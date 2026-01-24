@@ -1,0 +1,59 @@
+# Air - Live Reloading for Go Applications
+# https://github.com/air-verse/air
+#
+# Usage: air
+# or: air -c .air.toml
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Command to build the project
+cmd = "go build -o ./tmp/witnessd ./cmd/witnessd"
+# Binary file to run
+bin = "./tmp/witnessd"
+# Watch these file extensions
+include_ext = ["go", "toml"]
+# Exclude these directories
+exclude_dir = ["tmp", "vendor", "testdata", "bin", "dist", ".git"]
+# Exclude files matching these patterns
+exclude_file = []
+# Exclude patterns with regex
+exclude_regex = ["_test.go$", "_gen.go$"]
+# Exclude unchanged files
+exclude_unchanged = true
+# Follow symlinks
+follow_symlink = true
+# Log file path (empty = stdout)
+log = ""
+# Delay after file change before rebuilding (ms)
+delay = 1000
+# Stop running old binary when building new
+stop_on_error = true
+# Send interrupt signal before killing (for graceful shutdown)
+send_interrupt = true
+# Delay after interrupt before kill (ms)
+kill_delay = 500
+
+[log]
+# Show log time
+time = true
+# Only show main log
+main_only = false
+
+[color]
+# Customize colors
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+# Delete tmp directory on exit
+clean_on_exit = true
+
+[screen]
+# Clear screen on rebuild
+clear_on_rebuild = true
+# Keep scroll position
+keep_scroll = true

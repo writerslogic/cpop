@@ -1,0 +1,109 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "security:openssf-scorecard",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeMinor",
+    ":prHourlyLimit2",
+    ":prConcurrentLimit10"
+  ],
+  "description": "Renovate configuration for witnessd",
+
+  "labels": ["dependencies"],
+
+  "prBodyNotes": [
+    "This PR was automatically created by [Renovate](https://github.com/renovatebot/renovate).",
+    "Please verify tests pass before merging."
+  ],
+
+  "packageRules": [
+    {
+      "description": "Critical security updates for crypto libraries",
+      "matchPackageNames": [
+        "golang.org/x/crypto",
+        "crypto/ed25519",
+        "crypto/aes"
+      ],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "labels": ["security", "dependencies"]
+    },
+    {
+      "description": "File system watching library",
+      "matchPackageNames": ["github.com/fsnotify/fsnotify"],
+      "automerge": true,
+      "labels": ["dependencies"]
+    },
+    {
+      "description": "SQLite driver updates",
+      "matchPackageNames": ["github.com/mattn/go-sqlite3"],
+      "automerge": true,
+      "labels": ["dependencies", "database"]
+    },
+    {
+      "description": "TOML configuration library",
+      "matchPackageNames": ["github.com/BurntSushi/toml"],
+      "automerge": true,
+      "labels": ["dependencies"]
+    },
+    {
+      "description": "Go version updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["go-version", "dependencies"]
+    },
+    {
+      "description": "GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "labels": ["ci", "dependencies"]
+    },
+    {
+      "description": "Docker base image updates",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "automerge": false,
+      "labels": ["docker", "dependencies"]
+    },
+    {
+      "description": "Development dependencies",
+      "matchPackagePatterns": [
+        "golangci-lint",
+        "staticcheck",
+        "gosec"
+      ],
+      "automerge": true,
+      "labels": ["dev-dependencies"]
+    },
+    {
+      "description": "Group minor updates together",
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackagePatterns": ["*"],
+      "groupName": "minor-updates",
+      "groupSlug": "minor"
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+
+  "schedule": [
+    "before 6am on monday"
+  ],
+
+  "timezone": "America/Los_Angeles",
+
+  "gomod": {
+    "enabled": true,
+    "postUpdateOptions": ["gomodTidy"]
+  },
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  }
+}

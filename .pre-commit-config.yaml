@@ -1,0 +1,69 @@
+# Pre-commit hooks for witnessd
+# Install: pre-commit install
+# Run all: pre-commit run --all-files
+# https://pre-commit.com
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^vendor/
+      - id: end-of-file-fixer
+        exclude: ^vendor/
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.55.2
+    hooks:
+      - id: golangci-lint
+        args: ['--timeout=5m']
+
+  - repo: https://github.com/tekwizely/pre-commit-golang
+    rev: v1.0.0-rc.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet
+      - id: go-mod-tidy
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+
+  - repo: local
+    hooks:
+      - id: go-test
+        name: go test
+        entry: go test -short ./...
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: go-generate
+        name: go generate check
+        entry: bash -c 'go generate ./... && git diff --exit-code'
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: security-scan
+        name: security scan
+        entry: bash -c 'command -v gosec >/dev/null && gosec -quiet ./... || true'
+        language: system
+        pass_filenames: false
+        types: [go]

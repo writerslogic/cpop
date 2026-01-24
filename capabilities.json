@@ -1,0 +1,144 @@
+{
+  "$schema": "https://witnessd.dev/schemas/capabilities-v1.json",
+  "version": "1.0.0",
+  "description": "Linux capabilities required by witnessd daemon",
+
+  "capabilities": {
+    "required": [
+      {
+        "name": "CAP_SYS_ADMIN",
+        "reason": "Required for TPM 2.0 device access via /dev/tpmrm0",
+        "scope": "tpm_operations",
+        "alternatives": [
+          "Use udev rules to grant group access (recommended)",
+          "Run TPM operations in a separate privileged helper process"
+        ]
+      }
+    ],
+
+    "optional": [
+      {
+        "name": "CAP_DAC_READ_SEARCH",
+        "reason": "Read files in directories without execute permission",
+        "scope": "file_monitoring",
+        "note": "Only needed if monitoring files in restricted directories"
+      },
+      {
+        "name": "CAP_CHOWN",
+        "reason": "Change ownership of log files and data directories",
+        "scope": "installation",
+        "note": "Only needed during initial setup, can be dropped afterward"
+      },
+      {
+        "name": "CAP_SETGID",
+        "reason": "Set group ID for privilege separation",
+        "scope": "daemon_startup",
+        "note": "Allows daemon to drop to unprivileged group"
+      },
+      {
+        "name": "CAP_SETUID",
+        "reason": "Set user ID for privilege separation",
+        "scope": "daemon_startup",
+        "note": "Allows daemon to drop to unprivileged user"
+      }
+    ],
+
+    "never_required": [
+      {
+        "name": "CAP_NET_ADMIN",
+        "reason": "witnessd does not require network configuration"
+      },
+      {
+        "name": "CAP_NET_RAW",
+        "reason": "witnessd does not use raw network sockets"
+      },
+      {
+        "name": "CAP_SYS_PTRACE",
+        "reason": "witnessd does not trace other processes"
+      }
+    ]
+  },
+
+  "deployment_modes": {
+    "recommended": {
+      "name": "Unprivileged with udev rules",
+      "description": "Run as dedicated user with TPM access via group permissions",
+      "setup": [
+        "Create witnessd user: useradd -r -s /sbin/nologin witnessd",
+        "Install udev rules: cp rules.d/99-witnessd-tpm.rules /etc/udev/rules.d/",
+        "Reload udev: udevadm control --reload-rules",
+        "Add user to group: usermod -a -G witnessd witnessd"
+      ],
+      "capabilities_needed": []
+    },
+
+    "minimal_caps": {
+      "name": "Minimal capabilities",
+      "description": "Run with only CAP_SYS_ADMIN for direct TPM access",
+      "setup": [
+        "setcap cap_sys_admin+ep /usr/local/bin/witnessd"
+      ],
+      "capabilities_needed": ["CAP_SYS_ADMIN"]
+    },
+
+    "container": {
+      "name": "Container deployment",
+      "description": "Run in Docker/Podman with TPM device passthrough",
+      "setup": [
+        "docker run --device=/dev/tpmrm0 witnessd:latest"
+      ],
+      "capabilities_needed": [],
+      "notes": "Container must have access to TPM device"
+    }
+  },
+
+  "systemd_hardening": {
+    "description": "Recommended systemd security settings",
+    "settings": {
+      "CapabilityBoundingSet": "CAP_SYS_ADMIN",
+      "AmbientCapabilities": "",
+      "NoNewPrivileges": true,
+      "ProtectSystem": "strict",
+      "ProtectHome": true,
+      "PrivateTmp": true,
+      "PrivateDevices": false,
+      "DeviceAllow": "/dev/tpmrm0 rw",
+      "ProtectKernelTunables": true,
+      "ProtectKernelModules": true,
+      "ProtectControlGroups": true,
+      "RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6",
+      "RestrictNamespaces": true,
+      "LockPersonality": true,
+      "MemoryDenyWriteExecute": true,
+      "RestrictRealtime": true,
+      "RestrictSUIDSGID": true,
+      "SystemCallArchitectures": "native",
+      "SystemCallFilter": "@system-service"
+    }
+  },
+
+  "seccomp": {
+    "description": "Recommended seccomp profile",
+    "allowed_syscalls": [
+      "read", "write", "open", "close", "stat", "fstat", "lstat",
+      "poll", "lseek", "mmap", "mprotect", "munmap", "brk",
+      "ioctl", "access", "pipe", "dup", "dup2", "socket",
+      "connect", "accept", "sendto", "recvfrom", "shutdown",
+      "bind", "listen", "getsockname", "getpeername", "socketpair",
+      "clone", "fork", "execve", "exit", "wait4", "kill",
+      "uname", "fcntl", "flock", "fsync", "fdatasync", "truncate",
+      "getdents", "getcwd", "chdir", "rename", "mkdir", "rmdir",
+      "unlink", "symlink", "readlink", "chmod", "chown", "umask",
+      "gettimeofday", "getrlimit", "getuid", "getgid", "geteuid",
+      "getegid", "getppid", "getpgrp", "setsid", "getgroups",
+      "setgroups", "setpgid", "sigaltstack", "rt_sigaction",
+      "rt_sigprocmask", "rt_sigreturn", "nanosleep", "clock_gettime",
+      "epoll_create", "epoll_ctl", "epoll_wait", "epoll_pwait",
+      "eventfd", "timerfd_create", "timerfd_settime", "getrandom",
+      "openat", "mkdirat", "fstatat", "unlinkat", "renameat",
+      "futex", "set_robust_list", "get_robust_list", "pread64",
+      "pwrite64", "readv", "writev", "preadv", "pwritev",
+      "prctl", "arch_prctl", "seccomp", "memfd_create"
+    ]
+  }
+}

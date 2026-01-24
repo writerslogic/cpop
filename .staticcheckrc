@@ -1,0 +1,14 @@
+# Staticcheck configuration
+# https://staticcheck.io/docs/configuration
+
+checks = [
+  "all",
+  "-ST1000",
+  "-ST1003"
+]
+
+go = "1.21"
+
+dot_import_whitelist = []
+
+http_status_code_whitelist = []

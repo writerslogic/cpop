@@ -1,0 +1,62 @@
+{
+  "name": "witnessd Development",
+  "image": "mcr.microsoft.com/devcontainers/go:1.21-bullseye",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-vscode.makefile-tools",
+        "streetsidesoftware.code-spell-checker",
+        "DavidAnson.vscode-markdownlint",
+        "EditorConfig.EditorConfig",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "go.useLanguageServer": true,
+        "go.lintTool": "golangci-lint",
+        "go.lintFlags": ["--fast"],
+        "editor.formatOnSave": true,
+        "[go]": {
+          "editor.defaultFormatter": "golang.go",
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        },
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      }
+    }
+  },
+
+  "forwardPorts": [
+    2321,
+    2322
+  ],
+
+  "postCreateCommand": "make setup && go mod download",
+
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt", "seccomp=unconfined"
+  ],
+
+  "remoteUser": "vscode",
+
+  "containerEnv": {
+    "WITNESSD_TEST_MODE": "true",
+    "CGO_ENABLED": "1"
+  },
+
+  "postStartCommand": "docker-compose -f docker-compose.yml up -d tpm-simulator || true"
+}

@@ -1,0 +1,131 @@
+name: TPM Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/tpm/**'
+      - 'internal/signer/**'
+      - '.github/workflows/tpm-simulator.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/tpm/**'
+      - 'internal/signer/**'
+
+permissions:
+  contents: read
+
+jobs:
+  tpm-tests:
+    name: TPM Simulator Tests
+    runs-on: ubuntu-latest
+
+    services:
+      # IBM TPM 2.0 Simulator
+      tpm-simulator:
+        image: ghcr.io/salrashid123/tpm2simulator:latest
+        ports:
+          - 2321:2321  # TPM command port
+          - 2322:2322  # Platform port
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install TPM2 tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tpm2-tools libtss2-dev
+
+      - name: Wait for TPM simulator
+        run: |
+          for i in {1..30}; do
+            if nc -z localhost 2321; then
+              echo "TPM simulator is ready"
+              break
+            fi
+            echo "Waiting for TPM simulator..."
+            sleep 1
+          done
+
+      - name: Run TPM integration tests
+        env:
+          TPM2TOOLS_TCTI: mssim:host=localhost,port=2321
+          WITNESSD_TPM_SIMULATOR: "true"
+        run: |
+          go test -v -tags=tpm_integration ./internal/tpm/...
+
+      - name: Test TPM key sealing
+        env:
+          TPM2TOOLS_TCTI: mssim:host=localhost,port=2321
+        run: |
+          # Create a primary key
+          tpm2_createprimary -C o -g sha256 -G ecc -c primary.ctx
+
+          # Verify TPM is functional
+          tpm2_getrandom 32 --hex
+
+      - name: Test attestation flow
+        env:
+          TPM2TOOLS_TCTI: mssim:host=localhost,port=2321
+          WITNESSD_TPM_SIMULATOR: "true"
+        run: |
+          go test -v -tags=tpm_integration -run TestAttestation ./internal/tpm/...
+
+  tpm-quote-test:
+    name: TPM Quote Integration
+    runs-on: ubuntu-latest
+
+    services:
+      tpm-simulator:
+        image: ghcr.io/salrashid123/tpm2simulator:latest
+        ports:
+          - 2321:2321
+          - 2322:2322
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tpm2-tools libtss2-dev
+
+      - name: Wait for TPM simulator
+        run: |
+          for i in {1..30}; do
+            nc -z localhost 2321 && break
+            sleep 1
+          done
+
+      - name: Test TPM Quote generation
+        env:
+          TPM2TOOLS_TCTI: mssim:host=localhost,port=2321
+          WITNESSD_TPM_SIMULATOR: "true"
+        run: |
+          # Test the quote-based attestation that binds MMR roots to hardware
+          go test -v -tags=tpm_integration -run TestTPMQuote ./internal/tpm/...
+
+      - name: Verify PCR-based policy
+        env:
+          TPM2TOOLS_TCTI: mssim:host=localhost,port=2321
+        run: |
+          # Read PCRs to verify policy configuration
+          tpm2_pcrread sha256:0,1,2,3,7
+
+          # Test policy session creation
+          tpm2_startauthsession -S session.ctx --policy-session
+          tpm2_policypcr -S session.ctx -l sha256:0,1,2,3,7
+          tpm2_flushcontext session.ctx

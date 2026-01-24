@@ -1,0 +1,29 @@
+# udev rules for witnessd TPM access
+# Install: sudo cp 99-witnessd-tpm.rules /etc/udev/rules.d/
+# Reload:  sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# TPM 2.0 Resource Manager - allow witnessd group access
+# This enables non-root access to /dev/tpmrm0 for the witnessd daemon
+KERNEL=="tpmrm[0-9]*", MODE="0660", GROUP="witnessd", TAG+="uaccess"
+
+# TPM 2.0 Character Device (direct access, usually not needed)
+# Only enable if tpmrm0 is not available on your system
+# KERNEL=="tpm[0-9]*", MODE="0660", GROUP="witnessd", TAG+="uaccess"
+
+# Alternative: Use systemd-based access control
+# This relies on systemd's uaccess tag for logged-in users
+# KERNEL=="tpmrm[0-9]*", TAG+="uaccess", TAG+="systemd"
+
+# For systems using tss group (TPM Software Stack)
+# Uncomment if your distro uses tss group instead
+# KERNEL=="tpmrm[0-9]*", MODE="0660", GROUP="tss"
+
+# Hardware security key access (for FIDO2/WebAuthn devices)
+# Useful if witnessd integrates with hardware keys
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", MODE="0660", GROUP="witnessd", TAG+="uaccess"
+
+# Infineon TPM (specific device permissions)
+SUBSYSTEM=="tpm", ATTR{vendor}=="0x15d1", MODE="0660", GROUP="witnessd"
+
+# STMicroelectronics TPM
+SUBSYSTEM=="tpm", ATTR{vendor}=="0x104a", MODE="0660", GROUP="witnessd"

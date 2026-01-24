@@ -1,0 +1,127 @@
+{
+  "$schema": "https://witnessd.dev/schemas/tpm-policy-v1.json",
+  "version": "1.0.0",
+  "description": "TPM 2.0 Policy Configuration for witnessd signing key sealing",
+
+  "policy": {
+    "name": "witnessd-signing-key",
+    "description": "Policy for sealing the Ed25519 signing key to TPM PCRs",
+
+    "pcr_selection": {
+      "hash_algorithm": "sha256",
+      "pcrs": [
+        {
+          "index": 0,
+          "description": "SRTM, BIOS, and Platform Extensions",
+          "required": true,
+          "note": "Measures boot firmware integrity"
+        },
+        {
+          "index": 1,
+          "description": "Platform Configuration (CPU, memory)",
+          "required": false,
+          "note": "May change with hardware updates"
+        },
+        {
+          "index": 2,
+          "description": "Option ROM Code",
+          "required": false,
+          "note": "Measures PCI device firmware"
+        },
+        {
+          "index": 3,
+          "description": "Option ROM Configuration and Data",
+          "required": false,
+          "note": "Hardware-specific, may vary"
+        },
+        {
+          "index": 7,
+          "description": "Secure Boot State",
+          "required": true,
+          "note": "Ensures Secure Boot is enabled and unchanged"
+        }
+      ]
+    },
+
+    "authorization": {
+      "type": "policy_session",
+      "commands": [
+        "TPM2_PolicyPCR",
+        "TPM2_PolicyAuthValue"
+      ],
+      "password_required": false,
+      "note": "Key is unsealed only when PCR values match"
+    },
+
+    "key_properties": {
+      "algorithm": "ecc",
+      "curve": "nist_p256",
+      "scheme": "ecdsa",
+      "key_usage": ["sign"],
+      "sensitive_data_origin": true,
+      "user_with_auth": false,
+      "fixed_tpm": true,
+      "fixed_parent": true
+    }
+  },
+
+  "attestation": {
+    "quote": {
+      "enabled": true,
+      "pcr_selection": [0, 1, 2, 3, 7],
+      "hash_algorithm": "sha256",
+      "signing_scheme": "rsassa"
+    },
+
+    "ak_certificate": {
+      "description": "Attestation Key certificate chain for TPM identity",
+      "validation": "ek_certificate_chain",
+      "note": "Enables hardware-bound identity verification"
+    }
+  },
+
+  "recovery": {
+    "description": "Recovery options if PCR values change",
+    "options": [
+      {
+        "method": "reseal",
+        "description": "Generate new sealed key with updated PCR values",
+        "requires": "owner_password"
+      },
+      {
+        "method": "backup",
+        "description": "Use software-only key from secure backup",
+        "requires": "backup_passphrase"
+      }
+    ]
+  },
+
+  "audit": {
+    "log_path": "/var/log/witnessd/tpm-audit.log",
+    "events": [
+      "key_load",
+      "key_unseal",
+      "quote_generation",
+      "policy_failure"
+    ]
+  },
+
+  "compatibility": {
+    "minimum_tpm_version": "2.0",
+    "required_commands": [
+      "TPM2_Create",
+      "TPM2_Load",
+      "TPM2_Sign",
+      "TPM2_Quote",
+      "TPM2_PolicyPCR",
+      "TPM2_CreatePrimary"
+    ],
+    "tested_implementations": [
+      "Intel PTT",
+      "AMD fTPM",
+      "Infineon SLB9670",
+      "STMicroelectronics ST33",
+      "IBM TPM 2.0 Simulator"
+    ]
+  }
+}

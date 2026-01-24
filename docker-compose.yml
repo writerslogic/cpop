@@ -1,0 +1,66 @@
+# Docker Compose for witnessd integration testing
+# Provides mock services for external timestamping and TPM simulation
+
+version: "3.9"
+
+services:
+  # TPM 2.0 Simulator (IBM implementation)
+  tpm-simulator:
+    image: ghcr.io/salrashid123/tpm2simulator:latest
+    ports:
+      - "2321:2321"  # TPM command port
+      - "2322:2322"  # Platform port
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2321"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # RFC 3161 Time Stamping Authority (mock)
+  tsa-mock:
+    image: nginx:alpine
+    ports:
+      - "3161:80"
+    volumes:
+      - ./testdata/tsa-mock:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # OpenTimestamps calendar server (mock for testing)
+  ots-calendar:
+    image: python:3.11-slim
+    ports:
+      - "14788:14788"
+    command: >
+      sh -c "pip install flask && python -c \"
+      from flask import Flask, request, Response
+      app = Flask(__name__)
+      @app.route('/digest', methods=['POST'])
+      def digest():
+          return Response(b'mock-timestamp-response', mimetype='application/octet-stream')
+      app.run(host='0.0.0.0', port=14788)
+      \""
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:14788/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # SQLite web interface for debugging (optional)
+  sqlite-web:
+    image: coleifer/sqlite-web
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./testdata:/data:ro
+    environment:
+      - SQLITE_DATABASE=/data/events.db
+    profiles:
+      - debug
+
+networks:
+  default:
+    name: witnessd-test

@@ -1,0 +1,138 @@
+# GoReleaser configuration
+# https://goreleaser.com
+
+version: 2
+
+project_name: witnessd
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: witnessd
+    main: ./cmd/witnessd
+    binary: witnessd
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: witnessctl
+    main: ./cmd/witnessctl
+    binary: witnessctl
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - docs/*
+      - rules.d/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: "^feat"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix"
+      order: 1
+    - title: Security
+      regexp: "^security"
+      order: 2
+    - title: Others
+      order: 999
+
+sboms:
+  - artifacts: archive
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}.sbom.spdx.json"
+
+signs:
+  - cmd: cosign
+    env:
+      - COSIGN_EXPERIMENTAL=1
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+release:
+  github:
+    owner: davidcondrey
+    name: witnessd
+  draft: true
+  prerelease: auto
+  mode: replace
+  header: |
+    ## witnessd {{ .Version }}
+
+    Cryptographic file witnessing daemon with forensic authorship detection.
+
+    ### Verification
+
+    Verify checksums:
+    ```bash
+    sha256sum -c checksums.txt
+    ```
+
+    Verify SLSA provenance:
+    ```bash
+    slsa-verifier verify-artifact witnessd_{{ .Version }}_linux_amd64.tar.gz \
+      --provenance-path witnessd_{{ .Version }}_linux_amd64.tar.gz.intoto.jsonl \
+      --source-uri github.com/davidcondrey/witnessd
+    ```
+  footer: |
+    **Full Changelog**: https://github.com/davidcondrey/witnessd/compare/{{ .PreviousTag }}...{{ .Tag }}

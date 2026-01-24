@@ -1,0 +1,49 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Go source files
+*.go text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Configuration files
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.xml text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
+
+# Makefiles
+Makefile text eol=lf
+
+# SQL
+*.sql text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# Go module files
+go.mod text eol=lf
+go.sum text eol=lf
+
+# Prevent diff noise in vendored files
+vendor/** linguist-vendored
+
+# Mark generated files
+*_gen.go linguist-generated
+*.pb.go linguist-generated
