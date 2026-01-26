@@ -480,6 +480,63 @@ func (s *Store) GetWeave(id int64) (*Weave, error) {
 	return &w, nil
 }
 
+// GetContextForTimestamp returns the context that was active at the given timestamp.
+// Returns nil if no context was active at that time.
+func (s *Store) GetContextForTimestamp(timestampNs int64) (*Context, error) {
+	var c Context
+	var contextType string
+
+	err := s.db.QueryRow(`
+		SELECT id, type, note, start_ns, end_ns
+		FROM contexts
+		WHERE start_ns <= ? AND (end_ns IS NULL OR end_ns >= ?)
+		ORDER BY start_ns DESC
+		LIMIT 1`, timestampNs, timestampNs,
+	).Scan(&c.ID, &contextType, &c.Note, &c.StartNs, &c.EndNs)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get context for timestamp: %w", err)
+	}
+
+	c.Type = ContextType(contextType)
+	return &c, nil
+}
+
+// GetContextsInRange returns all contexts that overlap with the given time range.
+func (s *Store) GetContextsInRange(startNs, endNs int64) ([]Context, error) {
+	rows, err := s.db.Query(`
+		SELECT id, type, note, start_ns, end_ns
+		FROM contexts
+		WHERE start_ns <= ? AND (end_ns IS NULL OR end_ns >= ?)
+		ORDER BY start_ns ASC`, endNs, startNs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query contexts in range: %w", err)
+	}
+	defer rows.Close()
+
+	var contexts []Context
+	for rows.Next() {
+		var c Context
+		var contextType string
+
+		if err := rows.Scan(&c.ID, &contextType, &c.Note, &c.StartNs, &c.EndNs); err != nil {
+			return nil, fmt.Errorf("scan context: %w", err)
+		}
+
+		c.Type = ContextType(contextType)
+		contexts = append(contexts, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate contexts: %w", err)
+	}
+
+	return contexts, nil
+}
+
 // scanEvents is a helper to scan event rows into a slice.
 func scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
