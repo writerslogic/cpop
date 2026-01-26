@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"witnessd/internal/config"
+	"witnessd/internal/context"
+	"witnessd/internal/forensics"
 	"witnessd/internal/mmr"
 	"witnessd/internal/signer"
+	"witnessd/internal/store"
 	"witnessd/internal/verify"
 )
 
@@ -53,6 +56,18 @@ func main() {
 			output = flag.Arg(2)
 		}
 		cmdExport(flag.Arg(1), output)
+	case "forensics":
+		if flag.NArg() < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: witnessctl forensics <file>")
+			os.Exit(1)
+		}
+		cmdForensics(flag.Arg(1))
+	case "context":
+		if flag.NArg() < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: witnessctl context <begin|end|status> [type] [note]")
+			os.Exit(1)
+		}
+		cmdContext(flag.Args()[1:])
 	case "help":
 		usage()
 	default:
@@ -68,11 +83,16 @@ func usage() {
 Usage: witnessctl [options] <command> [args]
 
 Commands:
-  status          Show daemon status and statistics
-  history         Print witness history
-  verify <file>   Verify a file against the witness database
-  export <file>   Export cryptographic evidence for a file
-  help            Show this help message
+  status              Show daemon status and statistics
+  history             Print witness history
+  verify <file>       Verify a file against the witness database
+  export <file>       Export cryptographic evidence for a file
+  forensics <file>    Analyze authorship patterns for a file
+  context <action>    Manage editing context declarations
+    begin <type> [note]  Start context (types: external, assisted, review)
+    end                  End current context
+    status               Show active context
+  help                Show this help message
 
 Options:
   -config <path>  Path to config file (default: ~/.witnessd/config.toml)`)
@@ -381,4 +401,154 @@ type SignatureEntry struct {
 func prettyJSON(v interface{}) string {
 	data, _ := json.MarshalIndent(v, "", "  ")
 	return string(data)
+}
+
+func cmdForensics(filePath string) {
+	cfg := loadConfig()
+
+	// Open event store
+	eventStore, err := store.Open(cfg.EventStorePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening event store: %v\n", err)
+		os.Exit(1)
+	}
+	defer eventStore.Close()
+
+	// Get all events for this file
+	events, err := eventStore.GetEventsByFile(filePath, 0, time.Now().UnixNano())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading events: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(events) == 0 {
+		fmt.Fprintf(os.Stderr, "No witness events found for: %s\n", filePath)
+		os.Exit(1)
+	}
+
+	// Convert to forensics types and load regions
+	eventData := make([]forensics.EventData, len(events))
+	regionsByEvent := make(map[int64][]forensics.RegionData)
+
+	for i, e := range events {
+		eventData[i] = forensics.EventData{
+			ID:          e.ID,
+			TimestampNs: e.TimestampNs,
+			FileSize:    e.FileSize,
+			SizeDelta:   e.SizeDelta,
+			FilePath:    e.FilePath,
+		}
+
+		// Load edit regions for this event
+		regions, err := eventStore.GetEditRegions(e.ID)
+		if err == nil && len(regions) > 0 {
+			regData := make([]forensics.RegionData, len(regions))
+			for j, r := range regions {
+				regData[j] = forensics.RegionData{
+					StartPct:  r.StartPct,
+					EndPct:    r.EndPct,
+					DeltaSign: r.DeltaSign,
+					ByteCount: r.ByteCount,
+				}
+			}
+			regionsByEvent[e.ID] = regData
+		}
+	}
+
+	// Build profile
+	profile, err := forensics.BuildProfile(eventData, regionsByEvent)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error building profile: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print report
+	forensics.PrintReport(os.Stdout, profile)
+}
+
+func cmdContext(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: witnessctl context <begin|end|status> [type] [note]")
+		os.Exit(1)
+	}
+
+	cfg := loadConfig()
+
+	eventStore, err := store.Open(cfg.EventStorePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening event store: %v\n", err)
+		os.Exit(1)
+	}
+	defer eventStore.Close()
+
+	ctxMgr := context.NewManager(eventStore)
+
+	switch args[0] {
+	case "begin":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: witnessctl context begin <type> [note]")
+			fmt.Fprintln(os.Stderr, "Types: external (ext), assisted (ai), review (rev)")
+			os.Exit(1)
+		}
+
+		ctxType, err := context.ValidateType(args[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid context type: %s\n", args[1])
+			fmt.Fprintln(os.Stderr, "Valid types: external (ext), assisted (ai), review (rev)")
+			os.Exit(1)
+		}
+
+		note := ""
+		if len(args) >= 3 {
+			note = strings.Join(args[2:], " ")
+		}
+
+		id, err := ctxMgr.Begin(ctxType, note)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error starting context: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Context started: %s\n", context.TypeDescription(ctxType))
+		if note != "" {
+			fmt.Printf("Note: %s\n", note)
+		}
+		fmt.Printf("ID: %d\n", id)
+
+	case "end":
+		err := ctxMgr.End()
+		if err != nil {
+			if err == context.ErrNoActiveContext {
+				fmt.Println("No active context to end.")
+			} else {
+				fmt.Fprintf(os.Stderr, "Error ending context: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+		fmt.Println("Context ended.")
+
+	case "status":
+		active, err := ctxMgr.Active()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking context: %v\n", err)
+			os.Exit(1)
+		}
+
+		if active == nil {
+			fmt.Println("No active context.")
+		} else {
+			fmt.Println("Active context:")
+			fmt.Printf("  Type: %s\n", context.TypeDescription(active.Type))
+			fmt.Printf("  Started: %s\n", time.Unix(0, active.StartNs).Format(time.RFC3339))
+			if active.Note != "" {
+				fmt.Printf("  Note: %s\n", active.Note)
+			}
+		}
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown context action: %s\n", args[0])
+		fmt.Fprintln(os.Stderr, "Valid actions: begin, end, status")
+		os.Exit(1)
+	}
 }
