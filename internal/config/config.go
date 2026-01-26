@@ -29,6 +29,9 @@ type Config struct {
 
 	// SignaturesPath is the path to store signature mappings.
 	SignaturesPath string `toml:"signatures_path"`
+
+	// EventStorePath is the path to the SQLite event store database.
+	EventStorePath string `toml:"event_store_path"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -43,6 +46,7 @@ func DefaultConfig() *Config {
 		LogPath:        filepath.Join(witnessdDir, "witnessd.log"),
 		SigningKeyPath: filepath.Join(homeDir, ".ssh", "witnessd_signing_key"),
 		SignaturesPath: filepath.Join(witnessdDir, "signatures.sigs"),
+		EventStorePath: filepath.Join(witnessdDir, "events.db"),
 	}
 }
 

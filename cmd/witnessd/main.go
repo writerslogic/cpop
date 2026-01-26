@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -15,7 +16,9 @@ import (
 	"witnessd/internal/config"
 	"witnessd/internal/mmr"
 	"witnessd/internal/signer"
+	"witnessd/internal/store"
 	"witnessd/internal/watcher"
+	"witnessd/internal/witness"
 )
 
 var (
@@ -62,18 +65,51 @@ func main() {
 	}
 
 	// Initialize MMR store
-	store, err := mmr.OpenFileStore(cfg.DatabasePath)
+	mmrStore, err := mmr.OpenFileStore(cfg.DatabasePath)
 	if err != nil {
 		logger.Fatalf("Failed to open MMR store: %v", err)
 	}
 
-	mmrTree, err := mmr.New(store)
+	mmrTree, err := mmr.New(mmrStore)
 	if err != nil {
-		store.Close()
+		mmrStore.Close()
 		logger.Fatalf("Failed to initialize MMR: %v", err)
 	}
 
 	logger.Printf("MMR initialized with %d nodes (%d leaves)", mmrTree.Size(), mmrTree.LeafCount())
+
+	// Initialize SQLite event store
+	eventStore, err := store.Open(cfg.EventStorePath)
+	if err != nil {
+		mmrStore.Close()
+		logger.Fatalf("Failed to open event store: %v", err)
+	}
+	defer eventStore.Close()
+
+	// Load signing key bytes for shadow cache key derivation
+	signingKeyBytes, err := loadSigningKeyBytes(cfg.SigningKeyPath)
+	if err != nil {
+		mmrStore.Close()
+		logger.Fatalf("Failed to load signing key bytes: %v", err)
+	}
+
+	// Initialize shadow cache
+	shadowCache, err := witness.NewShadowCache(
+		config.WitnessdDir(),
+		signingKeyBytes,
+	)
+	if err != nil {
+		mmrStore.Close()
+		logger.Fatalf("Failed to initialize shadow cache: %v", err)
+	}
+
+	// Get or create device identity
+	deviceID, err := getOrCreateDeviceID(cfg)
+	if err != nil {
+		mmrStore.Close()
+		logger.Fatalf("Failed to get device ID: %v", err)
+	}
+	logger.Printf("Device ID: %s", hex.EncodeToString(deviceID[:]))
 
 	// Initialize watcher
 	if len(cfg.WatchPaths) == 0 {
@@ -82,7 +118,7 @@ func main() {
 
 	w, err := watcher.New(cfg.WatchPaths, cfg.Interval)
 	if err != nil {
-		store.Close()
+		mmrStore.Close()
 		logger.Fatalf("Failed to create watcher: %v", err)
 	}
 
@@ -92,7 +128,7 @@ func main() {
 
 	// Start watching
 	if err := w.Start(); err != nil {
-		store.Close()
+		mmrStore.Close()
 		logger.Fatalf("Failed to start watcher: %v", err)
 	}
 
@@ -112,18 +148,108 @@ func main() {
 	for running {
 		select {
 		case event := <-w.Events():
-			// Witness the file
-			idx, err := mmrTree.Append(event.Hash[:])
+			// Read current file content for topology extraction
+			content, err := os.ReadFile(event.Path)
+			if err != nil {
+				logger.Printf("Error reading file %s: %v", event.Path, err)
+				continue
+			}
+
+			now := time.Now().UnixNano()
+
+			// Get previous shadow for topology extraction
+			prevShadow, _ := shadowCache.Get(event.Path)
+
+			// Extract edit topology and compute size delta
+			var regions []witness.EditRegion
+			var sizeDelta int32
+			if prevShadow != nil {
+				regions = witness.ExtractTopology(prevShadow.Content, content)
+				sizeDelta = witness.ComputeSizeDelta(prevShadow.FileSize, int64(len(content)))
+			} else {
+				// New file - single insertion region covering the whole file
+				sizeDelta = int32(len(content))
+				if len(content) > 0 {
+					regions = []witness.EditRegion{{
+						StartPct:  0.0,
+						EndPct:    1.0,
+						DeltaSign: 1, // Insertion
+						ByteCount: int32(len(content)),
+					}}
+				}
+			}
+
+			// Compute cryptographic commitment
+			metadataHash := witness.ComputeMetadataHash(now, int64(len(content)), sizeDelta, event.Path)
+			regionsRoot := witness.ComputeRegionsRoot(regions)
+			leafHash := witness.ComputeMMRLeaf(event.Hash, metadataHash, regionsRoot)
+
+			// Append to MMR using the full leaf hash (binds content + metadata + topology)
+			idx, err := mmrTree.Append(leafHash[:])
 			if err != nil {
 				logger.Printf("Error appending to MMR: %v", err)
 				continue
 			}
 
-			eventCount++
-			logger.Printf("Witnessed: %s (index=%d, hash=%s)",
-				event.Path, idx, hex.EncodeToString(event.Hash[:8]))
+			// Store full event in SQLite
+			evt := &store.Event{
+				DeviceID:    deviceID,
+				MMRIndex:    idx,
+				MMRLeafHash: leafHash,
+				TimestampNs: now,
+				FilePath:    event.Path,
+				ContentHash: event.Hash,
+				FileSize:    int64(len(content)),
+				SizeDelta:   sizeDelta,
+				ContextID:   getActiveContextID(eventStore),
+			}
 
-			// Get and sign the root periodically (every 10 events or on shutdown)
+			eventID, err := eventStore.InsertEvent(evt)
+			if err != nil {
+				logger.Printf("Error storing event: %v", err)
+				continue
+			}
+
+			// Store edit regions
+			if len(regions) > 0 {
+				storeRegions := make([]store.EditRegion, len(regions))
+				for i, r := range regions {
+					storeRegions[i] = store.EditRegion{
+						EventID:   eventID,
+						Ordinal:   int16(i),
+						StartPct:  r.StartPct,
+						EndPct:    r.EndPct,
+						DeltaSign: int8(r.DeltaSign),
+						ByteCount: r.ByteCount,
+					}
+				}
+				if err := eventStore.InsertEditRegions(eventID, storeRegions); err != nil {
+					logger.Printf("Error storing regions: %v", err)
+				}
+			}
+
+			// Update shadow cache for next comparison
+			if err := shadowCache.Put(event.Path, content); err != nil {
+				logger.Printf("Warning: failed to update shadow: %v", err)
+			}
+
+			// Update verification index
+			regionsRootPtr := &regionsRoot
+			verifyEntry := &store.VerificationEntry{
+				MMRIndex:     idx,
+				LeafHash:     leafHash,
+				MetadataHash: metadataHash,
+				RegionsRoot:  regionsRootPtr,
+			}
+			if err := eventStore.InsertVerificationEntry(verifyEntry); err != nil {
+				logger.Printf("Warning: failed to update verification index: %v", err)
+			}
+
+			eventCount++
+			logger.Printf("Witnessed: %s (idx=%d, regions=%d, delta=%+d)",
+				event.Path, idx, len(regions), sizeDelta)
+
+			// Sign the root periodically (every 10 events)
 			if eventCount%10 == 0 {
 				if err := signAndLogRoot(cfg, mmrTree, logger); err != nil {
 					logger.Printf("Warning: failed to sign root: %v", err)
@@ -155,10 +281,10 @@ func main() {
 
 	// Sync and close MMR store
 	logger.Printf("Syncing MMR store...")
-	if err := store.Sync(); err != nil {
+	if err := mmrStore.Sync(); err != nil {
 		logger.Printf("Error syncing store: %v", err)
 	}
-	if err := store.Close(); err != nil {
+	if err := mmrStore.Close(); err != nil {
 		logger.Printf("Error closing store: %v", err)
 	}
 
@@ -200,4 +326,60 @@ func signAndLogRoot(cfg *config.Config, m *mmr.MMR, logger *log.Logger) error {
 
 	logger.Printf("Signed root: %s (size=%d)", hex.EncodeToString(root[:8]), m.Size())
 	return nil
+}
+
+// getOrCreateDeviceID retrieves or generates a persistent device identifier.
+// The device ID is stored in ~/.witnessd/device_id.
+func getOrCreateDeviceID(cfg *config.Config) ([16]byte, error) {
+	deviceIDPath := filepath.Join(config.WitnessdDir(), "device_id")
+
+	// Try to load existing device ID
+	data, err := os.ReadFile(deviceIDPath)
+	if err == nil && len(data) == 16 {
+		var deviceID [16]byte
+		copy(deviceID[:], data)
+		return deviceID, nil
+	}
+
+	// Generate new UUID v4
+	var deviceID [16]byte
+	if _, err := rand.Read(deviceID[:]); err != nil {
+		return [16]byte{}, fmt.Errorf("generate device ID: %w", err)
+	}
+
+	// Set UUID v4 version and variant bits
+	deviceID[6] = (deviceID[6] & 0x0f) | 0x40 // Version 4
+	deviceID[8] = (deviceID[8] & 0x3f) | 0x80 // Variant 1
+
+	// Save device ID
+	if err := os.WriteFile(deviceIDPath, deviceID[:], 0600); err != nil {
+		return [16]byte{}, fmt.Errorf("save device ID: %w", err)
+	}
+
+	return deviceID, nil
+}
+
+// getActiveContextID returns the ID of the currently active context, or nil if none.
+func getActiveContextID(s *store.Store) *int64 {
+	ctx, err := s.GetActiveContext()
+	if err != nil || ctx == nil {
+		return nil
+	}
+	return &ctx.ID
+}
+
+// loadSigningKeyBytes reads the raw signing key bytes for shadow cache key derivation.
+func loadSigningKeyBytes(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read signing key: %w", err)
+	}
+
+	// The key file may contain just the seed (32 bytes) or full private key (64 bytes)
+	// Use the first 32 bytes as the derivation source
+	if len(data) < 32 {
+		return nil, fmt.Errorf("signing key too short: expected at least 32 bytes, got %d", len(data))
+	}
+
+	return data[:32], nil
 }
