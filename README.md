@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Cryptographic proof of human authorship through continuous temporal witnessing</strong>
+  <strong>Cryptographic proof of authorship through documented process attestation</strong>
 </p>
 
 <p align="center">
@@ -11,230 +11,261 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#how-it-works">How It Works</a> •
   <a href="#commands">Commands</a> •
-  <a href="#forensic-analysis">Forensic Analysis</a>
+  <a href="#evidence-tiers">Evidence Tiers</a>
 </p>
 
 ---
 
 ## Overview
 
-**witnessd** generates irrefutable cryptographic evidence of document authorship by capturing the "kinetic signature" of human creative work—the natural rhythm of edits, pauses, and revisions. Unlike AI-generated content which appears atomically, human writing exhibits distinctive temporal patterns that are computationally infeasible to forge retroactively.
+**witnessd** generates irrefutable cryptographic evidence of document authorship through commit-based temporal witnessing. Unlike detection-based approaches that attempt to distinguish human from AI content, witnessd provides a **documentation framework** where authors commit to content states over time and declare their creative process.
+
+### Philosophy
+
+The system makes three categories of claims:
+
+1. **Cryptographic (strong)**: Content states form an unbroken hash chain; VDFs prove minimum elapsed time between states
+2. **Attestation (legal)**: Authors sign declarations describing their process, including any AI tool usage
+3. **Presence (optional)**: Random challenge-response protocols verify author presence during sessions
 
 ### Key Features
 
-- **Merkle Mountain Range (MMR)** — Append-only authenticated data structure with O(log n) inclusion proofs
-- **Edit Topology Tracking** — Captures *where* edits occur, not just *when*, defeating drip-script attacks
-- **Cryptographic Binding** — Content, metadata, and edit regions bound in tamper-evident chain
+- **Verifiable Delay Functions (VDF)** — Prove minimum elapsed time between commits (unforgeable)
+- **Process Declarations** — Structured documentation of AI usage, collaboration, and input modalities
+- **Presence Verification** — Optional random challenges proving human presence
+- **Evidence Strength Tiers** — Basic → Standard → Enhanced → Maximum
 - **External Trust Anchors** — OpenTimestamps (Bitcoin) and RFC 3161 TSA integration
-- **Forensic Analysis** — Statistical detection of anomalous authorship patterns
-- **Multi-Device Support** — Federated witness chains with weave synchronization
+- **TPM Integration** — Optional hardware attestation for enhanced security
 
 ## Installation
 
 ```bash
-go install witnessd/cmd/witnessd@latest
-go install witnessd/cmd/witnessctl@latest
+go install witnessd@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/yourusername/witnessd
+git clone https://github.com/davidcondrey/witnessd
 cd witnessd
 go build -o witnessd ./cmd/witnessd
-go build -o witnessctl ./cmd/witnessctl
 ```
 
 ## Quick Start
 
-1. **Generate a signing key:**
-   ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/witnessd_signing_key -N ""
-   ```
+```bash
+# 1. Initialize witnessd
+witnessd init
 
-2. **Create configuration:**
-   ```bash
-   mkdir -p ~/.witnessd
-   cat > ~/.witnessd/config.toml << EOF
-   watch_paths = ["~/Documents/writing"]
-   interval = 5
-   EOF
-   ```
+# 2. Calibrate VDF for your machine (one-time)
+witnessd calibrate
 
-3. **Start the daemon:**
-   ```bash
-   witnessd -v
-   ```
+# 3. Write your document, then commit checkpoints
+witnessd commit manuscript.md -m "Completed chapter 1"
+# ... continue writing ...
+witnessd commit manuscript.md -m "Finished draft"
 
-4. **Check status:**
-   ```bash
-   witnessctl status
-   ```
+# 4. View checkpoint history
+witnessd log manuscript.md
+
+# 5. Export evidence when done
+witnessd export manuscript.md
+```
 
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    File Change Detected                      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Shadow Cache (Previous State)                   │
-│         Compare with Myers diff → Extract topology           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Cryptographic Commitment                        │
-│    LeafHash = SHA256(ContentHash || MetadataHash ||         │
-│                      RegionsRoot)                            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Merkle Mountain Range                           │
-│         Append leaf → Update peaks → Compute root            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              SQLite Event Store                              │
-│    Full metadata for forensic queries and verification       │
-└─────────────────────────────────────────────────────────────┘
+CREATION:
+┌─────────────────────────────────────────────────────────────────┐
+│  Author writes in any application                               │
+│                    ↓                                            │
+│  Author runs `witnessd commit` at chosen intervals              │
+│                    ↓                                            │
+│  Checkpoint created: content_hash + VDF proof + chain link      │
+│                    ↓                                            │
+│  Chain grows over days/weeks/months                             │
+└─────────────────────────────────────────────────────────────────┘
+
+EXPORT:
+┌─────────────────────────────────────────────────────────────────┐
+│  Author requests evidence export                                │
+│                    ↓                                            │
+│  System prompts for Process Declaration                         │
+│                    ↓                                            │
+│  Author declares modalities, AI usage, collaboration            │
+│                    ↓                                            │
+│  Declaration signed, bound to chain                             │
+│                    ↓                                            │
+│  Evidence packet generated at requested tier                    │
+└─────────────────────────────────────────────────────────────────┘
+
+VERIFICATION:
+┌─────────────────────────────────────────────────────────────────┐
+│  Verifier receives evidence packet                              │
+│                    ↓                                            │
+│  Verify chain integrity (hash links)                            │
+│                    ↓                                            │
+│  Verify VDF proofs (time elapsed)                               │
+│                    ↓                                            │
+│  Evaluate declaration plausibility against evidence             │
+│                    ↓                                            │
+│  Decision: Accept, investigate further, or reject               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Commands
 
-### Daemon
+```bash
+witnessd init                    # Initialize witnessd
+witnessd calibrate               # Calibrate VDF for your machine
+witnessd commit <file> [-m msg]  # Create checkpoint
+witnessd log <file>              # Show checkpoint history
+witnessd export <file> [-tier T] # Export evidence packet
+witnessd verify <file|json>      # Verify chain or evidence
+witnessd presence <action>       # Manage presence verification
+witnessd status                  # Show status
+```
+
+### Creating Checkpoints
 
 ```bash
-witnessd [options]
-  -config <path>    Path to config file
-  -v                Verbose logging
+# Basic commit
+witnessd commit essay.md
+
+# With message
+witnessd commit essay.md -m "Added methodology section"
 ```
 
-### Control CLI
+### Presence Verification (Optional)
+
+For stronger evidence, run presence verification during writing sessions:
 
 ```bash
-# Check daemon status and statistics
-witnessctl status
+# Start a presence session
+witnessd presence start
 
-# View witness history
-witnessctl history
+# Periodically verify your presence
+witnessd presence challenge
 
-# Verify a file against the witness database
-witnessctl verify <file>
-
-# Export self-contained evidence packet
-witnessctl export <file> [output.json]
-
-# Analyze authorship patterns
-witnessctl forensics <file>
-
-# Manage editing context declarations
-witnessctl context begin <type> [note]   # types: external, assisted, review
-witnessctl context end
-witnessctl context status
+# End the session
+witnessd presence stop
 ```
 
-## Forensic Analysis
-
-The `forensics` command analyzes authorship patterns across five primary metrics:
-
-| Metric | Human Range | Drip Attack | Description |
-|--------|-------------|-------------|-------------|
-| Monotonic Append Ratio | 40-60% | >95% | Fraction of edits at document end |
-| Edit Entropy | 2.5-4.0 | <1.0 | Shannon entropy of edit positions |
-| Median Interval | Variable | Regular | Time between edits |
-| Positive/Negative Ratio | 60-75% | >98% | Insertions vs deletions |
-| Deletion Clustering | <1.0 | ≈1.0 | Spatial clustering of deletions |
-
-Example output:
-
-```
-══════════════════════════════════════════════════════════════════════
-                     AUTHORSHIP ANALYSIS: manuscript.md
-══════════════════════════════════════════════════════════════════════
-
-Overview
-  Events:        1,847 witnesses across 89 sessions
-  Time span:     2025-09-14 → 2026-01-24 (132 days)
-
-EDIT TOPOLOGY                                              [KEY METRIC]
-  Monotonic append:   47.3%    ✓ (human: 40-60%, drip: >95%)
-  Edit entropy:       3.21     ✓ (human: 2.5-4.0, drip: <1.0)
-
-  ✓ CONSISTENT WITH HUMAN AUTHORSHIP
-```
-
-## Context Declarations
-
-Annotate editing sessions to explain anomalous patterns:
+### Exporting Evidence
 
 ```bash
-# Before pasting a block quote
-witnessctl context begin external "Block quote from source"
+# Basic tier (commits + declaration)
+witnessd export essay.md
 
-# When using AI assistance
-witnessctl context begin assisted "Outline generated with Claude"
+# Standard tier (+ presence verification)
+witnessd export essay.md -tier standard
 
-# During a revision pass
-witnessctl context begin review "Final proofreading"
-
-# End the context
-witnessctl context end
+# Enhanced tier (+ TPM attestation)
+witnessd export essay.md -tier enhanced
 ```
 
-## Evidence Export
+## Evidence Tiers
 
-Export a self-contained cryptographic proof:
+| Tier | Components | Claims |
+|------|------------|--------|
+| **Basic** | Commits + Declaration | Chain integrity, time elapsed, process declared |
+| **Standard** | + Presence Verification | Author was physically present during sessions |
+| **Enhanced** | + Hardware Attestation | TPM attests chain was not modified |
+| **Maximum** | + Behavioral + External | Full forensic analysis + blockchain anchors |
 
-```bash
-witnessctl export manuscript.md evidence.json
+## Process Declaration
+
+When exporting evidence, you must declare your creative process:
+
+```
+=== Process Declaration ===
+You must declare how this document was created.
+
+Input modality (how was this written?):
+  1. Keyboard (typing)
+  2. Dictation (voice)
+  3. Mixed
+Choice [1]: 1
+
+Did you use any AI tools? (y/n)
+Choice [n]: y
+
+Which AI tool? (e.g., Claude, ChatGPT, Copilot): Claude
+How was it used?
+  1. Research/ideation only
+  2. Feedback on drafts
+  3. Editing assistance
+  4. Drafting assistance
+Choice [1]: 2
+
+Provide a brief statement about your process:
+> I wrote this essay over two weeks, using Claude for feedback on early drafts.
 ```
 
-The evidence packet includes:
-- File hash and MMR inclusion proof
-- All peak hashes for root verification
-- Ed25519 signature
-- Optional external anchor proofs (OpenTimestamps, RFC 3161)
+The declaration is cryptographically signed and bound to your evidence.
 
-## Configuration
+## What This Proves
 
-`~/.witnessd/config.toml`:
+The evidence packet makes explicit claims:
 
-```toml
-# Paths to watch for changes
-watch_paths = ["~/Documents", "~/Projects/novel.md"]
+**Cryptographic (cannot be faked):**
+- "Content states form an unbroken cryptographic chain"
+- "At least 12h 34m elapsed during documented composition"
+- "Author was present 89% of challenged sessions"
 
-# Debounce interval in seconds
-interval = 5
+**Attestation (legal accountability):**
+- "Author signed declaration of creative process"
+- "No AI tools declared" or "AI assistance declared: moderate extent"
 
-# Database paths (defaults shown)
-database_path = "~/.witnessd/mmr.db"
-event_store_path = "~/.witnessd/events.db"
-log_path = "~/.witnessd/witnessd.log"
-signing_key_path = "~/.ssh/witnessd_signing_key"
-signatures_path = "~/.witnessd/signatures.sigs"
-```
+**Limitations (explicitly stated):**
+- "Cannot prove cognitive origin of ideas"
+- "Cannot prove absence of AI involvement in ideation"
+
+## Why Documentation Over Detection
+
+Traditional approaches try to **detect** AI involvement through behavioral analysis. This creates an arms race: as AI improves, detection becomes harder.
+
+witnessd takes a different approach:
+- **Prove what's provable**: Time elapsed (VDF), chain integrity (hashes)
+- **Declare what's not**: AI usage, collaboration, input modalities
+- **Let institutions handle false declarations**: This is how affidavits, notarization, and signatures work
+
+False declarations are the author's legal risk, not a technical detection problem.
 
 ## Security Model
 
 **Threat Model:**
 - Adversary controls filesystem after the fact
-- Adversary cannot break SHA-256 or Ed25519
+- Adversary cannot break SHA-256, Ed25519, or VDF
 - Adversary cannot retroactively modify Bitcoin blockchain
-- External timestamp authorities are trusted
 
-**Attack Resistance:**
-- *Backdating*: Cannot produce valid MMR proofs without knowing historical state
-- *Drip Scripts*: Edit topology analysis detects monotonic append patterns
-- *Fabrication*: External anchors pin timeline; statistical analysis reveals artificial patterns
+**The "Drip Attack" Problem:**
+An adversary could generate AI content and slowly feed it through the system. Under witnessd:
+1. They must spend real wall-clock time (VDF proves it)
+2. They must sign a false declaration (legal risk)
+3. The economic cost approaches honest work
+
+## Configuration
+
+Configuration is stored in `~/.witnessd/config.json`:
+
+```json
+{
+  "version": 2,
+  "vdf": {
+    "iterations_per_second": 1500000,
+    "calibrated": true
+  },
+  "presence": {
+    "challenge_interval_seconds": 600,
+    "response_window_seconds": 60
+  }
+}
+```
 
 ## License
 
-MIT
+Apache License 2.0
 
 ## Contributing
 
