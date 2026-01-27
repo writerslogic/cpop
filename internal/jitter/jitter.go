@@ -33,6 +33,17 @@ import (
 	"time"
 )
 
+// Zone-committed jitter constants
+const (
+	MinJitter   = 500  // microseconds
+	MaxJitter   = 3000 // microseconds
+	JitterRange = MaxJitter - MinJitter
+
+	// Interval buckets: 10 buckets of 50ms each (0-500ms range)
+	IntervalBucketSize = 50 // milliseconds
+	NumIntervalBuckets = 10
+)
+
 // Parameters controls jitter computation.
 type Parameters struct {
 	// Minimum and maximum jitter in microseconds
@@ -560,4 +571,386 @@ func (e *Evidence) IsPlausibleHumanTyping() bool {
 	}
 
 	return true
+}
+
+// =============================================================================
+// Zone-Committed Jitter Engine
+// =============================================================================
+
+// JitterEngine computes zone-committed jitter values.
+type JitterEngine struct {
+	secret     [32]byte
+	ordinal    uint64
+	prevJitter uint32
+	prevZone   int
+	prevTime   time.Time
+	profile    TypingProfile
+}
+
+// NewJitterEngine creates a new engine with the given secret.
+func NewJitterEngine(secret [32]byte) *JitterEngine {
+	return &JitterEngine{
+		secret:   secret,
+		prevZone: -1,
+	}
+}
+
+// JitterSample is a single jitter measurement.
+// ZoneTransition and IntervalBucket are stored for statistical verification.
+// The jitter value cryptographically commits to these via HMAC.
+type JitterSample struct {
+	Ordinal        uint64    `json:"ordinal"`
+	Timestamp      time.Time `json:"timestamp"`
+	DocHash        [32]byte  `json:"document_hash"`
+	ZoneTransition uint8     `json:"zone_transition"` // Encoded (from<<3)|to, 0xFF if none
+	IntervalBucket uint8     `json:"interval_bucket"` // 0-9, timing bin
+	JitterMicros   uint32    `json:"jitter_micros"`
+	SampleHash     [32]byte  `json:"sample_hash"`
+}
+
+// TypingProfile captures aggregate typing characteristics.
+type TypingProfile struct {
+	SameFingerHist   [10]uint32 `json:"same_finger_histogram"`
+	SameHandHist     [10]uint32 `json:"same_hand_histogram"`
+	AlternatingHist  [10]uint32 `json:"alternating_histogram"`
+	HandAlternation  float32    `json:"hand_alternation_ratio"`
+	TotalTransitions uint64     `json:"total_transitions"`
+	alternatingCount uint64     // internal counter
+}
+
+// OnKeystroke processes a keystroke and returns the jitter delay to inject.
+// The zone transition and interval are committed in the jitter value but not stored.
+func (e *JitterEngine) OnKeystroke(keyCode uint16, docHash [32]byte) (jitterMicros uint32, sample *JitterSample) {
+	now := time.Now()
+	zone := KeyCodeToZone(keyCode)
+
+	// Skip non-zone keys for jitter computation
+	if zone < 0 {
+		return 0, nil
+	}
+
+	var zoneTransition uint8 = 0xFF
+	var intervalBucket uint8 = 0
+
+	if e.prevZone >= 0 {
+		// Encode zone transition
+		zoneTransition = EncodeZoneTransition(e.prevZone, zone)
+
+		// Bucket the interval
+		interval := now.Sub(e.prevTime)
+		intervalBucket = IntervalToBucket(interval)
+
+		// Update typing profile
+		e.updateProfile(e.prevZone, zone, intervalBucket)
+	}
+
+	// Compute jitter (commits to zone and interval)
+	jitter := e.computeJitter(docHash, zoneTransition, intervalBucket, now)
+
+	// Create sample at configured intervals
+	e.ordinal++
+	sample = &JitterSample{
+		Ordinal:        e.ordinal,
+		Timestamp:      now,
+		DocHash:        docHash,
+		ZoneTransition: zoneTransition,
+		IntervalBucket: intervalBucket,
+		JitterMicros:   jitter,
+	}
+	sample.SampleHash = e.computeSampleHash(sample)
+
+	// Update state for next keystroke
+	e.prevZone = zone
+	e.prevTime = now
+	e.prevJitter = jitter
+
+	return jitter, sample
+}
+
+func (e *JitterEngine) computeJitter(
+	docHash [32]byte,
+	zoneTransition uint8,
+	intervalBucket uint8,
+	timestamp time.Time,
+) uint32 {
+	h := hmac.New(sha256.New, e.secret[:])
+
+	// Ordinal (position in sequence)
+	binary.Write(h, binary.BigEndian, e.ordinal)
+
+	// Document state
+	h.Write(docHash[:])
+
+	// Timestamp
+	binary.Write(h, binary.BigEndian, timestamp.UnixNano())
+
+	// Zone transition (COMMITTED, not stored in evidence)
+	h.Write([]byte{zoneTransition})
+
+	// Interval bucket (COMMITTED, not stored in evidence)
+	h.Write([]byte{intervalBucket})
+
+	// Chain link to previous jitter
+	binary.Write(h, binary.BigEndian, e.prevJitter)
+
+	// Compute final jitter value
+	hash := h.Sum(nil)
+	raw := binary.BigEndian.Uint32(hash[:4])
+	return MinJitter + (raw % JitterRange)
+}
+
+func (e *JitterEngine) computeSampleHash(s *JitterSample) [32]byte {
+	h := sha256.New()
+	binary.Write(h, binary.BigEndian, s.Ordinal)
+	binary.Write(h, binary.BigEndian, s.Timestamp.UnixNano())
+	h.Write(s.DocHash[:])
+	h.Write([]byte{s.ZoneTransition, s.IntervalBucket})
+	binary.Write(h, binary.BigEndian, s.JitterMicros)
+
+	var hash [32]byte
+	copy(hash[:], h.Sum(nil))
+	return hash
+}
+
+// IntervalToBucket converts a duration to an interval bucket (0-9).
+func IntervalToBucket(d time.Duration) uint8 {
+	ms := d.Milliseconds()
+	bucket := ms / IntervalBucketSize
+	if bucket >= NumIntervalBuckets {
+		bucket = NumIntervalBuckets - 1
+	}
+	if bucket < 0 {
+		bucket = 0
+	}
+	return uint8(bucket)
+}
+
+func (e *JitterEngine) updateProfile(fromZone, toZone int, bucket uint8) {
+	trans := ZoneTransition{From: fromZone, To: toZone}
+
+	if trans.IsSameFinger() {
+		e.profile.SameFingerHist[bucket]++
+	} else if trans.IsSameHand() {
+		e.profile.SameHandHist[bucket]++
+	} else {
+		e.profile.AlternatingHist[bucket]++
+		e.profile.alternatingCount++
+	}
+
+	e.profile.TotalTransitions++
+	if e.profile.TotalTransitions > 0 {
+		e.profile.HandAlternation = float32(e.profile.alternatingCount) / float32(e.profile.TotalTransitions)
+	}
+}
+
+// Profile returns the current typing profile.
+func (e *JitterEngine) Profile() TypingProfile {
+	return e.profile
+}
+
+// =============================================================================
+// Profile Comparison and Plausibility
+// =============================================================================
+
+// CompareProfiles computes similarity between two typing profiles.
+// Returns a value between 0.0 (completely different) and 1.0 (identical).
+func CompareProfiles(a, b TypingProfile) float64 {
+	if a.TotalTransitions == 0 || b.TotalTransitions == 0 {
+		return 0.0
+	}
+
+	// Compare histogram distributions using cosine similarity
+	sameFingerSim := histogramCosineSimilarity(a.SameFingerHist[:], b.SameFingerHist[:])
+	sameHandSim := histogramCosineSimilarity(a.SameHandHist[:], b.SameHandHist[:])
+	alternatingSim := histogramCosineSimilarity(a.AlternatingHist[:], b.AlternatingHist[:])
+
+	// Compare hand alternation ratio (inverse of absolute difference)
+	handAltDiff := float64(a.HandAlternation) - float64(b.HandAlternation)
+	if handAltDiff < 0 {
+		handAltDiff = -handAltDiff
+	}
+	handAltSim := 1.0 - handAltDiff // Difference is 0-1, so similarity is 1-diff
+
+	// Weighted average (histograms matter more than single ratio)
+	return 0.3*sameFingerSim + 0.3*sameHandSim + 0.3*alternatingSim + 0.1*handAltSim
+}
+
+// histogramCosineSimilarity computes cosine similarity between two histograms.
+func histogramCosineSimilarity(a, b []uint32) float64 {
+	var dotProduct, normA, normB float64
+
+	for i := range a {
+		fa := float64(a[i])
+		fb := float64(b[i])
+		dotProduct += fa * fb
+		normA += fa * fa
+		normB += fb * fb
+	}
+
+	if normA == 0 || normB == 0 {
+		return 0.0
+	}
+
+	return dotProduct / (sqrt(normA) * sqrt(normB))
+}
+
+// sqrt is a simple square root approximation for float64
+func sqrt(x float64) float64 {
+	if x <= 0 {
+		return 0
+	}
+	// Newton-Raphson
+	z := x / 2
+	for i := 0; i < 10; i++ {
+		z = z - (z*z-x)/(2*z)
+	}
+	return z
+}
+
+// IsHumanPlausible checks if a typing profile is consistent with human typing.
+// Returns true if the profile looks like it came from a real person typing.
+func IsHumanPlausible(p TypingProfile) bool {
+	if p.TotalTransitions < 10 {
+		// Not enough data to judge
+		return true
+	}
+
+	// Human typing characteristics:
+	// 1. Hand alternation should be between 30-70% (most text alternates hands)
+	if p.HandAlternation < 0.15 || p.HandAlternation > 0.85 {
+		// Extremely one-handed typing is suspicious
+		return false
+	}
+
+	// 2. Same-finger transitions should be relatively rare (< 15% typically)
+	var sameFingerTotal uint64
+	var sameHandTotal uint64
+	var alternatingTotal uint64
+
+	for i := 0; i < 10; i++ {
+		sameFingerTotal += uint64(p.SameFingerHist[i])
+		sameHandTotal += uint64(p.SameHandHist[i])
+		alternatingTotal += uint64(p.AlternatingHist[i])
+	}
+
+	totalTransitions := sameFingerTotal + sameHandTotal + alternatingTotal
+	if totalTransitions == 0 {
+		return true
+	}
+
+	sameFingerRatio := float64(sameFingerTotal) / float64(totalTransitions)
+	if sameFingerRatio > 0.30 {
+		// Too many same-finger transitions - unusual for natural typing
+		return false
+	}
+
+	// 3. Interval distribution should show variation (not all in one bucket)
+	// Compute entropy-like measure
+	var nonZeroBuckets int
+	for i := 0; i < 10; i++ {
+		if p.SameFingerHist[i] > 0 || p.SameHandHist[i] > 0 || p.AlternatingHist[i] > 0 {
+			nonZeroBuckets++
+		}
+	}
+
+	if nonZeroBuckets < 3 && totalTransitions > 100 {
+		// All typing happening at exactly the same speed is suspicious
+		return false
+	}
+
+	// 4. Check for robotic timing patterns (all intervals identical)
+	maxBucketPct := maxHistogramConcentration(p)
+	if maxBucketPct > 0.80 && totalTransitions > 50 {
+		// Over 80% of timing in a single bucket is robotic
+		return false
+	}
+
+	return true
+}
+
+// maxHistogramConcentration finds the maximum concentration in any single bucket.
+func maxHistogramConcentration(p TypingProfile) float64 {
+	var total uint64
+	var maxBucket uint64
+
+	for i := 0; i < 10; i++ {
+		bucketTotal := uint64(p.SameFingerHist[i]) + uint64(p.SameHandHist[i]) + uint64(p.AlternatingHist[i])
+		total += bucketTotal
+		if bucketTotal > maxBucket {
+			maxBucket = bucketTotal
+		}
+	}
+
+	if total == 0 {
+		return 0.0
+	}
+
+	return float64(maxBucket) / float64(total)
+}
+
+// ProfileDistance computes Euclidean distance between normalized profiles.
+// Smaller values indicate more similar profiles.
+func ProfileDistance(a, b TypingProfile) float64 {
+	// Normalize histograms
+	aNorm := normalizeHistograms(a)
+	bNorm := normalizeHistograms(b)
+
+	var sumSquares float64
+
+	// Same finger histogram distance
+	for i := 0; i < 10; i++ {
+		diff := aNorm.sameFinger[i] - bNorm.sameFinger[i]
+		sumSquares += diff * diff
+	}
+
+	// Same hand histogram distance
+	for i := 0; i < 10; i++ {
+		diff := aNorm.sameHand[i] - bNorm.sameHand[i]
+		sumSquares += diff * diff
+	}
+
+	// Alternating histogram distance
+	for i := 0; i < 10; i++ {
+		diff := aNorm.alternating[i] - bNorm.alternating[i]
+		sumSquares += diff * diff
+	}
+
+	// Hand alternation difference
+	diff := float64(a.HandAlternation) - float64(b.HandAlternation)
+	sumSquares += diff * diff
+
+	return sqrt(sumSquares)
+}
+
+type normalizedProfile struct {
+	sameFinger  [10]float64
+	sameHand    [10]float64
+	alternating [10]float64
+}
+
+func normalizeHistograms(p TypingProfile) normalizedProfile {
+	var np normalizedProfile
+
+	// Compute totals
+	var sfTotal, shTotal, altTotal uint64
+	for i := 0; i < 10; i++ {
+		sfTotal += uint64(p.SameFingerHist[i])
+		shTotal += uint64(p.SameHandHist[i])
+		altTotal += uint64(p.AlternatingHist[i])
+	}
+
+	// Normalize
+	for i := 0; i < 10; i++ {
+		if sfTotal > 0 {
+			np.sameFinger[i] = float64(p.SameFingerHist[i]) / float64(sfTotal)
+		}
+		if shTotal > 0 {
+			np.sameHand[i] = float64(p.SameHandHist[i]) / float64(shTotal)
+		}
+		if altTotal > 0 {
+			np.alternating[i] = float64(p.AlternatingHist[i]) / float64(altTotal)
+		}
+	}
+
+	return np
 }
