@@ -1,5 +1,5 @@
 /target
 .DS_Store
-witnessctl
-witnessd
-data/
+/witnessctl
+/witnessd
+/data/

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Witnessd</string>
+    <string name="ime_name">Witnessd Keyboard</string>
+    <string name="subtype_en_US">English (US)</string>
+    <string name="ime_description">Cryptographic authorship witnessing keyboard</string>
+</resources>
