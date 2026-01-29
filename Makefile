@@ -95,11 +95,44 @@ run-daemon: build
 status: build
 	$(WITNESSCTL) status
 
+## IME targets
+
+.PHONY: ime-macos ime-linux ime-windows ime-android ime-ios
+
+ime-macos:
+	@echo "Building macOS IME..."
+	$(MAKE) -C cmd/witnessd-ime
+
+ime-linux:
+	@echo "Building Linux IBus engine..."
+	$(MAKE) -C cmd/witnessd-ibus
+
+ime-windows:
+	@echo "Building Windows TSF..."
+	@echo "Note: Must be run on Windows with MSVC"
+	$(MAKE) -C cmd/witnessd-tsf
+
+ime-android:
+	@echo "Building Android IME..."
+	cd cmd/witnessd-android && chmod +x build.sh && ./build.sh
+
+ime-ios:
+	@echo "Building iOS keyboard extension..."
+	cd cmd/witnessd-ios && chmod +x build.sh && ./build.sh
+
+install-ime-macos: ime-macos
+	$(MAKE) -C cmd/witnessd-ime install
+
+install-ime-linux: ime-linux
+	$(MAKE) -C cmd/witnessd-ibus install
+
 ## Clean
 
 clean:
 	rm -rf $(BINDIR)
 	rm -f coverage.out coverage.html
+	$(MAKE) -C cmd/witnessd-ime clean 2>/dev/null || true
+	$(MAKE) -C cmd/witnessd-ibus clean 2>/dev/null || true
 
 ## Help
 
@@ -115,6 +148,15 @@ help:
 	@echo "  make test-race  - Run tests with race detector"
 	@echo "  make bench      - Run benchmarks"
 	@echo "  make coverage   - Generate coverage report"
+	@echo ""
+	@echo "IME targets:"
+	@echo "  make ime-macos  - Build macOS Input Method"
+	@echo "  make ime-linux  - Build Linux IBus engine"
+	@echo "  make ime-windows - Build Windows TSF (Windows only)"
+	@echo "  make ime-android - Build Android IME"
+	@echo "  make ime-ios    - Build iOS keyboard extension"
+	@echo "  make install-ime-macos - Install macOS IME"
+	@echo "  make install-ime-linux - Install Linux IBus engine"
 	@echo ""
 	@echo "Audit targets:"
 	@echo "  make audit      - Show git signature audit log"

@@ -144,3 +144,65 @@ jobs:
           CGO_ENABLED=1 go build -trimpath -ldflags="-s -w -buildid=" -o witnessd-2 ./cmd/witnessd
           sha256sum witnessd-1 witnessd-2
           diff <(sha256sum witnessd-1 | cut -d' ' -f1) <(sha256sum witnessd-2 | cut -d' ' -f1)
+
+  ime-tests:
+    name: IME Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Run IME tests
+        run: go test -v -race ./internal/ime/...
+
+      - name: Run jitter tests
+        run: go test -v -race ./internal/jitter/...
+
+  build-ime-macos:
+    name: Build macOS IME
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build Go library
+        run: |
+          mkdir -p cmd/witnessd-ime/build
+          go build -buildmode=c-archive -o cmd/witnessd-ime/build/libwitnessd.a ./cmd/witnessd-ime
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: witnessd-ime-macos
+          path: cmd/witnessd-ime/build/
+
+  build-ime-linux:
+    name: Build Linux IBus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build IBus engine
+        run: go build -o witnessd-ibus ./cmd/witnessd-ibus
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: witnessd-ibus
+          path: witnessd-ibus
