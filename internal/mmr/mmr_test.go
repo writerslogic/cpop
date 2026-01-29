@@ -473,3 +473,303 @@ func BenchmarkGetRoot(b *testing.B) {
 		mmr.GetRoot()
 	}
 }
+
+func TestRangeProof(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	// Append several leaves
+	testData := [][]byte{
+		[]byte("document v1"),
+		[]byte("document v2"),
+		[]byte("document v3"),
+		[]byte("document v4"),
+		[]byte("document v5"),
+		[]byte("document v6"),
+		[]byte("document v7"),
+		[]byte("document v8"),
+	}
+
+	for _, d := range testData {
+		_, err := mmr.Append(d)
+		if err != nil {
+			t.Fatalf("append failed: %v", err)
+		}
+	}
+
+	// Test range proof for consecutive leaves using leaf ordinals (not MMR indices)
+	testCases := []struct {
+		name  string
+		start uint64
+		end   uint64
+	}{
+		{"single leaf", 0, 0},
+		{"two leaves", 0, 1},
+		{"middle range", 2, 5},
+		{"all leaves", 0, 7},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// GenerateRangeProof takes leaf ordinals (0th, 1st, 2nd leaf, etc.)
+			proof, err := mmr.GenerateRangeProof(tc.start, tc.end)
+			if err != nil {
+				t.Fatalf("GenerateRangeProof failed: %v", err)
+			}
+
+			// Verify the proof
+			rangeData := testData[tc.start : tc.end+1]
+			err = proof.Verify(rangeData)
+			if err != nil {
+				t.Errorf("range proof verification failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestRangeProofInvalidData(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	testData := [][]byte{
+		[]byte("doc1"),
+		[]byte("doc2"),
+		[]byte("doc3"),
+	}
+
+	for _, d := range testData {
+		mmr.Append(d)
+	}
+
+	// Use leaf ordinals 0, 1, 2 (not MMR indices)
+	proof, err := mmr.GenerateRangeProof(0, 2)
+	if err != nil {
+		t.Fatalf("GenerateRangeProof failed: %v", err)
+	}
+
+	// Verify with tampered data should fail
+	tamperedData := [][]byte{
+		[]byte("doc1"),
+		[]byte("TAMPERED"),
+		[]byte("doc3"),
+	}
+	err = proof.Verify(tamperedData)
+	if err == nil {
+		t.Error("range proof should fail for tampered data")
+	}
+}
+
+func TestInclusionProofSerialize(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	// Append several leaves to get a proof with multiple path elements
+	for i := 0; i < 10; i++ {
+		mmr.Append([]byte{byte(i)})
+	}
+
+	proof, err := mmr.GenerateProof(0)
+	if err != nil {
+		t.Fatalf("GenerateProof failed: %v", err)
+	}
+
+	// Serialize
+	data := proof.Serialize()
+
+	// Deserialize
+	restored, err := DeserializeInclusionProof(data)
+	if err != nil {
+		t.Fatalf("DeserializeInclusionProof failed: %v", err)
+	}
+
+	// Verify fields match
+	if restored.LeafIndex != proof.LeafIndex {
+		t.Errorf("LeafIndex mismatch: %d vs %d", restored.LeafIndex, proof.LeafIndex)
+	}
+	if restored.LeafHash != proof.LeafHash {
+		t.Error("LeafHash mismatch")
+	}
+	if len(restored.MerklePath) != len(proof.MerklePath) {
+		t.Errorf("MerklePath length mismatch: %d vs %d", len(restored.MerklePath), len(proof.MerklePath))
+	}
+	for i := range proof.MerklePath {
+		if restored.MerklePath[i].Hash != proof.MerklePath[i].Hash {
+			t.Errorf("MerklePath[%d].Hash mismatch", i)
+		}
+		if restored.MerklePath[i].IsLeft != proof.MerklePath[i].IsLeft {
+			t.Errorf("MerklePath[%d].IsLeft mismatch", i)
+		}
+	}
+	if len(restored.Peaks) != len(proof.Peaks) {
+		t.Errorf("Peaks length mismatch: %d vs %d", len(restored.Peaks), len(proof.Peaks))
+	}
+	for i := range proof.Peaks {
+		if restored.Peaks[i] != proof.Peaks[i] {
+			t.Errorf("Peaks[%d] mismatch", i)
+		}
+	}
+	if restored.PeakPosition != proof.PeakPosition {
+		t.Errorf("PeakPosition mismatch: %d vs %d", restored.PeakPosition, proof.PeakPosition)
+	}
+	if restored.MMRSize != proof.MMRSize {
+		t.Errorf("MMRSize mismatch: %d vs %d", restored.MMRSize, proof.MMRSize)
+	}
+	if restored.Root != proof.Root {
+		t.Error("Root mismatch")
+	}
+
+	// Verify the restored proof works
+	err = restored.Verify([]byte{0})
+	if err != nil {
+		t.Errorf("restored proof verification failed: %v", err)
+	}
+}
+
+func TestRangeProofSerialize(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	testData := [][]byte{
+		[]byte("doc1"),
+		[]byte("doc2"),
+		[]byte("doc3"),
+		[]byte("doc4"),
+	}
+
+	for _, d := range testData {
+		mmr.Append(d)
+	}
+
+	// Use leaf ordinals (0, 1, 2, 3)
+	proof, err := mmr.GenerateRangeProof(0, 3)
+	if err != nil {
+		t.Fatalf("GenerateRangeProof failed: %v", err)
+	}
+
+	// Serialize
+	data := proof.Serialize()
+
+	// Deserialize
+	restored, err := DeserializeRangeProof(data)
+	if err != nil {
+		t.Fatalf("DeserializeRangeProof failed: %v", err)
+	}
+
+	// Verify fields match
+	if restored.StartLeaf != proof.StartLeaf {
+		t.Errorf("StartLeaf mismatch: %d vs %d", restored.StartLeaf, proof.StartLeaf)
+	}
+	if restored.EndLeaf != proof.EndLeaf {
+		t.Errorf("EndLeaf mismatch: %d vs %d", restored.EndLeaf, proof.EndLeaf)
+	}
+	if len(restored.LeafIndices) != len(proof.LeafIndices) {
+		t.Errorf("LeafIndices length mismatch: %d vs %d", len(restored.LeafIndices), len(proof.LeafIndices))
+	}
+	for i := range proof.LeafIndices {
+		if restored.LeafIndices[i] != proof.LeafIndices[i] {
+			t.Errorf("LeafIndices[%d] mismatch: %d vs %d", i, restored.LeafIndices[i], proof.LeafIndices[i])
+		}
+	}
+	if len(restored.LeafHashes) != len(proof.LeafHashes) {
+		t.Errorf("LeafHashes length mismatch: %d vs %d", len(restored.LeafHashes), len(proof.LeafHashes))
+	}
+	if restored.MMRSize != proof.MMRSize {
+		t.Errorf("MMRSize mismatch: %d vs %d", restored.MMRSize, proof.MMRSize)
+	}
+	if restored.Root != proof.Root {
+		t.Error("Root mismatch")
+	}
+
+	// Verify the restored proof works
+	err = restored.Verify(testData)
+	if err != nil {
+		t.Errorf("restored range proof verification failed: %v", err)
+	}
+}
+
+func TestMemoryStoreNodesReturnsCopy(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	mmr.Append([]byte("test"))
+
+	// Get nodes
+	nodes1 := store.Nodes()
+
+	// Modify the returned slice
+	if len(nodes1) > 0 {
+		nodes1[0].Height = 99
+	}
+
+	// Get nodes again
+	nodes2 := store.Nodes()
+
+	// The internal state should not have been modified
+	if len(nodes2) > 0 && nodes2[0].Height == 99 {
+		t.Error("MemoryStore.Nodes() should return a copy, not the internal slice")
+	}
+}
+
+func TestProofSizeCalculation(t *testing.T) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	for i := 0; i < 10; i++ {
+		mmr.Append([]byte{byte(i)})
+	}
+
+	// Test InclusionProof size - need to get a valid leaf index
+	leafIdx, err := mmr.GetLeafIndex(0)
+	if err != nil {
+		t.Fatalf("GetLeafIndex failed: %v", err)
+	}
+	proof, err := mmr.GenerateProof(leafIdx)
+	if err != nil {
+		t.Fatalf("GenerateProof failed: %v", err)
+	}
+	serialized := proof.Serialize()
+	if proof.ProofSize() != len(serialized) {
+		t.Errorf("InclusionProof.ProofSize() = %d, but serialized size = %d", proof.ProofSize(), len(serialized))
+	}
+
+	// Test RangeProof size - using leaf ordinals
+	rangeProof, err := mmr.GenerateRangeProof(0, 3)
+	if err != nil {
+		t.Fatalf("GenerateRangeProof failed: %v", err)
+	}
+	rangeSerialized := rangeProof.Serialize()
+	if rangeProof.ProofSize() != len(rangeSerialized) {
+		t.Errorf("RangeProof.ProofSize() = %d, but serialized size = %d", rangeProof.ProofSize(), len(rangeSerialized))
+	}
+}
+
+func BenchmarkRangeProofGenerate(b *testing.B) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	// Pre-populate
+	for i := 0; i < 1000; i++ {
+		mmr.Append([]byte{byte(i), byte(i >> 8)})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mmr.GenerateRangeProof(0, 9)
+	}
+}
+
+func BenchmarkProofSerialize(b *testing.B) {
+	store := NewMemoryStore()
+	mmr, _ := New(store)
+
+	for i := 0; i < 100; i++ {
+		mmr.Append([]byte{byte(i)})
+	}
+
+	proof, _ := mmr.GenerateProof(0)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		proof.Serialize()
+	}
+}

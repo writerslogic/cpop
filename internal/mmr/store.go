@@ -94,23 +94,20 @@ func (s *FileStore) Append(node *Node) error {
 
 // Get retrieves a node by its index.
 func (s *FileStore) Get(index uint64) (*Node, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// Use write lock to safely flush and read.
+	// This prevents the race condition that existed with the previous
+	// RLock -> Unlock -> Lock -> Unlock -> RLock pattern.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	if index >= s.size {
 		return nil, ErrIndexOutOfRange
 	}
 
 	// Flush writer to ensure we can read recent data
-	s.mu.RUnlock()
-	s.mu.Lock()
 	if err := s.writer.Flush(); err != nil {
-		s.mu.Unlock()
-		s.mu.RLock()
 		return nil, err
 	}
-	s.mu.Unlock()
-	s.mu.RLock()
 
 	// Calculate file offset
 	offset := int64(index) * NodeSize
@@ -228,9 +225,19 @@ func (s *MemoryStore) Close() error {
 	return nil
 }
 
-// Nodes returns all nodes (for testing).
+// Nodes returns a copy of all nodes (for testing).
 func (s *MemoryStore) Nodes() []*Node {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.nodes
+
+	// Return a deep copy to prevent external modification of internal state
+	result := make([]*Node, len(s.nodes))
+	for i, node := range s.nodes {
+		result[i] = &Node{
+			Index:  node.Index,
+			Height: node.Height,
+			Hash:   node.Hash,
+		}
+	}
+	return result
 }
