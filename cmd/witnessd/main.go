@@ -15,7 +15,6 @@ package main
 import (
 	"bufio"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -394,7 +393,12 @@ func cmdExport() {
 		if keystrokeEvidence != nil {
 			builder.WithKeystroke(keystrokeEvidence)
 		}
-		// TPM binding would go here
+		// Add TPM hardware attestation
+		tpmBindings, tpmDeviceID := collectTPMBindings(chain)
+		if len(tpmBindings) > 0 {
+			builder.WithHardware(tpmBindings, tpmDeviceID)
+			fmt.Printf("Including TPM attestation: %d bindings\n", len(tpmBindings))
+		}
 	case "maximum":
 		sessions := loadPresenceSessions(filePath)
 		if len(sessions) > 0 {
@@ -404,7 +408,13 @@ func cmdExport() {
 		if keystrokeEvidence != nil {
 			builder.WithKeystroke(keystrokeEvidence)
 		}
-		// All layers would be added here
+		// Add TPM hardware attestation
+		tpmBindings, tpmDeviceID := collectTPMBindings(chain)
+		if len(tpmBindings) > 0 {
+			builder.WithHardware(tpmBindings, tpmDeviceID)
+			fmt.Printf("Including TPM attestation: %d bindings\n", len(tpmBindings))
+		}
+		// All layers would be added here (behavioral data, external anchors)
 	}
 
 	packet, err := builder.Build()
@@ -1098,12 +1108,18 @@ func cmdStatus() {
 	}
 
 	fmt.Println()
-	fmt.Println("TPM: ", func() string {
-		if tpm.DetectTPM().Available() {
-			return "available"
+	tpmProvider := tpm.DetectTPM()
+	if tpmProvider.Available() {
+		if err := tpmProvider.Open(); err == nil {
+			fmt.Printf("TPM: available (%s, firmware %s)\n",
+				tpmProvider.Manufacturer(), tpmProvider.FirmwareVersion())
+			tpmProvider.Close()
+		} else {
+			fmt.Println("TPM: available (unable to open)")
 		}
-		return "not available"
-	}())
+	} else {
+		fmt.Println("TPM: not available")
+	}
 }
 
 // cmdDaemon runs the legacy background monitoring daemon.
@@ -1426,5 +1442,34 @@ func runTrackingDaemon(documentPath, currentFile, pidFile string) {
 	}
 }
 
-// Unused import placeholders for compatibility
-var _ = sha256.Sum256
+// collectTPMBindings creates TPM attestations for checkpoint chain.
+func collectTPMBindings(chain *checkpoint.Chain) ([]tpm.Binding, string) {
+	provider := tpm.DetectTPM()
+	if !provider.Available() {
+		return nil, ""
+	}
+
+	if err := provider.Open(); err != nil {
+		return nil, ""
+	}
+	defer provider.Close()
+
+	deviceID, err := provider.DeviceID()
+	if err != nil {
+		return nil, ""
+	}
+
+	binder := tpm.NewBinder(provider)
+	var bindings []tpm.Binding
+
+	for _, cp := range chain.Checkpoints {
+		binding, err := binder.Bind(cp.Hash)
+		if err != nil {
+			// Non-fatal - continue without this binding
+			continue
+		}
+		bindings = append(bindings, *binding)
+	}
+
+	return bindings, hex.EncodeToString(deviceID)
+}

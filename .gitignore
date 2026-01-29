@@ -3,3 +3,5 @@
 /witnessctl
 /witnessd
 /data/
+cmd/witnessd-ime/build/Witnessd
+cmd/witnessd-ime/Witnessd.app/Contents/MacOS/
