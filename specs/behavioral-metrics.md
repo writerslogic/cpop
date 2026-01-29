@@ -1,15 +1,23 @@
-# Keystroke Metrics Specification
+# Behavioral Forensic Metrics Specification
 
 **Version:** 1.0.0
 **Status:** Draft
-**Last Updated:** 2026-01-24
+**Last Updated:** 2026-01-25
 
 ## Overview
 
-This specification defines the "Kinetic Integrity" metrics used by witnessd to
-establish behavioral biometric signatures of human authorship. These metrics
-analyze temporal patterns of file modifications without capturing actual
-keystrokes or content.
+This specification defines the behavioral forensic metrics used by witnessd to analyze edit patterns for consistency with human authorship. These metrics examine the spatial distribution and timing of document edits without capturing actual content.
+
+**Important:** This specification covers edit topology and timing pattern analysis. For jitter seal keystroke watermarking (HMAC-based timing injection), see the research paper `paper/jitter-seal.md` and evidence format `specs/evidence-format.md`.
+
+### Distinction from Jitter Seal
+
+| Mechanism | What It Measures | Purpose |
+|-----------|------------------|---------|
+| **Jitter Seal** | Injected microsecond delays during typing | Cryptographic proof of real-time input |
+| **Behavioral Metrics** | Edit positions and timing patterns | Forensic analysis of authorship patterns |
+
+Behavioral metrics are statistical indicators. Jitter seal provides cryptographic proof.
 
 ## Terminology
 
@@ -101,10 +109,12 @@ MonotonicAppendRatio = AppendCount / |R|
 
 **Calculation:**
 ```
-Insertions = |{r ∈ R : r.DeltaSign > 0}|
-Deletions = |{r ∈ R : r.DeltaSign < 0}|
+Insertions = |{r ∈ R : r.DeltaSign == "insert"}|
+Deletions = |{r ∈ R : r.DeltaSign == "delete"}|
 PositiveNegativeRatio = Insertions / (Insertions + Deletions)
 ```
+
+Note: `r.DeltaSign` is a string enum: `"replace"`, `"insert"`, or `"delete"`.
 
 **Interpretation:**
 | Value | Interpretation |
