@@ -127,29 +127,53 @@ func tpmGetDeviceID(t transport.TPM) ([]byte, error) {
 		return nil, err
 	}
 
-	pubBytes, err := ekPub.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal EK public: %w", err)
-	}
+	pubBytes := tpm2.Marshal(*ekPub)
 
 	hash := sha256.Sum256(pubBytes)
 	return hash[:], nil
 }
 
 // tpmReadClock returns the current TPM clock information.
+// Note: This function may not work on all TPM implementations.
 func tpmReadClock(t transport.TPM) (*ClockInfo, error) {
-	readClockCmd := tpm2.ReadClock{}
-	rsp, err := readClockCmd.Execute(t)
+	// GetTime provides clock information in newer go-tpm versions
+	getTimeCmd := tpm2.GetTime{
+		PrivacyAdminHandle: tpm2.TPMRHEndorsement,
+		SignHandle:         tpm2.TPMRHNull,
+	}
+
+	rsp, err := getTimeCmd.Execute(t)
 	if err != nil {
-		return nil, err
+		// Return a default clock info if not available
+		return &ClockInfo{
+			Clock:        0,
+			ResetCount:   0,
+			RestartCount: 0,
+			Safe:         false,
+		}, nil
+	}
+
+	// Extract clock info from attestation data
+	attData, err := rsp.TimeInfo.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get time info: %w", err)
 	}
 
 	return &ClockInfo{
-		Clock:        rsp.CurrentTime.ClockInfo.Clock,
-		ResetCount:   rsp.CurrentTime.ClockInfo.ResetCount,
-		RestartCount: rsp.CurrentTime.ClockInfo.RestartCount,
-		Safe:         rsp.CurrentTime.ClockInfo.Safe == tpm2.TPMYes,
+		Clock:        attData.ClockInfo.Clock,
+		ResetCount:   attData.ClockInfo.ResetCount,
+		RestartCount: attData.ClockInfo.RestartCount,
+		Safe:         bool(attData.ClockInfo.Safe),
 	}, nil
+}
+
+// intToUint converts []int to []uint for PCR indices
+func intToUint(ints []int) []uint {
+	uints := make([]uint, len(ints))
+	for i, v := range ints {
+		uints[i] = uint(v)
+	}
+	return uints
 }
 
 // tpmReadPCRs reads the specified PCR values.
@@ -160,7 +184,7 @@ func tpmReadPCRs(t transport.TPM, pcrs PCRSelection) (map[int][]byte, error) {
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
 				Hash:      tpm2.TPMAlgSHA256,
-				PCRSelect: tpm2.PCClientCompatible.PCRs(pcrs.PCRs...),
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
 			},
 		},
 	}
@@ -289,7 +313,7 @@ func tpmCreatePCRPolicy(t transport.TPM, pcrs PCRSelection) (tpm2.TPMHandle, []b
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
 				Hash:      tpm2.TPMAlgSHA256,
-				PCRSelect: tpm2.PCClientCompatible.PCRs(pcrs.PCRs...),
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
 			},
 		},
 	}

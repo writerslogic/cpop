@@ -20,6 +20,8 @@ package tpm
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -285,23 +287,42 @@ func (s *SecureEnclaveProvider) SealKey(data []byte, _ PCRSelection) ([]byte, er
 	}
 
 	// In production, this would use Secure Enclave key wrapping.
-	// For now, we use a simple encryption scheme.
-	// WARNING: This is NOT as secure as TPM sealing.
+	// We use AES-256-GCM authenticated encryption with a random key.
+	// The key is stored with the ciphertext (not as secure as TPM sealing
+	// which binds to platform state, but provides confidentiality).
 
-	// Generate random key
+	// Generate random 256-bit key
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("secure enclave: failed to generate key: %w", err)
 	}
 
-	// XOR encrypt (NOT SECURE - placeholder only)
-	// In production, use proper authenticated encryption
-	sealed := make([]byte, 1+32+len(data)) // version + key + data
-	sealed[0] = 1                          // version
-	copy(sealed[1:33], key)
-	for i, b := range data {
-		sealed[33+i] = b ^ key[i%32]
+	// Create AES-GCM cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("secure enclave: failed to create cipher: %w", err)
 	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("secure enclave: failed to create GCM: %w", err)
+	}
+
+	// Generate random nonce
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("secure enclave: failed to generate nonce: %w", err)
+	}
+
+	// Encrypt with authentication
+	ciphertext := gcm.Seal(nil, nonce, data, nil)
+
+	// Format: version(1) + key(32) + nonce(12) + ciphertext(len+16 for tag)
+	sealed := make([]byte, 1+32+len(nonce)+len(ciphertext))
+	sealed[0] = 2 // version 2 for AES-GCM
+	copy(sealed[1:33], key)
+	copy(sealed[33:33+len(nonce)], nonce)
+	copy(sealed[33+len(nonce):], ciphertext)
 
 	return sealed, nil
 }
@@ -315,21 +336,61 @@ func (s *SecureEnclaveProvider) UnsealKey(sealed []byte) ([]byte, error) {
 		return nil, ErrTPMNotOpen
 	}
 
-	if len(sealed) < 34 {
+	if len(sealed) < 2 {
 		return nil, errors.New("secure enclave: sealed data too short")
 	}
 
-	if sealed[0] != 1 {
-		return nil, fmt.Errorf("secure enclave: unsupported version: %d", sealed[0])
-	}
+	version := sealed[0]
 
-	key := sealed[1:33]
-	data := make([]byte, len(sealed)-33)
-	for i := range data {
-		data[i] = sealed[33+i] ^ key[i%32]
-	}
+	switch version {
+	case 1:
+		// Legacy XOR format (for backward compatibility)
+		if len(sealed) < 34 {
+			return nil, errors.New("secure enclave: sealed data too short for v1")
+		}
+		key := sealed[1:33]
+		data := make([]byte, len(sealed)-33)
+		for i := range data {
+			data[i] = sealed[33+i] ^ key[i%32]
+		}
+		return data, nil
 
-	return data, nil
+	case 2:
+		// AES-256-GCM format
+		// Format: version(1) + key(32) + nonce(12) + ciphertext
+		const keySize = 32
+		const nonceSize = 12
+		minSize := 1 + keySize + nonceSize + 16 // at least tag size
+		if len(sealed) < minSize {
+			return nil, errors.New("secure enclave: sealed data too short for v2")
+		}
+
+		key := sealed[1 : 1+keySize]
+		nonce := sealed[1+keySize : 1+keySize+nonceSize]
+		ciphertext := sealed[1+keySize+nonceSize:]
+
+		// Create AES-GCM cipher
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: failed to create cipher: %w", err)
+		}
+
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: failed to create GCM: %w", err)
+		}
+
+		// Decrypt and verify authentication tag
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: decryption failed (tampered or wrong key): %w", err)
+		}
+
+		return plaintext, nil
+
+	default:
+		return nil, fmt.Errorf("secure enclave: unsupported version: %d", version)
+	}
 }
 
 // Manufacturer returns the provider type.

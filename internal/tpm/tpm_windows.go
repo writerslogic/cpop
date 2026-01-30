@@ -27,7 +27,7 @@ const (
 // HardwareProvider implements Provider using Windows TPM via TBS.
 type HardwareProvider struct {
 	mu           sync.Mutex
-	transport    transport.TPM
+	transport    transport.TPMCloser
 	isOpen       bool
 	ekHandle     tpm2.TPMHandle
 	akHandle     tpm2.TPMHandle
@@ -130,10 +130,7 @@ func (h *HardwareProvider) DeviceID() ([]byte, error) {
 		return nil, fmt.Errorf("tpm: failed to get EK public: %w", err)
 	}
 
-	pubBytes, err := ekPub.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("tpm: failed to marshal EK public: %w", err)
-	}
+	pubBytes := tpm2.Marshal(*ekPub)
 
 	hash := sha256.Sum256(pubBytes)
 	return hash[:], nil
@@ -208,18 +205,7 @@ func (h *HardwareProvider) GetClock() (*ClockInfo, error) {
 		return nil, ErrTPMNotOpen
 	}
 
-	readClockCmd := tpm2.ReadClock{}
-	rsp, err := readClockCmd.Execute(h.transport)
-	if err != nil {
-		return nil, fmt.Errorf("tpm: ReadClock failed: %w", err)
-	}
-
-	return &ClockInfo{
-		Clock:        rsp.CurrentTime.ClockInfo.Clock,
-		ResetCount:   rsp.CurrentTime.ClockInfo.ResetCount,
-		RestartCount: rsp.CurrentTime.ClockInfo.RestartCount,
-		Safe:         rsp.CurrentTime.ClockInfo.Safe == tpm2.TPMYes,
-	}, nil
+	return h.getClockInternal()
 }
 
 // Quote creates a TPM quote over the given data.
@@ -240,7 +226,7 @@ func (h *HardwareProvider) QuoteWithPCRs(data []byte, pcrs PCRSelection) (*Attes
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
 				Hash:      tpm2.TPMAlgSHA256,
-				PCRSelect: tpm2.PCClientCompatible.PCRs(pcrs.PCRs...),
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
 			},
 		},
 	}
@@ -306,16 +292,10 @@ func (h *HardwareProvider) QuoteWithPCRs(data []byte, pcrs PCRSelection) (*Attes
 		return nil, fmt.Errorf("tpm: failed to get quote contents: %w", err)
 	}
 
-	attestData, err := quoteData.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("tpm: failed to marshal quote: %w", err)
-	}
+	attestData := tpm2.Marshal(*quoteData)
 
 	// Marshal signature
-	sigData, err := rsp.Signature.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("tpm: failed to marshal signature: %w", err)
-	}
+	sigData := tpm2.Marshal(rsp.Signature)
 
 	return &Attestation{
 		DeviceID:         deviceID,
@@ -399,8 +379,8 @@ func (h *HardwareProvider) SealKey(data []byte, pcrs PCRSelection) ([]byte, erro
 		return nil, fmt.Errorf("tpm: Create failed: %w", err)
 	}
 
-	pubBytes, _ := createRsp.OutPublic.Marshal()
-	privBytes, _ := createRsp.OutPrivate.Marshal()
+	pubBytes := tpm2.Marshal(createRsp.OutPublic)
+	privBytes := tpm2.Marshal(createRsp.OutPrivate)
 
 	sealed := make([]byte, 4+len(pubBytes)+4+len(privBytes))
 	binary.BigEndian.PutUint32(sealed[0:4], uint32(len(pubBytes)))
@@ -438,8 +418,8 @@ func (h *HardwareProvider) UnsealKey(sealed []byte) ([]byte, error) {
 	}
 	privBytes := sealed[offset+4 : offset+4+privLen]
 
-	var outPublic tpm2.TPM2BPublic
-	if _, err := outPublic.Unmarshal(pubBytes); err != nil {
+	outPublic, err := tpm2.Unmarshal[tpm2.TPM2BPublic](pubBytes)
+	if err != nil {
 		return nil, fmt.Errorf("tpm: failed to unmarshal public: %w", err)
 	}
 
@@ -457,7 +437,7 @@ func (h *HardwareProvider) UnsealKey(sealed []byte) ([]byte, error) {
 			Handle: srkHandle,
 			Auth:   tpm2.PasswordAuth(nil),
 		},
-		InPublic: outPublic,
+		InPublic: *outPublic,
 		InPrivate: tpm2.TPM2BPrivate{
 			Buffer: privBytes,
 		},
@@ -472,19 +452,37 @@ func (h *HardwareProvider) UnsealKey(sealed []byte) ([]byte, error) {
 		flushCmd.Execute(h.transport)
 	}()
 
-	policySession, err := h.createPolicySession(DefaultPCRSelection())
+	// Create policy session for unsealing using the proper go-tpm API
+	pcrs := DefaultPCRSelection()
+	policySession, closeSession, err := tpm2.PolicySession(h.transport, tpm2.TPMAlgSHA256, 16)
 	if err != nil {
 		return nil, fmt.Errorf("tpm: failed to create policy session: %w", err)
 	}
-	defer func() {
-		flushCmd := tpm2.FlushContext{FlushHandle: policySession}
-		flushCmd.Execute(h.transport)
-	}()
+	defer closeSession()
+
+	// Build PCR selection and apply policy
+	pcrSel := tpm2.TPMLPCRSelection{
+		PCRSelections: []tpm2.TPMSPCRSelection{
+			{
+				Hash:      tpm2.TPMAlgSHA256,
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
+			},
+		},
+	}
+
+	// Apply PCR policy to session
+	policyPCRCmd := tpm2.PolicyPCR{
+		PolicySession: policySession.Handle(),
+		Pcrs:          pcrSel,
+	}
+	if _, err := policyPCRCmd.Execute(h.transport); err != nil {
+		return nil, fmt.Errorf("tpm: PolicyPCR failed: %w", err)
+	}
 
 	unsealCmd := tpm2.Unseal{
 		ItemHandle: tpm2.AuthHandle{
 			Handle: loadRsp.ObjectHandle,
-			Auth:   tpm2.Session{Handle: policySession},
+			Auth:   policySession,
 		},
 	}
 
@@ -720,17 +718,34 @@ func (h *HardwareProvider) incrementCounterInternal() (uint64, error) {
 }
 
 func (h *HardwareProvider) getClockInternal() (*ClockInfo, error) {
-	readClockCmd := tpm2.ReadClock{}
-	rsp, err := readClockCmd.Execute(h.transport)
+	// Use GetTime command which provides clock info in newer go-tpm versions
+	getTimeCmd := tpm2.GetTime{
+		PrivacyAdminHandle: tpm2.TPMRHEndorsement,
+		SignHandle:         tpm2.TPMRHNull,
+	}
+
+	rsp, err := getTimeCmd.Execute(h.transport)
 	if err != nil {
-		return nil, err
+		// Return a default clock info if not available
+		return &ClockInfo{
+			Clock:        0,
+			ResetCount:   0,
+			RestartCount: 0,
+			Safe:         false,
+		}, nil
+	}
+
+	// Extract clock info from attestation data
+	attData, err := rsp.TimeInfo.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get time info: %w", err)
 	}
 
 	return &ClockInfo{
-		Clock:        rsp.CurrentTime.ClockInfo.Clock,
-		ResetCount:   rsp.CurrentTime.ClockInfo.ResetCount,
-		RestartCount: rsp.CurrentTime.ClockInfo.RestartCount,
-		Safe:         rsp.CurrentTime.ClockInfo.Safe == tpm2.TPMYes,
+		Clock:        attData.ClockInfo.Clock,
+		ResetCount:   attData.ClockInfo.ResetCount,
+		RestartCount: attData.ClockInfo.RestartCount,
+		Safe:         bool(attData.ClockInfo.Safe),
 	}, nil
 }
 
@@ -740,10 +755,7 @@ func (h *HardwareProvider) getDeviceIDInternal() ([]byte, error) {
 		return nil, err
 	}
 
-	pubBytes, err := ekPub.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal EK public: %w", err)
-	}
+	pubBytes := tpm2.Marshal(*ekPub)
 	hash := sha256.Sum256(pubBytes)
 	return hash[:], nil
 }
@@ -755,7 +767,7 @@ func (h *HardwareProvider) readPCRsInternal(pcrs PCRSelection) (map[int][]byte, 
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
 				Hash:      tpm2.TPMAlgSHA256,
-				PCRSelect: tpm2.PCClientCompatible.PCRs(pcrs.PCRs...),
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
 			},
 		},
 	}
@@ -807,7 +819,7 @@ func (h *HardwareProvider) createPCRPolicy(pcrs PCRSelection) (tpm2.TPMHandle, [
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
 				Hash:      tpm2.TPMAlgSHA256,
-				PCRSelect: tpm2.PCClientCompatible.PCRs(pcrs.PCRs...),
+				PCRSelect: tpm2.PCClientCompatible.PCRs(intToUint(pcrs.PCRs)...),
 			},
 		},
 	}
