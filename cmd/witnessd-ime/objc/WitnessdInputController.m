@@ -8,6 +8,10 @@
 static const unsigned short kVK_Delete = 0x33;      // Backspace
 static const unsigned short kVK_ForwardDelete = 0x75;
 
+// Engine state
+static BOOL gEngineInitialized = NO;
+static BOOL gEngineFailed = NO;
+
 @implementation WitnessdInputController
 
 - (instancetype)initWithServer:(IMKServer*)server delegate:(id)delegate client:(id)client {
@@ -16,14 +20,28 @@ static const unsigned short kVK_ForwardDelete = 0x75;
         _currentClient = client;
         _composingText = @"";
 
-        // Initialize the Go engine
+        // Initialize the Go engine (once)
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
-            WitnessdInit();
+            @try {
+                int result = WitnessdInit();
+                if (result == 0) {
+                    gEngineInitialized = YES;
+                    NSLog(@"Witnessd: Engine initialized successfully");
+                } else {
+                    gEngineFailed = YES;
+                    NSLog(@"Witnessd: Engine initialization failed with code %d", result);
+                }
+            } @catch (NSException* e) {
+                gEngineFailed = YES;
+                NSLog(@"Witnessd: Engine initialization exception: %@", e);
+            }
         });
 
-        // Start session for this client
-        [self startSessionForClient:client];
+        // Start session for this client (if engine is available)
+        if (gEngineInitialized && !gEngineFailed) {
+            [self startSessionForClient:client];
+        }
     }
     return self;
 }
@@ -51,18 +69,25 @@ static const unsigned short kVK_ForwardDelete = 0x75;
     [super activateServer:client];
     self.currentClient = client;
 
-    // Start or resume session
-    if (!WitnessdHasActiveSession()) {
+    // Start or resume session (if engine is available)
+    if (gEngineInitialized && !gEngineFailed && !WitnessdHasActiveSession()) {
         [self startSessionForClient:client];
     }
 }
 
 - (void)deactivateServer:(id)client {
-    // End session when deactivating
-    char* evidence = WitnessdEndSession();
-    if (evidence) {
-        NSLog(@"Witnessd session ended: %s", evidence);
-        WitnessdFreeString(evidence);
+    // End session when deactivating (if engine is available)
+    if (gEngineInitialized && !gEngineFailed) {
+        @try {
+            char* evidence = WitnessdEndSession();
+            if (evidence) {
+                NSLog(@"Witnessd session ended: %s", evidence);
+                WitnessdFreeString(evidence);
+            }
+        } @catch (NSException* e) {
+            NSLog(@"Witnessd: Exception ending session: %@", e);
+            gEngineFailed = YES;
+        }
     }
 
     [super deactivateServer:client];
@@ -78,16 +103,24 @@ static const unsigned short kVK_ForwardDelete = 0x75;
     // Get key code
     unsigned short keyCode = event.keyCode;
 
-    // Handle delete keys
-    if (keyCode == kVK_Delete || keyCode == kVK_ForwardDelete) {
-        // Record the delete in the engine
-        WitnessdOnTextDelete(1);
-        // Let the system handle the actual deletion
-        return NO;
-    }
-
     // Get characters - use charactersIgnoringModifiers for base character
     NSString* chars = event.characters;
+
+    // If engine failed, pass through without processing
+    if (gEngineFailed || !gEngineInitialized) {
+        return NO;  // Let system handle normally
+    }
+
+    // Handle delete keys
+    if (keyCode == kVK_Delete || keyCode == kVK_ForwardDelete) {
+        @try {
+            WitnessdOnTextDelete(1);
+        } @catch (NSException* e) {
+            NSLog(@"Witnessd: Exception on delete: %@", e);
+        }
+        return NO;  // Let the system handle the actual deletion
+    }
+
     if (chars.length == 0) {
         return NO;
     }
@@ -109,12 +142,17 @@ static const unsigned short kVK_ForwardDelete = 0x75;
         charCode = (int32_t)[chars characterAtIndex:0];
     }
 
-    // Process through witnessd engine
-    int64_t jitterMicros = WitnessdOnKeyDown(keyCode, charCode);
+    // Process through witnessd engine with error recovery
+    int64_t jitterMicros = 0;
+    @try {
+        jitterMicros = WitnessdOnKeyDown(keyCode, charCode);
+    } @catch (NSException* e) {
+        NSLog(@"Witnessd: Exception on keydown: %@", e);
+        // Fall through to normal insertion
+    }
 
     // Apply jitter delay asynchronously to avoid blocking
     if (jitterMicros > 0) {
-        // Copy data needed for async block
         NSString* charsToInsert = [chars copy];
         id clientCopy = client;
 
@@ -123,14 +161,22 @@ static const unsigned short kVK_ForwardDelete = 0x75;
                        dispatch_get_main_queue(), ^{
             [clientCopy insertText:charsToInsert
                   replacementRange:NSMakeRange(NSNotFound, 0)];
-            WitnessdOnTextCommit((char*)[charsToInsert UTF8String]);
+            @try {
+                WitnessdOnTextCommit((char*)[charsToInsert UTF8String]);
+            } @catch (NSException* e) {
+                NSLog(@"Witnessd: Exception on commit: %@", e);
+            }
         });
         return YES;
     }
 
     // No jitter delay - insert immediately
     [client insertText:chars replacementRange:NSMakeRange(NSNotFound, 0)];
-    WitnessdOnTextCommit((char*)[chars UTF8String]);
+    @try {
+        WitnessdOnTextCommit((char*)[chars UTF8String]);
+    } @catch (NSException* e) {
+        NSLog(@"Witnessd: Exception on commit: %@", e);
+    }
     return YES;
 }
 
