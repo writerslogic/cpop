@@ -2,10 +2,139 @@
 
 package ime
 
+/*
+#cgo CFLAGS: -x objective-c
+#cgo LDFLAGS: -framework Carbon -framework Foundation
+
+#include <Carbon/Carbon.h>
+#include <Foundation/Foundation.h>
+
+// Get current input source ID
+const char* getCurrentInputSourceID() {
+    TISInputSourceRef currentSource = TISCopyCurrentKeyboardInputSource();
+    if (currentSource == NULL) {
+        return NULL;
+    }
+
+    CFStringRef sourceID = (CFStringRef)TISGetInputSourceProperty(currentSource, kTISPropertyInputSourceID);
+    if (sourceID == NULL) {
+        CFRelease(currentSource);
+        return NULL;
+    }
+
+    const char* result = NULL;
+    CFIndex length = CFStringGetLength(sourceID);
+    CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8) + 1;
+    char* buffer = malloc(maxSize);
+    if (buffer != NULL && CFStringGetCString(sourceID, buffer, maxSize, kCFStringEncodingUTF8)) {
+        result = buffer;
+    }
+
+    CFRelease(currentSource);
+    return result;
+}
+
+// Free string allocated by getCurrentInputSourceID
+void freeString(const char* str) {
+    if (str != NULL) {
+        free((void*)str);
+    }
+}
+
+// Check if an input source with the given bundle ID exists
+int inputSourceExists(const char* bundleID) {
+    CFStringRef bundleIDRef = CFStringCreateWithCString(NULL, bundleID, kCFStringEncodingUTF8);
+    if (bundleIDRef == NULL) {
+        return 0;
+    }
+
+    CFMutableDictionaryRef filterDict = CFDictionaryCreateMutable(NULL, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFDictionaryAddValue(filterDict, kTISPropertyBundleID, bundleIDRef);
+
+    CFArrayRef sources = TISCreateInputSourceList(filterDict, true);
+
+    int exists = sources != NULL && CFArrayGetCount(sources) > 0;
+
+    if (sources != NULL) {
+        CFRelease(sources);
+    }
+    CFRelease(filterDict);
+    CFRelease(bundleIDRef);
+
+    return exists;
+}
+
+// Enable an input source (add to enabled list)
+int enableInputSource(const char* bundleID) {
+    CFStringRef bundleIDRef = CFStringCreateWithCString(NULL, bundleID, kCFStringEncodingUTF8);
+    if (bundleIDRef == NULL) {
+        return -1;
+    }
+
+    CFMutableDictionaryRef filterDict = CFDictionaryCreateMutable(NULL, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFDictionaryAddValue(filterDict, kTISPropertyBundleID, bundleIDRef);
+
+    CFArrayRef sources = TISCreateInputSourceList(filterDict, true);
+    int result = -1;
+
+    if (sources != NULL && CFArrayGetCount(sources) > 0) {
+        TISInputSourceRef source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, 0);
+        if (TISEnableInputSource(source) == noErr) {
+            result = 0;
+        }
+    }
+
+    if (sources != NULL) {
+        CFRelease(sources);
+    }
+    CFRelease(filterDict);
+    CFRelease(bundleIDRef);
+
+    return result;
+}
+
+// Select (activate) an input source
+int selectInputSource(const char* bundleID) {
+    CFStringRef bundleIDRef = CFStringCreateWithCString(NULL, bundleID, kCFStringEncodingUTF8);
+    if (bundleIDRef == NULL) {
+        return -1;
+    }
+
+    CFMutableDictionaryRef filterDict = CFDictionaryCreateMutable(NULL, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFDictionaryAddValue(filterDict, kTISPropertyBundleID, bundleIDRef);
+
+    CFArrayRef sources = TISCreateInputSourceList(filterDict, false);
+    int result = -1;
+
+    if (sources != NULL && CFArrayGetCount(sources) > 0) {
+        TISInputSourceRef source = (TISInputSourceRef)CFArrayGetValueAtIndex(sources, 0);
+        if (TISSelectInputSource(source) == noErr) {
+            result = 0;
+        }
+    }
+
+    if (sources != NULL) {
+        CFRelease(sources);
+    }
+    CFRelease(filterDict);
+    CFRelease(bundleIDRef);
+
+    return result;
+}
+*/
+import "C"
+
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"unsafe"
 )
 
 // DarwinPlatform implements the Platform interface for macOS.
@@ -34,22 +163,11 @@ func (p *DarwinPlatform) Name() string {
 }
 
 func (p *DarwinPlatform) Available() bool {
-	// macOS is always available when we're compiled for darwin
 	return true
 }
 
 // Install creates the input method bundle and registers it.
-// The bundle structure:
-//
-//	Witnessd.app/
-//	├── Contents/
-//	│   ├── Info.plist
-//	│   ├── MacOS/
-//	│   │   └── Witnessd
-//	│   └── Resources/
-//	│       └── icon.icns
 func (p *DarwinPlatform) Install() error {
-	// Get install location (~/Library/Input Methods/)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -77,22 +195,58 @@ func (p *DarwinPlatform) Install() error {
 		return err
 	}
 
-	// Copy the current executable as the input method binary
-	// In a real implementation, we'd have a separate IME binary
-	execPath, err := os.Executable()
+	// Find and copy the IME binary
+	execPath, err := p.findIMEBinary()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to find IME binary: %w", err)
 	}
 
 	destExec := filepath.Join(bundlePath, "Contents", "MacOS", "Witnessd")
 	if err := copyFile(execPath, destExec); err != nil {
-		return err
+		return fmt.Errorf("failed to copy binary: %w", err)
 	}
 	if err := os.Chmod(destExec, 0755); err != nil {
 		return err
 	}
 
+	// Register with Launch Services to refresh input method list
+	p.refreshInputMethods(bundlePath)
+
 	return nil
+}
+
+func (p *DarwinPlatform) findIMEBinary() (string, error) {
+	// Look for witnessd-ime binary first
+	candidates := []string{
+		"/usr/local/bin/witnessd-ime",
+		"/opt/homebrew/bin/witnessd-ime",
+	}
+
+	// Check relative to current executable
+	if execPath, err := os.Executable(); err == nil {
+		execDir := filepath.Dir(execPath)
+		candidates = append([]string{
+			filepath.Join(execDir, "witnessd-ime"),
+		}, candidates...)
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	// Fall back to current executable
+	return os.Executable()
+}
+
+func (p *DarwinPlatform) refreshInputMethods(bundlePath string) {
+	// Touch the bundle to trigger LaunchServices refresh
+	exec.Command("touch", bundlePath).Run()
+
+	// Register with lsregister
+	exec.Command("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+		"-f", bundlePath).Run()
 }
 
 func (p *DarwinPlatform) Uninstall() error {
@@ -113,18 +267,42 @@ func (p *DarwinPlatform) IsInstalled() bool {
 
 	bundlePath := filepath.Join(home, "Library", "Input Methods", "Witnessd.app")
 	_, err = os.Stat(bundlePath)
-	return err == nil
+	if err != nil {
+		return false
+	}
+
+	// Also check if registered with the system
+	bundleID := C.CString(p.config.BundleID)
+	defer C.free(unsafe.Pointer(bundleID))
+	return C.inputSourceExists(bundleID) == 1
 }
 
 func (p *DarwinPlatform) IsActive() bool {
-	// Would need to query the system for current input source
-	// This requires calling into Cocoa/Carbon APIs
-	return false
+	currentID := C.getCurrentInputSourceID()
+	if currentID == nil {
+		return false
+	}
+	defer C.freeString(currentID)
+
+	goID := C.GoString(currentID)
+	return strings.Contains(goID, "witnessd") || strings.Contains(goID, p.config.BundleID)
 }
 
 func (p *DarwinPlatform) Activate() error {
-	// Would need to call TISSelectInputSource
-	return errors.New("not implemented: use System Preferences to select input method")
+	bundleID := C.CString(p.config.BundleID)
+	defer C.free(unsafe.Pointer(bundleID))
+
+	// First, enable the input source if not enabled
+	C.enableInputSource(bundleID)
+
+	// Then select it
+	if C.selectInputSource(bundleID) != 0 {
+		// Open System Preferences as fallback
+		exec.Command("open", "x-apple.systempreferences:com.apple.preference.keyboard?Text").Run()
+		return errors.New("please select Witnessd from Keyboard settings")
+	}
+
+	return nil
 }
 
 func (p *DarwinPlatform) generateInfoPlist() string {

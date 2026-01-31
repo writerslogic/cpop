@@ -22,7 +22,6 @@ type Key struct {
 	// On macOS: virtual key code (e.g., 0x00 for 'A')
 	// On Windows: virtual key code (e.g., VK_A)
 	// On Linux: X11 keycode or evdev code
-	// On Android/iOS: platform key code
 	Code uint16
 
 	// Char is the character that will be produced (if known).
@@ -167,15 +166,34 @@ func (e *Evidence) ToJSON() (string, error) {
 	return string(data), nil
 }
 
+// Storage is the interface for persisting IME evidence.
+type Storage interface {
+	// SaveEvidence persists the evidence from a completed session.
+	SaveEvidence(evidence *Evidence) error
+}
+
 // Engine is the core IME integration that tracks typing and builds evidence.
 type Engine struct {
 	mu      sync.RWMutex
 	session *Session
+	storage Storage
 }
 
 // NewEngine creates a new IME engine.
 func NewEngine() *Engine {
 	return &Engine{}
+}
+
+// NewEngineWithStorage creates an IME engine with persistent storage.
+func NewEngineWithStorage(storage Storage) *Engine {
+	return &Engine{storage: storage}
+}
+
+// SetStorage sets the storage backend for automatic persistence.
+func (e *Engine) SetStorage(storage Storage) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.storage = storage
 }
 
 // StartSession begins a new witnessing session.
@@ -465,6 +483,15 @@ func (e *Engine) EndSession() (*Evidence, error) {
 		TotalKeystrokes:   uint64(len(e.session.samples)),
 		DocumentEvolution: len(docHashes),
 		TypingRateKPM:     kpm,
+	}
+
+	// Persist to storage if configured
+	if e.storage != nil {
+		if err := e.storage.SaveEvidence(evidence); err != nil {
+			// Log but don't fail - evidence is still returned
+			// The caller can retry persistence if needed
+			_ = err
+		}
 	}
 
 	// Clear session

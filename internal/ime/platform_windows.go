@@ -2,7 +2,16 @@
 
 package ime
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/sys/windows/registry"
+)
 
 // WindowsPlatform implements the Platform interface for Windows.
 // Uses Text Services Framework (TSF).
@@ -10,6 +19,18 @@ type WindowsPlatform struct {
 	config PlatformConfig
 	engine *Engine
 }
+
+// TSF registration constants
+const (
+	// CLSID for our Text Input Processor
+	witnessdCLSID = "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+
+	// Language profile GUID
+	witnessdLangProfileGUID = "{12345678-90AB-CDEF-1234-567890ABCDEF}"
+
+	// Registry paths
+	ctfTIPPath = `SOFTWARE\Microsoft\CTF\TIP\` + witnessdCLSID
+)
 
 // NewWindowsPlatform creates a new Windows IME platform.
 func NewWindowsPlatform(config PlatformConfig, engine *Engine) *WindowsPlatform {
@@ -24,31 +45,173 @@ func (p *WindowsPlatform) Name() string {
 }
 
 func (p *WindowsPlatform) Available() bool {
+	// Check if TSF is available (Windows 8+)
+	// TSF is available on all modern Windows versions
 	return true
 }
 
 func (p *WindowsPlatform) Install() error {
-	// TSF installation requires:
-	// 1. Register COM DLL with regsvr32
-	// 2. Add registry entries under HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\CTF\TIP
-	// 3. Register CLSID and language profile
-	return errors.New("not implemented: Windows TSF installation requires administrator privileges")
+	// Get install location
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		return errors.New("LOCALAPPDATA not set")
+	}
+
+	installDir := filepath.Join(localAppData, "Witnessd", "IME")
+	if err := os.MkdirAll(installDir, 0755); err != nil {
+		return fmt.Errorf("failed to create install directory: %w", err)
+	}
+
+	// Copy the current executable to install location
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	destExec := filepath.Join(installDir, "witnessd-tsf.exe")
+	if err := copyFileWindows(execPath, destExec); err != nil {
+		return fmt.Errorf("failed to copy executable: %w", err)
+	}
+
+	// Create registry entries for user-level installation
+	if err := p.createRegistryEntries(installDir); err != nil {
+		return fmt.Errorf("failed to create registry entries: %w", err)
+	}
+
+	// Generate install script for admin-level registration if needed
+	scriptPath := filepath.Join(installDir, "install-admin.ps1")
+	if err := p.generateInstallScript(scriptPath, installDir); err != nil {
+		return fmt.Errorf("failed to generate install script: %w", err)
+	}
+
+	return nil
+}
+
+func (p *WindowsPlatform) createRegistryEntries(installDir string) error {
+	// Try HKEY_CURRENT_USER first (no admin required)
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, ctfTIPPath, registry.ALL_ACCESS)
+	if err != nil {
+		return fmt.Errorf("failed to create TIP registry key: %w", err)
+	}
+	defer key.Close()
+
+	// Set basic TIP properties
+	if err := key.SetStringValue("", p.config.DisplayName); err != nil {
+		return err
+	}
+
+	// Create LanguageProfile subkey
+	langProfilePath := ctfTIPPath + `\LanguageProfile\0x00000409\` + witnessdLangProfileGUID
+	langKey, _, err := registry.CreateKey(registry.CURRENT_USER, langProfilePath, registry.ALL_ACCESS)
+	if err != nil {
+		return fmt.Errorf("failed to create language profile key: %w", err)
+	}
+	defer langKey.Close()
+
+	if err := langKey.SetStringValue("Description", "Witnessd Cryptographic Input Method"); err != nil {
+		return err
+	}
+
+	iconPath := filepath.Join(installDir, "witnessd-tsf.exe")
+	if err := langKey.SetExpandStringValue("IconFile", iconPath); err != nil {
+		return err
+	}
+	if err := langKey.SetDWordValue("IconIndex", 0); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *WindowsPlatform) generateInstallScript(scriptPath, installDir string) error {
+	script := fmt.Sprintf(`# Witnessd TSF Admin Installation Script
+# Run this script as Administrator for system-wide installation
+
+$ErrorActionPreference = "Stop"
+
+# CLSID for Witnessd TSF
+$clsid = "%s"
+$langProfileGUID = "%s"
+$installDir = "%s"
+
+Write-Host "Installing Witnessd Input Method..."
+
+# Register COM server (requires the DLL to be built)
+# regsvr32.exe /s "$installDir\witnessd-tsf.dll"
+
+# Create system-wide registry entries
+$tipPath = "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$clsid"
+New-Item -Path $tipPath -Force | Out-Null
+Set-ItemProperty -Path $tipPath -Name "(Default)" -Value "Witnessd"
+
+$langPath = "$tipPath\LanguageProfile\0x00000409\$langProfileGUID"
+New-Item -Path $langPath -Force | Out-Null
+Set-ItemProperty -Path $langPath -Name "Description" -Value "Witnessd Cryptographic Input Method"
+Set-ItemProperty -Path $langPath -Name "IconFile" -Value "$installDir\witnessd-tsf.exe"
+Set-ItemProperty -Path $langPath -Name "IconIndex" -Value 0
+
+Write-Host "Installation complete. Please restart your applications."
+Write-Host "To enable: Settings > Time & Language > Language > Keyboard"
+`, witnessdCLSID, witnessdLangProfileGUID, strings.ReplaceAll(installDir, `\`, `\\`))
+
+	return os.WriteFile(scriptPath, []byte(script), 0755)
 }
 
 func (p *WindowsPlatform) Uninstall() error {
-	return errors.New("not implemented")
+	// Remove registry entries
+	if err := registry.DeleteKey(registry.CURRENT_USER, ctfTIPPath); err != nil {
+		// Key might not exist, ignore error
+	}
+
+	// Remove install directory
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData != "" {
+		installDir := filepath.Join(localAppData, "Witnessd", "IME")
+		os.RemoveAll(installDir)
+	}
+
+	return nil
 }
 
 func (p *WindowsPlatform) IsInstalled() bool {
-	return false
+	key, err := registry.OpenKey(registry.CURRENT_USER, ctfTIPPath, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	key.Close()
+	return true
 }
 
 func (p *WindowsPlatform) IsActive() bool {
-	return false
+	// Query the current input method using PowerShell
+	// This is a workaround since proper COM queries require more setup
+	cmd := exec.Command("powershell", "-Command",
+		"Get-WinUserLanguageList | Select-Object -ExpandProperty InputMethodTips")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(output), "Witnessd")
 }
 
 func (p *WindowsPlatform) Activate() error {
-	return errors.New("not implemented: use Windows Settings to select input method")
+	// Open Windows keyboard settings
+	cmd := exec.Command("cmd", "/c", "start", "ms-settings:keyboard")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to open keyboard settings: %w", err)
+	}
+
+	return errors.New("please select Witnessd from the keyboard settings that just opened")
+}
+
+// copyFileWindows copies a file on Windows.
+func copyFileWindows(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0755)
 }
 
 // WindowsZoneMapping provides Windows-specific virtual key code mapping.

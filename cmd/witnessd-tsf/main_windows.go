@@ -6,11 +6,13 @@
 // The Go code handles the engine logic while C++ handles COM/TSF interfaces.
 //
 // Build:
-//   go build -buildmode=c-archive -o witnessd.a ./cmd/witnessd-tsf
-//   cl /EHsc /LD tsf/*.cpp witnessd.a /link /OUT:witnessd.dll
+//
+//	go build -buildmode=c-archive -o witnessd.a ./cmd/witnessd-tsf
+//	cl /EHsc /LD tsf/*.cpp witnessd.a /link /OUT:witnessd.dll
 //
 // Install:
-//   regsvr32 witnessd.dll
+//
+//	regsvr32 witnessd.dll
 //
 // The binary must be signed for production use on Windows.
 package main
@@ -36,9 +38,12 @@ import (
 )
 
 var (
-	engine   *ime.Engine
-	engineMu sync.Mutex
-	logFile  *os.File
+	engine      *ime.Engine
+	engineMu    sync.Mutex
+	logFile     *os.File
+	storage     *ime.EvidenceStorage
+	storageErr  error
+	storageOnce sync.Once
 )
 
 //export WitnessdInit
@@ -249,31 +254,25 @@ func evidenceToJSON(e *ime.Evidence) string {
 	return string(data)
 }
 
+func getStorage() (*ime.EvidenceStorage, error) {
+	storageOnce.Do(func() {
+		storage, storageErr = ime.NewEvidenceStorage("")
+	})
+	return storage, storageErr
+}
+
 func saveEvidence(evidence *ime.Evidence) {
-	appData := os.Getenv("LOCALAPPDATA")
-	if appData == "" {
+	if evidence == nil {
 		return
 	}
-
-	evidenceDir := filepath.Join(appData, "Witnessd", "evidence")
-	if err := os.MkdirAll(evidenceDir, 0700); err != nil {
-		log.Printf("Failed to create evidence dir: %v", err)
-		return
-	}
-
-	jsonData, err := json.Marshal(evidence)
+	store, err := getStorage()
 	if err != nil {
-		log.Printf("Failed to marshal evidence: %v", err)
+		log.Printf("Failed to init evidence storage: %v", err)
 		return
 	}
-
-	filename := filepath.Join(evidenceDir, evidence.SessionID+".json")
-	if err := os.WriteFile(filename, jsonData, 0600); err != nil {
-		log.Printf("Failed to write evidence: %v", err)
-		return
+	if err := store.Save(evidence); err != nil {
+		log.Printf("Failed to save evidence: %v", err)
 	}
-
-	log.Printf("Saved evidence to %s", filename)
 }
 
 func main() {

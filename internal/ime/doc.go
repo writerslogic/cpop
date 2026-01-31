@@ -41,8 +41,6 @@
 //	│ macOS    │ Input Method Kit (IMKit) - NSInputServiceProvider       │
 //	│ Windows  │ Text Services Framework (TSF) - ITfTextInputProcessor   │
 //	│ Linux    │ IBus (primary), Fcitx (fallback) - IBusEngine           │
-//	│ Android  │ InputMethodService - android.inputmethodservice         │
-//	│ iOS      │ Custom Keyboard Extension - UIInputViewController       │
 //	└──────────┴─────────────────────────────────────────────────────────┘
 //
 // # Core Interface
@@ -104,7 +102,7 @@
 // and can start new sessions or pause/resume existing ones.
 //
 // Sessions are identified by:
-//   - Application bundle ID (macOS/iOS) or package name (Android/Windows)
+//   - Application bundle ID (macOS) or executable name (Windows/Linux)
 //   - Document identifier (URL, file path, or field ID)
 //   - User-provided context (optional)
 //
@@ -124,9 +122,6 @@
 //   - macOS: .app bundle with Info.plist declaring NSInputServiceProvider
 //   - Windows: DLL registered as TSF Text Input Processor
 //   - Linux: IBus component XML + shared library
-//   - Android: APK with InputMethodService declaration in manifest
-//   - iOS: App Extension (.appex) with NSExtension keyboard type
 //
 // The common Go core is linked into each platform's native wrapper.
-// Mobile platforms use gomobile for the Go→Java/Swift binding.
 package ime

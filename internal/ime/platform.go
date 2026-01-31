@@ -32,7 +32,7 @@ type PlatformConfig struct {
 	// DataDir is where witnessd stores session data.
 	DataDir string
 
-	// BundleID is the application identifier (macOS/iOS).
+	// BundleID is the application identifier (macOS).
 	BundleID string
 
 	// DisplayName is shown to users in system preferences.
@@ -58,7 +58,7 @@ type PlatformInfo struct {
 	Permissions []string
 }
 
-// SupportedPlatforms lists all platforms we intend to support.
+// SupportedPlatforms lists all desktop platforms we support.
 var SupportedPlatforms = []PlatformInfo{
 	{
 		Name:        "macOS",
@@ -77,18 +77,6 @@ var SupportedPlatforms = []PlatformInfo{
 		Framework:   "IBus / Fcitx",
 		Description: "IBusEngine-based input method",
 		Permissions: []string{"None - user explicitly selects input method"},
-	},
-	{
-		Name:        "Android",
-		Framework:   "InputMethodService",
-		Description: "Android input method service",
-		Permissions: []string{"None - user explicitly enables keyboard"},
-	},
-	{
-		Name:        "iOS",
-		Framework:   "Custom Keyboard Extension",
-		Description: "UIInputViewController extension",
-		Permissions: []string{"Full Access (optional, for sync features)"},
 	},
 }
 
@@ -122,8 +110,6 @@ func (DefaultZoneMapping) CharToZone(char rune) int {
 // - platform_darwin.go
 // - platform_windows.go
 // - platform_linux.go
-// - platform_android.go (via gomobile)
-// - platform_ios.go (via gomobile)
 
 // zoneFromKeyCode wraps the jitter package function.
 // This indirection allows platform-specific overrides.

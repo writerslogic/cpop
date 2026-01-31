@@ -71,6 +71,11 @@ func defaultStorageDir() (string, error) {
 	}
 }
 
+// SaveEvidence implements the Storage interface.
+func (s *EvidenceStorage) SaveEvidence(evidence *Evidence) error {
+	return s.Save(evidence)
+}
+
 // Save persists an evidence record to storage.
 func (s *EvidenceStorage) Save(evidence *Evidence) error {
 	s.mu.Lock()

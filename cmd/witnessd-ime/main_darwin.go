@@ -7,11 +7,13 @@
 // that the Objective-C InputMethodController can call.
 //
 // Build:
-//   go build -o Witnessd.app/Contents/MacOS/Witnessd ./cmd/witnessd-ime
+//
+//	go build -o Witnessd.app/Contents/MacOS/Witnessd ./cmd/witnessd-ime
 //
 // Install:
-//   cp -r Witnessd.app ~/Library/Input\ Methods/
-//   # Then enable in System Preferences > Keyboard > Input Sources
+//
+//	cp -r Witnessd.app ~/Library/Input\ Methods/
+//	# Then enable in System Preferences > Keyboard > Input Sources
 package main
 
 /*
@@ -33,10 +35,13 @@ import (
 )
 
 var (
-	engine     *ime.Engine
-	engineOnce sync.Once
-	engineMu   sync.Mutex
-	logFile    *os.File
+	engine      *ime.Engine
+	engineOnce  sync.Once
+	engineMu    sync.Mutex
+	logFile     *os.File
+	storage     *ime.EvidenceStorage
+	storageErr  error
+	storageOnce sync.Once
 )
 
 func getEngine() *ime.Engine {
@@ -44,6 +49,27 @@ func getEngine() *ime.Engine {
 		engine = ime.NewEngine()
 	})
 	return engine
+}
+
+func getStorage() (*ime.EvidenceStorage, error) {
+	storageOnce.Do(func() {
+		storage, storageErr = ime.NewEvidenceStorage("")
+	})
+	return storage, storageErr
+}
+
+func saveEvidence(evidence *ime.Evidence) {
+	if evidence == nil {
+		return
+	}
+	storage, err := getStorage()
+	if err != nil {
+		log.Printf("Failed to init evidence storage: %v", err)
+		return
+	}
+	if err := storage.Save(evidence); err != nil {
+		log.Printf("Failed to save evidence: %v", err)
+	}
 }
 
 //export WitnessdInit
@@ -83,8 +109,10 @@ func WitnessdShutdown() {
 
 	// End any active session
 	if engine != nil && engine.HasActiveSession() {
-		if _, err := engine.EndSession(); err != nil {
+		if evidence, err := engine.EndSession(); err != nil {
 			log.Printf("Shutdown: EndSession error: %v", err)
+		} else {
+			saveEvidence(evidence)
 		}
 	}
 
@@ -136,6 +164,7 @@ func WitnessdEndSession() *C.char {
 		log.Printf("EndSession error: %v", err)
 		return nil
 	}
+	saveEvidence(evidence)
 
 	// Return JSON summary
 	summary := evidenceToJSON(evidence)
