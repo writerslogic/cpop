@@ -126,8 +126,9 @@ func (o *OTSAnchor) wrapProof(hash []byte, calendar string, calendarProof []byte
 }
 
 // Verify checks an OTS proof.
-// Note: Full verification requires Bitcoin RPC access to check block headers.
-// This implementation does basic format validation.
+// This validates the format and optionally verifies the hash matches.
+// If hash is nil, only format validation is performed.
+// Note: Full Bitcoin attestation verification requires blockchain access.
 func (o *OTSAnchor) Verify(hash, proof []byte) error {
 	if len(proof) < len(otsHeaderMagic)+1 {
 		return errors.New("ots: proof too short")
@@ -144,28 +145,107 @@ func (o *OTSAnchor) Verify(hash, proof []byte) error {
 		return fmt.Errorf("ots: unsupported version %d", version)
 	}
 
-	// TODO: Full verification would require:
-	// 1. Walking the OTS operations chain
-	// 2. Checking Bitcoin attestations against block headers
-	// For now, we just validate the format
+	// Parse the proof to validate format
+	info, err := ParseOTS(proof)
+	if err != nil {
+		return fmt.Errorf("ots: failed to parse proof: %w", err)
+	}
 
+	// Verify the hash in the proof matches the expected hash (if provided)
+	if hash != nil && !bytes.Equal(info.Hash, hash) {
+		return errors.New("ots: proof hash does not match expected hash")
+	}
+
+	// Check if we have attestations
+	if info.Confirmed || len(info.Pending) > 0 {
+		return nil
+	}
+
+	// Proof is valid format but has no attestations (unusual but not an error)
 	return nil
 }
 
 // UpgradeProof attempts to upgrade a pending OTS proof to a confirmed one.
+// It queries calendar servers to check if Bitcoin attestations are available.
 func (o *OTSAnchor) UpgradeProof(proof []byte) ([]byte, bool, error) {
-	// Parse the proof to find pending attestations
+	// Basic format validation
 	if len(proof) < len(otsHeaderMagic)+1 {
 		return proof, false, errors.New("ots: proof too short")
 	}
 
-	// TODO: Implement proof upgrade by querying calendars
-	// This would:
-	// 1. Parse pending attestations
-	// 2. Query calendar servers for Bitcoin confirmations
-	// 3. Replace pending attestations with Bitcoin block header attestations
+	// Parse the proof to find pending attestations
+	info, err := ParseOTS(proof)
+	if err != nil {
+		// If we can't parse, return the proof unchanged
+		// This maintains backward compatibility
+		return proof, false, nil
+	}
 
+	// Already confirmed
+	if info.Confirmed {
+		return proof, true, nil
+	}
+
+	// No pending attestations to upgrade
+	if len(info.Pending) == 0 {
+		return proof, false, nil
+	}
+
+	// Try to get upgrade from each pending calendar
+	for _, calendarURL := range info.Pending {
+		upgraded, err := o.queryCalendarForUpgrade(calendarURL, info.Hash)
+		if err != nil {
+			continue // Try next calendar
+		}
+
+		// Check if the upgrade contains a Bitcoin attestation
+		upgradedInfo, err := ParseOTS(upgraded)
+		if err != nil {
+			continue
+		}
+
+		if upgradedInfo.Confirmed {
+			return upgraded, true, nil
+		}
+	}
+
+	// No upgrade available yet
 	return proof, false, nil
+}
+
+// queryCalendarForUpgrade queries a calendar server for an upgraded proof.
+func (o *OTSAnchor) queryCalendarForUpgrade(calendarURL string, hash []byte) ([]byte, error) {
+	// Calendar servers provide upgraded proofs at /timestamp/{hash}
+	url := fmt.Sprintf("%s/timestamp/%x", calendarURL, hash)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.opentimestamps.v1")
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.New("ots: timestamp not yet available")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ots: calendar returned %d", resp.StatusCode)
+	}
+
+	// Read the upgraded proof
+	upgradeData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap in OTS file format
+	return o.wrapProof(hash, calendarURL, upgradeData), nil
 }
 
 // Helper functions

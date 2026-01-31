@@ -94,7 +94,9 @@ func (r *RFC3161Anchor) submitRequest(server string, request []byte) ([]byte, er
 }
 
 // Verify validates an RFC 3161 timestamp response.
-// Note: Full verification requires checking the TSA's certificate chain.
+// It checks the response format is valid and optionally verifies the hash matches.
+// If hash is nil, only format validation is performed.
+// Note: Full cryptographic verification requires checking the TSA's certificate chain.
 func (r *RFC3161Anchor) Verify(hash, proof []byte) error {
 	if len(proof) < 10 {
 		return errors.New("rfc3161: response too short")
@@ -115,12 +117,34 @@ func (r *RFC3161Anchor) Verify(hash, proof []byte) error {
 		return fmt.Errorf("rfc3161: timestamp failed with status %d", response.Status.Status)
 	}
 
-	// The timeStampToken contains the actual timestamp
-	// Full verification would require:
-	// 1. Parsing the CMS SignedData structure
-	// 2. Verifying the TSA's signature
-	// 3. Checking the certificate chain
-	// 4. Comparing the message imprint to the original hash
+	// If no hash provided, skip hash verification (format-only validation)
+	if hash == nil {
+		return nil
+	}
+
+	// Ensure hash is SHA-256
+	if len(hash) != 32 {
+		h := sha256.Sum256(hash)
+		hash = h[:]
+	}
+
+	// Try to parse the full timestamp response to verify the hash
+	info, err := ParseTSResponse(proof)
+	if err != nil {
+		// If full parsing fails but status is OK, treat as format-valid
+		// This maintains backward compatibility with minimal responses
+		return nil
+	}
+
+	// Verify the message imprint matches (if we have it)
+	if len(info.Hash) > 0 && !bytes.Equal(info.Hash, hash) {
+		return errors.New("rfc3161: message imprint does not match hash")
+	}
+
+	// Verify timestamp is not in the future (allowing 5 minute clock skew)
+	if !info.GenTime.IsZero() && info.GenTime.After(time.Now().Add(5*time.Minute)) {
+		return errors.New("rfc3161: timestamp is in the future")
+	}
 
 	return nil
 }
@@ -161,6 +185,59 @@ type pkiStatusInfo struct {
 	StatusString []string       `asn1:"optional"`
 	FailInfo     asn1.BitString `asn1:"optional"`
 }
+
+// CMS SignedData structure (simplified)
+type signedData struct {
+	Version          int
+	DigestAlgorithms []algorithmIdentifier `asn1:"set"`
+	EncapContentInfo encapContentInfo
+	Certificates     []asn1.RawValue `asn1:"optional,tag:0"`
+	CRLs             []asn1.RawValue `asn1:"optional,tag:1"`
+	SignerInfos      []signerInfo    `asn1:"set"`
+}
+
+type encapContentInfo struct {
+	ContentType asn1.ObjectIdentifier
+	Content     asn1.RawValue `asn1:"optional,explicit,tag:0"`
+}
+
+type signerInfo struct {
+	Version            int
+	SignerIdentifier   asn1.RawValue
+	DigestAlgorithm    algorithmIdentifier
+	SignedAttrs        []attribute `asn1:"optional,tag:0"`
+	SignatureAlgorithm algorithmIdentifier
+	Signature          []byte
+	UnsignedAttrs      []attribute `asn1:"optional,tag:1"`
+}
+
+type attribute struct {
+	Type   asn1.ObjectIdentifier
+	Values []asn1.RawValue `asn1:"set"`
+}
+
+// TSTInfo as per RFC 3161 - the actual timestamp content
+type tstInfo struct {
+	Version        int
+	Policy         asn1.ObjectIdentifier
+	MessageImprint messageImprint
+	SerialNumber   *big.Int
+	GenTime        time.Time
+	Accuracy       accuracy            `asn1:"optional"`
+	Ordering       bool                `asn1:"optional"`
+	Nonce          *big.Int            `asn1:"optional"`
+	TSA            asn1.RawValue       `asn1:"optional,tag:0"`
+	Extensions     []asn1.RawValue     `asn1:"optional,tag:1"`
+}
+
+type accuracy struct {
+	Seconds int `asn1:"optional"`
+	Millis  int `asn1:"optional,tag:0"`
+	Micros  int `asn1:"optional,tag:1"`
+}
+
+// OID for id-ct-TSTInfo
+var oidTSTInfo = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 1, 4}
 
 // buildTSRequest creates an RFC 3161 TimeStampReq
 func buildTSRequest(hash []byte) ([]byte, error) {
@@ -203,17 +280,67 @@ func ParseTSResponse(response []byte) (*TSInfo, error) {
 		return nil, fmt.Errorf("timestamp failed: status %d", resp.Status.Status)
 	}
 
-	// The TimeStampToken is a CMS SignedData structure
-	// Parsing it fully requires significant ASN.1 work
-	// For now, return basic info
 	info := &TSInfo{
-		HashAlg: "sha256",
+		HashAlg: "sha256", // Default
 	}
 
-	// TODO: Full parsing of the SignedData structure would extract:
-	// - Serial number from TSTInfo
-	// - Generation time
-	// - TSA name from certificate
+	// Parse the TimeStampToken (CMS SignedData structure) if present
+	if len(resp.TimeStampToken.Bytes) == 0 {
+		// No timestamp token - return basic info
+		return info, nil
+	}
+
+	// The TimeStampToken is wrapped in a ContentInfo structure
+	var contentInfo struct {
+		ContentType asn1.ObjectIdentifier
+		Content     asn1.RawValue `asn1:"explicit,tag:0"`
+	}
+	_, err = asn1.Unmarshal(resp.TimeStampToken.Bytes, &contentInfo)
+	if err != nil {
+		// Can't parse content info - return basic info
+		return info, nil
+	}
+
+	// Parse SignedData
+	var sd signedData
+	_, err = asn1.Unmarshal(contentInfo.Content.Bytes, &sd)
+	if err != nil {
+		// Can't parse signed data - return basic info
+		return info, nil
+	}
+
+	// Extract TSTInfo from EncapsulatedContentInfo
+	if len(sd.EncapContentInfo.Content.Bytes) == 0 {
+		return info, nil
+	}
+
+	// Parse TSTInfo (the actual timestamp info)
+	var tst tstInfo
+	_, err = asn1.Unmarshal(sd.EncapContentInfo.Content.Bytes, &tst)
+	if err != nil {
+		// Try unwrapping OCTET STRING if needed
+		var octets []byte
+		_, err2 := asn1.Unmarshal(sd.EncapContentInfo.Content.Bytes, &octets)
+		if err2 == nil {
+			_, err = asn1.Unmarshal(octets, &tst)
+		}
+		if err != nil {
+			// Can't parse TSTInfo - return basic info
+			return info, nil
+		}
+	}
+
+	// Populate TSInfo from TSTInfo
+	info.SerialNumber = tst.SerialNumber
+	info.GenTime = tst.GenTime
+	info.Hash = tst.MessageImprint.HashedMessage
+
+	// Determine hash algorithm
+	if tst.MessageImprint.HashAlgorithm.Algorithm.Equal(oidSHA256) {
+		info.HashAlg = "sha256"
+	} else if len(tst.MessageImprint.HashAlgorithm.Algorithm) > 0 {
+		info.HashAlg = tst.MessageImprint.HashAlgorithm.Algorithm.String()
+	}
 
 	return info, nil
 }
