@@ -934,3 +934,144 @@ func TestHexEncodedTestVector(t *testing.T) {
 	sample.Hash = sample.computeHash()
 	t.Logf("  Sample Hash:     %s", hex.EncodeToString(sample.Hash[:]))
 }
+
+// Fuzz tests for binary parsing functions
+
+func FuzzDecodeSampleBinary(f *testing.F) {
+	// Add seed corpus with valid sample data
+	validSample := Sample{
+		Timestamp:      testTimestamp,
+		KeystrokeCount: 100,
+		DocumentHash:   testDocHash,
+		JitterMicros:   1500,
+		PreviousHash:   [32]byte{1, 2, 3},
+	}
+	validSample.Hash = validSample.computeHash()
+	validData := EncodeSampleBinary(validSample)
+	f.Add(validData)
+
+	// Add edge cases
+	f.Add(make([]byte, 116))           // All zeros
+	f.Add(bytes.Repeat([]byte{0xff}, 116)) // All 0xff
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// DecodeSampleBinary should not panic on any input
+		_, err := DecodeSampleBinary(data)
+
+		// If data is exactly 116 bytes, it should decode without error
+		if len(data) == 116 && err != nil {
+			t.Errorf("DecodeSampleBinary failed on 116-byte input: %v", err)
+		}
+
+		// If data is not 116 bytes, it should return an error
+		if len(data) != 116 && err == nil {
+			t.Errorf("DecodeSampleBinary should fail on %d-byte input", len(data))
+		}
+	})
+}
+
+func FuzzDecodeChainBinary(f *testing.F) {
+	// Add seed corpus with valid chain data
+	samples := []Sample{
+		{
+			Timestamp:      testTimestamp,
+			KeystrokeCount: 100,
+			DocumentHash:   testDocHash,
+			JitterMicros:   1500,
+			PreviousHash:   [32]byte{},
+		},
+	}
+	samples[0].Hash = samples[0].computeHash()
+
+	validChain, _ := EncodeChainBinary(samples, testParams)
+	f.Add(validChain)
+
+	// Empty chain
+	emptyChain, _ := EncodeChainBinary(nil, testParams)
+	f.Add(emptyChain)
+
+	// Add malformed data
+	f.Add(make([]byte, 18))  // Minimum header only
+	f.Add(make([]byte, 0))   // Empty
+	f.Add(make([]byte, 10))  // Too short for header
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// DecodeChainBinary should not panic on any input
+		samples, params, err := DecodeChainBinary(data)
+		if err != nil {
+			return // Errors are expected for invalid input
+		}
+
+		// If decoding succeeded, verify we can re-encode
+		reencoded, err := EncodeChainBinary(samples, params)
+		if err != nil {
+			t.Errorf("Failed to re-encode successfully decoded chain: %v", err)
+		}
+
+		// Re-decode should produce the same result
+		samples2, params2, err := DecodeChainBinary(reencoded)
+		if err != nil {
+			t.Errorf("Failed to decode re-encoded chain: %v", err)
+		}
+
+		if len(samples) != len(samples2) {
+			t.Errorf("Sample count mismatch after re-encode: %d != %d", len(samples), len(samples2))
+		}
+
+		if params != params2 {
+			t.Errorf("Parameters mismatch after re-encode")
+		}
+	})
+}
+
+func FuzzDecodeChain(f *testing.F) {
+	// Add seed corpus with valid JSON chain
+	samples := []Sample{
+		{
+			Timestamp:      testTimestamp,
+			KeystrokeCount: 100,
+			DocumentHash:   testDocHash,
+			JitterMicros:   1500,
+			PreviousHash:   [32]byte{},
+		},
+	}
+	samples[0].Hash = samples[0].computeHash()
+
+	validJSON, _ := EncodeChain(samples, testParams)
+	f.Add(validJSON)
+
+	// Add various JSON edge cases
+	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"samples":[],"parameters":{}}`))
+	f.Add([]byte(`{"samples":null}`))
+	f.Add([]byte(`invalid json`))
+	f.Add([]byte(`[]`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// DecodeChain should not panic on any input
+		samples, params, err := DecodeChain(data)
+		if err != nil {
+			return // Errors are expected for invalid input
+		}
+
+		// If decoding succeeded, verify we can re-encode
+		reencoded, err := EncodeChain(samples, params)
+		if err != nil {
+			t.Errorf("Failed to re-encode successfully decoded chain: %v", err)
+		}
+
+		// Re-decode should produce the same result
+		samples2, params2, err := DecodeChain(reencoded)
+		if err != nil {
+			t.Errorf("Failed to decode re-encoded chain: %v", err)
+		}
+
+		if len(samples) != len(samples2) {
+			t.Errorf("Sample count mismatch after re-encode: %d != %d", len(samples), len(samples2))
+		}
+
+		if params != params2 {
+			t.Errorf("Parameters mismatch after re-encode")
+		}
+	})
+}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -556,10 +557,11 @@ type ContentVerificationResult struct {
 
 // VerifyWithContent performs statistical verification of zone-committed jitter evidence.
 //
-// Verification layers:
-// 1. Chain integrity: sample hashes link correctly
-// 2. Zone compatibility: recorded zone distribution matches document content
-// 3. Profile plausibility: typing patterns are human-like
+// This implements Layer 4a (Keystroke Evidence) verification from the evidence packet.
+// Internal verification steps:
+//  1. Chain integrity: sample hashes link correctly
+//  2. Zone compatibility: recorded zone distribution matches document content
+//  3. Profile plausibility: typing patterns are human-like
 //
 // This does NOT require the secret. For cryptographic verification with secret,
 // use VerifyWithSecret.
@@ -575,7 +577,7 @@ func VerifyWithContent(samples []JitterSample, content []byte) ContentVerificati
 		return result
 	}
 
-	// Layer 1: Verify chain integrity
+	// Step 1: Verify chain integrity
 	if err := VerifyJitterChain(samples); err != nil {
 		result.ChainValid = false
 		result.Valid = false
@@ -584,7 +586,7 @@ func VerifyWithContent(samples []JitterSample, content []byte) ContentVerificati
 		result.ChainValid = true
 	}
 
-	// Layer 2: Extract and compare zone distributions
+	// Step 2: Extract and compare zone distributions
 	expectedZones := AnalyzeDocumentZones(content)
 	recordedZones := ExtractRecordedZones(samples)
 
@@ -600,7 +602,7 @@ func VerifyWithContent(samples []JitterSample, content []byte) ContentVerificati
 	result.TransitionDivergence = TransitionHistogramDivergence(result.ExpectedTransitions, result.RecordedTransitions)
 
 	// Use transition divergence as primary check (more discriminating)
-	// Jensen-Shannon divergence is bounded [0, ln(2) ≈ 0.693]
+	// Jensen-Shannon divergence is bounded [0, safeLog(2) ≈ 0.693]
 	// Threshold: 0.3 catches fabricated evidence while allowing natural variation
 	if result.TransitionDivergence > 0.3 {
 		result.ZonesCompatible = false
@@ -610,7 +612,7 @@ func VerifyWithContent(samples []JitterSample, content []byte) ContentVerificati
 		result.ZonesCompatible = true
 	}
 
-	// Layer 3: Profile plausibility
+	// Step 3: Profile plausibility
 	result.ProfilePlausible = IsHumanPlausible(recordedZones)
 	if !result.ProfilePlausible {
 		result.Warnings = append(result.Warnings, "typing profile does not appear human-plausible")
@@ -762,16 +764,10 @@ func ExtractRecordedZones(samples []JitterSample) TypingProfile {
 }
 
 // ZoneKLDivergence computes KL divergence between expected and recorded zone transitions.
-// This compares the full 64-element transition histogram (8 zones × 8 zones), not just categories.
-// Lower values indicate better match. Returns high value for mismatched distributions.
+// NOTE: This compares category distributions (same-finger/same-hand/alternating), NOT the
+// full 64-bin zone-to-zone histogram. For fine-grained comparison, use TransitionHistogramDivergence.
+// Lower values indicate better match.
 func ZoneKLDivergence(expected, recorded TypingProfile) float64 {
-	// We need to compare actual zone-to-zone transitions, not just categories
-	// But TypingProfile only stores category histograms...
-	// This is a limitation - we need to use the samples directly
-
-	// For now, use category comparison as a baseline, but this is insufficient
-	// The real fix requires passing zone transition histograms
-
 	// Compute zone type distributions (ignoring timing buckets)
 	var expSameFinger, expSameHand, expAlternating uint64
 	var recSameFinger, recSameHand, recAlternating uint64
@@ -789,7 +785,11 @@ func ZoneKLDivergence(expected, recorded TypingProfile) float64 {
 	recTotal := float64(recSameFinger + recSameHand + recAlternating)
 
 	if expTotal == 0 || recTotal == 0 {
-		return 0.0 // Can't compute divergence
+		// Can't compute divergence - return high value to indicate problem
+		if expTotal == 0 && recTotal == 0 {
+			return 0.0 // Both empty is OK
+		}
+		return 10.0 // One empty, one not - max divergence
 	}
 
 	// Normalize to probabilities with Laplace smoothing
@@ -809,7 +809,7 @@ func ZoneKLDivergence(expected, recorded TypingProfile) float64 {
 	var kl float64
 	for i := 0; i < 3; i++ {
 		if pRec[i] > 0 {
-			kl += pRec[i] * ln(pRec[i]/pExp[i])
+			kl += pRec[i] * safeLog(pRec[i]/pExp[i])
 		}
 	}
 
@@ -867,40 +867,22 @@ func TransitionHistogramDivergence(expected, recorded ZoneTransitionHistogram) f
 		pMid := (pExp + pRec) / 2
 
 		if pExp > 0 {
-			js += 0.5 * pExp * ln(pExp/pMid)
+			js += 0.5 * pExp * safeLog(pExp/pMid)
 		}
 		if pRec > 0 {
-			js += 0.5 * pRec * ln(pRec/pMid)
+			js += 0.5 * pRec * safeLog(pRec/pMid)
 		}
 	}
 
 	return js
 }
 
-// ln computes natural logarithm
-func ln(x float64) float64 {
+// safeLog computes natural logarithm with protection against log(0).
+func safeLog(x float64) float64 {
 	if x <= 0 {
 		return -1e10 // Avoid log(0)
 	}
-	// Newton-Raphson for ln(x)
-	// ln(x) = 2 * sum((((x-1)/(x+1))^(2n+1))/(2n+1))
-	if x > 2 {
-		// Use ln(x) = ln(x/e) + 1 for large x
-		return ln(x/2.718281828) + 1
-	}
-	if x < 0.5 {
-		return -ln(1/x)
-	}
-	// For x near 1, use series
-	t := (x - 1) / (x + 1)
-	t2 := t * t
-	result := t
-	term := t
-	for i := 1; i < 20; i++ {
-		term *= t2
-		result += term / float64(2*i+1)
-	}
-	return 2 * result
+	return math.Log(x)
 }
 
 // VerifyJitterChain verifies a sequence of JitterSamples (structural checks only).

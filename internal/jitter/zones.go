@@ -73,10 +73,17 @@ func EncodeZoneTransition(from, to int) uint8 {
 }
 
 // DecodeZoneTransition unpacks a zone transition byte.
+// Note: Caller should check for 0xFF (invalid marker) before calling.
+// If 0xFF is passed, returns (31, 7) which is out of valid range (0-7).
 func DecodeZoneTransition(encoded uint8) (from, to int) {
 	from = int(encoded >> 3)
 	to = int(encoded & 0x07)
 	return
+}
+
+// IsValidZoneTransition returns true if the encoded value represents a valid transition.
+func IsValidZoneTransition(encoded uint8) bool {
+	return encoded != 0xFF && (encoded>>3) < 8
 }
 
 // TextToZoneSequence extracts the sequence of zone transitions from text.

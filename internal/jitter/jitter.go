@@ -142,15 +142,20 @@ type Session struct {
 
 // NewSession creates a new jitter tracking session.
 func NewSession(documentPath string, params Parameters) (*Session, error) {
-	absPath, err := filepath.Abs(documentPath)
-	if err != nil {
-		return nil, fmt.Errorf("invalid document path: %w", err)
-	}
-
 	// Generate session ID
 	var idBytes [8]byte
 	if _, err := rand.Read(idBytes[:]); err != nil {
 		return nil, fmt.Errorf("failed to generate session ID: %w", err)
+	}
+	return NewSessionWithID(documentPath, params, hex.EncodeToString(idBytes[:]))
+}
+
+// NewSessionWithID creates a new jitter tracking session with a specific ID.
+// This allows the jitter session to share an ID with a parent tracking session.
+func NewSessionWithID(documentPath string, params Parameters, sessionID string) (*Session, error) {
+	absPath, err := filepath.Abs(documentPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid document path: %w", err)
 	}
 
 	// Generate secret seed
@@ -160,7 +165,7 @@ func NewSession(documentPath string, params Parameters) (*Session, error) {
 	}
 
 	return &Session{
-		ID:           hex.EncodeToString(idBytes[:]),
+		ID:           sessionID,
 		StartedAt:    time.Now(),
 		DocumentPath: absPath,
 		seed:         seed,

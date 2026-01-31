@@ -92,3 +92,34 @@ func TestZoneAmbiguity(t *testing.T) {
 	}
 	t.Logf("Zone 0->4 has %d-way ambiguity (privacy preserved)", count)
 }
+
+func TestIsValidZoneTransition(t *testing.T) {
+	// All valid zone transitions (0-7 x 0-7 = 64 possibilities)
+	for from := 0; from < 8; from++ {
+		for to := 0; to < 8; to++ {
+			encoded := EncodeZoneTransition(from, to)
+			if !IsValidZoneTransition(encoded) {
+				t.Errorf("Expected valid transition for (%d,%d), encoded=%d", from, to, encoded)
+			}
+		}
+	}
+
+	// Invalid marker
+	if IsValidZoneTransition(0xFF) {
+		t.Error("0xFF should be invalid")
+	}
+
+	// Encoding invalid zones returns 0xFF
+	if EncodeZoneTransition(-1, 5) != 0xFF {
+		t.Error("Invalid from zone should return 0xFF")
+	}
+	if EncodeZoneTransition(5, -1) != 0xFF {
+		t.Error("Invalid to zone should return 0xFF")
+	}
+	if EncodeZoneTransition(8, 0) != 0xFF {
+		t.Error("From zone > 7 should return 0xFF")
+	}
+	if EncodeZoneTransition(0, 8) != 0xFF {
+		t.Error("To zone > 7 should return 0xFF")
+	}
+}
