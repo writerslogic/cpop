@@ -1,0 +1,17 @@
+# witnessd example configuration
+
+# Directories to monitor for changes (files will be witnessed)
+watch_paths = [
+  "~/Documents",
+]
+
+# Debounce interval in seconds before witnessing a change
+interval = 5
+
+# Paths for local data
+# (Defaults are under ~/.witnessd/ if not set)
+database_path = "~/.witnessd/mmr.db"
+log_path = "~/.witnessd/witnessd.log"
+signing_key_path = "~/.ssh/witnessd_signing_key"
+signatures_path = "~/.witnessd/signatures.sigs"
+event_store_path = "~/.witnessd/events.db"

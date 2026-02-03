@@ -15,6 +15,7 @@ package main
 import (
 	"bufio"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -23,6 +24,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,9 +35,17 @@ import (
 	"witnessd/internal/evidence"
 	"witnessd/internal/jitter"
 	"witnessd/internal/presence"
+	"witnessd/internal/store"
 	"witnessd/internal/tpm"
 	"witnessd/internal/tracking"
 	"witnessd/internal/vdf"
+)
+
+// Version information (set via ldflags during build)
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+	Commit    = "unknown"
 )
 
 func main() {
@@ -69,6 +79,8 @@ func main() {
 		cmdDaemon()
 	case "help", "-h", "--help":
 		usage()
+	case "version", "-v", "--version":
+		printVersion()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
 		usage()
@@ -94,6 +106,7 @@ COMMANDS:
     status              Show witnessd status and configuration
     daemon              (Legacy) Run background monitoring daemon
     help                Show this help message
+    version             Show version information
 
 BASIC WORKFLOW:
     1. witnessd init                    # One-time setup
@@ -123,7 +136,15 @@ The system proves:
     - Real keystrokes occurred over time (jitter evidence)
     - Your signed declaration of creative process
 
-See https://github.com/davidcondrey/witnessd for documentation.`)
+See https://github.com/writerslogic/witnessd for documentation.`)
+}
+
+func printVersion() {
+	fmt.Printf("witnessd %s\n", Version)
+	fmt.Printf("  Build:    %s\n", BuildTime)
+	fmt.Printf("  Commit:   %s\n", Commit)
+	fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("  Go:       %s\n", runtime.Version())
 }
 
 func witnessdDir() string {
@@ -149,11 +170,66 @@ func cmdInit() {
 		}
 	}
 
+	// Generate signing key if not exists
+	keyPath := filepath.Join(dir, "signing_key")
+	var privKey ed25519.PrivateKey
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		fmt.Println("Generating Ed25519 signing key...")
+		pub, priv, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating key: %v\n", err)
+			os.Exit(1)
+		}
+		privKey = priv
+
+		if err := os.WriteFile(keyPath, priv, 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving private key: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := os.WriteFile(keyPath+".pub", pub, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving public key: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("  Public key: %s\n", hex.EncodeToString(pub[:8])+"...")
+	} else {
+		// Load existing key
+		keyData, err := os.ReadFile(keyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading signing key: %v\n", err)
+			os.Exit(1)
+		}
+		privKey = ed25519.PrivateKey(keyData)
+	}
+
+	// Create secure SQLite database
+	dbPath := filepath.Join(dir, "events.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		fmt.Println("Creating secure event database...")
+
+		// Derive HMAC key from signing key for database integrity
+		hmacKey := deriveHMACKey(privKey)
+
+		db, err := store.OpenSecure(dbPath, hmacKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating database: %v\n", err)
+			os.Exit(1)
+		}
+		db.Close()
+		fmt.Println("  Database: events.db (tamper-evident)")
+	}
+
 	// Create default config if not exists
 	configPath := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		cfg := map[string]interface{}{
-			"version": 2,
+			"version": 3,
+			"storage": map[string]interface{}{
+				"type":     "sqlite",
+				"path":     "events.db",
+				"secure":   true,
+			},
 			"vdf": map[string]interface{}{
 				"iterations_per_second": 1000000,
 				"min_iterations":        100000,
@@ -173,29 +249,6 @@ func cmdInit() {
 		}
 	}
 
-	// Generate signing key if not exists
-	keyPath := filepath.Join(dir, "signing_key")
-	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
-		fmt.Println("Generating Ed25519 signing key...")
-		pub, priv, err := ed25519.GenerateKey(nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating key: %v\n", err)
-			os.Exit(1)
-		}
-
-		if err := os.WriteFile(keyPath, priv, 0600); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving private key: %v\n", err)
-			os.Exit(1)
-		}
-
-		if err := os.WriteFile(keyPath+".pub", pub, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving public key: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("  Public key: %s\n", hex.EncodeToString(pub[:8])+"...")
-	}
-
 	fmt.Println()
 	fmt.Println("witnessd initialized!")
 	fmt.Println()
@@ -203,6 +256,50 @@ func cmdInit() {
 	fmt.Println("  1. Run 'witnessd calibrate' to calibrate VDF for your machine")
 	fmt.Println("  2. Create checkpoints with 'witnessd commit <file> -m \"message\"'")
 	fmt.Println("  3. Export evidence with 'witnessd export <file>'")
+}
+
+// deriveHMACKey derives an HMAC key from the signing key for database integrity.
+func deriveHMACKey(privKey ed25519.PrivateKey) []byte {
+	h := sha256.New()
+	h.Write([]byte("witnessd-hmac-key-v1"))
+	h.Write(privKey.Seed())
+	return h.Sum(nil)
+}
+
+// openSecureStore opens the secure SQLite database.
+func openSecureStore() (*store.SecureStore, error) {
+	dir := witnessdDir()
+	dbPath := filepath.Join(dir, "events.db")
+	keyPath := filepath.Join(dir, "signing_key")
+
+	// Load signing key
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read signing key: %w", err)
+	}
+
+	privKey := ed25519.PrivateKey(keyData)
+	hmacKey := deriveHMACKey(privKey)
+
+	return store.OpenSecure(dbPath, hmacKey)
+}
+
+// getDeviceID returns a stable device identifier derived from the signing key.
+func getDeviceID() [16]byte {
+	dir := witnessdDir()
+	keyPath := filepath.Join(dir, "signing_key.pub")
+
+	pubKey, err := os.ReadFile(keyPath)
+	if err != nil {
+		var zero [16]byte
+		return zero
+	}
+
+	// Device ID is first 16 bytes of SHA256(public key)
+	h := sha256.Sum256(pubKey)
+	var id [16]byte
+	copy(id[:], h[:16])
+	return id
 }
 
 func cmdCommit() {
@@ -218,20 +315,63 @@ func cmdCommit() {
 	filePath := fs.Arg(0)
 
 	// Check file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	fileInfo, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "File not found: %s\n", filePath)
 		os.Exit(1)
 	}
 
-	// Load VDF parameters
-	vdfParams := loadVDFParams()
-
-	// Get or create chain
-	chain, err := checkpoint.GetOrCreateChain(filePath, witnessdDir(), vdfParams)
+	// Get absolute path
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading chain: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Open secure database
+	db, err := openSecureStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Run 'witnessd init' first.")
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	// Read file content and compute hash
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading file: %v\n", err)
+		os.Exit(1)
+	}
+	contentHash := sha256.Sum256(content)
+
+	// Get previous event for this file (for VDF input and size delta)
+	lastEvent, _ := db.GetLastSecureEventForFile(absPath)
+
+	var vdfInput [32]byte
+	var sizeDelta int32
+	if lastEvent != nil {
+		vdfInput = lastEvent.EventHash // VDF input is previous event hash
+		sizeDelta = int32(fileInfo.Size() - lastEvent.FileSize)
+	} else {
+		// Genesis: VDF input is content hash
+		vdfInput = contentHash
+		sizeDelta = int32(fileInfo.Size())
+	}
+
+	// Load VDF parameters and compute VDF proof
+	vdfParams := loadVDFParams()
+
+	fmt.Printf("Computing checkpoint...")
+	start := time.Now()
+
+	// Use 1 second as default VDF target duration
+	vdfProof, err := vdf.Compute(vdfInput, time.Second, vdfParams)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nError computing VDF: %v\n", err)
+		os.Exit(1)
+	}
+	elapsed := time.Since(start)
 
 	// Check for active tracking session
 	var trackingInfo string
@@ -241,30 +381,34 @@ func cmdCommit() {
 			jitterEv.Statistics.TotalSamples)
 	}
 
-	// Commit
-	fmt.Printf("Computing checkpoint...")
-	start := time.Now()
-	cp, err := chain.Commit(*message)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nError creating checkpoint: %v\n", err)
-		os.Exit(1)
+	// Create event
+	event := &store.SecureEvent{
+		DeviceID:      getDeviceID(),
+		TimestampNs:   time.Now().UnixNano(),
+		FilePath:      absPath,
+		ContentHash:   contentHash,
+		FileSize:      fileInfo.Size(),
+		SizeDelta:     sizeDelta,
+		ContextType:   *message,
+		VDFInput:      vdfInput,
+		VDFOutput:     vdfProof.Output,
+		VDFIterations: vdfProof.Iterations,
 	}
-	elapsed := time.Since(start)
 
-	// Save chain
-	if err := chain.Save(chain.StoragePath()); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving chain: %v\n", err)
+	if err := db.InsertSecureEvent(event); err != nil {
+		fmt.Fprintf(os.Stderr, "\nError saving checkpoint: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Get checkpoint number
+	count, _ := db.CountEventsForFile(absPath)
 
 	fmt.Printf(" done (%s)\n", elapsed.Round(time.Millisecond))
 	fmt.Println()
-	fmt.Printf("Checkpoint #%d created%s\n", cp.Ordinal, trackingInfo)
-	fmt.Printf("  Content hash: %s\n", hex.EncodeToString(cp.ContentHash[:8])+"...")
-	fmt.Printf("  Chain hash:   %s\n", hex.EncodeToString(cp.Hash[:8])+"...")
-	if cp.VDF != nil {
-		fmt.Printf("  VDF proves:   >= %s elapsed\n", cp.VDF.MinElapsedTime(vdfParams).Round(time.Second))
-	}
+	fmt.Printf("Checkpoint #%d created%s\n", count, trackingInfo)
+	fmt.Printf("  Content hash: %s...\n", hex.EncodeToString(contentHash[:8]))
+	fmt.Printf("  Event hash:   %s...\n", hex.EncodeToString(event.EventHash[:8]))
+	fmt.Printf("  VDF proves:   >= %s elapsed\n", vdfProof.MinElapsedTime(vdfParams).Round(time.Second))
 	if *message != "" {
 		fmt.Printf("  Message:      %s\n", *message)
 	}
@@ -278,34 +422,62 @@ func cmdLog() {
 
 	filePath := os.Args[2]
 
-	// Find chain
-	chainPath, err := checkpoint.FindChain(filePath, witnessdDir())
+	// Get absolute path
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "No checkpoint history found for: %s\n", filePath)
+		fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 		os.Exit(1)
 	}
 
-	chain, err := checkpoint.Load(chainPath)
+	// Open database
+	db, err := openSecureStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading chain: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 		os.Exit(1)
 	}
+	defer db.Close()
+
+	// Get events for file
+	events, err := db.GetEventsForFile(absPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading events: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(events) == 0 {
+		fmt.Printf("No checkpoint history found for: %s\n", filePath)
+		return
+	}
+
+	// Calculate total VDF time
+	vdfParams := loadVDFParams()
+	totalVDFTime, _ := db.GetTotalVDFTime(absPath, vdfParams.IterationsPerSecond)
 
 	fmt.Printf("=== Checkpoint History: %s ===\n", filepath.Base(filePath))
-	fmt.Printf("Document: %s\n", chain.DocumentPath)
-	fmt.Printf("Checkpoints: %d\n", len(chain.Checkpoints))
-	fmt.Printf("Total elapsed: %s\n", chain.TotalElapsedTime().Round(time.Second))
+	fmt.Printf("Document: %s\n", absPath)
+	fmt.Printf("Checkpoints: %d\n", len(events))
+	fmt.Printf("Total VDF time: %s\n", totalVDFTime.Round(time.Second))
 	fmt.Println()
 
-	for _, cp := range chain.Checkpoints {
-		fmt.Printf("[%d] %s\n", cp.Ordinal, cp.Timestamp.Format("2006-01-02 15:04:05"))
-		fmt.Printf("    Hash: %s\n", hex.EncodeToString(cp.ContentHash[:]))
-		fmt.Printf("    Size: %d bytes\n", cp.ContentSize)
-		if cp.VDF != nil {
-			fmt.Printf("    VDF:  >= %s\n", cp.VDF.MinElapsedTime(chain.VDFParams).Round(time.Second))
+	for i, ev := range events {
+		ts := time.Unix(0, ev.TimestampNs)
+		fmt.Printf("[%d] %s\n", i+1, ts.Format("2006-01-02 15:04:05"))
+		fmt.Printf("    Hash: %s\n", hex.EncodeToString(ev.ContentHash[:]))
+		fmt.Printf("    Size: %d bytes", ev.FileSize)
+		if ev.SizeDelta != 0 {
+			if ev.SizeDelta > 0 {
+				fmt.Printf(" (+%d)", ev.SizeDelta)
+			} else {
+				fmt.Printf(" (%d)", ev.SizeDelta)
+			}
 		}
-		if cp.Message != "" {
-			fmt.Printf("    Msg:  %s\n", cp.Message)
+		fmt.Println()
+		if ev.VDFIterations > 0 {
+			elapsed := time.Duration(float64(ev.VDFIterations) / float64(vdfParams.IterationsPerSecond) * float64(time.Second))
+			fmt.Printf("    VDF:  >= %s\n", elapsed.Round(time.Second))
+		}
+		if ev.ContextType != "" {
+			fmt.Printf("    Msg:  %s\n", ev.ContextType)
 		}
 		fmt.Println()
 	}
@@ -324,6 +496,255 @@ func cmdExport() {
 
 	filePath := fs.Arg(0)
 
+	// Get absolute path
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Try SQLite first
+	db, err := openSecureStore()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	events, err := db.GetEventsForFile(absPath)
+	if err != nil || len(events) == 0 {
+		// Fall back to legacy chain
+		cmdExportLegacy(filePath, *tier, *output)
+		return
+	}
+
+	// SQLite-based export
+	cmdExportFromSQLite(absPath, events, *tier, *output)
+}
+
+func cmdExportFromSQLite(absPath string, events []store.SecureEvent, tier, output string) {
+	vdfParams := loadVDFParams()
+
+	// Load signing key
+	keyPath := filepath.Join(witnessdDir(), "signing_key")
+	privKeyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading signing key: %v\n", err)
+		os.Exit(1)
+	}
+	privKey := ed25519.PrivateKey(privKeyData)
+
+	// Get latest event
+	latest := events[len(events)-1]
+
+	// Collect declaration
+	fmt.Println("=== Process Declaration ===")
+	fmt.Println("You must declare how this document was created.")
+	fmt.Println()
+
+	decl, err := collectDeclarationSimple(latest.ContentHash, latest.EventHash, filepath.Base(absPath), privKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating declaration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate totals
+	var totalIterations uint64
+	for _, ev := range events {
+		totalIterations += ev.VDFIterations
+	}
+	totalVDFTime := time.Duration(float64(totalIterations) / float64(vdfParams.IterationsPerSecond) * float64(time.Second))
+
+	// Build evidence packet
+	packet := map[string]interface{}{
+		"version":     3,
+		"format":      "witnessd-sqlite",
+		"exported_at": time.Now().Format(time.RFC3339),
+		"tier":        tier,
+		"document": map[string]interface{}{
+			"path":         absPath,
+			"name":         filepath.Base(absPath),
+			"final_hash":   hex.EncodeToString(latest.ContentHash[:]),
+			"final_size":   latest.FileSize,
+			"checkpoints":  len(events),
+			"total_vdf_time": totalVDFTime.String(),
+		},
+		"vdf_params": map[string]interface{}{
+			"iterations_per_second": vdfParams.IterationsPerSecond,
+		},
+		"chain_hash":  hex.EncodeToString(latest.EventHash[:]),
+		"declaration": decl,
+		"checkpoints": formatEventsForExport(events, vdfParams),
+		"claims": []map[string]interface{}{
+			{"type": "cryptographic", "description": "Content states form unbroken cryptographic chain", "confidence": "certain"},
+			{"type": "cryptographic", "description": fmt.Sprintf("At least %s elapsed during documented composition", totalVDFTime.Round(time.Second)), "confidence": "certain"},
+		},
+		"limitations": []string{
+			"Cannot prove cognitive origin of ideas",
+			"Cannot prove absence of AI involvement in ideation",
+		},
+	}
+
+	// Add keystroke evidence if available
+	keystrokeEvidence := loadTrackingEvidence(absPath)
+	if keystrokeEvidence != nil && (tier == "standard" || tier == "enhanced" || tier == "maximum") {
+		packet["keystroke"] = map[string]interface{}{
+			"session_id":       keystrokeEvidence.SessionID,
+			"total_keystrokes": keystrokeEvidence.Statistics.TotalKeystrokes,
+			"total_samples":    keystrokeEvidence.Statistics.TotalSamples,
+			"duration":         keystrokeEvidence.Statistics.Duration.String(),
+			"keystrokes_per_min": keystrokeEvidence.Statistics.KeystrokesPerMin,
+			"chain_valid":      keystrokeEvidence.Statistics.ChainValid,
+		}
+		packet["claims"] = append(packet["claims"].([]map[string]interface{}),
+			map[string]interface{}{
+				"type":        "behavioral",
+				"description": fmt.Sprintf("Real keystrokes recorded: %d events", keystrokeEvidence.Statistics.TotalKeystrokes),
+				"confidence":  "high",
+			})
+		fmt.Printf("Including keystroke evidence: %d keystrokes, %d samples\n",
+			keystrokeEvidence.Statistics.TotalKeystrokes,
+			keystrokeEvidence.Statistics.TotalSamples)
+	}
+
+	// Determine output path
+	outPath := output
+	if outPath == "" {
+		outPath = filepath.Base(absPath) + ".evidence.json"
+	}
+
+	// Save
+	data, _ := json.MarshalIndent(packet, "", "  ")
+	if err := os.WriteFile(outPath, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving evidence: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println()
+	fmt.Printf("Evidence exported to: %s\n", outPath)
+	fmt.Printf("  Checkpoints: %d\n", len(events))
+	fmt.Printf("  Total VDF time: %s\n", totalVDFTime.Round(time.Second))
+	fmt.Printf("  Tier: %s\n", tier)
+}
+
+func formatEventsForExport(events []store.SecureEvent, vdfParams vdf.Parameters) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(events))
+	for i, ev := range events {
+		elapsed := time.Duration(float64(ev.VDFIterations) / float64(vdfParams.IterationsPerSecond) * float64(time.Second))
+		result[i] = map[string]interface{}{
+			"ordinal":        i + 1,
+			"timestamp":      time.Unix(0, ev.TimestampNs).Format(time.RFC3339),
+			"content_hash":   hex.EncodeToString(ev.ContentHash[:]),
+			"event_hash":     hex.EncodeToString(ev.EventHash[:]),
+			"file_size":      ev.FileSize,
+			"size_delta":     ev.SizeDelta,
+			"vdf_iterations": ev.VDFIterations,
+			"vdf_elapsed":    elapsed.String(),
+			"message":        ev.ContextType,
+		}
+	}
+	return result
+}
+
+func collectDeclarationSimple(contentHash, chainHash [32]byte, docName string, privKey ed25519.PrivateKey) (map[string]interface{}, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("Input modality (how was this written?):")
+	fmt.Println("  1. Keyboard (typing)")
+	fmt.Println("  2. Dictation (voice)")
+	fmt.Println("  3. Mixed")
+	fmt.Print("Choice [1]: ")
+
+	modalityChoice, _ := reader.ReadString('\n')
+	modalityChoice = strings.TrimSpace(modalityChoice)
+
+	modality := "keyboard"
+	switch modalityChoice {
+	case "2":
+		modality = "dictation"
+	case "3":
+		modality = "mixed"
+	}
+
+	fmt.Println()
+	fmt.Println("Did you use any AI tools? (y/n)")
+	fmt.Print("Choice [n]: ")
+
+	aiChoice, _ := reader.ReadString('\n')
+	aiChoice = strings.TrimSpace(aiChoice)
+
+	var aiInfo map[string]interface{}
+	if strings.ToLower(aiChoice) == "y" {
+		fmt.Print("Which AI tool? ")
+		tool, _ := reader.ReadString('\n')
+		tool = strings.TrimSpace(tool)
+
+		fmt.Println("How was it used? (1=research, 2=feedback, 3=editing, 4=drafting)")
+		fmt.Print("Choice [1]: ")
+		purposeChoice, _ := reader.ReadString('\n')
+		purposeChoice = strings.TrimSpace(purposeChoice)
+
+		purpose := "research"
+		switch purposeChoice {
+		case "2":
+			purpose = "feedback"
+		case "3":
+			purpose = "editing"
+		case "4":
+			purpose = "drafting"
+		}
+
+		fmt.Println("Extent? (1=minimal, 2=moderate, 3=substantial)")
+		fmt.Print("Choice [1]: ")
+		extentChoice, _ := reader.ReadString('\n')
+		extentChoice = strings.TrimSpace(extentChoice)
+
+		extent := "minimal"
+		switch extentChoice {
+		case "2":
+			extent = "moderate"
+		case "3":
+			extent = "substantial"
+		}
+
+		aiInfo = map[string]interface{}{
+			"tool":    tool,
+			"purpose": purpose,
+			"extent":  extent,
+		}
+	}
+
+	fmt.Println()
+	fmt.Print("Brief statement about your process: ")
+	statement, _ := reader.ReadString('\n')
+	statement = strings.TrimSpace(statement)
+	if statement == "" {
+		statement = "I authored this document as declared."
+	}
+
+	decl := map[string]interface{}{
+		"document":     docName,
+		"content_hash": hex.EncodeToString(contentHash[:]),
+		"chain_hash":   hex.EncodeToString(chainHash[:]),
+		"modality":     modality,
+		"statement":    statement,
+		"timestamp":    time.Now().Format(time.RFC3339),
+	}
+
+	if aiInfo != nil {
+		decl["ai_tools"] = []interface{}{aiInfo}
+	}
+
+	// Sign the declaration
+	declBytes, _ := json.Marshal(decl)
+	signature := ed25519.Sign(privKey, declBytes)
+	decl["signature"] = hex.EncodeToString(signature)
+	decl["public_key"] = hex.EncodeToString(privKey.Public().(ed25519.PublicKey))
+
+	return decl, nil
+}
+
+func cmdExportLegacy(filePath, tier, output string) {
 	// Find and load chain
 	chainPath, err := checkpoint.FindChain(filePath, witnessdDir())
 	if err != nil {
@@ -374,7 +795,7 @@ func cmdExport() {
 	}
 
 	// Add tier-specific evidence
-	switch strings.ToLower(*tier) {
+	switch strings.ToLower(tier) {
 	case "standard":
 		sessions := loadPresenceSessions(filePath)
 		if len(sessions) > 0 {
@@ -424,7 +845,7 @@ func cmdExport() {
 	}
 
 	// Determine output path
-	outPath := *output
+	outPath := output
 	if outPath == "" {
 		outPath = filepath.Base(filePath) + ".evidence.json"
 	}
@@ -827,10 +1248,8 @@ PRIVACY NOTE:
 		cmd.Stderr = nil
 		cmd.Stdin = nil
 
-		// Detach from parent process
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Setsid: true,
-		}
+		// Detach from parent process (platform-specific)
+		cmd.SysProcAttr = getDaemonSysProcAttr()
 
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error starting tracking daemon: %v\n", err)
@@ -904,9 +1323,36 @@ PRIVACY NOTE:
 		fmt.Printf("Duration: %s\n", status.Duration.Round(time.Second))
 		fmt.Printf("Keystrokes: %d\n", status.KeystrokeCount)
 		fmt.Printf("Samples: %d\n", status.SampleCount)
+		fmt.Printf("Checkpoints: %d\n", status.Checkpoints)
 		if status.KeystrokesPerMin > 0 {
 			fmt.Printf("Typing rate: %.0f keystrokes/min\n", status.KeystrokesPerMin)
 		}
+
+		// Show security summary
+		fmt.Println()
+		fmt.Println("Security Summary:")
+		if status.TPMAvailable {
+			fmt.Println("  TPM: hardware-backed")
+		} else {
+			fmt.Println("  TPM: software integrity only")
+		}
+		if status.Compromised {
+			fmt.Printf("  INTEGRITY: COMPROMISED (%s)\n", status.CompromiseReason)
+		} else {
+			fmt.Println("  Integrity: VERIFIED")
+		}
+		if status.SyntheticRejected > 0 {
+			fmt.Printf("  Synthetic rejected: %d events\n", status.SyntheticRejected)
+		}
+		if status.AnomalyPercentage > 5 {
+			fmt.Printf("  Anomaly rate: %.1f%% (elevated)\n", status.AnomalyPercentage)
+		} else if status.AnomalyPercentage > 0 {
+			fmt.Printf("  Anomaly rate: %.1f%% (normal)\n", status.AnomalyPercentage)
+		}
+		if status.SuspectedScripted || status.SuspectedUSBHID {
+			fmt.Println("  WARNING: Suspicious patterns detected!")
+		}
+
 		fmt.Println()
 		fmt.Printf("Session saved: %s\n", sessionID)
 		fmt.Println()
@@ -944,6 +1390,10 @@ PRIVACY NOTE:
 		fmt.Printf("Duration: %s\n", status.Duration.Round(time.Second))
 		fmt.Printf("Keystrokes: %d\n", status.KeystrokeCount)
 		fmt.Printf("Jitter samples: %d\n", status.SampleCount)
+		fmt.Printf("Checkpoints: %d\n", status.Checkpoints)
+		if status.PasteEvents > 0 {
+			fmt.Printf("Paste events: %d (legitimate copy/paste detected)\n", status.PasteEvents)
+		}
 		if status.KeystrokesPerMin > 0 {
 			fmt.Printf("Typing rate: %.0f keystrokes/min\n", status.KeystrokesPerMin)
 		}
@@ -951,6 +1401,40 @@ PRIVACY NOTE:
 			fmt.Println("Daemon: RUNNING")
 		} else {
 			fmt.Println("Daemon: STOPPED (session data preserved)")
+		}
+
+		// Security status
+		fmt.Println()
+		fmt.Println("=== Security Status ===")
+		if status.TPMAvailable {
+			fmt.Println("TPM: BOUND (hardware-backed)")
+		} else {
+			fmt.Println("TPM: not available (software integrity only)")
+		}
+
+		if status.Compromised {
+			fmt.Printf("INTEGRITY: COMPROMISED (%s)\n", status.CompromiseReason)
+		} else {
+			fmt.Println("Integrity: VERIFIED")
+		}
+
+		if status.SyntheticRejected > 0 {
+			fmt.Printf("Synthetic events rejected: %d\n", status.SyntheticRejected)
+		}
+
+		if status.ValidationMismatch > 0 {
+			fmt.Printf("Validation mismatches: %d\n", status.ValidationMismatch)
+		}
+
+		if status.AnomalyPercentage > 0 {
+			fmt.Printf("Anomaly rate: %.1f%%\n", status.AnomalyPercentage)
+		}
+
+		if status.SuspectedScripted {
+			fmt.Println("WARNING: Scripted input patterns detected!")
+		}
+		if status.SuspectedUSBHID {
+			fmt.Println("WARNING: USB-HID spoofing patterns detected!")
 		}
 
 	case "list":
@@ -1094,10 +1578,42 @@ func cmdStatus() {
 	vdfParams := loadVDFParams()
 	fmt.Printf("VDF iterations/sec: %d\n", vdfParams.IterationsPerSecond)
 
-	// Count chains
+	fmt.Println()
+	fmt.Println("=== Secure Database ===")
+
+	// Check SQLite database
+	db, err := openSecureStore()
+	if err != nil {
+		fmt.Printf("Database: ERROR (%v)\n", err)
+	} else {
+		defer db.Close()
+
+		stats, err := db.GetStats()
+		if err != nil {
+			fmt.Printf("Database: ERROR reading stats (%v)\n", err)
+		} else {
+			if stats.IntegrityOK {
+				fmt.Println("Integrity: VERIFIED (tamper-evident)")
+			} else {
+				fmt.Println("Integrity: FAILED - database may be tampered!")
+			}
+			fmt.Printf("Events: %d\n", stats.EventCount)
+			fmt.Printf("Files tracked: %d\n", stats.FileCount)
+			if stats.EventCount > 0 {
+				fmt.Printf("Oldest event: %s\n", stats.OldestEvent.Format(time.RFC3339))
+				fmt.Printf("Newest event: %s\n", stats.NewestEvent.Format(time.RFC3339))
+			}
+			fmt.Printf("Chain hash: %s...\n", stats.ChainHash[:16])
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("=== Legacy Chains ===")
+
+	// Count chains (legacy JSON format)
 	chainsDir := filepath.Join(dir, "chains")
 	chains, _ := filepath.Glob(filepath.Join(chainsDir, "*.json"))
-	fmt.Printf("Active chains: %d\n", len(chains))
+	fmt.Printf("JSON chains: %d\n", len(chains))
 
 	// Check for active presence session
 	sessionFile := filepath.Join(dir, "sessions", "current.json")
@@ -1108,6 +1624,8 @@ func cmdStatus() {
 	}
 
 	fmt.Println()
+	fmt.Println("=== Hardware ===")
+
 	tpmProvider := tpm.DetectTPM()
 	if tpmProvider.Available() {
 		if err := tpmProvider.Open(); err == nil {
