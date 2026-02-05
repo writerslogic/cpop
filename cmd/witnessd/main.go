@@ -88,7 +88,14 @@ func main() {
 	}
 }
 
+const banner = `
+░█░░░█░░▀░░▀█▀░█▀▀▄░█▀▀░█▀▀░█▀▀░░░░█▀▄
+░▀▄█▄▀░░█▀░░█░░█░▒█░█▀▀░▀▀▄░▀▀▄░▀▀░█░█
+░░▀░▀░░▀▀▀░░▀░░▀░░▀░▀▀▀░▀▀▀░▀▀▀░░░░▀▀░
+`
+
 func usage() {
+	fmt.Print(banner)
 	fmt.Println(`witnessd - Cryptographic Authorship Witnessing
 
 USAGE:
@@ -140,6 +147,7 @@ See https://github.com/writerslogic/witnessd for documentation.`)
 }
 
 func printVersion() {
+	fmt.Print(banner)
 	fmt.Printf("witnessd %s\n", Version)
 	fmt.Printf("  Build:    %s\n", BuildTime)
 	fmt.Printf("  Commit:   %s\n", Commit)

@@ -1,4 +1,4 @@
-# Jitter Jitter Shebang Bang: Cryptographic Keystroke Watermarking for Authorship Provenance
+# Jitter Bugs: Hiding Authorship Proofs in Keystroke Timing
 
 **Authors:** David Condrey
 **Institution:** Writerslogic Inc.
@@ -6,19 +6,17 @@
 
 ---
 
-## Abstract
-
+\begin{abstract}
 As AI-generated text becomes indistinguishable from human writing, approaches that analyze textual features face an unwinnable arms race. We propose a fundamentally different approach: instead of detecting AI involvement in the output, we prove human involvement in the process.
 
 We introduce the *jitter seal*, a cryptographic watermarking technique that embeds unforgeable timing signatures into the authorship process itself. During writing, the system injects imperceptible microsecond delays into keystroke delivery. These delays are cryptographically derived from a session secret, keystroke ordinality, and document state---creating a chain of evidence that could only exist if real keystrokes produced the document in real time.
 
-Critically, the system captures no keystroke content. Only timestamps, delay values, and document hashes are recorded. This is not a keylogger---it is a proof-of-process mechanism that preserves privacy while enabling verification.
+Critically, the system captures no keystroke content. Only timestamps, delay values, and document hashes are recorded, preserving privacy while enabling verification.
 
 We implement the jitter seal across Windows, macOS, and Linux, and evaluate it against fabrication, replay, and post-hoc generation attacks. Invalid proofs---those constructed without knowledge of the session secret---fail cryptographic verification. Performance overhead is under 3ms per keystroke, well below human perception thresholds established in the literature (Deber et al., 2015).
 
-The jitter seal provides *economic security*: the only viable "attack" is actually typing content in real time---which costs as much as honest authorship.
-
----
+The jitter seal raises the cost of fabrication by requiring real-time interaction with the tracking software. It defeats post-hoc forgery and simple paste attacks. While it does not defeat sophisticated synthetic keystroke injection without additional layers, we present a tiered security model that positions the jitter seal as the "Standard" tier, effective against common threat vectors. We also introduce OS-level mitigations, such as `CGEventSourceStateID` verification, to raise the bar against software-based injection.
+\end{abstract}
 
 ## 1. Introduction
 
@@ -57,16 +55,16 @@ Our mechanism, the *jitter seal*, works as follows:
    - The document evolved through specific intermediate states
    - The sequence cannot be fabricated without the secret
 
-### 1.4 What Is Not Captured
+### 1.4 What Is Captured (and What Is Not)
 
-The jitter seal explicitly does NOT capture:
+The jitter seal captures **zone transitions** (which finger regions typed consecutive characters) but explicitly does NOT capture:
 
-- Which key was pressed
+- Which specific key was pressed (only the zone, containing 3-6 possible keys)
 - The character produced
 - Cursor position or selection state
 - Any document content whatsoever
 
-Only keystroke *counts*, *timestamps*, *delays*, and *document hashes* are recorded. This is a proof-of-process mechanism, not a keylogger.
+Recorded data: keystroke *counts*, *timestamps*, *zone transitions*, *timing buckets*, *delays*, and *document hashes*. Zone transitions enable third-party verification while preserving character-level privacy through k-anonymity (each zone contains multiple keys).
 
 ### 1.5 Contributions
 
@@ -113,19 +111,14 @@ We explicitly do NOT assume:
 
 ### 2.3 Security Goal: Economic Security
 
-We do not claim that fraudulent evidence is *impossible* to produce. Instead, we aim for *economic security*: the cost of producing convincing fraudulent evidence should exceed the cost of honest authorship.
+We redefine *economic security* not merely as the time cost of typing, but as the *technical sophistication* required to bypass verification. The goal is to force the attacker to escalate from low-cost, scalable attacks (post-hoc generation, paste scripts) to high-cost, specialized attacks (custom drivers, hardware emulation) that are difficult to scale.
 
-Formally, let:
-- $T_{\text{honest}}$ = time to author document through genuine typing
-- $T_{\text{attack}}$ = time to produce fraudulent evidence
-- $C_{\text{honest}}$ = cost of honest authorship
-- $C_{\text{attack}}$ = cost of attack
+Formally, the cost $C_{\text{attack}}$ includes:
+- **Development Cost**: Reverse engineering the jitter protocol and implementing a custom injection harness.
+- **Runtime Risk**: Bypassing OS-level checks (e.g., `CGEventSourceStateID`) without triggering heuristics.
+- **Scalability Limit**: The requirement to run attacks in real-time prevents instantaneous bulk forgery.
 
-We aim for:
-
-$$T_{\text{attack}} \geq T_{\text{honest}} \quad \text{and} \quad C_{\text{attack}} \geq C_{\text{honest}}$$
-
-Under this definition, the only viable "attack" is actually typing the content through a real keyboard while the system runs---which costs approximately the same as writing the content originally.
+We aim for $C_{\text{attack}} \gg C_{\text{honest}}$ for scalable attacks. While a sophisticated attacker can simulate keystrokes, doing so while the legitimate software is running---and scrutinizing event sources---requires significant engineering effort.
 
 ### 2.4 Explicit Non-Goals
 
@@ -158,12 +151,15 @@ When a user initiates tracking on a document, the jitter seal system executes th
 
 **On each keystroke:**
 1. Increment counter: $i \leftarrow i + 1$
-2. If $i \mod N = 0$ (sample interval, default $N = 50$):
+2. Determine keyboard zone $z$ from key code (0-7, or -1 for non-zone keys like space)
+3. Compute zone transition: $Z_i = (z_{\text{prev}} \ll 3) | z$ (or 0xFF if no valid transition)
+4. Compute interval bucket $B_i \in [0,9]$ from time since previous keystroke
+5. If $i \mod N = 0$ (sample interval, default $N = 50$):
 
    a. Read current document hash: $H_i = \text{SHA256}(\text{file contents})$
 
-   b. Compute jitter:
-   $$J_i = \text{HMAC-SHA256}(S, i \| H_i \| t_{\text{now}} \| J_{i-1}) \mod R$$
+   b. Compute jitter (zone-committed):
+   $$J_i = \text{HMAC-SHA256}(S, i \| H_i \| Z_i \| B_i \| t_{\text{now}} \| J_{i-1}) \mod R$$
 
    where $R = J_{\max} - J_{\min}$ is the jitter range (default: 2500μs)
 
@@ -172,11 +168,12 @@ When a user initiates tracking on a document, the jitter seal system executes th
    d. Inject delay of $\mu_i$ microseconds before forwarding keystroke
 
    e. Compute sample hash:
-   $$\text{SampleHash}_i = \text{SHA256}(\text{prefix} \| t_i \| i \| H_i \| J_i \| \text{SampleHash}_{i-1})$$
+   $$\text{SampleHash}_i = \text{SHA256}(\text{prefix} \| t_i \| i \| H_i \| Z_i \| B_i \| J_i \| \text{SampleHash}_{i-1})$$
 
-   f. Record sample: $(t_i, i, H_i, J_i, \text{SampleHash}_i, \text{SampleHash}_{i-1})$
+   f. Record sample: $(i, t_i, H_i, Z_i, B_i, J_i, \text{SampleHash}_i)$
 
-3. Forward keystroke to application (unchanged content)
+6. Update $z_{\text{prev}} \leftarrow z$
+7. Forward keystroke to application (unchanged content)
 
 **Termination:**
 1. Record session end timestamp
@@ -185,31 +182,46 @@ When a user initiates tracking on a document, the jitter seal system executes th
 
 ### 3.2 Cryptographic Binding
 
-The jitter value $J_i$ is cryptographically bound to four components:
+The jitter value $J_i$ is cryptographically bound to six components:
 
 | Component | Purpose |
 |-----------|---------|
 | Session secret $S$ | Prevents fabrication without secret |
 | Keystroke ordinal $i$ | Prevents reordering samples |
 | Document hash $H_i$ | Binds to specific content state |
+| Zone transition $Z_i$ | Binds to keyboard region sequence |
+| Interval bucket $B_i$ | Binds to typing rhythm |
 | Previous jitter $J_{i-1}$ | Creates unforgeable chain |
 
 Each sample is also bound into a hash chain through `SampleHash`, providing tamper evidence independent of the secret.
 
-### 3.3 What Is NOT Captured
+**Zone-committed verification:** The zone transition $Z_i$ enables statistical verification. Given the final document, a verifier can:
+1. Extract expected zone sequence: `TextToZoneSequence(document)`
+2. Aggregate recorded zones from samples
+3. Compare distributions using KL divergence
+4. Reject evidence where zone patterns don't match content
 
-The system captures:
+### 3.3 What Is Captured vs. Not Captured
+
+The system captures zone transitions (which finger regions were used) but NOT the actual keys or characters:
 
 | Captured | Not Captured |
 |----------|--------------|
-| Keystroke count | Which key |
+| Keystroke count | Which specific key |
 | Timestamp | Character produced |
 | Document hash | Document content |
 | Jitter value | Cursor position |
-| | Selection state |
-| | Application context |
+| **Zone transition** | Selection state |
+| Interval bucket | Application context |
 
-This distinction is critical: the jitter seal is *not a keylogger*. An attacker who obtains exported evidence learns nothing about what was typed---only that typing occurred with specific timing.
+**Privacy-preserving zone design:** Each zone contains 3-6 keys, providing k-anonymity within zones. For example, zone 0→4 transition could be any of: qa, qy, qu, qh, qj, qn, qm, ay, au, ah, aj, an, am, zy, zu, zh, zj, zn, zm (18+ possibilities). The verifier learns typing rhythm patterns without learning content.
+
+**Verification benefit:** Zone transitions enable third-party verification. A verifier with access to the final document can:
+1. Extract expected zone sequence from document characters
+2. Compare against recorded zone transitions
+3. Detect fabricated evidence where zone distributions don't match document content
+
+This is strictly stronger than the original hiding design---we gain verifiability while preserving character-level privacy.
 
 ### 3.4 Security Analysis
 
@@ -248,97 +260,24 @@ For document $B$ with different content, $H_i^{(B)} \neq H_i^{(A)}$, so the reco
 
 This is the standard HMAC security assumption.
 
-### 3.5 Verification Protocol
+### 3.5 Tiered Security Model
 
-Given exported evidence (sample chain) and the session secret $S$, verification proceeds:
+We structure the evidence confidence into tiers:
 
-```go
-// VerifyWithSecret verifies a jitter evidence chain against the session secret.
-// This is the authoritative verification used by the prover.
-func VerifyWithSecret(evidence *Evidence, secret [32]byte) error {
-    var prevHash [32]byte
-    var prevJitter uint32
+**Tier 1: Standard (Jitter Seal)**
+Defeats post-hoc forgery and simple paste/macro attacks. Relies on the cryptographic binding of timing to document state. Vulnerable to sophisticated synthetic injection.
 
-    for i, sample := range evidence.Samples {
-        // Recompute expected jitter using HMAC-SHA256
-        h := hmac.New(sha256.New, secret[:])
+**Tier 2: Enhanced (Source Verified)**
+Adds OS-level event source verification (e.g., checking `CGEventSourceStateID` on macOS). Defeats naive software injectors (`CGEventPost`) and generic automation tools. Vulnerable to kernel-level injection and hardware emulation.
 
-        var buf [8]byte
-        binary.BigEndian.PutUint64(buf[:], sample.KeystrokeCount)
-        h.Write(buf[:])
-        h.Write(sample.DocumentHash[:])
-        binary.BigEndian.PutUint64(buf[:], uint64(sample.Timestamp.UnixNano()))
-        h.Write(buf[:])
-        binary.BigEndian.PutUint32(buf[:4], prevJitter)
-        h.Write(buf[:4])
+**Tier 3: Hardware Anchored**
+Binds the session to a hardware root of trust (TPM/Secure Enclave) or external hardware witness. Defeats software-only attacks.
 
-        hmacOutput := h.Sum(nil)
-        raw := binary.BigEndian.Uint32(hmacOutput[:4])
-        jitterRange := evidence.Params.MaxJitterMicros - evidence.Params.MinJitterMicros
-        expected := evidence.Params.MinJitterMicros + (raw % jitterRange)
+### 3.6 Mitigation: Event Source Verification
 
-        // Jitter must match exactly (computed deterministically)
-        if sample.JitterMicros != expected {
-            return fmt.Errorf("sample %d: jitter mismatch (recorded=%d, expected=%d)",
-                i, sample.JitterMicros, expected)
-        }
+To raise the bar against synthetic injection (Tier 2), we implement checks for the `CGEventSourceStateID` on macOS. Legitimate hardware events typically carry the `kCGEventSourceStateHIDSystemState` ID, while events injected via `CGEventPost` often carry `kCGEventSourceStateCombinedSessionState` or `kCGEventSourceStatePrivate`.
 
-        // Verify sample hash chain
-        computed := computeSampleHash(&sample, prevHash)
-        if computed != sample.Hash {
-            return fmt.Errorf("sample %d: hash mismatch", i)
-        }
-
-        // Verify chain linkage
-        if sample.PreviousHash != prevHash {
-            return fmt.Errorf("sample %d: broken chain link", i)
-        }
-
-        // Verify timestamps are strictly monotonic
-        if i > 0 && !sample.Timestamp.After(evidence.Samples[i-1].Timestamp) {
-            return fmt.Errorf("sample %d: timestamp not strictly monotonic", i)
-        }
-
-        // Verify keystroke counts are strictly monotonic
-        if i > 0 && sample.KeystrokeCount <= evidence.Samples[i-1].KeystrokeCount {
-            return fmt.Errorf("sample %d: keystroke count not strictly monotonic", i)
-        }
-
-        prevHash = sample.Hash
-        prevJitter = sample.JitterMicros
-    }
-
-    return nil
-}
-
-// computeSampleHash computes the binding hash for a sample.
-func computeSampleHash(s *Sample, prevHash [32]byte) [32]byte {
-    h := sha256.New()
-    h.Write([]byte("witnessd-jitter-sample-v1"))
-
-    var buf [8]byte
-    binary.BigEndian.PutUint64(buf[:], uint64(s.Timestamp.UnixNano()))
-    h.Write(buf[:])
-
-    binary.BigEndian.PutUint64(buf[:], s.KeystrokeCount)
-    h.Write(buf[:])
-
-    h.Write(s.DocumentHash[:])
-
-    binary.BigEndian.PutUint32(buf[:4], s.JitterMicros)
-    h.Write(buf[:4])
-
-    h.Write(prevHash[:])
-
-    var result [32]byte
-    copy(result[:], h.Sum(nil))
-    return result
-}
-```
-
-Verification can occur offline with only the evidence and secret---no access to the original system required.
-
----
+While not a panacea---sophisticated attackers can forge these fields or inject at the driver level (BadUSB)---this check forces attackers to move beyond simple user-space scripting tools, significantly increasing the technical barrier to entry.
 
 ## 4. System Design
 
@@ -427,18 +366,23 @@ The jitter seal can integrate with witnessd's other evidence layers:
 │  │ Layer 1: Process Declaration (AI usage attestation) │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ Layer 2: JITTER SEAL (this paper)                   │   │
+│  │ Layer 2: Presence Verification (random challenges)  │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │ Layer 3: Hardware Attestation (TPM binding)         │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ Layer 4: External Anchors (Bitcoin/RFC 3161)        │   │
+│  │ Layer 4a: KEYSTROKE EVIDENCE (jitter seal)          │   │
+│  │ Layer 4b: Behavioral Data (typing biometrics)       │   │
+│  │ Layer 4c: Context Periods (editing sessions)        │   │
+│  └─────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Layer 5: External Anchors (Bitcoin/RFC 3161)        │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-The jitter seal strengthens the evidence stack by proving real-time human input, complementing VDF time proofs (which prove elapsed computation) and declarations (which attest to process).
+The jitter seal (Layer 4a) strengthens the evidence stack by proving real-time human input, complementing VDF time proofs (Layer 0), declarations (Layer 1), and presence verification (Layer 2).
 
 ---
 
@@ -507,7 +451,7 @@ We measure overhead components against established benchmarks from the literatur
 
 **Input processing latency context:**
 
-Prior research establishes baseline input processing latencies. Fatin (2015) measured OS-level processing latency across editors, finding ranges of 0.2--12.4 ms depending on platform and application. Stapelberg (2018) measured Linux kernel-level processing at 152--278 μs. These measurements exclude hardware latency (keyboard matrix scan, debouncing, USB polling), which Luu (2017) found ranges from 15--60 ms across commercial keyboards.
+Prior research establishes baseline input processing latencies. Fatin (2015) measured OS-level processing latency across editors, finding ranges of 0.2--12.4 ms depending on platform and application. Stapelberg (2018) measured Linux kernel-level processing at 152--278 μs. These measurements exclude hardware latency (keyboard matrix scan, debouncing, USB polling), which Luu (2016) found ranges from 15--60 ms across commercial keyboards.
 
 **Jitter seal processing overhead:**
 
@@ -778,14 +722,7 @@ A 10,000-character document requires a minimum of 13.3 minutes at the fastest ob
 
 **Clock attacks:** The system assumes reasonably accurate local time. Clock manipulation during a session could potentially distort timing relationships. Mitigation: external timestamp anchoring (OpenTimestamps, RFC 3161).
 
-### 7.2 What We Explicitly Don't Claim
-
-1. We do not claim to detect AI-assisted writing where the human typed the content
-2. We do not claim to prove authorship of ideas, only of keystrokes
-3. We do not claim resistance to attackers who control the system during legitimate sessions
-4. We do not claim usability for all typing contexts (gaming, real-time collaboration)
-
-### 7.3 Future Directions
+### 7.2 Future Directions
 
 **Biometric binding:** Integrate keystroke dynamics (inter-key timing patterns) as an additional authentication factor. This would bind evidence not just to "a human" but to "this specific human."
 
@@ -833,15 +770,19 @@ Our key contributions are:
 
 1. **The jitter seal mechanism:** Imperceptible keystroke delays derived from session secrets, keystroke counts, and document state, creating an unforgeable chain of evidence.
 
-2. **Economic security:** The only viable attack is actually typing the content---which costs as much as honest authorship.
+2. **Economic security:** We shift the cost function from typing time to technical sophistication, forcing attackers to develop specialized injection tools.
 
-3. **Privacy preservation:** No keystroke content is captured. Only timing, counts, and document hashes are recorded.
+3. **Tiered evidence:** A model distinguishing between standard timing proofs and enhanced proofs with OS-level source verification.
 
-4. **Practical implementation:** Cross-platform support with sub-3ms overhead, well below perception thresholds.
+4. **Privacy preservation:** No keystroke content is captured. Only timing, counts, and document hashes are recorded.
 
-5. **Empirical validation:** Verification experiments across 31,000 trials confirm that invalid proofs fail cryptographic verification, grounded in analysis of 786,755 inter-keystroke interval samples from published research.
+5. **Practical implementation:** Cross-platform support with sub-3ms overhead, well below perception thresholds.
+
+6. **Empirical validation:** Verification experiments across 31,000 trials confirm that invalid proofs fail cryptographic verification, grounded in analysis of 786,755 inter-keystroke interval samples from published research.
 
 As AI-generated content becomes ubiquitous, systems that prove human involvement in creative processes will become essential infrastructure. The jitter seal offers a practical, privacy-preserving foundation for this future.
+
+The term "jitterbug" originated as Harlem dancers' playful ridicule of newcomers learning the Lindy Hop. The ridicule faded; the dance endured. Today's anxiety over AI in creative work may follow a similar arc. The jitter seal makes no judgment about where ideas originate—only that human hands brought them to the page.
 
 ---
 
@@ -869,7 +810,7 @@ As AI-generated content becomes ubiquitous, systems that prove human involvement
 
 11. Kirchenbauer, J., Geiping, J., Wen, Y., Katz, J., Miers, I., & Goldstein, T. (2023). A watermark for large language models. In *International Conference on Machine Learning* (pp. 17061--17084).
 
-12. Luu, D. (2017). Keyboard latency. https://danluu.com/keyboard-latency/
+12. Luu, D. (2016). Keyboard latency. https://danluu.com/keyboard-latency/
 
 13. Monrose, F., & Rubin, A. D. (2000). Keystroke dynamics as a biometric for authentication. *Future Generation Computer Systems*, 16(4), 351--359.
 
@@ -889,13 +830,29 @@ As AI-generated content becomes ubiquitous, systems that prove human involvement
 
 ```json
 {
+  "ordinal": 10,
   "timestamp": "2026-01-24T15:30:42.123456789Z",
-  "keystroke_count": 500,
   "document_hash": "a3f2b8c9d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+  "zone_transition": 28,
+  "interval_bucket": 3,
   "jitter_micros": 1847,
-  "hash": "f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3",
-  "previous_hash": "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+  "sample_hash": "f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3"
 }
+```
+
+**Field descriptions:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ordinal` | uint64 | Sample sequence number |
+| `timestamp` | RFC3339Nano | When sample was recorded |
+| `document_hash` | [32]byte | SHA-256 of document at sample time |
+| `zone_transition` | uint8 | Encoded keyboard zone transition: `(from<<3)\|to`, or `0xFF` if none |
+| `interval_bucket` | uint8 | Timing bin (0-9) for inter-keystroke interval |
+| `jitter_micros` | uint32 | Injected delay in microseconds |
+| `sample_hash` | [32]byte | Cryptographic binding to previous sample |
+
+**Zone encoding:** The 8 keyboard zones map to finger positions on a QWERTY layout (zones 0-3 = left hand, zones 4-7 = right hand). Zone transitions enable statistical verification: a verifier with the document can compute expected zone distributions from character sequences and compare against recorded transitions.
 ```
 
 ### A.2 Evidence Packet Structure
