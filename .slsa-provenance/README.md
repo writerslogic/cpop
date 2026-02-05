@@ -25,13 +25,13 @@ go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
 
 ```bash
 # Download release artifacts
-curl -LO https://github.com/davidcondrey/witnessd/releases/download/v0.1.0/witnessd_0.1.0_linux_amd64.tar.gz
-curl -LO https://github.com/davidcondrey/witnessd/releases/download/v0.1.0/witnessd_0.1.0_linux_amd64.tar.gz.intoto.jsonl
+curl -LO https://github.com/writerslogic/witnessd/releases/download/v0.1.0/witnessd_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/writerslogic/witnessd/releases/download/v0.1.0/witnessd_0.1.0_linux_amd64.tar.gz.intoto.jsonl
 
 # Verify provenance
 slsa-verifier verify-artifact witnessd_0.1.0_linux_amd64.tar.gz \
   --provenance-path witnessd_0.1.0_linux_amd64.tar.gz.intoto.jsonl \
-  --source-uri github.com/davidcondrey/witnessd \
+  --source-uri github.com/writerslogic/witnessd \
   --source-tag v0.1.0
 ```
 
@@ -41,7 +41,7 @@ slsa-verifier verify-artifact witnessd_0.1.0_linux_amd64.tar.gz \
 Verified signature against tance envelope payload.
 Verified entry in log
 Verified provenance for artifact witnessd_0.1.0_linux_amd64.tar.gz
-  * Repository: github.com/davidcondrey/witnessd
+  * Repository: github.com/writerslogic/witnessd
   * Tag: v0.1.0
   * Builder: github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml
   * Build type: https://github.com/slsa-framework/slsa-github-generator/generic@v1
@@ -69,7 +69,7 @@ The provenance file (`.intoto.jsonl`) contains:
     "buildConfig": { ... },
     "materials": [
       {
-        "uri": "git+https://github.com/davidcondrey/witnessd@refs/tags/v0.1.0",
+        "uri": "git+https://github.com/writerslogic/witnessd@refs/tags/v0.1.0",
         "digest": { "sha1": "..." }
       }
     ]

@@ -158,7 +158,7 @@ CHANGELOG and git history. Continued use after changes constitutes acceptance.
 ## Contact
 
 For privacy inquiries:
-- GitHub Issues: https://github.com/davidcondrey/witnessd/issues
+- GitHub Issues: https://github.com/writerslogic/witnessd/issues
 - Email: privacy@witnessd.dev
 
 ## Technical Appendix: Data Minimization

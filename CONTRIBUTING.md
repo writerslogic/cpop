@@ -27,7 +27,7 @@ you are expected to uphold this code.
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/davidcondrey/witnessd.git
+   git clone https://github.com/writerslogic/witnessd.git
    cd witnessd
    make setup
    ```
@@ -117,7 +117,7 @@ Releases are managed by maintainers:
 
 ## Getting Help
 
-- [GitHub Discussions](https://github.com/davidcondrey/witnessd/discussions)
+- [GitHub Discussions](https://github.com/writerslogic/witnessd/discussions)
 - Documentation in `docs/`
 - Test files for usage examples
 

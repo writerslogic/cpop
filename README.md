@@ -30,25 +30,44 @@ The system makes three categories of claims:
 
 ### Key Features
 
+- **Hardened Keystroke Capture** — CGEventTap-based counting with multi-layer security
+- **Tamper Detection** — HMAC integrity verification, cryptographic chaining, timing anomaly detection
+- **Script/USB-HID Protection** — Detects automated input from scripts and hardware spoofing devices
+- **Jitter Evidence** — Cryptographic proof of real-time typing through zone-based keystroke timing
 - **Verifiable Delay Functions (VDF)** — Prove minimum elapsed time between commits (unforgeable)
 - **Process Declarations** — Structured documentation of AI usage, collaboration, and input modalities
 - **Presence Verification** — Optional random challenges proving human presence
+- **Secure Storage** — Tamper-evident SQLite database with HMAC integrity verification
 - **Evidence Strength Tiers** — Basic → Standard → Enhanced → Maximum
 - **External Trust Anchors** — OpenTimestamps (Bitcoin) and RFC 3161 TSA integration
-- **TPM Integration** — Optional hardware attestation for enhanced security
+- **TPM Integration** — Hardware-backed security with monotonic counters and attestation
 
 ## Installation
 
+**Homebrew (macOS/Linux):**
 ```bash
-go install witnessd@latest
+brew install writerslogic/tap/witnessd
 ```
 
-Or build from source:
+**From source:**
+```bash
+git clone https://github.com/writerslogic/witnessd
+cd witnessd
+make install
+```
+
+**Binary releases:**
+Download from [GitHub Releases](https://github.com/writerslogic/witnessd/releases)
+
+## Configuration
+
+By default, witnessd reads `~/.witnessd/config.toml`. If it doesn't exist,
+defaults are used.
+
+Example config:
 
 ```bash
-git clone https://github.com/davidcondrey/witnessd
-cd witnessd
-go build -o witnessd ./cmd/witnessd
+cp configs/config.example.toml ~/.witnessd/config.toml
 ```
 
 ## Quick Start
@@ -71,6 +90,83 @@ witnessd log manuscript.md
 # 5. Export evidence when done
 witnessd export manuscript.md
 ```
+
+## Enhanced Workflow (with Keystroke Tracking)
+
+For stronger evidence, enable real-time keystroke tracking during writing:
+
+```bash
+# 1. Initialize and calibrate (one-time)
+witnessd init && witnessd calibrate
+
+# 2. Start keystroke tracking for your document
+witnessd track start manuscript.md
+
+# 3. Write your document (keystrokes are counted, NOT captured)
+#    - Only keystroke counts and timing are recorded
+#    - Zone transitions (which finger) are tracked
+#    - This is NOT a keylogger
+
+# 4. Check tracking status
+witnessd track status
+
+# 5. Create checkpoints as you write
+witnessd commit manuscript.md -m "Draft complete"
+
+# 6. Stop tracking when done
+witnessd track stop
+
+# 7. Export with jitter evidence
+witnessd export manuscript.md -tier standard
+```
+
+**Privacy Guarantee:** Keystroke tracking records ONLY:
+- Event counts and timing (not which keys)
+- Zone transitions (which finger typed each key)
+- Jitter samples (cryptographic proof of real typing)
+
+No actual keystrokes or text content is captured.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         WITNESSD SYSTEM                           │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
+│   │  witnessd   │     │  witnessctl │     │   IME       │        │
+│   │  (daemon)   │     │   (query)   │     │  (future)   │        │
+│   └──────┬──────┘     └──────┬──────┘     └──────┬──────┘        │
+│          │                   │                   │                │
+│          ▼                   ▼                   ▼                │
+│   ┌──────────────────────────────────────────────────────┐       │
+│   │               Secure SQLite Storage                   │       │
+│   │  • HMAC integrity verification                        │       │
+│   │  • Chain-linked events                                │       │
+│   │  • Tamper detection                                   │       │
+│   └──────────────────────────────────────────────────────┘       │
+│          │                                                        │
+│          ▼                                                        │
+│   ┌──────────────────────────────────────────────────────┐       │
+│   │                 Evidence Layers                       │       │
+│   │  • VDF proofs (temporal)                              │       │
+│   │  • Jitter evidence (behavioral)                       │       │
+│   │  • Presence verification                              │       │
+│   │  • TPM attestation                                    │       │
+│   │  • External anchors (Bitcoin, RFC 3161)               │       │
+│   └──────────────────────────────────────────────────────┘       │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+1. **witnessd** commands create events (init, commit, track)
+2. Events are stored in tamper-evident SQLite database
+3. **witnessctl** reads events for status, verification, forensics
+4. **Export** bundles events into portable evidence packets
+5. **Verify** validates evidence packets independently
 
 ## How It Works
 
@@ -116,14 +212,32 @@ VERIFICATION:
 ## Commands
 
 ```bash
+# Core workflow
 witnessd init                    # Initialize witnessd
 witnessd calibrate               # Calibrate VDF for your machine
 witnessd commit <file> [-m msg]  # Create checkpoint
 witnessd log <file>              # Show checkpoint history
 witnessd export <file> [-tier T] # Export evidence packet
 witnessd verify <file|json>      # Verify chain or evidence
-witnessd presence <action>       # Manage presence verification
 witnessd status                  # Show status
+
+# Keystroke tracking (for jitter evidence)
+witnessd track start <file>      # Start tracking keystrokes
+witnessd track status            # Show tracking status
+witnessd track stop              # Stop tracking and save evidence
+witnessd track list              # List saved tracking sessions
+witnessd track export <id>       # Export jitter evidence
+
+# Presence verification (optional)
+witnessd presence start          # Start presence session
+witnessd presence challenge      # Take a presence challenge
+witnessd presence stop           # End presence session
+
+# Status
+witnessctl status                # Show full system status
+witnessctl history               # Show witness history
+witnessctl verify <file>         # Verify a file
+witnessctl forensics <file>      # Analyze authorship patterns
 ```
 
 ### Creating Checkpoints
@@ -204,6 +318,109 @@ Provide a brief statement about your process:
 
 The declaration is cryptographically signed and bound to your evidence.
 
+## Jitter Evidence
+
+The keystroke tracking system builds cryptographic proof of real-time typing:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     JITTER EVIDENCE CHAIN                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  For each keystroke:                                            │
+│    1. Zone detected (which finger: 0-7 from pinky to pinky)     │
+│    2. Document hash computed (current content state)             │
+│    3. Jitter delay calculated (zone-dependent, entropy-based)    │
+│    4. Sample added to chain: zone + delay + doc_hash + prev_hash │
+│                                                                  │
+│  The chain proves:                                               │
+│    • Real keystrokes occurred (zone transitions are realistic)   │
+│    • Document evolved over time (hash progression)               │
+│    • Timing is consistent with human typing                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Zone Layout (QWERTY):**
+```
+Zone 0 (left pinky):  Q A Z
+Zone 1 (left ring):   W S X
+Zone 2 (left middle): E D C
+Zone 3 (left index):  R T F G V B
+Zone 4 (right index): Y U H J N M
+Zone 5 (right middle): I K ,
+Zone 6 (right ring):  O L .
+Zone 7 (right pinky): P ; /
+```
+
+Human typing has characteristic patterns between zones. The jitter evidence proves
+these patterns occurred over the documented time period.
+
+## Keystroke Security
+
+The keystroke tracking system uses multiple layers of protection to prevent tampering:
+
+### Primary: CGEventTap (macOS) / evdev (Linux)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HARDENED KEYSTROKE CAPTURE                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. DUAL-LAYER VALIDATION (macOS)                               │
+│     • CGEventTap captures keyboard events at system level        │
+│     • IOKit HID monitors hardware-level input below CGEventTap   │
+│     • Cross-validation detects synthetic events                  │
+│                                                                  │
+│  2. SYNTHETIC EVENT DETECTION                                    │
+│     • Source state ID verification                               │
+│     • Keyboard type checking                                     │
+│     • Source PID validation                                      │
+│     • Timestamp monotonicity                                     │
+│                                                                  │
+│  3. TIMING ANOMALY DETECTION                                     │
+│     • Superhuman speed detection (<20ms intervals)               │
+│     • Consecutive identical intervals (scripted)                 │
+│     • Low variance detection (robotic typing)                    │
+│     • Repeating pattern detection                                │
+│                                                                  │
+│  4. INTEGRITY PROTECTION                                         │
+│     • HMAC on all counter state                                  │
+│     • Cryptographic chaining of updates                          │
+│     • Tamper-evident sealed checkpoints                          │
+│                                                                  │
+│  5. TPM BINDING (when available)                                 │
+│     • Hardware monotonic counter (prevents rollback)             │
+│     • TPM attestation quotes                                     │
+│     • Key sealing to platform state (PCRs)                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Legitimate Copy/Paste Handling
+
+The system properly handles legitimate copy/paste operations:
+- **Detection**: Large content changes with few keystrokes are flagged as paste events
+- **Transparency**: Paste events are recorded and included in evidence export
+- **No Penalty**: Copy/paste from your own content or citations is legitimate authorship
+
+```bash
+# Check tracking status including paste detection
+witnessd track status
+
+# Example output:
+# Keystrokes: 15234
+# Paste events: 3 (legitimate copy/paste detected)
+```
+
+### Backup: IME Integration (Future)
+
+For users who decline accessibility permissions or on mobile platforms, an optional
+Input Method Engine (IME) provides keystroke counting without system-level access:
+- Requires installing witnessd as a keyboard
+- Privacy-focused: counts only, no text capture
+- Lower security tier (cannot detect synthetic events)
+
 ## What This Proves
 
 The evidence packet makes explicit claims:
@@ -239,11 +456,46 @@ False declarations are the author's legal risk, not a technical detection proble
 - Adversary cannot break SHA-256, Ed25519, or VDF
 - Adversary cannot retroactively modify Bitcoin blockchain
 
+**Storage Security:**
+
+The event database (`~/.witnessd/events.db`) is tamper-evident:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    SECURE SQLITE STORAGE                        │
+├────────────────────────────────────────────────────────────────┤
+│  • HMAC Integrity: Each record has HMAC derived from signing   │
+│    key - modifications are detectable                          │
+│                                                                │
+│  • Chain Linking: Each event references previous event hash    │
+│    - insertions/deletions break the chain                      │
+│                                                                │
+│  • Append-Only: Events cannot be modified after insertion      │
+│                                                                │
+│  • File Permissions: Database has 0600 permissions (owner      │
+│    read/write only)                                            │
+│                                                                │
+│  • Integrity Verification: Full chain verified on every open   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Check integrity status:
+```bash
+witnessctl status  # Shows "Integrity: VERIFIED" or "FAILED"
+```
+
 **The "Drip Attack" Problem:**
 An adversary could generate AI content and slowly feed it through the system. Under witnessd:
 1. They must spend real wall-clock time (VDF proves it)
 2. They must sign a false declaration (legal risk)
 3. The economic cost approaches honest work
+4. With keystroke tracking: Multiple layers of protection:
+   - **Timing anomaly detection**: Scripts show low variance, identical intervals, or superhuman speed
+   - **Synthetic event detection**: CGEventPost injections are flagged by source state validation
+   - **Dual-layer validation**: IOKit HID cross-validates CGEventTap counts
+   - **USB-HID spoofing detection**: Hardware keyboard type checking
+   - **TPM binding**: Hardware counters prevent replay attacks
+5. Copy/paste is tracked: Large content changes with few keystrokes are recorded
 
 ## Configuration
 
@@ -262,6 +514,22 @@ Configuration is stored in `~/.witnessd/config.json`:
   }
 }
 ```
+
+## Citation
+
+If you use witnessd in academic work, please cite:
+
+```bibtex
+@article{condrey2025witnessd,
+  title={Kinetic Proof of Provenance: Cryptographic Authorship Witnessing Through Temporal Attestation},
+  author={Condrey, David},
+  journal={arXiv preprint},
+  year={2025},
+  note={Paper forthcoming}
+}
+```
+
+<!-- TODO: Update with arXiv ID once published -->
 
 ## License
 

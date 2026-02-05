@@ -1,0 +1,181 @@
+.\" witnessctl - Control CLI for witnessd
+.TH WITNESSCTL 1 "January 2025" "witnessd" "User Commands"
+.SH NAME
+witnessctl \- control CLI for the witnessd authorship witnessing system
+.SH SYNOPSIS
+.B witnessctl
+.RI [ options ]
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B witnessctl
+is the control interface for the witnessd cryptographic authorship witnessing
+system. It provides commands for checking daemon status, viewing witness
+history, verifying files, exporting evidence, and analyzing authorship patterns.
+.PP
+This tool is designed for querying and managing witness data, while
+.BR witnessd (1)
+handles the core witnessing operations.
+.SH OPTIONS
+.TP
+.BI \-config " path"
+Path to config file. Default: ~/.witnessd/config.toml
+.TP
+.B \-no-color
+Disable colored output
+.TP
+.B \-q
+Quiet mode. Suppress the banner.
+.TP
+.B \-version
+Show version information and exit
+.SH COMMANDS
+.TP
+.B status
+Show daemon status and statistics. Displays whether the daemon is running,
+database size, witness count, MMR root hash, watched paths, and signing key.
+.TP
+.B history
+Print witness history. Shows a table of witnessed events with their
+MMR index, content hash, and signed root (if applicable).
+.TP
+.BI "verify " file
+Verify a file against the witness database. Checks if the current file
+content matches a previously witnessed state and validates the MMR proof.
+.TP
+.BI "export " file " [" output.json ]
+Export cryptographic evidence for a file. Creates a JSON evidence packet
+containing the file hash, MMR inclusion proof, root hash, and signature.
+If output is not specified, creates <file>.evidence.json.
+.TP
+.BI "forensics " file
+Analyze authorship patterns for a file. Examines edit history, timing
+patterns, edit regions, and typing behavior to build a forensic profile.
+.TP
+.B attestation
+Emit a filled TPM attestation template. Use --out to write to a file.
+.TP
+.BI "context " action " [" type "] [" note ]
+Manage editing context declarations. Used to mark periods of external
+assistance or AI tool usage.
+.RS
+.TP
+.BI "begin " "type [note]"
+Start a new context. Types: external (ext), assisted (ai), review (rev)
+.TP
+.B end
+End the current context
+.TP
+.B status
+Show the active context
+.RE
+.TP
+.B help
+Show help message
+.TP
+.B version
+Show version information
+.SH CONTEXT TYPES
+When declaring editing contexts:
+.TP
+.B external
+Content from external sources (copy/paste, dictation)
+.TP
+.B assisted
+AI-assisted editing (Claude, ChatGPT, Copilot, etc.)
+.TP
+.B review
+Third-party review or editing by another person
+.SH FILES
+.TP
+.I ~/.witnessd/config.toml
+Configuration file
+.TP
+.I ~/.witnessd/mmr.db
+Merkle Mountain Range database
+.TP
+.I ~/.witnessd/events.db
+Event store with edit history
+.TP
+.I ~/.witnessd/signatures.log
+Signed root commitments
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Error or verification failure
+.SH EXAMPLES
+Check daemon status:
+.PP
+.RS
+.nf
+$ witnessctl status
+.fi
+.RE
+.PP
+Verify a file was witnessed:
+.PP
+.RS
+.nf
+$ witnessctl verify manuscript.docx
+.fi
+.RE
+.PP
+Export evidence for a file:
+.PP
+.RS
+.nf
+$ witnessctl export report.pdf evidence.json
+.fi
+.RE
+.PP
+Analyze authorship patterns:
+.PP
+.RS
+.nf
+$ witnessctl forensics thesis.tex
+.fi
+.RE
+.PP
+Emit an attestation template:
+.PP
+.RS
+.nf
+$ witnessctl attestation -out attestation.json
+.fi
+.RE
+.PP
+Mark AI-assisted editing session:
+.PP
+.RS
+.nf
+$ witnessctl context begin assisted "Using Claude for proofreading"
+$ # ... edit with AI assistance ...
+$ witnessctl context end
+.fi
+.RE
+.PP
+Quiet mode (suppress banner):
+.PP
+.RS
+.nf
+$ witnessctl -q status
+.fi
+.RE
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+When set, disables colored output (follows no-color.org standard)
+.TP
+.B WITNESSD_HOME
+Override the default ~/.witnessd directory
+.SH SEE ALSO
+.BR witnessd (1)
+.SH BUGS
+Report bugs at https://github.com/writerslogic/witnessd/issues
+.SH AUTHOR
+David Condrey
+.SH COPYRIGHT
+Copyright \(co 2025. Licensed under the MIT License.
