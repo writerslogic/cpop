@@ -1,3 +1,5 @@
+//go:build darwin
+
 // Command keystroke-test is a manual testing tool for the CGEventTap keystroke counter.
 //
 // It checks accessibility permissions, starts the keystroke counter, and prints
