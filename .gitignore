@@ -1,7 +1,46 @@
-/target
-.DS_Store
-/witnessctl
+# Build artifacts
+/bin/
+/target/
 /witnessd
+/witnessctl
+*.exe
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Research data and paper (not for public repo)
 /data/
-cmd/witnessd-ime/build/Witnessd
+/paper/
+docs/paper.md
+
+# IME build artifacts
+cmd/witnessd-ime/build/
 cmd/witnessd-ime/Witnessd.app/Contents/MacOS/
+
+# Release artifacts
+dist/
+*.zip
+*.tar.gz
+*.deb
+*.rpm
+
+# Coverage
+coverage.out
+coverage.html
+
+# Local environment
+.env
+.env.local
+
+# Apple signing
+*.p8
+*.p12
+witnessd-notarize.zip

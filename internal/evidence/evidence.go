@@ -85,12 +85,23 @@ type Packet struct {
 	// Layer 4b: Behavioral Data (Maximum only)
 	Behavioral *BehavioralEvidence `json:"behavioral,omitempty"`
 
+	// Layer 4c: Context Periods (runtime-tracked editing contexts)
+	Contexts []ContextPeriod `json:"contexts,omitempty"`
+
 	// Layer 5: External Anchors (Maximum only)
 	External *ExternalAnchors `json:"external,omitempty"`
 
 	// What this evidence claims
 	Claims     []Claim  `json:"claims"`
 	Limitations []string `json:"limitations"`
+}
+
+// ContextPeriod represents a period of editing with declared context.
+type ContextPeriod struct {
+	Type      string    `json:"type"`       // "external", "assisted", "review"
+	Note      string    `json:"note,omitempty"`
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
 }
 
 // DocumentInfo describes the witnessed document.
@@ -166,11 +177,13 @@ type EditRegion struct {
 
 // ForensicMetrics from behavioral analysis.
 type ForensicMetrics struct {
-	MonotonicAppendRatio float64 `json:"monotonic_append_ratio"`
-	EditEntropy          float64 `json:"edit_entropy"`
-	MedianInterval       float64 `json:"median_interval_seconds"`
+	MonotonicAppendRatio  float64 `json:"monotonic_append_ratio"`
+	EditEntropy           float64 `json:"edit_entropy"`
+	MedianInterval        float64 `json:"median_interval_seconds"`
 	PositiveNegativeRatio float64 `json:"positive_negative_ratio"`
-	DeletionClustering   float64 `json:"deletion_clustering"`
+	DeletionClustering    float64 `json:"deletion_clustering"`
+	Assessment            string  `json:"assessment,omitempty"`
+	AnomalyCount          int     `json:"anomaly_count,omitempty"`
 }
 
 // ExternalAnchors contains third-party timestamp proofs.
@@ -260,6 +273,7 @@ const (
 	ClaimKeystrokesVerified  ClaimType = "keystrokes_verified"
 	ClaimHardwareAttested    ClaimType = "hardware_attested"
 	ClaimBehaviorAnalyzed    ClaimType = "behavior_analyzed"
+	ClaimContextsRecorded    ClaimType = "contexts_recorded"
 	ClaimExternalAnchored    ClaimType = "external_anchored"
 )
 
@@ -406,6 +420,17 @@ func (b *Builder) WithBehavioral(regions []EditRegion, metrics *ForensicMetrics)
 	if b.packet.Strength < Maximum {
 		b.packet.Strength = Maximum
 	}
+	return b
+}
+
+// WithContexts adds runtime-tracked editing context periods.
+// Context periods complement the declaration by providing runtime evidence
+// of when external content, AI assistance, or review passes occurred.
+func (b *Builder) WithContexts(contexts []ContextPeriod) *Builder {
+	if len(contexts) == 0 {
+		return b
+	}
+	b.packet.Contexts = contexts
 	return b
 }
 
@@ -562,6 +587,27 @@ func (b *Builder) generateClaims() {
 			Type:        ClaimBehaviorAnalyzed,
 			Description: "Edit patterns captured for forensic analysis",
 			Confidence:  "statistical",
+		})
+	}
+
+	// Context periods
+	if len(b.packet.Contexts) > 0 {
+		// Count context types
+		typeCounts := make(map[string]int)
+		for _, ctx := range b.packet.Contexts {
+			typeCounts[ctx.Type]++
+		}
+		desc := fmt.Sprintf("%d context periods recorded", len(b.packet.Contexts))
+		if typeCounts["assisted"] > 0 {
+			desc += fmt.Sprintf(" (%d AI-assisted)", typeCounts["assisted"])
+		}
+		if typeCounts["external"] > 0 {
+			desc += fmt.Sprintf(" (%d external)", typeCounts["external"])
+		}
+		b.packet.Claims = append(b.packet.Claims, Claim{
+			Type:        ClaimContextsRecorded,
+			Description: desc,
+			Confidence:  "attestation",
 		})
 	}
 

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://witnessd.dev/schemas/attestation-v1.json",
+  "$schema": "https://raw.githubusercontent.com/writerslogic/witnessd/main/docs/schema/attestation-v1.schema.json",
   "version": "1.0.0",
   "description": "TPM Quote attestation template for hardware-bound MMR root commitments",
 
