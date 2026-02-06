@@ -51,22 +51,29 @@ type SecureEnclaveProvider struct {
 }
 
 // detectHardwareTPM on macOS checks for Secure Enclave availability.
-// Returns a SecureEnclaveProvider if available, nil otherwise.
+// Returns a Provider - either real Secure Enclave or simulated fallback.
 func detectHardwareTPM() Provider {
-	// Check if we're on Apple Silicon or T2 Mac
-	// In a production implementation, we would check for Secure Enclave
-	// availability using the Security framework.
-	//
-	// For now, we provide a software-based provider that mimics
-	// Secure Enclave behavior for development and testing.
-
-	// Check for home directory to store counter file
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
+	// First, try to use real Secure Enclave (requires CGO)
+	// This will return nil if Secure Enclave is not available or CGO is disabled
+	if realSE := newRealSecureEnclaveProvider(); realSE != nil {
+		return realSE
 	}
 
-	counterFile := filepath.Join(home, ".witnessd", "se_counter")
+	// Fall back to simulated Secure Enclave for development/testing
+	// or when CGO is not available
+
+	// Determine base directory - check for environment variable override
+	// (used by sandboxed macOS app)
+	baseDir := os.Getenv("WITNESSD_DATA_DIR")
+	if baseDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+		baseDir = filepath.Join(home, ".witnessd")
+	}
+
+	counterFile := filepath.Join(baseDir, "se_counter")
 
 	return &SecureEnclaveProvider{
 		counterFile: counterFile,
@@ -91,13 +98,11 @@ func (s *SecureEnclaveProvider) Open() error {
 	// In production, this would use IOKit to get hardware UUID
 	s.deviceID = s.generateDeviceID()
 
-	// Generate or load signing key
+	// Load or generate signing key
 	// In production, this would create/load a Secure Enclave key
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return fmt.Errorf("secure enclave: failed to generate key: %w", err)
+	if err := s.loadOrGenerateSigningKey(); err != nil {
+		return fmt.Errorf("secure enclave: failed to load/generate key: %w", err)
 	}
-	s.signingKey = key
 
 	// Load counter from file
 	s.loadCounter()
@@ -278,6 +283,16 @@ func (s *SecureEnclaveProvider) ReadPCRs(_ PCRSelection) (map[int][]byte, error)
 }
 
 // SealKey is a limited implementation - data is encrypted but not bound to platform state.
+//
+// SECURITY WARNING: This is a SOFTWARE SIMULATION of Secure Enclave sealing.
+// Unlike real TPM/Secure Enclave sealing which binds data to hardware state:
+// - The key is derived from device-specific data but is NOT hardware-protected
+// - Anyone with access to the device ID and sealed data can unseal it
+// - This provides defense-in-depth but NOT the security guarantees of true hardware sealing
+//
+// NOTE: Real Secure Enclave integration is implemented in secureenclave_darwin.go
+// (CGO build) which provides hardware-backed key protection via Security.framework.
+// This fallback is used when CGO is disabled or Secure Enclave is unavailable.
 func (s *SecureEnclaveProvider) SealKey(data []byte, _ PCRSelection) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -286,16 +301,17 @@ func (s *SecureEnclaveProvider) SealKey(data []byte, _ PCRSelection) ([]byte, er
 		return nil, ErrTPMNotOpen
 	}
 
-	// In production, this would use Secure Enclave key wrapping.
-	// We use AES-256-GCM authenticated encryption with a random key.
-	// The key is stored with the ciphertext (not as secure as TPM sealing
-	// which binds to platform state, but provides confidentiality).
-
-	// Generate random 256-bit key
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("secure enclave: failed to generate key: %w", err)
-	}
+	// Derive a key from device-specific data instead of storing a random key
+	// This provides some binding to this specific device, though not as strong
+	// as true TPM/Secure Enclave sealing which uses hardware-protected keys.
+	keyMaterial := sha256.New()
+	keyMaterial.Write([]byte("witnessd-seal-key-v3"))
+	keyMaterial.Write(s.deviceID)
+	// Include counter to ensure different keys over time
+	var counterBuf [8]byte
+	binary.BigEndian.PutUint64(counterBuf[:], s.counter)
+	keyMaterial.Write(counterBuf[:])
+	key := keyMaterial.Sum(nil)
 
 	// Create AES-GCM cipher
 	block, err := aes.NewCipher(key)
@@ -315,14 +331,16 @@ func (s *SecureEnclaveProvider) SealKey(data []byte, _ PCRSelection) ([]byte, er
 	}
 
 	// Encrypt with authentication
-	ciphertext := gcm.Seal(nil, nonce, data, nil)
+	// Include counter as additional authenticated data
+	ciphertext := gcm.Seal(nil, nonce, data, counterBuf[:])
 
-	// Format: version(1) + key(32) + nonce(12) + ciphertext(len+16 for tag)
-	sealed := make([]byte, 1+32+len(nonce)+len(ciphertext))
-	sealed[0] = 2 // version 2 for AES-GCM
-	copy(sealed[1:33], key)
-	copy(sealed[33:33+len(nonce)], nonce)
-	copy(sealed[33+len(nonce):], ciphertext)
+	// Format: version(1) + counter(8) + nonce(12) + ciphertext(len+16 for tag)
+	// Note: key is NOT stored - it's derived from device ID and counter
+	sealed := make([]byte, 1+8+len(nonce)+len(ciphertext))
+	sealed[0] = 3 // version 3 for derived-key AES-GCM
+	copy(sealed[1:9], counterBuf[:])
+	copy(sealed[9:9+len(nonce)], nonce)
+	copy(sealed[9+len(nonce):], ciphertext)
 
 	return sealed, nil
 }
@@ -356,7 +374,7 @@ func (s *SecureEnclaveProvider) UnsealKey(sealed []byte) ([]byte, error) {
 		return data, nil
 
 	case 2:
-		// AES-256-GCM format
+		// AES-256-GCM format with stored key (legacy, less secure)
 		// Format: version(1) + key(32) + nonce(12) + ciphertext
 		const keySize = 32
 		const nonceSize = 12
@@ -384,6 +402,48 @@ func (s *SecureEnclaveProvider) UnsealKey(sealed []byte) ([]byte, error) {
 		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 		if err != nil {
 			return nil, fmt.Errorf("secure enclave: decryption failed (tampered or wrong key): %w", err)
+		}
+
+		return plaintext, nil
+
+	case 3:
+		// Derived-key AES-256-GCM format (more secure - key derived from device ID)
+		// Format: version(1) + counter(8) + nonce(12) + ciphertext
+		const counterSize = 8
+		const nonceSize = 12
+		minSize := 1 + counterSize + nonceSize + 16 // at least tag size
+		if len(sealed) < minSize {
+			return nil, errors.New("secure enclave: sealed data too short for v3")
+		}
+
+		counter := binary.BigEndian.Uint64(sealed[1:9])
+		nonce := sealed[9 : 9+nonceSize]
+		ciphertext := sealed[9+nonceSize:]
+
+		// Derive the key from device ID and counter (same derivation as SealKey)
+		keyMaterial := sha256.New()
+		keyMaterial.Write([]byte("witnessd-seal-key-v3"))
+		keyMaterial.Write(s.deviceID)
+		var counterBuf [8]byte
+		binary.BigEndian.PutUint64(counterBuf[:], counter)
+		keyMaterial.Write(counterBuf[:])
+		key := keyMaterial.Sum(nil)
+
+		// Create AES-GCM cipher
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: failed to create cipher: %w", err)
+		}
+
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: failed to create GCM: %w", err)
+		}
+
+		// Decrypt and verify authentication tag (with counter as AAD)
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, counterBuf[:])
+		if err != nil {
+			return nil, fmt.Errorf("secure enclave: decryption failed (wrong device or tampered): %w", err)
 		}
 
 		return plaintext, nil
@@ -446,26 +506,64 @@ func (s *SecureEnclaveProvider) saveCounter() {
 	os.WriteFile(s.counterFile, data, 0600)
 }
 
+// loadOrGenerateSigningKey loads an existing signing key or generates a new one.
+// The key is persisted to disk to ensure consistency across restarts.
+// SECURITY NOTE: In production, this should use Secure Enclave via Security.framework.
+func (s *SecureEnclaveProvider) loadOrGenerateSigningKey() error {
+	keyFile := filepath.Join(filepath.Dir(s.counterFile), "se_signing_key")
+
+	// Try to load existing key
+	data, err := os.ReadFile(keyFile)
+	if err == nil && len(data) > 0 {
+		// Parse the stored key (PEM-encoded PKCS#8 format)
+		key, err := x509.ParseECPrivateKey(data)
+		if err == nil {
+			s.signingKey = key
+			return nil
+		}
+		// Key file corrupted - regenerate
+	}
+
+	// Generate new key
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("failed to generate key: %w", err)
+	}
+	s.signingKey = key
+
+	// Save the new key
+	return s.saveSigningKey(keyFile)
+}
+
+// saveSigningKey persists the signing key to disk.
+func (s *SecureEnclaveProvider) saveSigningKey(keyFile string) error {
+	if s.signingKey == nil {
+		return errors.New("no signing key to save")
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(keyFile)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	// Marshal the private key
+	keyBytes, err := x509.MarshalECPrivateKey(s.signingKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal key: %w", err)
+	}
+
+	// Write with restrictive permissions
+	return os.WriteFile(keyFile, keyBytes, 0600)
+}
+
 // Ensure SecureEnclaveProvider implements Provider
 var _ Provider = (*SecureEnclaveProvider)(nil)
 
-// Note: For production Secure Enclave support, you would use CGo to call
-// the Security framework APIs:
-//
-// #cgo LDFLAGS: -framework Security -framework CoreFoundation
-// /*
-// #include <Security/Security.h>
-// #include <CoreFoundation/CoreFoundation.h>
-// */
-// import "C"
-//
-// And implement:
-// - SecKeyCreateRandomKey with kSecAttrTokenIDSecureEnclave
-// - SecKeyCreateSignature for signing
-// - SecKeyCopyExternalRepresentation for public key export
-//
-// The current implementation is a simulation that provides the same API
-// for development and testing on macOS.
+// NOTE: Real Secure Enclave integration is implemented in secureenclave_darwin.go
+// (CGO build) which provides hardware-backed key protection via Security.framework.
+// This SecureEnclaveProvider serves as a software fallback when CGO is disabled
+// or Secure Enclave hardware is not available.
 
 // DeviceInfo returns information about the Secure Enclave provider.
 func (s *SecureEnclaveProvider) DeviceInfo() string {
