@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"witnessd/internal/checkpoint"
+	"witnessd/internal/config"
 	"witnessd/internal/declaration"
 	"witnessd/internal/evidence"
 	"witnessd/internal/jitter"
@@ -49,9 +50,11 @@ var (
 )
 
 func main() {
+	// If no arguments, launch interactive menu
 	if len(os.Args) < 2 {
-		usage()
-		os.Exit(1)
+		menu := NewMenu()
+		menu.Run()
+		return
 	}
 
 	cmd := os.Args[1]
@@ -156,8 +159,7 @@ func printVersion() {
 }
 
 func witnessdDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".witnessd")
+	return config.WitnessdDir()
 }
 
 func cmdInit() {
