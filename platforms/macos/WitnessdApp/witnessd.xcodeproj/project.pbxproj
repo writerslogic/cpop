@@ -1,0 +1,425 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000001234567890 /* WitnessdApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000011234567890 /* WitnessdApp.swift */; };
+		A1000002234567890 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000012234567890 /* AppDelegate.swift */; };
+		A1000003234567890 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000013234567890 /* StatusBarController.swift */; };
+		A1000004234567890 /* WitnessdBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000014234567890 /* WitnessdBridge.swift */; };
+		A1000005234567890 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000015234567890 /* LaunchAtLogin.swift */; };
+		A1000006234567890 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000016234567890 /* SettingsView.swift */; };
+		A1000007234567890 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000017234567890 /* Assets.xcassets */; };
+		A1000008234567890 /* witnessd in Resources */ = {isa = PBXBuildFile; fileRef = A1000018234567890 /* witnessd */; };
+		A1000021234567890 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000031234567891 /* OnboardingView.swift */; };
+		A1000022234567890 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000032234567891 /* NotificationManager.swift */; };
+		A1000023234567890 /* DropZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000033234567891 /* DropZoneView.swift */; };
+		A1000024234567890 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000034234567891 /* HistoryView.swift */; };
+		A1000025234567890 /* AccessibilityHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000035234567891 /* AccessibilityHelpers.swift */; };
+		A1000026234567890 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000036234567891 /* DesignSystem.swift */; };
+		A1000027234567890 /* PopoverViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037234567891 /* PopoverViews.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A1000000234567890 /* witnessd.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = witnessd.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000011234567890 /* WitnessdApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WitnessdApp.swift; sourceTree = "<group>"; };
+		A1000012234567890 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A1000013234567890 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
+		A1000014234567890 /* WitnessdBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WitnessdBridge.swift; sourceTree = "<group>"; };
+		A1000015234567890 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
+		A1000016234567890 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A1000017234567890 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1000018234567890 /* witnessd */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = witnessd; sourceTree = "<group>"; };
+		A1000019234567890 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1000020234567890 /* witnessd.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = witnessd.entitlements; sourceTree = "<group>"; };
+		A1000031234567891 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A1000032234567891 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		A1000033234567891 /* DropZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropZoneView.swift; sourceTree = "<group>"; };
+		A1000034234567891 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		A1000035234567891 /* AccessibilityHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityHelpers.swift; sourceTree = "<group>"; };
+		A1000036234567891 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		A1000037234567891 /* PopoverViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverViews.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1000030234567890 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000040234567890 = {
+			isa = PBXGroup;
+			children = (
+				A1000050234567890 /* witnessd */,
+				A1000060234567890 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1000050234567890 /* witnessd */ = {
+			isa = PBXGroup;
+			children = (
+				A1000011234567890 /* WitnessdApp.swift */,
+				A1000012234567890 /* AppDelegate.swift */,
+				A1000013234567890 /* StatusBarController.swift */,
+				A1000014234567890 /* WitnessdBridge.swift */,
+				A1000015234567890 /* LaunchAtLogin.swift */,
+				A1000016234567890 /* SettingsView.swift */,
+				A1000031234567891 /* OnboardingView.swift */,
+				A1000032234567891 /* NotificationManager.swift */,
+				A1000033234567891 /* DropZoneView.swift */,
+				A1000034234567891 /* HistoryView.swift */,
+				A1000035234567891 /* AccessibilityHelpers.swift */,
+				A1000036234567891 /* DesignSystem.swift */,
+				A1000037234567891 /* PopoverViews.swift */,
+				A1000017234567890 /* Assets.xcassets */,
+				A1000019234567890 /* Info.plist */,
+				A1000020234567890 /* witnessd.entitlements */,
+				A1000070234567890 /* Resources */,
+			);
+			path = witnessd;
+			sourceTree = "<group>";
+		};
+		A1000060234567890 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000234567890 /* witnessd.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A1000070234567890 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A1000018234567890 /* witnessd */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1000080234567890 /* witnessd */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000090234567890 /* Build configuration list for PBXNativeTarget "witnessd" */;
+			buildPhases = (
+				A1000100234567890 /* Build witnessd CLI */,
+				A1000031234567890 /* Sources */,
+				A1000030234567890 /* Frameworks */,
+				A1000032234567890 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = witnessd;
+			productName = Witness;
+			productReference = A1000000234567890 /* witnessd.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1000041234567890 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					A1000080234567890 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = A1000042234567890 /* Build configuration list for PBXProject "witnessd" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1000040234567890;
+			productRefGroup = A1000060234567890 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1000080234567890 /* witnessd */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1000032234567890 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000007234567890 /* Assets.xcassets in Resources */,
+				A1000008234567890 /* witnessd in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A1000100234567890 /* Build witnessd CLI */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build witnessd CLI";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "# Build witnessd for the current architecture\ncd \"${PROJECT_DIR}/..\"\n\nif [ \"${ARCHS}\" = \"arm64\" ]; then\n    GOARCH=arm64\nelse\n    GOARCH=amd64\nfi\n\nCGO_ENABLED=1 GOOS=darwin GOARCH=$GOARCH go build -ldflags=\"-s -w\" -o \"${PROJECT_DIR}/witnessd/Resources/witnessd\" ./cmd/witnessd\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1000031234567890 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001234567890 /* WitnessdApp.swift in Sources */,
+				A1000002234567890 /* AppDelegate.swift in Sources */,
+				A1000003234567890 /* StatusBarController.swift in Sources */,
+				A1000004234567890 /* WitnessdBridge.swift in Sources */,
+				A1000005234567890 /* LaunchAtLogin.swift in Sources */,
+				A1000006234567890 /* SettingsView.swift in Sources */,
+				A1000021234567890 /* OnboardingView.swift in Sources */,
+				A1000022234567890 /* NotificationManager.swift in Sources */,
+				A1000023234567890 /* DropZoneView.swift in Sources */,
+				A1000024234567890 /* HistoryView.swift in Sources */,
+				A1000025234567890 /* AccessibilityHelpers.swift in Sources */,
+				A1000026234567890 /* DesignSystem.swift in Sources */,
+				A1000027234567890 /* PopoverViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A1000200234567890 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A1000201234567890 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A1000210234567890 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = witnessd/witnessd.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PZN7P3E5;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = witnessd/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Witnessd;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Writerslogic Inc. All rights reserved.";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.writerslogic.witnessd;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A1000211234567890 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = witnessd/witnessd.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PZN7P3E5;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = witnessd/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Witnessd;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Writerslogic Inc. All rights reserved.";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.writerslogic.witnessd;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1000042234567890 /* Build configuration list for PBXProject "witnessd" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000200234567890 /* Debug */,
+				A1000201234567890 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000090234567890 /* Build configuration list for PBXNativeTarget "witnessd" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000210234567890 /* Debug */,
+				A1000211234567890 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A1000041234567890 /* Project object */;
+}

@@ -3,6 +3,7 @@
 
 .PHONY: all build test bench clean install install-man uninstall audit verify-self fmt lint validate-schemas help
 .PHONY: release release-snapshot sign notarize
+.PHONY: witness-app witness-build witness-archive witness-clean
 
 # Build variables
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -177,9 +178,49 @@ notarize: sign
 	rm witnessd-notarize.zip
 	@echo "Notarization complete."
 
+## Witness macOS App
+
+witness-app: witness-build
+	@echo "Witness.app built successfully!"
+	@echo "Location: Witness/build/Build/Products/Release/Witness.app"
+
+witness-build:
+	@echo "Building Witness.app..."
+	@# First build witnessd for the app bundle (CGO required for keystroke tracking)
+	CGO_ENABLED=1 GOOS=darwin go build $(LDFLAGS) -o Witness/Witness/Resources/witnessd ./cmd/witnessd
+	@# Build the Xcode project
+	xcodebuild -project Witness/Witness.xcodeproj \
+		-scheme Witness \
+		-configuration Release \
+		-derivedDataPath Witness/build \
+		build
+
+witness-archive:
+	@echo "Archiving Witness.app for distribution..."
+	@# Build witnessd universal binary (CGO required)
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o Witness/Witness/Resources/witnessd-amd64 ./cmd/witnessd
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o Witness/Witness/Resources/witnessd-arm64 ./cmd/witnessd
+	lipo -create -output Witness/Witness/Resources/witnessd \
+		Witness/Witness/Resources/witnessd-amd64 \
+		Witness/Witness/Resources/witnessd-arm64
+	rm Witness/Witness/Resources/witnessd-amd64 Witness/Witness/Resources/witnessd-arm64
+	@# Archive for App Store / Notarization
+	xcodebuild -project Witness/Witness.xcodeproj \
+		-scheme Witness \
+		-configuration Release \
+		-archivePath Witness/build/Witness.xcarchive \
+		archive
+	@echo "Archive created: Witness/build/Witness.xcarchive"
+
+witness-clean:
+	rm -rf Witness/build
+	rm -f Witness/Witness/Resources/witnessd
+	rm -f Witness/Witness/Resources/witnessd-amd64
+	rm -f Witness/Witness/Resources/witnessd-arm64
+
 ## Clean
 
-clean:
+clean: witness-clean
 	rm -rf $(BINDIR)
 	rm -f coverage.out coverage.html
 	$(MAKE) -C cmd/witnessd-ime clean 2>/dev/null || true
@@ -195,6 +236,11 @@ help:
 	@echo "  make install     - Install binaries and man pages"
 	@echo "  make install-man - Install man pages only"
 	@echo "  make uninstall   - Remove installed files"
+	@echo ""
+	@echo "Witness.app (macOS):"
+	@echo "  make witness-app     - Build Witness.app for macOS"
+	@echo "  make witness-archive - Create archive for App Store submission"
+	@echo "  make witness-clean   - Clean Witness.app build artifacts"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  make test        - Run all tests"
