@@ -44,6 +44,7 @@ import (
 	"witnessd/internal/tracking"
 	"witnessd/internal/vdf"
 	"witnessd/internal/wal"
+	"witnessd/internal/witness"
 )
 
 // Version information (set via ldflags during build)
@@ -468,6 +469,44 @@ func cmdCommit() {
 	}
 	elapsed := time.Since(start)
 
+	// Load signing key for ShadowCache
+	keyPath := filepath.Join(witnessdDir(), "signing_key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nError loading signing key: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize ShadowCache
+	shadowCache, err := witness.NewShadowCache(witnessdDir(), keyData)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nError initializing shadow cache: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate Edit Topology
+	var regions []witness.EditRegion
+	prevShadow, _ := shadowCache.Get(absPath)
+
+	if prevShadow != nil {
+		if prevShadow.Strategy == witness.ShadowFull {
+			regions = witness.ExtractTopology(prevShadow.Content, content)
+		} else if prevShadow.Strategy == witness.ShadowChunked {
+			currChunks := witness.ComputeChunks(content)
+			regions = witness.DiffChunked(prevShadow.FileSize, content, prevShadow.Chunks, currChunks)
+		}
+	} else {
+		// New file
+		regions = witness.ExtractTopology(nil, content)
+	}
+
+	regionsRoot := witness.ComputeRegionsRoot(regions)
+
+	// Update ShadowCache
+	if err := shadowCache.Put(absPath, content); err != nil {
+		fmt.Fprintf(os.Stderr, "\nWarning: failed to update shadow cache: %v\n", err)
+	}
+
 	// Check for active tracking session
 	var trackingInfo string
 	if jitterEv := loadTrackingEvidence(filePath); jitterEv != nil {
@@ -488,6 +527,8 @@ func cmdCommit() {
 		VDFInput:      vdfInput,
 		VDFOutput:     vdfProof.Output,
 		VDFIterations: vdfProof.Iterations,
+		RegionsRoot:   regionsRoot,
+		EditRegions:   regions,
 	}
 
 	if err := db.InsertSecureEvent(event); err != nil {

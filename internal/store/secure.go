@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"witnessd/internal/witness"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -56,12 +58,25 @@ CREATE TABLE IF NOT EXISTS secure_events (
     context_note    TEXT,
     vdf_input       BLOB,
     vdf_output      BLOB,
-    vdf_iterations  INTEGER DEFAULT 0
+    vdf_iterations  INTEGER DEFAULT 0,
+    regions_root    BLOB
+);
+
+CREATE TABLE IF NOT EXISTS secure_edit_regions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id        INTEGER NOT NULL,
+    ordinal         INTEGER NOT NULL,
+    start_pct       REAL NOT NULL,
+    end_pct         REAL NOT NULL,
+    delta_sign      INTEGER NOT NULL,
+    byte_count      INTEGER NOT NULL,
+    FOREIGN KEY(event_id) REFERENCES secure_events(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_secure_events_timestamp ON secure_events(timestamp_ns);
 CREATE INDEX IF NOT EXISTS idx_secure_events_file ON secure_events(file_path, timestamp_ns);
 CREATE INDEX IF NOT EXISTS idx_secure_events_hash ON secure_events(event_hash);
+CREATE INDEX IF NOT EXISTS idx_secure_edit_regions_event ON secure_edit_regions(event_id);
 `
 
 // OpenSecure opens or creates a secure SQLite database.
@@ -190,7 +205,7 @@ func (s *SecureStore) verifyIntegrity() error {
 	// Verify event chain
 	rows, err := s.db.Query(`
 		SELECT id, event_hash, previous_hash, hmac,
-		       device_id, timestamp_ns, file_path, content_hash, file_size, size_delta
+		       device_id, timestamp_ns, file_path, content_hash, file_size, size_delta, regions_root
 		FROM secure_events ORDER BY id ASC`)
 	if err != nil {
 		return fmt.Errorf("query events: %w", err)
@@ -203,13 +218,13 @@ func (s *SecureStore) verifyIntegrity() error {
 	for rows.Next() {
 		var id int64
 		var eventHash, previousHash, storedEventMAC []byte
-		var deviceID, contentHash []byte
+		var deviceID, contentHash, regionsRoot []byte
 		var timestampNs, fileSize int64
 		var sizeDelta int32
 		var filePath string
 
 		if err := rows.Scan(&id, &eventHash, &previousHash, &storedEventMAC,
-			&deviceID, &timestampNs, &filePath, &contentHash, &fileSize, &sizeDelta); err != nil {
+			&deviceID, &timestampNs, &filePath, &contentHash, &fileSize, &sizeDelta, &regionsRoot); err != nil {
 			return fmt.Errorf("scan event %d: %w", id, err)
 		}
 
@@ -221,13 +236,13 @@ func (s *SecureStore) verifyIntegrity() error {
 		}
 
 		// Verify event HMAC
-		expectedEventMAC := s.computeEventHMAC(deviceID, timestampNs, filePath, contentHash, fileSize, sizeDelta, previousHash)
+		expectedEventMAC := s.computeEventHMAC(deviceID, timestampNs, filePath, contentHash, fileSize, sizeDelta, previousHash, regionsRoot)
 		if !hmac.Equal(storedEventMAC, expectedEventMAC) {
 			return fmt.Errorf("event %d HMAC mismatch - event may be tampered", id)
 		}
 
 		// Verify event hash
-		computedHash := computeEventHash(deviceID, timestampNs, filePath, contentHash, fileSize, sizeDelta, previousHash)
+		computedHash := computeEventHash(deviceID, timestampNs, filePath, contentHash, fileSize, sizeDelta, previousHash, regionsRoot)
 		if !bytesEqual(eventHash, computedHash[:]) {
 			return fmt.Errorf("event %d hash mismatch", id)
 		}
@@ -272,6 +287,10 @@ type SecureEvent struct {
 	VDFInput      [32]byte // Input to VDF (previous event hash or genesis)
 	VDFOutput     [32]byte // VDF result
 	VDFIterations uint64   // Number of iterations performed
+
+	// Edit Topology (forensic structure)
+	RegionsRoot   [32]byte             // Merkle root of edit regions
+	EditRegions   []witness.EditRegion // Granular edits (in-memory only, stored in separate table)
 }
 
 // InsertSecureEvent inserts a new event with integrity verification.
@@ -288,10 +307,10 @@ func (s *SecureStore) InsertSecureEvent(e *SecureEvent) error {
 	e.PreviousHash = s.lastHash
 
 	// Compute event hash
-	e.EventHash = computeEventHash(e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:])
+	e.EventHash = computeEventHash(e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:], e.RegionsRoot[:])
 
 	// Compute HMAC
-	eventMAC := s.computeEventHMAC(e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:])
+	eventMAC := s.computeEventHMAC(e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:], e.RegionsRoot[:])
 
 	// Begin transaction
 	tx, err := s.db.Begin()
@@ -302,9 +321,9 @@ func (s *SecureStore) InsertSecureEvent(e *SecureEvent) error {
 
 	// Insert event
 	result, err := tx.Exec(`
-		INSERT INTO secure_events (device_id, timestamp_ns, file_path, content_hash, file_size, size_delta, previous_hash, event_hash, hmac, context_type, context_note, vdf_input, vdf_output, vdf_iterations)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:], e.EventHash[:], eventMAC, e.ContextType, e.ContextNote, e.VDFInput[:], e.VDFOutput[:], e.VDFIterations,
+		INSERT INTO secure_events (device_id, timestamp_ns, file_path, content_hash, file_size, size_delta, previous_hash, event_hash, hmac, context_type, context_note, vdf_input, vdf_output, vdf_iterations, regions_root)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.DeviceID[:], e.TimestampNs, e.FilePath, e.ContentHash[:], e.FileSize, e.SizeDelta, e.PreviousHash[:], e.EventHash[:], eventMAC, e.ContextType, e.ContextNote, e.VDFInput[:], e.VDFOutput[:], e.VDFIterations, e.RegionsRoot[:],
 	)
 	if err != nil {
 		return fmt.Errorf("insert event: %w", err)
@@ -312,6 +331,21 @@ func (s *SecureStore) InsertSecureEvent(e *SecureEvent) error {
 
 	id, _ := result.LastInsertId()
 	e.ID = id
+
+	// Insert edit regions
+	if len(e.EditRegions) > 0 {
+		stmt, err := tx.Prepare(`INSERT INTO secure_edit_regions (event_id, ordinal, start_pct, end_pct, delta_sign, byte_count) VALUES (?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf("prepare regions stmt: %w", err)
+		}
+		defer stmt.Close()
+
+		for i, r := range e.EditRegions {
+			if _, err := stmt.Exec(id, i, r.StartPct, r.EndPct, r.DeltaSign, r.ByteCount); err != nil {
+				return fmt.Errorf("insert region %d: %w", i, err)
+			}
+		}
+	}
 
 	// Update integrity record
 	newMAC := s.computeIntegrityHMAC(e.EventHash, id)
@@ -486,9 +520,9 @@ func (s *SecureStore) computeIntegrityHMAC(chainHash [32]byte, eventCount int64)
 	return h.Sum(nil)
 }
 
-func (s *SecureStore) computeEventHMAC(deviceID []byte, timestampNs int64, filePath string, contentHash []byte, fileSize int64, sizeDelta int32, previousHash []byte) []byte {
+func (s *SecureStore) computeEventHMAC(deviceID []byte, timestampNs int64, filePath string, contentHash []byte, fileSize int64, sizeDelta int32, previousHash []byte, regionsRoot []byte) []byte {
 	h := hmac.New(sha256.New, s.hmacKey)
-	h.Write([]byte("witnessd-event-v1"))
+	h.Write([]byte("witnessd-event-v2"))
 	h.Write(deviceID)
 	h.Write(intToBytes(timestampNs))
 	h.Write([]byte(filePath))
@@ -496,12 +530,13 @@ func (s *SecureStore) computeEventHMAC(deviceID []byte, timestampNs int64, fileP
 	h.Write(intToBytes(fileSize))
 	h.Write(int32ToBytes(sizeDelta))
 	h.Write(previousHash)
+	h.Write(regionsRoot)
 	return h.Sum(nil)
 }
 
-func computeEventHash(deviceID []byte, timestampNs int64, filePath string, contentHash []byte, fileSize int64, sizeDelta int32, previousHash []byte) [32]byte {
+func computeEventHash(deviceID []byte, timestampNs int64, filePath string, contentHash []byte, fileSize int64, sizeDelta int32, previousHash []byte, regionsRoot []byte) [32]byte {
 	h := sha256.New()
-	h.Write([]byte("witnessd-event-v1"))
+	h.Write([]byte("witnessd-event-v2"))
 	h.Write(deviceID)
 	h.Write(intToBytes(timestampNs))
 	h.Write([]byte(filePath))
@@ -509,6 +544,7 @@ func computeEventHash(deviceID []byte, timestampNs int64, filePath string, conte
 	h.Write(intToBytes(fileSize))
 	h.Write(int32ToBytes(sizeDelta))
 	h.Write(previousHash)
+	h.Write(regionsRoot)
 	var result [32]byte
 	copy(result[:], h.Sum(nil))
 	return result

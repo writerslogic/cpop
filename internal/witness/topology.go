@@ -369,11 +369,19 @@ func coalesceRegions(regions []EditRegion, proximityPct float32) []EditRegion {
 	return result
 }
 
-// chunkedDiff compares content using content-defined chunks.
-// Returns approximate edit regions based on which chunks changed.
-// Used for files 256KB - 10MB.
-func chunkedDiff(prev, curr []byte, prevChunks, currChunks []ChunkRef) []EditRegion {
-	if len(prev) == 0 {
+// ComputeChunks uses content-defined chunking (Rabin fingerprint style).
+// Target chunk size ~4KB, min 1KB, max 16KB.
+func ComputeChunks(content []byte) []ChunkRef {
+	return computeChunks(content)
+}
+
+// DiffChunked compares content using content-defined chunks when previous content is missing.
+// prevSize: size of previous file.
+// curr: current content.
+// prevChunks: chunks of previous file.
+// currChunks: chunks of current file.
+func DiffChunked(prevSize int64, curr []byte, prevChunks, currChunks []ChunkRef) []EditRegion {
+	if prevSize == 0 {
 		return []EditRegion{{
 			StartPct:  0.0,
 			EndPct:    1.0,
@@ -395,13 +403,12 @@ func chunkedDiff(prev, curr []byte, prevChunks, currChunks []ChunkRef) []EditReg
 	}
 
 	var regions []EditRegion
-	prevLen := len(prev)
 
 	// Find deleted chunks (in prev but not in curr)
 	for _, c := range prevChunks {
 		if !currHashes[c.Hash] {
-			startPct := float32(c.Offset) / float32(prevLen)
-			endPct := float32(c.Offset+c.Length) / float32(prevLen)
+			startPct := float32(c.Offset) / float32(prevSize)
+			endPct := float32(c.Offset+c.Length) / float32(prevSize)
 			regions = append(regions, EditRegion{
 				StartPct:  startPct,
 				EndPct:    endPct,
@@ -412,8 +419,7 @@ func chunkedDiff(prev, curr []byte, prevChunks, currChunks []ChunkRef) []EditReg
 	}
 
 	// Find inserted chunks (in curr but not in prev)
-	// Position is approximate - use relative position in curr mapped to prev
-	currLen := len(curr)
+	currLen := int64(len(curr))
 	for _, c := range currChunks {
 		if !prevHashes[c.Hash] {
 			// Map position from curr to prev space
@@ -431,6 +437,13 @@ func chunkedDiff(prev, curr []byte, prevChunks, currChunks []ChunkRef) []EditReg
 	}
 
 	return coalesceRegions(regions, CoalesceProximity)
+}
+
+// chunkedDiff compares content using content-defined chunks.
+// Returns approximate edit regions based on which chunks changed.
+// Used for files 256KB - 10MB.
+func chunkedDiff(prev, curr []byte, prevChunks, currChunks []ChunkRef) []EditRegion {
+	return DiffChunked(int64(len(prev)), curr, prevChunks, currChunks)
 }
 
 // bytesEqual checks if two byte slices are equal.
