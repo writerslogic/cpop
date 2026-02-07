@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Witnessd IBus Component Definition
+
+  This file defines the Witnessd input method engine for IBus.
+  It should be installed to one of:
+    - ~/.local/share/ibus/component/witnessd.xml (user installation)
+    - /usr/share/ibus/component/witnessd.xml (system installation)
+
+  After installation, restart IBus:
+    ibus restart
+
+  Then enable the engine via:
+    - ibus-setup (IBus preferences)
+    - GNOME Settings > Keyboard > Input Sources
+    - KDE System Settings > Input Devices > Input Methods
+-->
+<component>
+    <!-- Unique identifier for this component -->
+    <name>com.witnessd.ibus</name>
+
+    <!-- Human-readable description -->
+    <description>Witnessd Cryptographic Authorship Witnessing</description>
+
+    <!-- Path to the engine binary -->
+    <exec>/usr/local/bin/witnessd-ibus --ibus</exec>
+
+    <!-- Component version -->
+    <version>1.0.0</version>
+
+    <!-- Author information -->
+    <author>Witnessd Project</author>
+
+    <!-- License -->
+    <license>MIT</license>
+
+    <!-- Project homepage -->
+    <homepage>https://github.com/witnessd/witnessd</homepage>
+
+    <!-- Text domain for translations -->
+    <textdomain>witnessd</textdomain>
+
+    <!-- Engine definitions -->
+    <engines>
+        <engine>
+            <!-- Engine name (used for selection) -->
+            <name>witnessd</name>
+
+            <!-- Display name in UI -->
+            <longname>Witnessd</longname>
+
+            <!-- Short description -->
+            <description>Cryptographic authorship witnessing - transparent keystroke monitoring</description>
+
+            <!-- Supported languages (all languages supported) -->
+            <language>en</language>
+
+            <!-- License for the engine -->
+            <license>MIT</license>
+
+            <!-- Author -->
+            <author>Witnessd Project</author>
+
+            <!-- Icon name or path -->
+            <icon>witnessd</icon>
+
+            <!-- Keyboard layout (passthrough - doesn't modify layout) -->
+            <layout>us</layout>
+
+            <!-- Symbol shown in panel (single character) -->
+            <symbol>W</symbol>
+
+            <!-- Ranking (higher = preferred) -->
+            <rank>99</rank>
+
+            <!-- Hotkey to toggle (optional) -->
+            <!-- <hotkeys></hotkeys> -->
+
+            <!-- Setup command (optional) -->
+            <setup>/usr/local/bin/witnessd-ibus --configure</setup>
+
+            <!-- Required component version -->
+            <component_version>1.0.0</component_version>
+
+            <!-- Indicates this is a passthrough engine -->
+            <!--
+              This engine operates in passthrough mode:
+              - It observes all keystrokes for authorship witnessing
+              - It does NOT modify, delay, or consume any input
+              - All keys are passed through to applications unchanged
+              - Focus tracking provides document correlation
+            -->
+        </engine>
+
+        <!-- Additional language variants could be added here -->
+        <!--
+        <engine>
+            <name>witnessd-intl</name>
+            <language>other</language>
+            <layout>*</layout>
+            ...
+        </engine>
+        -->
+    </engines>
+</component>

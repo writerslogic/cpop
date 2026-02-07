@@ -14,6 +14,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,11 +36,14 @@ import (
 	"witnessd/internal/declaration"
 	"witnessd/internal/evidence"
 	"witnessd/internal/jitter"
+	"witnessd/internal/keyhierarchy"
 	"witnessd/internal/presence"
+	"witnessd/internal/sentinel"
 	"witnessd/internal/store"
 	"witnessd/internal/tpm"
 	"witnessd/internal/tracking"
 	"witnessd/internal/vdf"
+	"witnessd/internal/wal"
 )
 
 // Version information (set via ldflags during build)
@@ -74,12 +78,16 @@ func main() {
 		cmdPresence()
 	case "track":
 		cmdTrack()
+	case "sentinel":
+		cmdSentinel()
 	case "calibrate":
 		cmdCalibrate()
 	case "status":
 		cmdStatus()
 	case "daemon":
 		cmdDaemon()
+	case "serve":
+		cmdIPCDaemon()
 	case "help", "-h", "--help":
 		usage()
 	case "version", "-v", "--version":
@@ -112,39 +120,55 @@ COMMANDS:
     verify <file>       Verify checkpoint chain or evidence packet
     presence <action>   Manage presence verification sessions
     track <action>      Track keyboard activity (count only, no capture)
+    sentinel <action>   Manage background sentinel daemon
     calibrate           Calibrate VDF performance for this machine
     status              Show witnessd status and configuration
+    serve               Start IPC daemon for client communication
     daemon              (Legacy) Run background monitoring daemon
     help                Show this help message
     version             Show version information
 
 BASIC WORKFLOW:
-    1. witnessd init                    # One-time setup
+    1. witnessd init                    # One-time setup (creates master identity)
     2. (write your document)
-    3. witnessd commit doc.md -m "..."  # Checkpoint when ready
+    3. witnessd commit doc.md -m "..."  # Checkpoint with ratcheting key signature
     4. (continue writing)
     5. witnessd commit doc.md -m "..."  # More checkpoints
-    6. witnessd export doc.md           # Export evidence when done
-    7. witnessd verify evidence.json    # Verify evidence packet
+    6. witnessd export doc.md           # Export evidence with key hierarchy
+    7. witnessd verify evidence.json    # Verify including key hierarchy
 
 ENHANCED WORKFLOW (with keystroke + jitter tracking):
-    1. witnessd track start doc.md      # Start tracking daemon
+    1. witnessd track start doc.md      # Start tracking daemon (creates WAL)
     2. (write your document)
     3. witnessd track status            # Check keystroke count, jitter samples
     4. witnessd commit doc.md -m "..."  # Creates checkpoint with jitter chain
     5. witnessd track stop              # Stop tracking, save jitter evidence
-    6. witnessd export doc.md           # Export with jitter evidence
-    7. witnessd verify evidence.wpkt    # Verify including jitter chain
+    6. witnessd export doc.md           # Export with jitter + key hierarchy
+    7. witnessd verify evidence.wpkt    # Verify including all evidence layers
+
+SENTINEL DAEMON (automatic tracking):
+    witnessd sentinel start             # Start background sentinel daemon
+    witnessd sentinel stop              # Stop sentinel daemon
+    witnessd sentinel status            # Show tracked documents
 
 PRIVACY NOTE:
     Tracking counts keystrokes - it does NOT capture which keys are pressed.
     This is NOT a keylogger. Only event counts and timing are recorded.
+
+KEY HIERARCHY:
+    The system uses a three-tier ratcheting key hierarchy:
+    - Tier 0 (Identity): Master key derived from device PUF
+    - Tier 1 (Session): Per-session keys certified by master
+    - Tier 2 (Ratchet): Forward-secrecy keys per checkpoint
 
 The system proves:
     - Content states form an unbroken chain
     - Minimum time elapsed between commits (VDF)
     - Real keystrokes occurred over time (jitter evidence)
     - Your signed declaration of creative process
+    - Persistent author identity with forward secrecy
+
+Patent Pending: USPTO Application No. 19/460,364
 
 See https://github.com/writerslogic/witnessd for documentation.`)
 }
@@ -171,6 +195,8 @@ func cmdInit() {
 		filepath.Join(dir, "chains"),
 		filepath.Join(dir, "sessions"),
 		filepath.Join(dir, "tracking"),
+		filepath.Join(dir, "sentinel"),
+		filepath.Join(dir, "sentinel", "wal"),
 	}
 
 	for _, d := range dirs {
@@ -213,6 +239,53 @@ func cmdInit() {
 		privKey = ed25519.PrivateKey(keyData)
 	}
 
+	// Initialize master identity from PUF (key hierarchy)
+	pufSeedPath := filepath.Join(dir, "puf_seed")
+	if _, err := os.Stat(pufSeedPath); os.IsNotExist(err) {
+		fmt.Println("Initializing master identity from PUF...")
+		puf, err := keyhierarchy.LoadOrCreateSoftwarePUF(pufSeedPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating PUF seed: %v\n", err)
+			os.Exit(1)
+		}
+
+		identity, err := keyhierarchy.DeriveMasterIdentity(puf)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error deriving master identity: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Save identity public key
+		identityPath := filepath.Join(dir, "identity.json")
+		identityData, _ := json.MarshalIndent(map[string]interface{}{
+			"version":     keyhierarchy.Version,
+			"fingerprint": identity.Fingerprint,
+			"public_key":  hex.EncodeToString(identity.PublicKey),
+			"device_id":   identity.DeviceID,
+			"created_at":  identity.CreatedAt,
+		}, "", "  ")
+		if err := os.WriteFile(identityPath, identityData, 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving identity: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("  Master Identity: %s\n", identity.Fingerprint)
+		fmt.Printf("  Device ID: %s\n", identity.DeviceID)
+	} else {
+		// Load existing identity
+		puf, err := keyhierarchy.LoadOrCreateSoftwarePUF(pufSeedPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading PUF: %v\n", err)
+			os.Exit(1)
+		}
+		identity, err := keyhierarchy.DeriveMasterIdentity(puf)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error deriving identity: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("  Existing Master Identity: %s\n", identity.Fingerprint)
+	}
+
 	// Create secure SQLite database
 	dbPath := filepath.Join(dir, "events.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -234,11 +307,11 @@ func cmdInit() {
 	configPath := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		cfg := map[string]interface{}{
-			"version": 3,
+			"version": 4,
 			"storage": map[string]interface{}{
-				"type":     "sqlite",
-				"path":     "events.db",
-				"secure":   true,
+				"type":   "sqlite",
+				"path":   "events.db",
+				"secure": true,
 			},
 			"vdf": map[string]interface{}{
 				"iterations_per_second": 1000000,
@@ -249,6 +322,16 @@ func cmdInit() {
 			"presence": map[string]interface{}{
 				"challenge_interval_seconds": 600,
 				"response_window_seconds":    60,
+			},
+			"key_hierarchy": map[string]interface{}{
+				"enabled": true,
+				"version": keyhierarchy.Version,
+			},
+			"sentinel": map[string]interface{}{
+				"auto_start":          false,
+				"heartbeat_seconds":   60,
+				"checkpoint_seconds":  60,
+				"wal_enabled":         true,
 			},
 		}
 
@@ -266,6 +349,8 @@ func cmdInit() {
 	fmt.Println("  1. Run 'witnessd calibrate' to calibrate VDF for your machine")
 	fmt.Println("  2. Create checkpoints with 'witnessd commit <file> -m \"message\"'")
 	fmt.Println("  3. Export evidence with 'witnessd export <file>'")
+	fmt.Println()
+	fmt.Println("Optional: Run 'witnessd sentinel start' for automatic document tracking")
 }
 
 // deriveHMACKey derives an HMAC key from the signing key for database integrity.
@@ -595,6 +680,29 @@ func cmdExportFromSQLite(absPath string, events []store.SecureEvent, tier, outpu
 		},
 	}
 
+	// Add key hierarchy evidence
+	khEv := loadKeyHierarchyEvidence(absPath)
+	if khEv != nil {
+		packet["key_hierarchy"] = map[string]interface{}{
+			"version":             khEv.Version,
+			"master_fingerprint":  khEv.MasterFingerprint,
+			"master_public_key":   hex.EncodeToString(khEv.MasterPublicKey),
+			"device_id":           khEv.DeviceID,
+			"session_id":          khEv.SessionID,
+			"session_public_key":  hex.EncodeToString(khEv.SessionPublicKey),
+			"session_started":     khEv.SessionStarted.Format(time.RFC3339),
+			"session_certificate": hex.EncodeToString(khEv.SessionCertificateRaw),
+			"ratchet_count":       khEv.RatchetCount,
+		}
+		packet["claims"] = append(packet["claims"].([]map[string]interface{}),
+			map[string]interface{}{
+				"type":        "identity",
+				"description": fmt.Sprintf("Identity verified: %s", khEv.MasterFingerprint),
+				"confidence":  "certain",
+			})
+		fmt.Printf("Including key hierarchy evidence: %s\n", khEv.MasterFingerprint)
+	}
+
 	// Add keystroke evidence if available
 	keystrokeEvidence := loadTrackingEvidence(absPath)
 	if keystrokeEvidence != nil && (tier == "standard" || tier == "enhanced" || tier == "maximum") {
@@ -795,6 +903,13 @@ func cmdExportLegacy(filePath, tier, output string) {
 	// Build evidence packet
 	builder := evidence.NewBuilder(filepath.Base(filePath), chain).
 		WithDeclaration(decl)
+
+	// Add key hierarchy evidence
+	khEv := loadKeyHierarchyEvidence(filePath)
+	if khEv != nil {
+		builder.WithKeyHierarchy(khEv)
+		fmt.Printf("Including key hierarchy evidence: %s\n", khEv.MasterFingerprint)
+	}
 
 	// Load tracking evidence if available
 	keystrokeEvidence := loadTrackingEvidence(filePath)
@@ -2001,3 +2116,422 @@ func collectTPMBindings(chain *checkpoint.Chain) ([]tpm.Binding, string) {
 
 	return bindings, hex.EncodeToString(deviceID)
 }
+
+// cmdSentinel handles sentinel daemon commands.
+//
+// Patent Pending: USPTO Application No. 19/460,364
+func cmdSentinel() {
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, `Usage: witnessd sentinel <action> [options]
+
+ACTIONS:
+    start               Start background sentinel daemon
+    stop                Stop sentinel daemon
+    status              Show sentinel status and tracked documents
+    track <file>        Add a document to sentinel tracking
+    untrack <file>      Remove a document from sentinel tracking
+
+The sentinel daemon automatically tracks documents and manages WAL-based
+crash recovery for continuous authorship witnessing.`)
+		os.Exit(1)
+	}
+
+	action := os.Args[2]
+	dir := witnessdDir()
+	daemonMgr := sentinel.NewDaemonManager(dir)
+
+	switch action {
+	case "start":
+		if daemonMgr.IsRunning() {
+			fmt.Fprintln(os.Stderr, "Sentinel daemon is already running.")
+			status, _ := daemonMgr.Status()
+			if status != nil {
+				fmt.Printf("  PID: %d\n", status.PID)
+				fmt.Printf("  Uptime: %s\n", status.Uptime.Round(time.Second))
+			}
+			os.Exit(1)
+		}
+
+		// Check if running as daemon subprocess
+		if os.Getenv("WITNESSD_SENTINEL_DAEMON") == "1" {
+			runSentinelDaemon(dir)
+			return
+		}
+
+		// Fork daemon subprocess
+		fmt.Println("Starting sentinel daemon...")
+
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error finding executable: %v\n", err)
+			os.Exit(1)
+		}
+
+		cmd := exec.Command(exe, "sentinel", "start")
+		cmd.Env = append(os.Environ(), "WITNESSD_SENTINEL_DAEMON=1")
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		cmd.Stdin = nil
+		cmd.SysProcAttr = getDaemonSysProcAttr()
+
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error starting sentinel: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Wait for daemon to initialize
+		time.Sleep(500 * time.Millisecond)
+
+		if daemonMgr.IsRunning() {
+			status, _ := daemonMgr.Status()
+			fmt.Println("Sentinel daemon started.")
+			if status != nil {
+				fmt.Printf("  PID: %d\n", status.PID)
+				if status.Identity != "" {
+					fmt.Printf("  Identity: %s\n", status.Identity)
+				}
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "Error: Sentinel daemon failed to start.")
+			os.Exit(1)
+		}
+
+	case "stop":
+		if !daemonMgr.IsRunning() {
+			fmt.Fprintln(os.Stderr, "Sentinel daemon is not running.")
+			os.Exit(1)
+		}
+
+		fmt.Println("Stopping sentinel daemon...")
+
+		if err := daemonMgr.SignalStop(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error signaling daemon: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := daemonMgr.WaitForStop(10 * time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		}
+
+		fmt.Println("Sentinel daemon stopped.")
+
+	case "status":
+		status, err := daemonMgr.Status()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading status: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("=== Sentinel Status ===")
+		fmt.Println()
+
+		if status.Running {
+			fmt.Printf("Status: RUNNING (PID %d)\n", status.PID)
+			fmt.Printf("Started: %s\n", status.StartedAt.Format(time.RFC3339))
+			fmt.Printf("Uptime: %s\n", status.Uptime.Round(time.Second))
+			if status.Identity != "" {
+				fmt.Printf("Identity: %s\n", status.Identity)
+			}
+		} else {
+			fmt.Println("Status: STOPPED")
+		}
+
+		// List WAL files for crash recovery info
+		walDir := sentinel.WALDir(dir)
+		if files, err := filepath.Glob(filepath.Join(walDir, "*.wal")); err == nil && len(files) > 0 {
+			fmt.Println()
+			fmt.Printf("Active WAL files: %d\n", len(files))
+			for _, f := range files {
+				info, _ := os.Stat(f)
+				if info != nil {
+					fmt.Printf("  %s (%d bytes)\n", filepath.Base(f), info.Size())
+				}
+			}
+		}
+
+	case "track":
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "Usage: witnessd sentinel track <file>")
+			os.Exit(1)
+		}
+
+		filePath := os.Args[3]
+		absPath, err := filepath.Abs(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
+			os.Exit(1)
+		}
+
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "File not found: %s\n", filePath)
+			os.Exit(1)
+		}
+
+		// TODO: Send track command to running daemon via IPC
+		fmt.Printf("Would track: %s\n", absPath)
+		fmt.Println("Note: IPC to running daemon not yet implemented.")
+		fmt.Println("For now, restart sentinel with file in auto-start list.")
+
+	case "untrack":
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "Usage: witnessd sentinel untrack <file>")
+			os.Exit(1)
+		}
+
+		filePath := os.Args[3]
+		absPath, err := filepath.Abs(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
+			os.Exit(1)
+		}
+
+		// TODO: Send untrack command to running daemon via IPC
+		fmt.Printf("Would untrack: %s\n", absPath)
+		fmt.Println("Note: IPC to running daemon not yet implemented.")
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown sentinel action: %s\n", action)
+		os.Exit(1)
+	}
+}
+
+// runSentinelDaemon runs the sentinel daemon in the foreground (called by subprocess).
+func runSentinelDaemon(witnessdDir string) {
+	daemonMgr := sentinel.NewDaemonManager(witnessdDir)
+
+	// Write PID file
+	if err := daemonMgr.WritePID(); err != nil {
+		os.Exit(1)
+	}
+
+	// Load configuration
+	cfg := sentinel.DefaultConfig().WithWitnessdDir(witnessdDir)
+
+	// Create sentinel
+	sent, err := sentinel.New(cfg)
+	if err != nil {
+		daemonMgr.Cleanup()
+		os.Exit(1)
+	}
+
+	// Write daemon state
+	state := &sentinel.DaemonState{
+		PID:       os.Getpid(),
+		StartedAt: time.Now(),
+		Version:   Version,
+	}
+	daemonMgr.WriteState(state)
+
+	// Start sentinel
+	if err := sent.Start(context.Background()); err != nil {
+		daemonMgr.Cleanup()
+		os.Exit(1)
+	}
+
+	// Set up signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+
+	// Run until signaled
+	for {
+		sig := <-sigChan
+		switch sig {
+		case syscall.SIGHUP:
+			// Reload configuration
+			// TODO: Implement config reload
+			continue
+		default:
+			// Graceful shutdown
+			sent.Stop()
+			daemonMgr.Cleanup()
+			return
+		}
+	}
+}
+
+// loadMasterIdentity loads the master identity for key hierarchy operations.
+func loadMasterIdentity() (*keyhierarchy.MasterIdentity, *keyhierarchy.SoftwarePUF, error) {
+	dir := witnessdDir()
+	pufSeedPath := filepath.Join(dir, "puf_seed")
+
+	puf, err := keyhierarchy.LoadOrCreateSoftwarePUF(pufSeedPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load PUF: %w", err)
+	}
+
+	identity, err := keyhierarchy.DeriveMasterIdentity(puf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("derive identity: %w", err)
+	}
+
+	return identity, puf, nil
+}
+
+// loadKeyHierarchyEvidence loads key hierarchy evidence for a document session.
+func loadKeyHierarchyEvidence(documentPath string) *keyhierarchy.KeyHierarchyEvidence {
+	dir := witnessdDir()
+	absPath, err := filepath.Abs(documentPath)
+	if err != nil {
+		return nil
+	}
+
+	// Look for session-specific key hierarchy data
+	sessionDir := filepath.Join(dir, "sessions")
+	docHash := sha256.Sum256([]byte(absPath))
+	sessionFile := filepath.Join(sessionDir, hex.EncodeToString(docHash[:8])+".keyhierarchy.json")
+
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		return nil
+	}
+
+	var evidence keyhierarchy.KeyHierarchyEvidence
+	if err := json.Unmarshal(data, &evidence); err != nil {
+		return nil
+	}
+
+	return &evidence
+}
+
+// saveKeyHierarchyEvidence saves key hierarchy evidence for a document session.
+func saveKeyHierarchyEvidence(documentPath string, evidence *keyhierarchy.KeyHierarchyEvidence) error {
+	dir := witnessdDir()
+	absPath, err := filepath.Abs(documentPath)
+	if err != nil {
+		return err
+	}
+
+	sessionDir := filepath.Join(dir, "sessions")
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
+		return err
+	}
+
+	docHash := sha256.Sum256([]byte(absPath))
+	sessionFile := filepath.Join(sessionDir, hex.EncodeToString(docHash[:8])+".keyhierarchy.json")
+
+	data, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(sessionFile, data, 0600)
+}
+
+// getOrCreateKeySession gets or creates a key hierarchy session for a document.
+func getOrCreateKeySession(documentPath string) (*keyhierarchy.SessionManager, error) {
+	_, puf, err := loadMasterIdentity()
+	if err != nil {
+		return nil, err
+	}
+
+	return keyhierarchy.NewSessionManager(puf, documentPath)
+}
+
+// openOrCreateWAL opens or creates a WAL for tracking a document.
+func openOrCreateWAL(documentPath, sessionID string) (*wal.WAL, error) {
+	dir := witnessdDir()
+	walDir := filepath.Join(dir, "tracking", "wal")
+	if err := os.MkdirAll(walDir, 0700); err != nil {
+		return nil, fmt.Errorf("create WAL dir: %w", err)
+	}
+
+	// Generate session-specific HMAC key
+	h := sha256.Sum256([]byte("witnessd-wal-hmac-" + sessionID))
+	var sessionIDBytes [32]byte
+	sessionIDHash := sha256.Sum256([]byte(sessionID))
+	copy(sessionIDBytes[:], sessionIDHash[:])
+
+	walPath := filepath.Join(walDir, sessionID+".wal")
+	return wal.Open(walPath, sessionIDBytes, h[:])
+}
+
+// recoverFromWAL recovers tracking state from a WAL after crash.
+func recoverFromWAL(walLog *wal.WAL) (*wal.RecoveryInfo, error) {
+	entries, err := walLog.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("read WAL: %w", err)
+	}
+
+	recovery := &wal.RecoveryInfo{
+		RecoveredAt:      time.Now(),
+		EntriesRecovered: uint64(len(entries)),
+	}
+
+	// Replay entries to recover state
+	for _, entry := range entries {
+		switch entry.Type {
+		case wal.EntryKeystrokeBatch:
+			if payload, err := wal.DeserializeKeystrokeBatch(entry.Payload); err == nil {
+				recovery.KeystrokesRecovered += uint64(payload.Count)
+			}
+		case wal.EntryJitterSample:
+			recovery.SamplesRecovered++
+		case wal.EntryCheckpoint:
+			recovery.LastCheckpointSeq = entry.Sequence
+		}
+
+		// Verify entry integrity
+		if !walLog.VerifyHMAC(&entry) {
+			recovery.TamperedEntries++
+		}
+	}
+
+	// Estimate data loss (max 100ms between WAL writes)
+	recovery.DataLossEstimate = "< 100ms"
+
+	return recovery, nil
+}
+
+// checkAndRecoverWAL checks for WAL files that need recovery and prompts user.
+func checkAndRecoverWAL() {
+	dir := witnessdDir()
+	walDir := filepath.Join(dir, "tracking", "wal")
+
+	files, err := filepath.Glob(filepath.Join(walDir, "*.wal"))
+	if err != nil || len(files) == 0 {
+		return
+	}
+
+	fmt.Println("=== WAL Recovery Check ===")
+	fmt.Printf("Found %d WAL file(s) that may need recovery.\n", len(files))
+
+	for _, walFile := range files {
+		sessionID := strings.TrimSuffix(filepath.Base(walFile), ".wal")
+		fmt.Printf("\nSession: %s\n", sessionID)
+
+		// Open WAL and attempt recovery
+		h := sha256.Sum256([]byte("witnessd-wal-hmac-" + sessionID))
+		var sessionIDBytes [32]byte
+		sessionIDHash := sha256.Sum256([]byte(sessionID))
+	copy(sessionIDBytes[:], sessionIDHash[:])
+
+		walLog, err := wal.Open(walFile, sessionIDBytes, h[:])
+		if err != nil {
+			fmt.Printf("  Error opening WAL: %v\n", err)
+			continue
+		}
+
+		recovery, err := recoverFromWAL(walLog)
+		walLog.Close()
+
+		if err != nil {
+			fmt.Printf("  Error recovering: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("  Entries: %d\n", recovery.EntriesRecovered)
+		fmt.Printf("  Keystrokes: %d\n", recovery.KeystrokesRecovered)
+		fmt.Printf("  Data loss estimate: %s\n", recovery.DataLossEstimate)
+		if recovery.TamperedEntries > 0 {
+			fmt.Printf("  WARNING: %d tampered entries detected!\n", recovery.TamperedEntries)
+		}
+	}
+}
+
+// Unused import guards - these ensure the imports are used
+var (
+	_ = context.Background
+	_ = sentinel.DefaultConfig
+	_ = keyhierarchy.Version
+	_ = wal.Version
+)

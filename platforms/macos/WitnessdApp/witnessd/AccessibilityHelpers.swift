@@ -205,7 +205,7 @@ extension View {
         self
             .focusable()
             .focused(isFocused)
-            .onChange(of: isFocused.wrappedValue) { _, focused in
+            .onChange(of: isFocused.wrappedValue) { focused in
                 if focused {
                     onFocus?()
                 }

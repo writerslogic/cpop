@@ -1,0 +1,69 @@
+#!/usr/bin/make -f
+
+# Debian rules file for witnessd
+
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export GOPROXY = https://proxy.golang.org,direct
+export GOFLAGS = -mod=readonly
+
+# Version information
+VERSION := $(shell dpkg-parsechangelog -S Version | cut -d- -f1)
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(BUILD_TIME)
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+	rm -rf bin/
+	rm -f witnessd-ibus
+
+override_dh_auto_build:
+	# Build main daemon
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o bin/witnessd ./cmd/witnessd
+	# Build control utility
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o bin/witnessctl ./cmd/witnessctl
+	# Build IBus engine
+	go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o witnessd-ibus ./cmd/witnessd-ibus
+
+override_dh_auto_test:
+	go test -v ./...
+
+override_dh_auto_install:
+	# Install binaries
+	install -D -m 755 bin/witnessd debian/witnessd/usr/bin/witnessd
+	install -D -m 755 bin/witnessctl debian/witnessd/usr/bin/witnessctl
+
+	# Install man pages
+	install -D -m 644 docs/man/witnessd.1 debian/witnessd/usr/share/man/man1/witnessd.1
+	install -D -m 644 docs/man/witnessctl.1 debian/witnessd/usr/share/man/man1/witnessctl.1
+
+	# Install systemd units
+	install -D -m 644 platforms/linux/systemd/witnessd.service debian/witnessd/lib/systemd/system/witnessd.service
+	install -D -m 644 platforms/linux/systemd/witnessd-user.service debian/witnessd/usr/lib/systemd/user/witnessd.service
+	install -D -m 644 platforms/linux/systemd/witnessd.socket debian/witnessd/lib/systemd/system/witnessd.socket
+
+	# Install default config
+	install -D -m 644 configs/config.example.toml debian/witnessd/etc/witnessd/config.toml.default
+
+	# Install documentation
+	install -D -m 644 LICENSE debian/witnessd/usr/share/doc/witnessd/LICENSE
+	install -D -m 644 README.md debian/witnessd/usr/share/doc/witnessd/README.md
+
+	# Install IBus engine
+	install -D -m 755 witnessd-ibus debian/witnessd-ibus/usr/bin/witnessd-ibus
+	install -D -m 644 platforms/linux/systemd/witnessd-ibus.service debian/witnessd-ibus/usr/lib/systemd/user/witnessd-ibus.service
+
+	# Install IBus component XML with correct binary path
+	sed 's|/usr/local/bin|/usr/bin|g' cmd/witnessd-ibus/components/witnessd.xml > debian/witnessd-ibus/tmp-witnessd.xml
+	install -D -m 644 debian/witnessd-ibus/tmp-witnessd.xml debian/witnessd-ibus/usr/share/ibus/component/witnessd.xml
+	rm -f debian/witnessd-ibus/tmp-witnessd.xml
+
+override_dh_installsystemd:
+	dh_installsystemd --name=witnessd
+	dh_installsystemd --name=witnessd --user
+
+override_dh_compress:
+	dh_compress -X.md

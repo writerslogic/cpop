@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Main gradient: blue to purple -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#007AFF"/>
+      <stop offset="100%" style="stop-color:#AF52DE"/>
+    </linearGradient>
+    <!-- Subtle inner shadow -->
+    <filter id="innerShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="20" result="blur"/>
+      <feOffset in="blur" dx="0" dy="10" result="offsetBlur"/>
+      <feComposite in="SourceGraphic" in2="offsetBlur" operator="over"/>
+    </filter>
+    <!-- Drop shadow for depth -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- macOS rounded rectangle background -->
+  <rect x="40" y="40" width="944" height="944" rx="212" ry="212"
+        fill="url(#bgGradient)" filter="url(#dropShadow)"/>
+
+  <!-- Eye outer circle -->
+  <circle cx="512" cy="512" r="320" fill="none" stroke="white" stroke-width="48"/>
+
+  <!-- Eye shape (almond) -->
+  <path d="M 192 512
+           Q 352 320 512 320
+           Q 672 320 832 512
+           Q 672 704 512 704
+           Q 352 704 192 512 Z"
+        fill="white" fill-opacity="0.95"/>
+
+  <!-- Iris -->
+  <circle cx="512" cy="512" r="140" fill="url(#bgGradient)"/>
+
+  <!-- Pupil -->
+  <circle cx="512" cy="512" r="70" fill="#1a1a2e"/>
+
+  <!-- Light reflection on pupil -->
+  <circle cx="545" cy="480" r="25" fill="white" fill-opacity="0.8"/>
+  <circle cx="490" cy="540" r="12" fill="white" fill-opacity="0.4"/>
+</svg>

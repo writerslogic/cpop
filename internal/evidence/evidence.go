@@ -23,6 +23,7 @@ import (
 	"witnessd/internal/checkpoint"
 	"witnessd/internal/declaration"
 	"witnessd/internal/jitter"
+	"witnessd/internal/keyhierarchy"
 	"witnessd/internal/presence"
 	"witnessd/internal/tpm"
 	"witnessd/internal/vdf"
@@ -94,9 +95,50 @@ type Packet struct {
 	// Layer 5: External Anchors (Maximum only)
 	External *ExternalAnchors `json:"external,omitempty"`
 
+	// Layer 6: Key Hierarchy (cryptographic identity chain)
+	// Patent Pending: USPTO Application No. 19/460,364
+	KeyHierarchy *KeyHierarchyEvidencePacket `json:"key_hierarchy,omitempty"`
+
 	// What this evidence claims
 	Claims     []Claim  `json:"claims"`
 	Limitations []string `json:"limitations"`
+}
+
+// KeyHierarchyEvidencePacket contains the key hierarchy evidence for an evidence packet.
+// This provides persistent identity and forward secrecy through ratcheting keys.
+//
+// Patent Pending: USPTO Application No. 19/460,364
+type KeyHierarchyEvidencePacket struct {
+	// Version of the key hierarchy protocol
+	Version int `json:"version"`
+
+	// Master identity information (public)
+	MasterFingerprint string `json:"master_fingerprint"`
+	MasterPublicKey   string `json:"master_public_key"`
+	DeviceID          string `json:"device_id"`
+
+	// Session information
+	SessionID      string    `json:"session_id"`
+	SessionPublicKey string  `json:"session_public_key"`
+	SessionStarted time.Time `json:"session_started"`
+
+	// Session certificate (signed by master key)
+	SessionCertificate string `json:"session_certificate"`
+
+	// Ratchet chain evidence
+	RatchetCount     int      `json:"ratchet_count"`
+	RatchetPublicKeys []string `json:"ratchet_public_keys,omitempty"`
+
+	// Checkpoint signatures (signed by ratchet keys)
+	CheckpointSignatures []CheckpointSignature `json:"checkpoint_signatures,omitempty"`
+}
+
+// CheckpointSignature links a checkpoint to a ratcheting key.
+type CheckpointSignature struct {
+	Ordinal       uint64 `json:"ordinal"`
+	CheckpointHash string `json:"checkpoint_hash"`
+	RatchetIndex  int    `json:"ratchet_index"`
+	Signature     string `json:"signature"`
 }
 
 // ContextPeriod represents a period of editing with declared context.
@@ -182,6 +224,9 @@ type CheckpointProof struct {
 	// Chain linkage
 	PreviousHash string `json:"previous_hash"`
 	Hash         string `json:"hash"`
+
+	// Key Hierarchy signature (optional)
+	Signature string `json:"signature,omitempty"`
 }
 
 // HardwareEvidence contains TPM attestations.
@@ -328,6 +373,7 @@ const (
 	ClaimBehaviorAnalyzed    ClaimType = "behavior_analyzed"
 	ClaimContextsRecorded    ClaimType = "contexts_recorded"
 	ClaimExternalAnchored    ClaimType = "external_anchored"
+	ClaimKeyHierarchy        ClaimType = "key_hierarchy"      // Patent Pending: USPTO Application No. 19/460,364
 )
 
 // Builder constructs evidence packets.
@@ -367,6 +413,10 @@ func NewBuilder(title string, chain *checkpoint.Chain) *Builder {
 			Message:      cp.Message,
 			PreviousHash: hex.EncodeToString(cp.PreviousHash[:]),
 			Hash:         hex.EncodeToString(cp.Hash[:]),
+		}
+
+		if len(cp.Signature) > 0 {
+			proof.Signature = hex.EncodeToString(cp.Signature)
 		}
 
 		if cp.VDF != nil {
@@ -535,6 +585,53 @@ func (b *Builder) WithAnchors(proofs []*anchors.Proof) *Builder {
 	return b
 }
 
+// WithKeyHierarchy adds key hierarchy evidence to the packet.
+// This provides cryptographic proof of persistent author identity with
+// forward secrecy through ratcheting keys.
+//
+// Patent Pending: USPTO Application No. 19/460,364
+func (b *Builder) WithKeyHierarchy(evidence *keyhierarchy.KeyHierarchyEvidence) *Builder {
+	if evidence == nil {
+		return b
+	}
+
+	packet := &KeyHierarchyEvidencePacket{
+		Version:           evidence.Version,
+		MasterFingerprint: evidence.MasterFingerprint,
+		MasterPublicKey:   hex.EncodeToString(evidence.MasterPublicKey),
+		DeviceID:          evidence.DeviceID,
+		SessionID:         evidence.SessionID,
+		SessionPublicKey:  hex.EncodeToString(evidence.SessionPublicKey),
+		SessionStarted:    evidence.SessionStarted,
+		SessionCertificate: base64.StdEncoding.EncodeToString(evidence.SessionCertificateRaw),
+		RatchetCount:      evidence.RatchetCount,
+	}
+
+	// Add ratchet public keys
+	for _, key := range evidence.RatchetPublicKeys {
+		packet.RatchetPublicKeys = append(packet.RatchetPublicKeys, hex.EncodeToString(key))
+	}
+
+	// Add checkpoint signatures
+	for i, sig := range evidence.CheckpointSignatures {
+		packet.CheckpointSignatures = append(packet.CheckpointSignatures, CheckpointSignature{
+			Ordinal:        sig.Ordinal,
+			CheckpointHash: hex.EncodeToString(sig.CheckpointHash[:]),
+			RatchetIndex:   i, // Use index as ratchet index
+			Signature:      base64.StdEncoding.EncodeToString(sig.Signature[:]),
+		})
+	}
+
+	b.packet.KeyHierarchy = packet
+
+	// Key hierarchy enhances evidence strength
+	if b.packet.Strength < Enhanced {
+		b.packet.Strength = Enhanced
+	}
+
+	return b
+}
+
 // convertAnchorProof converts an anchors.Proof to AnchorProof.
 func convertAnchorProof(p *anchors.Proof) AnchorProof {
 	ap := AnchorProof{
@@ -684,6 +781,21 @@ func (b *Builder) generateClaims() {
 			Confidence:  "cryptographic",
 		})
 	}
+
+	// Key hierarchy (Patent Pending: USPTO Application No. 19/460,364)
+	if b.packet.KeyHierarchy != nil {
+		desc := fmt.Sprintf("Identity %s with %d ratchet generations",
+			b.packet.KeyHierarchy.MasterFingerprint[:16]+"...",
+			b.packet.KeyHierarchy.RatchetCount)
+		if len(b.packet.KeyHierarchy.CheckpointSignatures) > 0 {
+			desc += fmt.Sprintf(", %d checkpoint signatures", len(b.packet.KeyHierarchy.CheckpointSignatures))
+		}
+		b.packet.Claims = append(b.packet.Claims, Claim{
+			Type:        ClaimKeyHierarchy,
+			Description: desc,
+			Confidence:  "cryptographic",
+		})
+	}
 }
 
 func (b *Builder) generateLimitations() {
@@ -758,6 +870,77 @@ func (p *Packet) Verify(vdfParams vdf.Parameters) error {
 	if p.Hardware != nil && len(p.Hardware.Bindings) > 0 {
 		if err := tpm.VerifyBindingChain(p.Hardware.Bindings, nil); err != nil {
 			return fmt.Errorf("hardware attestation invalid: %w", err)
+		}
+	}
+
+	// Verify key hierarchy if present (Patent Pending: USPTO Application No. 19/460,364)
+	if p.KeyHierarchy != nil {
+		if err := p.verifyKeyHierarchy(); err != nil {
+			return fmt.Errorf("key hierarchy verification failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// verifyKeyHierarchy verifies the key hierarchy evidence.
+//
+// Patent Pending: USPTO Application No. 19/460,364
+func (p *Packet) verifyKeyHierarchy() error {
+	kh := p.KeyHierarchy
+
+	// Decode master public key
+	masterPubKey, err := hex.DecodeString(kh.MasterPublicKey)
+	if err != nil {
+		return fmt.Errorf("invalid master public key: %w", err)
+	}
+	if len(masterPubKey) != 32 {
+		return errors.New("master public key wrong length")
+	}
+
+	// Decode session public key
+	sessionPubKey, err := hex.DecodeString(kh.SessionPublicKey)
+	if err != nil {
+		return fmt.Errorf("invalid session public key: %w", err)
+	}
+	if len(sessionPubKey) != 32 {
+		return errors.New("session public key wrong length")
+	}
+
+	// Decode session certificate
+	sessionCert, err := base64.StdEncoding.DecodeString(kh.SessionCertificate)
+	if err != nil {
+		return fmt.Errorf("invalid session certificate: %w", err)
+	}
+
+	// Verify session certificate is signed by master key
+	if err := keyhierarchy.VerifySessionCertificateBytes(masterPubKey, sessionPubKey, sessionCert); err != nil {
+		return fmt.Errorf("session certificate invalid: %w", err)
+	}
+
+	// Verify checkpoint signatures
+	for _, sig := range kh.CheckpointSignatures {
+		if sig.RatchetIndex < 0 || sig.RatchetIndex >= len(kh.RatchetPublicKeys) {
+			return fmt.Errorf("checkpoint %d: invalid ratchet index %d", sig.Ordinal, sig.RatchetIndex)
+		}
+
+		ratchetPubKey, err := hex.DecodeString(kh.RatchetPublicKeys[sig.RatchetIndex])
+		if err != nil {
+			return fmt.Errorf("checkpoint %d: invalid ratchet key: %w", sig.Ordinal, err)
+		}
+
+		checkpointHash, err := hex.DecodeString(sig.CheckpointHash)
+		if err != nil {
+			return fmt.Errorf("checkpoint %d: invalid hash: %w", sig.Ordinal, err)
+		}
+
+		signature, err := base64.StdEncoding.DecodeString(sig.Signature)
+		if err != nil {
+			return fmt.Errorf("checkpoint %d: invalid signature: %w", sig.Ordinal, err)
+		}
+
+		if err := keyhierarchy.VerifyRatchetSignature(ratchetPubKey, checkpointHash, signature); err != nil {
+			return fmt.Errorf("checkpoint %d: signature verification failed: %w", sig.Ordinal, err)
 		}
 	}
 

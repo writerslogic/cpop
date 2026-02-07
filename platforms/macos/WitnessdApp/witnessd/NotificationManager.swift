@@ -82,6 +82,11 @@ final class NotificationManager: @unchecked Sendable {
         )
     }
 
+    /// Simple convenience method for sending notifications
+    func send(title: String, body: String) {
+        sendNotification(title: title, body: body, sound: .default)
+    }
+
     // MARK: - Private
 
     private func sendNotification(title: String, body: String, sound: UNNotificationSound) {

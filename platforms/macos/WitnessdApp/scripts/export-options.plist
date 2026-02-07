@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Export method for Developer ID distribution -->
+    <key>method</key>
+    <string>developer-id</string>
+
+    <!-- Team ID -->
+    <key>teamID</key>
+    <string>U3PZN7P3E5</string>
+
+    <!-- Signing style -->
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!-- Signing certificate -->
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+
+    <!-- Destination -->
+    <key>destination</key>
+    <string>export</string>
+
+    <!-- Strip Swift symbols -->
+    <key>stripSwiftSymbols</key>
+    <true/>
+
+    <!-- Upload symbols to Apple -->
+    <key>uploadSymbols</key>
+    <true/>
+
+    <!-- Compile bitcode (not applicable for macOS) -->
+    <key>compileBitcode</key>
+    <false/>
+
+    <!-- Provisioning profiles (automatic) -->
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.witnessd.app</key>
+        <string>Witnessd Developer ID</string>
+    </dict>
+
+</dict>
+</plist>

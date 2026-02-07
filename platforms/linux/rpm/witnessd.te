@@ -1,0 +1,97 @@
+# SELinux Type Enforcement Policy for witnessd
+#
+# This policy module provides SELinux confinement for the witnessd daemon.
+# It allows the daemon to perform its cryptographic authorship witnessing
+# functions while maintaining security isolation.
+#
+# To compile and install:
+#   checkmodule -M -m -o witnessd.mod witnessd.te
+#   semodule_package -o witnessd.pp -m witnessd.mod
+#   semodule -i witnessd.pp
+#
+# Or use the provided Makefile target:
+#   make selinux
+
+policy_module(witnessd, 1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+type witnessd_t;
+type witnessd_exec_t;
+init_daemon_domain(witnessd_t, witnessd_exec_t)
+
+type witnessd_var_lib_t;
+files_type(witnessd_var_lib_t)
+
+type witnessd_var_log_t;
+logging_log_file(witnessd_var_log_t)
+
+type witnessd_etc_t;
+files_config_file(witnessd_etc_t)
+
+type witnessd_var_run_t;
+files_pid_file(witnessd_var_run_t)
+
+type witnessd_tmp_t;
+files_tmp_file(witnessd_tmp_t)
+
+########################################
+#
+# witnessd local policy
+#
+
+# Allow reading its own config
+allow witnessd_t witnessd_etc_t:dir list_dir_perms;
+allow witnessd_t witnessd_etc_t:file read_file_perms;
+
+# Allow managing its own data
+allow witnessd_t witnessd_var_lib_t:dir create_dir_perms;
+allow witnessd_t witnessd_var_lib_t:file create_file_perms;
+allow witnessd_t witnessd_var_lib_t:lnk_file { create read unlink };
+
+# Allow logging
+allow witnessd_t witnessd_var_log_t:dir create_dir_perms;
+allow witnessd_t witnessd_var_log_t:file create_file_perms;
+logging_log_filetrans(witnessd_t, witnessd_var_log_t, file)
+
+# Allow runtime files (socket, pid)
+allow witnessd_t witnessd_var_run_t:dir create_dir_perms;
+allow witnessd_t witnessd_var_run_t:file create_file_perms;
+allow witnessd_t witnessd_var_run_t:sock_file create_file_perms;
+files_pid_filetrans(witnessd_t, witnessd_var_run_t, { file sock_file dir })
+
+# Allow temporary files
+allow witnessd_t witnessd_tmp_t:dir create_dir_perms;
+allow witnessd_t witnessd_tmp_t:file create_file_perms;
+files_tmp_filetrans(witnessd_t, witnessd_tmp_t, { file dir })
+
+# Network access (for timestamping anchors)
+allow witnessd_t self:tcp_socket create_stream_socket_perms;
+allow witnessd_t self:udp_socket create_socket_perms;
+corenet_tcp_connect_http_port(witnessd_t)
+corenet_tcp_connect_https_port(witnessd_t)
+
+# Allow reading passwd for user info
+auth_use_nsswitch(witnessd_t)
+
+# Allow signaling self
+allow witnessd_t self:process { signal signull };
+
+# Allow using its own unix sockets
+allow witnessd_t self:unix_stream_socket create_stream_socket_perms;
+allow witnessd_t self:unix_dgram_socket create_socket_perms;
+
+# Misc
+kernel_read_system_state(witnessd_t)
+files_read_etc_files(witnessd_t)
+miscfiles_read_localization(witnessd_t)
+
+########################################
+#
+# File context definitions (to be used with witnessd.fc)
+#
+
+# See witnessd.fc for file context definitions

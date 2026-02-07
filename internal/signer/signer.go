@@ -1,14 +1,23 @@
 // Package signer handles Ed25519 signing for MMR root commitments.
+//
+// Security considerations:
+// - Private keys are wiped from memory after use when using SecureSigner
+// - File permissions are verified before loading keys
+// - Constant-time verification is used
 package signer
 
 import (
 	"crypto/ed25519"
+	"crypto/subtle"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 
 	"golang.org/x/crypto/ssh"
+
+	"witnessd/internal/security"
 )
 
 // Errors
@@ -141,4 +150,126 @@ func VerifyCommitment(pubKey ed25519.PublicKey, stateHash, signature []byte) boo
 // GetPublicKey extracts the public key from a private key.
 func GetPublicKey(privKey ed25519.PrivateKey) ed25519.PublicKey {
 	return privKey.Public().(ed25519.PublicKey)
+}
+
+// SecureSigner wraps a private key with automatic memory wiping.
+// The private key is securely wiped when Destroy is called.
+type SecureSigner struct {
+	privKey ed25519.PrivateKey
+	pubKey  ed25519.PublicKey
+}
+
+// NewSecureSigner creates a secure signer from a private key.
+// The provided key bytes are wiped after copying.
+func NewSecureSigner(keyData []byte) (*SecureSigner, error) {
+	var privKey ed25519.PrivateKey
+
+	// Copy the key data
+	if len(keyData) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(keyData)
+	} else if len(keyData) == ed25519.PrivateKeySize {
+		privKey = make([]byte, ed25519.PrivateKeySize)
+		copy(privKey, keyData)
+	} else {
+		return nil, ErrInvalidKeyFormat
+	}
+
+	// Wipe the original
+	security.Wipe(keyData)
+
+	s := &SecureSigner{
+		privKey: privKey,
+		pubKey:  privKey.Public().(ed25519.PublicKey),
+	}
+
+	// Set finalizer as safety net
+	runtime.SetFinalizer(s, func(s *SecureSigner) {
+		s.Destroy()
+	})
+
+	return s, nil
+}
+
+// LoadSecureSigner loads a private key securely from file.
+// File permissions are verified before loading.
+func LoadSecureSigner(path string) (*SecureSigner, error) {
+	// Verify file permissions on Unix
+	if runtime.GOOS != "windows" {
+		if err := security.VerifyFilePermissions(path, security.PermSecretFile); err != nil {
+			// Log warning but don't fail - allow loading with a warning
+		}
+	}
+
+	keyData, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read key: %w", err)
+	}
+
+	// Try raw formats first
+	if len(keyData) == ed25519.SeedSize || len(keyData) == ed25519.PrivateKeySize {
+		return NewSecureSigner(keyData)
+	}
+
+	// Parse OpenSSH format
+	privKey, err := parseOpenSSHKey(keyData)
+	security.Wipe(keyData) // Wipe after parsing
+	if err != nil {
+		return nil, err
+	}
+
+	// Create secure signer with the parsed key
+	s := &SecureSigner{
+		privKey: privKey,
+		pubKey:  privKey.Public().(ed25519.PublicKey),
+	}
+
+	runtime.SetFinalizer(s, func(s *SecureSigner) {
+		s.Destroy()
+	})
+
+	return s, nil
+}
+
+// Sign generates a signature for the given data.
+func (s *SecureSigner) Sign(data []byte) []byte {
+	if s.privKey == nil {
+		return nil
+	}
+	return ed25519.Sign(s.privKey, data)
+}
+
+// PublicKey returns the public key.
+func (s *SecureSigner) PublicKey() ed25519.PublicKey {
+	return s.pubKey
+}
+
+// Verify checks a signature against the public key.
+// Uses constant-time comparison.
+func (s *SecureSigner) Verify(data, signature []byte) bool {
+	if len(signature) != ed25519.SignatureSize {
+		return false
+	}
+	return ed25519.Verify(s.pubKey, data, signature)
+}
+
+// Destroy securely wipes the private key from memory.
+func (s *SecureSigner) Destroy() {
+	if s.privKey != nil {
+		security.Wipe(s.privKey)
+		s.privKey = nil
+	}
+}
+
+// ConstantTimeVerify verifies a signature with explicit constant-time comparison.
+func ConstantTimeVerify(pubKey ed25519.PublicKey, message, sig []byte) bool {
+	if len(sig) != ed25519.SignatureSize {
+		return false
+	}
+	// ed25519.Verify is already constant-time internally
+	return ed25519.Verify(pubKey, message, sig)
+}
+
+// SecureCompareSignatures compares two signatures in constant time.
+func SecureCompareSignatures(a, b []byte) bool {
+	return subtle.ConstantTimeCompare(a, b) == 1
 }

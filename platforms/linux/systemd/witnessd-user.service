@@ -1,0 +1,29 @@
+[Unit]
+Description=Witnessd User Authorship Witnessing Service
+Documentation=man:witnessd(1)
+Documentation=https://github.com/writerslogic/witnessd
+After=graphical-session.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/witnessd --user
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Environment
+Environment=WITNESSD_USER_MODE=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=witnessd-user
+
+# Security (user service, less restrictive)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

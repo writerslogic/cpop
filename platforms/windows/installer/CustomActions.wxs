@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Witnessd Windows Installer - Custom Actions
+
+  Defines custom actions for:
+  - TSF (Text Services Framework) DLL registration/unregistration
+  - Windows service management
+  - Configuration initialization
+  - VDF calibration
+  - Cleanup on uninstall
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+
+    <!-- ================================================================== -->
+    <!-- Custom Action Properties                                            -->
+    <!-- ================================================================== -->
+
+    <!-- Store installation paths for deferred custom actions -->
+    <Property Id="WITNESSD_BINPATH" Secure="yes" />
+    <Property Id="WITNESSD_DATAPATH" Secure="yes" />
+    <Property Id="WITNESSD_CONFIGPATH" Secure="yes" />
+
+    <!-- Set properties for deferred actions -->
+    <CustomAction Id="SetBinPath" Property="WITNESSD_BINPATH" Value="[BinFolder]" />
+    <CustomAction Id="SetDataPath" Property="WITNESSD_DATAPATH" Value="[DataFolder]" />
+    <CustomAction Id="SetConfigPath" Property="WITNESSD_CONFIGPATH" Value="[ConfigFolder]" />
+
+    <!-- ================================================================== -->
+    <!-- TSF Registration Custom Actions                                     -->
+    <!-- ================================================================== -->
+
+    <!-- Register TSF DLL (COM server) -->
+    <CustomAction Id="CA_RegisterTSF"
+                  Directory="BinFolder"
+                  ExeCommand="regsvr32.exe /s &quot;[BinFolder]witnessd-tsf.dll&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <!-- Unregister TSF DLL (COM server) -->
+    <CustomAction Id="CA_UnregisterTSF"
+                  Directory="BinFolder"
+                  ExeCommand="regsvr32.exe /u /s &quot;[BinFolder]witnessd-tsf.dll&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Set property for deferred TSF registration -->
+    <CustomAction Id="CA_SetRegisterTSFPath"
+                  Property="CA_RegisterTSF"
+                  Value="[BinFolder]" />
+
+    <CustomAction Id="CA_SetUnregisterTSFPath"
+                  Property="CA_UnregisterTSF"
+                  Value="[BinFolder]" />
+
+    <!-- ================================================================== -->
+    <!-- Windows Service Custom Actions                                      -->
+    <!-- ================================================================== -->
+
+    <!-- Stop witnessd service before upgrade/uninstall -->
+    <CustomAction Id="CA_StopService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]sc.exe stop witnessd"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Query if service exists -->
+    <CustomAction Id="CA_QueryService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]sc.exe query witnessd"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <!-- Delete service if exists (for clean uninstall) -->
+    <CustomAction Id="CA_DeleteService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]sc.exe delete witnessd"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- ================================================================== -->
+    <!-- Initialization Custom Actions                                       -->
+    <!-- ================================================================== -->
+
+    <!-- Initialize witnessd (create directories, keys, database) -->
+    <CustomAction Id="CA_InitializeWitnessd"
+                  Directory="BinFolder"
+                  ExeCommand="&quot;[BinFolder]witnessd.exe&quot; init"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Calibrate VDF performance -->
+    <CustomAction Id="CA_CalibrateVDF"
+                  Directory="BinFolder"
+                  ExeCommand="&quot;[BinFolder]witnessd.exe&quot; calibrate"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Set property for deferred initialization -->
+    <CustomAction Id="CA_SetInitPath"
+                  Property="CA_InitializeWitnessd"
+                  Value="[BinFolder]" />
+
+    <CustomAction Id="CA_SetCalibratePath"
+                  Property="CA_CalibrateVDF"
+                  Value="[BinFolder]" />
+
+    <!-- ================================================================== -->
+    <!-- Configuration Custom Actions                                        -->
+    <!-- ================================================================== -->
+
+    <!-- Copy config template if no config exists -->
+    <CustomAction Id="CA_CopyConfigTemplate"
+                  Directory="ConfigFolder"
+                  ExeCommand="[SystemFolder]cmd.exe /c if not exist &quot;[ConfigFolder]config.json&quot; copy &quot;[ConfigFolder]config.json.template&quot; &quot;[ConfigFolder]config.json&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- ================================================================== -->
+    <!-- Cleanup Custom Actions                                              -->
+    <!-- ================================================================== -->
+
+    <!-- Clean user data on uninstall (optional, controlled by property) -->
+    <CustomAction Id="CA_CleanUserData"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]cmd.exe /c rmdir /s /q &quot;[LocalAppDataFolder]Witnessd&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <!-- Clean logs directory -->
+    <CustomAction Id="CA_CleanLogs"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]cmd.exe /c rmdir /s /q &quot;[LogsFolder]&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- ================================================================== -->
+    <!-- Post-Install Launch Actions                                         -->
+    <!-- ================================================================== -->
+
+    <!-- Launch witnessd status after install (if checkbox selected) -->
+    <CustomAction Id="CA_LaunchStatus"
+                  Directory="BinFolder"
+                  ExeCommand="&quot;[BinFolder]witnessctl.exe&quot; status"
+                  Execute="immediate"
+                  Return="asyncNoWait" />
+
+    <!-- Property to control launch -->
+    <Property Id="LAUNCHAPPONEXIT" Value="1" />
+
+    <!-- ================================================================== -->
+    <!-- Rollback Custom Actions                                             -->
+    <!-- ================================================================== -->
+
+    <!-- Rollback TSF registration if install fails -->
+    <CustomAction Id="CA_RollbackTSF"
+                  Directory="BinFolder"
+                  ExeCommand="regsvr32.exe /u /s &quot;[BinFolder]witnessd-tsf.dll&quot;"
+                  Execute="rollback"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Rollback service installation if install fails -->
+    <CustomAction Id="CA_RollbackService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="[SystemFolder]sc.exe delete witnessd"
+                  Execute="rollback"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- ================================================================== -->
+    <!-- Install Sequence                                                    -->
+    <!-- ================================================================== -->
+
+    <InstallExecuteSequence>
+      <!-- Set paths for deferred actions -->
+      <Custom Action="SetBinPath" Before="CA_SetRegisterTSFPath" />
+      <Custom Action="SetDataPath" Before="CA_SetInitPath" />
+      <Custom Action="SetConfigPath" Before="CA_CopyConfigTemplate" />
+
+      <!-- Uninstall sequence -->
+      <Custom Action="CA_StopService" Before="CA_DeleteService" Condition="Installed AND (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="CA_DeleteService" Before="CA_UnregisterTSF" Condition="Installed AND (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="CA_SetUnregisterTSFPath" Before="CA_UnregisterTSF" Condition="Installed AND (REMOVE=&quot;ALL&quot;) AND INSTALLTSF" />
+      <Custom Action="CA_UnregisterTSF" Before="RemoveFiles" Condition="Installed AND (REMOVE=&quot;ALL&quot;) AND INSTALLTSF" />
+      <Custom Action="CA_CleanLogs" After="RemoveFiles" Condition="Installed AND (REMOVE=&quot;ALL&quot;) AND CLEANLOGS" />
+      <Custom Action="CA_CleanUserData" After="CA_CleanLogs" Condition="Installed AND (REMOVE=&quot;ALL&quot;) AND CLEANUSERDATA" />
+
+      <!-- Install sequence -->
+      <Custom Action="CA_SetRegisterTSFPath" Before="CA_RegisterTSF" Condition="NOT Installed AND INSTALLTSF" />
+      <Custom Action="CA_RollbackTSF" Before="CA_RegisterTSF" Condition="NOT Installed AND INSTALLTSF" />
+      <Custom Action="CA_RegisterTSF" After="InstallFiles" Condition="NOT Installed AND INSTALLTSF" />
+
+      <Custom Action="CA_SetInitPath" Before="CA_InitializeWitnessd" Condition="NOT Installed" />
+      <Custom Action="CA_InitializeWitnessd" After="CA_RegisterTSF" Condition="NOT Installed" />
+
+      <Custom Action="CA_SetCalibratePath" Before="CA_CalibrateVDF" Condition="NOT Installed" />
+      <Custom Action="CA_CalibrateVDF" After="CA_InitializeWitnessd" Condition="NOT Installed" />
+
+      <Custom Action="CA_CopyConfigTemplate" After="InstallFiles" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+    <!-- ================================================================== -->
+    <!-- UI Sequence (for launch checkbox)                                   -->
+    <!-- ================================================================== -->
+
+    <InstallUISequence>
+      <Custom Action="CA_LaunchStatus" After="ExecuteAction" Condition="LAUNCHAPPONEXIT AND NOT Installed" />
+    </InstallUISequence>
+
+  </Fragment>
+
+</Wix>

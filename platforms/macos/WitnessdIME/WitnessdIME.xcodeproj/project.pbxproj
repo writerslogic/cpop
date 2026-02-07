@@ -1,0 +1,586 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1000001201F0001 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000011201F0001 /* main.m */; };
+		A1000002201F0001 /* WitnessdInputController.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000012201F0001 /* WitnessdInputController.m */; };
+		A1000003201F0001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000013201F0001 /* Assets.xcassets */; };
+		A1000004201F0001 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000021201F0001 /* Cocoa.framework */; };
+		A1000005201F0001 /* InputMethodKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000022201F0001 /* InputMethodKit.framework */; };
+		A1000006201F0001 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000023201F0001 /* Carbon.framework */; };
+		A1000007201F0001 /* libwitnessd.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000024201F0001 /* libwitnessd.a */; };
+		A1000008201F0001 /* WitnessdInputController+Enhanced.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000017201F0001 /* WitnessdInputController+Enhanced.m */; };
+		A1000009201F0001 /* WitnessdXPCClient.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000032201F0001 /* WitnessdXPCClient.m */; };
+		A100000A201F0001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1000034201F0001 /* PrivacyInfo.xcprivacy */; };
+		A100000B201F0001 /* WitnessdInputControllerTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000041201F0001 /* WitnessdInputControllerTests.m */; };
+		A100000C201F0001 /* WitnessdXPCClientTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A1000042201F0001 /* WitnessdXPCClientTests.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000B0201F0001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000080201F0001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000060201F0001;
+			remoteInfo = WitnessdIME;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A1000010201F0001 /* WitnessdIME.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WitnessdIME.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000011201F0001 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		A1000012201F0001 /* WitnessdInputController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WitnessdInputController.m; sourceTree = "<group>"; };
+		A1000013201F0001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A1000014201F0001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1000015201F0001 /* WitnessdIME.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WitnessdIME.entitlements; sourceTree = "<group>"; };
+		A1000016201F0001 /* WitnessdInputController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WitnessdInputController.h; sourceTree = "<group>"; };
+		A1000017201F0001 /* WitnessdInputController+Enhanced.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "WitnessdInputController+Enhanced.m"; sourceTree = "<group>"; };
+		A1000018201F0001 /* WitnessdInputController+Enhanced.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "WitnessdInputController+Enhanced.h"; sourceTree = "<group>"; };
+		A1000021201F0001 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		A1000022201F0001 /* InputMethodKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = InputMethodKit.framework; path = System/Library/Frameworks/InputMethodKit.framework; sourceTree = SDKROOT; };
+		A1000023201F0001 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
+		A1000024201F0001 /* libwitnessd.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libwitnessd.a; path = "$(BUILT_PRODUCTS_DIR)/libwitnessd.a"; sourceTree = "<group>"; };
+		A1000025201F0001 /* libwitnessd.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = libwitnessd.h; path = "$(BUILT_PRODUCTS_DIR)/libwitnessd.h"; sourceTree = "<group>"; };
+		A1000030201F0001 /* build-go-library.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-go-library.sh"; sourceTree = "<group>"; };
+		A1000031201F0001 /* WitnessdXPCProtocol.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WitnessdXPCProtocol.h; sourceTree = "<group>"; };
+		A1000032201F0001 /* WitnessdXPCClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WitnessdXPCClient.m; sourceTree = "<group>"; };
+		A1000033201F0001 /* WitnessdXPCClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WitnessdXPCClient.h; sourceTree = "<group>"; };
+		A1000034201F0001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A1000035201F0001 /* WitnessdIMEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WitnessdIMEApp.swift; sourceTree = "<group>"; };
+		A1000040201F0001 /* WitnessdIMETests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WitnessdIMETests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000041201F0001 /* WitnessdInputControllerTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WitnessdInputControllerTests.m; sourceTree = "<group>"; };
+		A1000042201F0001 /* WitnessdXPCClientTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WitnessdXPCClientTests.m; sourceTree = "<group>"; };
+		A1000043201F0001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1000040201F0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000004201F0001 /* Cocoa.framework in Frameworks */,
+				A1000005201F0001 /* InputMethodKit.framework in Frameworks */,
+				A1000006201F0001 /* Carbon.framework in Frameworks */,
+				A1000007201F0001 /* libwitnessd.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000A1201F0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1000050201F0001 = {
+			isa = PBXGroup;
+			children = (
+				A1000051201F0001 /* WitnessdIME */,
+				A10000A0201F0001 /* WitnessdIMETests */,
+				A1000052201F0001 /* scripts */,
+				A1000053201F0001 /* Frameworks */,
+				A1000054201F0001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1000051201F0001 /* WitnessdIME */ = {
+			isa = PBXGroup;
+			children = (
+				A1000055201F0001 /* objc */,
+				A1000056201F0001 /* XPC */,
+				A1000057201F0001 /* Swift */,
+				A1000013201F0001 /* Assets.xcassets */,
+				A1000014201F0001 /* Info.plist */,
+				A1000015201F0001 /* WitnessdIME.entitlements */,
+				A1000034201F0001 /* PrivacyInfo.xcprivacy */,
+			);
+			path = WitnessdIME;
+			sourceTree = "<group>";
+		};
+		A1000052201F0001 /* scripts */ = {
+			isa = PBXGroup;
+			children = (
+				A1000030201F0001 /* build-go-library.sh */,
+			);
+			path = scripts;
+			sourceTree = "<group>";
+		};
+		A1000053201F0001 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A1000021201F0001 /* Cocoa.framework */,
+				A1000022201F0001 /* InputMethodKit.framework */,
+				A1000023201F0001 /* Carbon.framework */,
+				A1000024201F0001 /* libwitnessd.a */,
+				A1000025201F0001 /* libwitnessd.h */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A1000054201F0001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1000010201F0001 /* WitnessdIME.app */,
+				A1000040201F0001 /* WitnessdIMETests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A1000055201F0001 /* objc */ = {
+			isa = PBXGroup;
+			children = (
+				A1000011201F0001 /* main.m */,
+				A1000016201F0001 /* WitnessdInputController.h */,
+				A1000012201F0001 /* WitnessdInputController.m */,
+				A1000018201F0001 /* WitnessdInputController+Enhanced.h */,
+				A1000017201F0001 /* WitnessdInputController+Enhanced.m */,
+			);
+			path = objc;
+			sourceTree = "<group>";
+		};
+		A1000056201F0001 /* XPC */ = {
+			isa = PBXGroup;
+			children = (
+				A1000031201F0001 /* WitnessdXPCProtocol.h */,
+				A1000033201F0001 /* WitnessdXPCClient.h */,
+				A1000032201F0001 /* WitnessdXPCClient.m */,
+			);
+			path = XPC;
+			sourceTree = "<group>";
+		};
+		A1000057201F0001 /* Swift */ = {
+			isa = PBXGroup;
+			children = (
+				A1000035201F0001 /* WitnessdIMEApp.swift */,
+			);
+			path = Swift;
+			sourceTree = "<group>";
+		};
+		A10000A0201F0001 /* WitnessdIMETests */ = {
+			isa = PBXGroup;
+			children = (
+				A1000041201F0001 /* WitnessdInputControllerTests.m */,
+				A1000042201F0001 /* WitnessdXPCClientTests.m */,
+				A1000043201F0001 /* Info.plist */,
+			);
+			path = WitnessdIMETests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1000060201F0001 /* WitnessdIME */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000070201F0001 /* Build configuration list for PBXNativeTarget "WitnessdIME" */;
+			buildPhases = (
+				A1000061201F0001 /* Build Go Library */,
+				A1000062201F0001 /* Sources */,
+				A1000040201F0001 /* Frameworks */,
+				A1000063201F0001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WitnessdIME;
+			productName = WitnessdIME;
+			productReference = A1000010201F0001 /* WitnessdIME.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000A2201F0001 /* WitnessdIMETests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000A3201F0001 /* Build configuration list for PBXNativeTarget "WitnessdIMETests" */;
+			buildPhases = (
+				A10000A4201F0001 /* Sources */,
+				A10000A1201F0001 /* Frameworks */,
+				A10000A5201F0001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000B1201F0001 /* PBXTargetDependency */,
+			);
+			name = WitnessdIMETests;
+			productName = WitnessdIMETests;
+			productReference = A1000040201F0001 /* WitnessdIMETests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1000080201F0001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					A1000060201F0001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					A10000A2201F0001 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = A1000060201F0001;
+					};
+				};
+			};
+			buildConfigurationList = A1000081201F0001 /* Build configuration list for PBXProject "WitnessdIME" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1000050201F0001;
+			productRefGroup = A1000054201F0001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1000060201F0001 /* WitnessdIME */,
+				A10000A2201F0001 /* WitnessdIMETests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1000063201F0001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000003201F0001 /* Assets.xcassets in Resources */,
+				A100000A201F0001 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000A5201F0001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A1000061201F0001 /* Build Go Library */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Go Library";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/libwitnessd.a",
+				"$(BUILT_PRODUCTS_DIR)/libwitnessd.h",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${PROJECT_DIR}/scripts/build-go-library.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1000062201F0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000001201F0001 /* main.m in Sources */,
+				A1000002201F0001 /* WitnessdInputController.m in Sources */,
+				A1000008201F0001 /* WitnessdInputController+Enhanced.m in Sources */,
+				A1000009201F0001 /* WitnessdXPCClient.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000A4201F0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A100000B201F0001 /* WitnessdInputControllerTests.m in Sources */,
+				A100000C201F0001 /* WitnessdXPCClientTests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000B1201F0001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1000060201F0001 /* WitnessdIME */;
+			targetProxy = A10000B0201F0001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A1000090201F0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		A1000091201F0001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		A1000092201F0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WitnessdIME/WitnessdIME.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)";
+				INFOPLIST_FILE = WitnessdIME/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Witnessd. All rights reserved.";
+				LIBRARY_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.witnessd.inputmethod;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		A1000093201F0001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WitnessdIME/WitnessdIME.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)";
+				INFOPLIST_FILE = WitnessdIME/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Witnessd. All rights reserved.";
+				LIBRARY_SEARCH_PATHS = "$(BUILT_PRODUCTS_DIR)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-lresolv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.witnessd.inputmethod;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		A10000A6201F0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(BUILT_PRODUCTS_DIR)",
+					"$(PROJECT_DIR)/WitnessdIME/objc",
+					"$(PROJECT_DIR)/WitnessdIME/XPC",
+				);
+				INFOPLIST_FILE = WitnessdIMETests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.witnessd.inputmethod.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WitnessdIME.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WitnessdIME";
+			};
+			name = Debug;
+		};
+		A10000A7201F0001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(BUILT_PRODUCTS_DIR)",
+					"$(PROJECT_DIR)/WitnessdIME/objc",
+					"$(PROJECT_DIR)/WitnessdIME/XPC",
+				);
+				INFOPLIST_FILE = WitnessdIMETests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.witnessd.inputmethod.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WitnessdIME.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WitnessdIME";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1000070201F0001 /* Build configuration list for PBXNativeTarget "WitnessdIME" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000092201F0001 /* Debug */,
+				A1000093201F0001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000081201F0001 /* Build configuration list for PBXProject "WitnessdIME" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000090201F0001 /* Debug */,
+				A1000091201F0001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000A3201F0001 /* Build configuration list for PBXNativeTarget "WitnessdIMETests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000A6201F0001 /* Debug */,
+				A10000A7201F0001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A1000080201F0001 /* Project object */;
+}

@@ -15,6 +15,7 @@ struct OnboardingView: View {
     @State private var calibrateComplete = false
     @State private var error: String? = nil
     @State private var accessibilityCheckTimer: Timer? = nil
+    @State private var accessibilityObserver: NSObjectProtocol? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -495,18 +496,37 @@ struct OnboardingView: View {
 
     private func startAccessibilityCheck() {
         // Check immediately
-        accessibilityGranted = AXIsProcessTrusted()
+        checkAccessibilityPermission()
 
-        // Poll every 2 seconds to detect when user grants permission
-        accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            let granted = AXIsProcessTrusted()
-            if granted != self.accessibilityGranted {
-                self.accessibilityGranted = granted
-                if granted {
-                    // Auto-advance to next step when permission granted
-                    withOptionalAnimation {
-                        currentStep = 3 // Calibrate step
-                    }
+        // Listen for app becoming active (user returning from System Settings)
+        accessibilityObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                self.checkAccessibilityPermission()
+            }
+        }
+
+        // Also poll periodically as a fallback (less frequent - 3 seconds)
+        accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+            Task { @MainActor in
+                self.checkAccessibilityPermission()
+            }
+        }
+    }
+
+    private func checkAccessibilityPermission() {
+        let granted = AXIsProcessTrusted()
+        if granted != accessibilityGranted {
+            accessibilityGranted = granted
+            if granted {
+                // Stop checking once granted
+                stopAccessibilityCheck()
+                // Auto-advance to next step when permission granted
+                withOptionalAnimation {
+                    currentStep = 3 // Calibrate step
                 }
             }
         }
@@ -515,6 +535,10 @@ struct OnboardingView: View {
     private func stopAccessibilityCheck() {
         accessibilityCheckTimer?.invalidate()
         accessibilityCheckTimer = nil
+        if let observer = accessibilityObserver {
+            NotificationCenter.default.removeObserver(observer)
+            accessibilityObserver = nil
+        }
     }
 
     private func calibrate() {

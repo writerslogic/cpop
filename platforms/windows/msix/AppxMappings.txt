@@ -1,0 +1,76 @@
+# MSIX File Mapping for Witnessd
+# Format: [Destination]\t[Source]
+# This file is used by makeappx.exe to map build outputs to package locations
+
+[ResourceMetadata]
+"ResourceDimensions"	"language-en-US"
+
+[Files]
+# Executables
+"witnessd.exe"	"..\..\..\..\build\windows_amd64\witnessd.exe"
+"witnessctl.exe"	"..\..\..\..\build\windows_amd64\witnessctl.exe"
+"witnessd-tsf.dll"	"..\..\..\..\build\windows_amd64\witnessd-tsf.dll"
+
+# Manifest
+"AppxManifest.xml"	"AppxManifest.xml"
+
+# Visual Assets - Square44x44Logo
+"Assets\Square44x44Logo.scale-100.png"	"..\assets\Square44x44Logo.scale-100.png"
+"Assets\Square44x44Logo.scale-125.png"	"..\assets\Square44x44Logo.scale-125.png"
+"Assets\Square44x44Logo.scale-150.png"	"..\assets\Square44x44Logo.scale-150.png"
+"Assets\Square44x44Logo.scale-200.png"	"..\assets\Square44x44Logo.scale-200.png"
+"Assets\Square44x44Logo.scale-400.png"	"..\assets\Square44x44Logo.scale-400.png"
+"Assets\Square44x44Logo.targetsize-16.png"	"..\assets\Square44x44Logo.targetsize-16.png"
+"Assets\Square44x44Logo.targetsize-24.png"	"..\assets\Square44x44Logo.targetsize-24.png"
+"Assets\Square44x44Logo.targetsize-32.png"	"..\assets\Square44x44Logo.targetsize-32.png"
+"Assets\Square44x44Logo.targetsize-48.png"	"..\assets\Square44x44Logo.targetsize-48.png"
+"Assets\Square44x44Logo.targetsize-256.png"	"..\assets\Square44x44Logo.targetsize-256.png"
+"Assets\Square44x44Logo.altform-unplated_targetsize-16.png"	"..\assets\Square44x44Logo.altform-unplated_targetsize-16.png"
+"Assets\Square44x44Logo.altform-unplated_targetsize-32.png"	"..\assets\Square44x44Logo.altform-unplated_targetsize-32.png"
+"Assets\Square44x44Logo.altform-unplated_targetsize-48.png"	"..\assets\Square44x44Logo.altform-unplated_targetsize-48.png"
+"Assets\Square44x44Logo.altform-unplated_targetsize-256.png"	"..\assets\Square44x44Logo.altform-unplated_targetsize-256.png"
+
+# Visual Assets - Square150x150Logo
+"Assets\Square150x150Logo.scale-100.png"	"..\assets\Square150x150Logo.scale-100.png"
+"Assets\Square150x150Logo.scale-125.png"	"..\assets\Square150x150Logo.scale-125.png"
+"Assets\Square150x150Logo.scale-150.png"	"..\assets\Square150x150Logo.scale-150.png"
+"Assets\Square150x150Logo.scale-200.png"	"..\assets\Square150x150Logo.scale-200.png"
+"Assets\Square150x150Logo.scale-400.png"	"..\assets\Square150x150Logo.scale-400.png"
+
+# Visual Assets - Wide310x150Logo
+"Assets\Wide310x150Logo.scale-100.png"	"..\assets\Wide310x150Logo.scale-100.png"
+"Assets\Wide310x150Logo.scale-125.png"	"..\assets\Wide310x150Logo.scale-125.png"
+"Assets\Wide310x150Logo.scale-150.png"	"..\assets\Wide310x150Logo.scale-150.png"
+"Assets\Wide310x150Logo.scale-200.png"	"..\assets\Wide310x150Logo.scale-200.png"
+"Assets\Wide310x150Logo.scale-400.png"	"..\assets\Wide310x150Logo.scale-400.png"
+
+# Visual Assets - Square71x71Logo (Small Tile)
+"Assets\Square71x71Logo.scale-100.png"	"..\assets\Square71x71Logo.scale-100.png"
+"Assets\Square71x71Logo.scale-125.png"	"..\assets\Square71x71Logo.scale-125.png"
+"Assets\Square71x71Logo.scale-150.png"	"..\assets\Square71x71Logo.scale-150.png"
+"Assets\Square71x71Logo.scale-200.png"	"..\assets\Square71x71Logo.scale-200.png"
+"Assets\Square71x71Logo.scale-400.png"	"..\assets\Square71x71Logo.scale-400.png"
+
+# Visual Assets - Square310x310Logo (Large Tile)
+"Assets\Square310x310Logo.scale-100.png"	"..\assets\Square310x310Logo.scale-100.png"
+"Assets\Square310x310Logo.scale-125.png"	"..\assets\Square310x310Logo.scale-125.png"
+"Assets\Square310x310Logo.scale-150.png"	"..\assets\Square310x310Logo.scale-150.png"
+"Assets\Square310x310Logo.scale-200.png"	"..\assets\Square310x310Logo.scale-200.png"
+"Assets\Square310x310Logo.scale-400.png"	"..\assets\Square310x310Logo.scale-400.png"
+
+# Visual Assets - StoreLogo
+"Assets\StoreLogo.scale-100.png"	"..\assets\StoreLogo.scale-100.png"
+"Assets\StoreLogo.scale-125.png"	"..\assets\StoreLogo.scale-125.png"
+"Assets\StoreLogo.scale-150.png"	"..\assets\StoreLogo.scale-150.png"
+"Assets\StoreLogo.scale-200.png"	"..\assets\StoreLogo.scale-200.png"
+"Assets\StoreLogo.scale-400.png"	"..\assets\StoreLogo.scale-400.png"
+
+# Visual Assets - SplashScreen
+"Assets\SplashScreen.scale-100.png"	"..\assets\SplashScreen.scale-100.png"
+"Assets\SplashScreen.scale-125.png"	"..\assets\SplashScreen.scale-125.png"
+"Assets\SplashScreen.scale-150.png"	"..\assets\SplashScreen.scale-150.png"
+"Assets\SplashScreen.scale-200.png"	"..\assets\SplashScreen.scale-200.png"
+"Assets\SplashScreen.scale-400.png"	"..\assets\SplashScreen.scale-400.png"
+
+# Localization Resources
+"resources.pri"	"resources.pri"

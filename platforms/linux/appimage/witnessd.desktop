@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Witnessd
+GenericName=Authorship Witnessing
+Comment=Cryptographic authorship witnessing daemon - Kinetic Proof of Provenance
+Exec=witnessd %U
+Icon=witnessd
+Terminal=false
+Categories=Utility;Security;
+Keywords=witness;authorship;cryptography;keystroke;biometrics;
+StartupNotify=false
+StartupWMClass=witnessd
+Actions=Status;Verify;
+
+[Desktop Action Status]
+Name=Show Status
+Exec=witnessd --status
+
+[Desktop Action Verify]
+Name=Verify Document
+Exec=witnessctl verify %U

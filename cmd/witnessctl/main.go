@@ -471,10 +471,10 @@ func cmdStatus() {
 	}
 
 	// Legacy MMR Database (if exists)
-	if _, err := os.Stat(cfg.DatabasePath); err == nil {
+	if _, err := os.Stat(cfg.DatabasePath()); err == nil {
 		printSection("LEGACY DATABASE")
 
-		mmrStore, err := mmr.OpenFileStore(cfg.DatabasePath)
+		mmrStore, err := mmr.OpenFileStore(cfg.DatabasePath())
 		if err != nil {
 			fmt.Printf("  %sError:%s %v\n", c.Red, c.Reset, err)
 		} else {
@@ -496,14 +496,14 @@ func cmdStatus() {
 	keyPath := filepath.Join(dir, "signing_key")
 	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 		// Also check old location
-		if _, err := os.Stat(cfg.SigningKeyPath); os.IsNotExist(err) {
+		if _, err := os.Stat(cfg.SigningKeyPath()); os.IsNotExist(err) {
 			fmt.Printf("  %sStatus%s        %s%sNOT FOUND%s\n", c.Dim, c.Reset, c.Bold, c.Yellow, c.Reset)
 		} else {
-			pubKeyPath := cfg.SigningKeyPath + ".pub"
+			pubKeyPath := cfg.SigningKeyPath() + ".pub"
 			if pubKey, err := signer.LoadPublicKey(pubKeyPath); err == nil {
 				fmt.Printf("  %sPublic Key%s    %s%s%s...\n", c.Dim, c.Reset, c.Cyan, hex.EncodeToString(pubKey[:8]), c.Reset)
 			}
-			fmt.Printf("  %sPath%s          %s\n", c.Dim, c.Reset, cfg.SigningKeyPath)
+			fmt.Printf("  %sPath%s          %s\n", c.Dim, c.Reset, cfg.SigningKeyPath())
 		}
 	} else {
 		pubKeyPath := keyPath + ".pub"
@@ -526,7 +526,7 @@ func cmdStatus() {
 func cmdHistory() {
 	cfg := loadConfig()
 
-	mmrStore, err := mmr.OpenFileStore(cfg.DatabasePath)
+	mmrStore, err := mmr.OpenFileStore(cfg.DatabasePath())
 	if err != nil {
 		printError(fmt.Sprintf("opening database: %v", err))
 		os.Exit(1)
@@ -544,7 +544,8 @@ func cmdHistory() {
 		return
 	}
 
-	sigEntries := loadSignatureEntries(cfg.SignaturesPath)
+	signaturesPath := filepath.Join(config.PlatformDataDir(), "signatures.log")
+	sigEntries := loadSignatureEntries(signaturesPath)
 
 	printSection("WITNESS HISTORY")
 
@@ -589,9 +590,10 @@ func cmdHistory() {
 func cmdVerify(filePath string) {
 	cfg := loadConfig()
 
-	pubKeyPath := cfg.SigningKeyPath + ".pub"
+	pubKeyPath := cfg.SigningKeyPath() + ".pub"
+	signaturesPath := filepath.Join(config.PlatformDataDir(), "signatures.log")
 
-	v, err := verify.NewVerifier(cfg.DatabasePath, pubKeyPath, cfg.SignaturesPath)
+	v, err := verify.NewVerifier(cfg.DatabasePath(), pubKeyPath, signaturesPath)
 	if err != nil {
 		printError(fmt.Sprintf("initializing verifier: %v", err))
 		os.Exit(1)
@@ -630,9 +632,10 @@ func cmdVerify(filePath string) {
 func cmdExport(filePath, outputPath string) {
 	cfg := loadConfig()
 
-	pubKeyPath := cfg.SigningKeyPath + ".pub"
+	pubKeyPath := cfg.SigningKeyPath() + ".pub"
+	signaturesPath := filepath.Join(config.PlatformDataDir(), "signatures.log")
 
-	v, err := verify.NewVerifier(cfg.DatabasePath, pubKeyPath, cfg.SignaturesPath)
+	v, err := verify.NewVerifier(cfg.DatabasePath(), pubKeyPath, signaturesPath)
 	if err != nil {
 		printError(fmt.Sprintf("initializing verifier: %v", err))
 		os.Exit(1)
@@ -670,7 +673,7 @@ func cmdExport(filePath, outputPath string) {
 func cmdForensics(filePath string) {
 	cfg := loadConfig()
 
-	eventStore, err := store.Open(cfg.EventStorePath)
+	eventStore, err := store.Open(cfg.DatabasePath())
 	if err != nil {
 		printError(fmt.Sprintf("opening event store: %v", err))
 		os.Exit(1)
@@ -733,7 +736,7 @@ func cmdContext(args []string) {
 
 	cfg := loadConfig()
 
-	eventStore, err := store.Open(cfg.EventStorePath)
+	eventStore, err := store.Open(cfg.DatabasePath())
 	if err != nil {
 		printError(fmt.Sprintf("opening event store: %v", err))
 		os.Exit(1)

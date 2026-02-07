@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ============================================== -->
+    <!-- Witnessd Hardened Runtime Entitlements         -->
+    <!-- For Developer ID distribution (outside App Store) -->
+    <!-- ============================================== -->
+
+    <!-- App Sandbox -->
+    <!-- Required for distribution, provides security isolation -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- ============================================== -->
+    <!-- File System Access                             -->
+    <!-- ============================================== -->
+
+    <!-- User-selected files (via Open/Save dialogs) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- App-scoped bookmarks (persistent file access) -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Document-scoped bookmarks -->
+    <key>com.apple.security.files.bookmarks.document-scope</key>
+    <true/>
+
+    <!-- Downloads folder access -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- ============================================== -->
+    <!-- Network Access                                 -->
+    <!-- ============================================== -->
+
+    <!-- Outgoing network connections (for anchoring services) -->
+    <!-- Required for: drand beacon, Ethereum, Keybase, etc. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- ============================================== -->
+    <!-- Automation & Accessibility                     -->
+    <!-- ============================================== -->
+
+    <!-- Apple Events (for AppleScript automation) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- ============================================== -->
+    <!-- Hardware & Device Access                       -->
+    <!-- ============================================== -->
+
+    <!-- USB device access (for hardware security keys) -->
+    <!-- Uncomment if YubiKey or similar support is needed -->
+    <!-- <key>com.apple.security.device.usb</key>
+    <true/> -->
+
+    <!-- ============================================== -->
+    <!-- Hardened Runtime Exceptions                    -->
+    <!-- Keep these FALSE for maximum security          -->
+    <!-- ============================================== -->
+
+    <!-- Allow JIT compilation -->
+    <!-- FALSE: Not needed for witnessd -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <false/>
+
+    <!-- Allow unsigned executable memory -->
+    <!-- FALSE: Not needed for witnessd -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+
+    <!-- Allow DYLD environment variables -->
+    <!-- FALSE: Security risk, not needed -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <false/>
+
+    <!-- Disable library validation -->
+    <!-- FALSE: Keep library validation enabled for security -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <false/>
+
+    <!-- Disable executable page protection -->
+    <!-- FALSE: Keep page protection enabled -->
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <false/>
+
+    <!-- Debugger entitlement -->
+    <!-- FALSE: Not a debugger -->
+    <key>com.apple.security.cs.debugger</key>
+    <false/>
+
+    <!-- ============================================== -->
+    <!-- Keychain Access                                -->
+    <!-- For storing signing keys and credentials       -->
+    <!-- ============================================== -->
+
+    <!-- Keychain access groups -->
+    <!-- Allows access to shared keychain items -->
+    <key>com.apple.security.keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.witnessd.app</string>
+    </array>
+
+    <!-- ============================================== -->
+    <!-- Application Groups                             -->
+    <!-- For sharing data between app and helpers       -->
+    <!-- ============================================== -->
+
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>$(TeamIdentifierPrefix)com.witnessd</string>
+    </array>
+
+</dict>
+</plist>

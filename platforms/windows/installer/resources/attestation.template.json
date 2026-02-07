@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Witnessd TPM Attestation Template",
+  "description": "Template for TPM-backed attestation of document authorship",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["attestation"],
+  "properties": {
+    "attestation": {
+      "type": "object",
+      "required": ["metadata", "document", "proof"],
+      "properties": {
+        "metadata": {
+          "type": "object",
+          "description": "Attestation metadata",
+          "properties": {
+            "schema_version": { "type": "string", "const": "1.0.0" },
+            "timestamp_ns": { "type": "integer", "description": "Unix timestamp in nanoseconds" },
+            "device_id": { "type": "string", "description": "Unique device identifier" },
+            "witnessd_version": { "type": "string", "description": "Witnessd version" }
+          }
+        },
+        "document": {
+          "type": "object",
+          "description": "Document being attested",
+          "properties": {
+            "name": { "type": "string", "description": "Document filename" },
+            "content_hash": { "type": "string", "description": "SHA-256 hash of document content" },
+            "size_bytes": { "type": "integer", "description": "Document size in bytes" }
+          }
+        },
+        "proof": {
+          "type": "object",
+          "description": "Cryptographic proof elements",
+          "properties": {
+            "chain_hash": { "type": "string", "description": "Hash of the checkpoint chain" },
+            "vdf_iterations": { "type": "integer", "description": "Total VDF iterations" },
+            "vdf_elapsed": { "type": "string", "description": "VDF-proven elapsed time" },
+            "tpm_binding": {
+              "type": "object",
+              "properties": {
+                "platform_pcr": { "type": "string", "description": "TPM PCR value" },
+                "quote": { "type": "string", "description": "TPM quote (base64)" },
+                "signature": { "type": "string", "description": "TPM signature (base64)" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "example_output": {
+    "attestation": {
+      "metadata": {
+        "schema_version": "1.0.0",
+        "timestamp_ns": 0,
+        "device_id": "00000000-0000-0000-0000-000000000000",
+        "witnessd_version": "dev"
+      },
+      "document": {
+        "name": "example.txt",
+        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 0
+      },
+      "proof": {
+        "chain_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "vdf_iterations": 0,
+        "vdf_elapsed": "0s",
+        "tpm_binding": null
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+# Witnessd IBus Engine Service
+#
+# This systemd user service manages the Witnessd IBus input method engine.
+# It is designed to be started by IBus when the engine is selected, but
+# can also be started manually for debugging or standalone operation.
+#
+# Installation:
+#   mkdir -p ~/.config/systemd/user
+#   cp witnessd-ibus.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable witnessd-ibus.service
+#
+# Manual control:
+#   systemctl --user start witnessd-ibus
+#   systemctl --user stop witnessd-ibus
+#   systemctl --user status witnessd-ibus
+#   journalctl --user -u witnessd-ibus -f
+
+[Unit]
+Description=Witnessd IBus Input Method Engine
+Documentation=https://github.com/witnessd/witnessd
+After=ibus.service dbus.service
+
+# Only start when IBus is available
+Requires=dbus.socket
+Wants=ibus.service
+
+# Part of the desktop session
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/witnessd-ibus --ibus
+Restart=on-failure
+RestartSec=5
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=25%
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+# Allow access to required directories
+ReadWritePaths=%h/.local/share/witnessd
+ReadWritePaths=%h/.config/witnessd
+
+# Environment
+Environment=DISPLAY=%I
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=witnessd-ibus
+
+[Install]
+WantedBy=default.target

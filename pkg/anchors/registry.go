@@ -46,6 +46,7 @@ func (r *Registry) RegisterDefaults() {
 	// Fully implemented providers
 	r.RegisterProvider(NewOpenTimestampsProvider())
 	r.RegisterProvider(NewFreeTSAProvider())
+	r.RegisterProvider(NewDrandProvider())
 
 	// Scaffolded providers (require configuration)
 	r.RegisterProvider(NewEIDASProvider(EIDASConfig{}))

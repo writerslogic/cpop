@@ -39,6 +39,8 @@ enum ExportTier: String, CaseIterable, Identifiable {
 
 struct ExportTierSheet: View {
     @Binding var selectedTier: ExportTier
+    @Binding var sourceURL: URL?
+    @Binding var destinationURL: URL?
     let onExport: () -> Void
     let onCancel: () -> Void
 
@@ -50,24 +52,86 @@ struct ExportTierSheet: View {
                     .font(.system(size: Design.IconSize.xl))
                     .foregroundStyle(Design.Colors.brandGradient)
 
-                Text("Select Export Tier")
+                Text("Export Evidence")
                     .font(Design.Typography.headlineLarge)
                     .foregroundColor(Design.Colors.primaryText)
-
-                Text("Choose the level of evidence to include")
-                    .font(Design.Typography.bodySmall)
-                    .foregroundColor(Design.Colors.secondaryText)
             }
             .padding(.top, Design.Spacing.md)
 
-            // Tier options
-            VStack(spacing: Design.Spacing.sm) {
-                ForEach(ExportTier.allCases) { tier in
-                    ExportTierRow(
-                        tier: tier,
-                        isSelected: selectedTier == tier,
-                        onSelect: { selectedTier = tier }
-                    )
+            VStack(alignment: .leading, spacing: Design.Spacing.md) {
+                // Source document section
+                VStack(alignment: .leading, spacing: Design.Spacing.xs) {
+                    Text("Source Document")
+                        .font(Design.Typography.labelMedium)
+                        .foregroundColor(Design.Colors.secondaryText)
+
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(Design.Colors.tertiaryText)
+                        Text(sourceURL?.lastPathComponent ?? "No document selected")
+                            .font(Design.Typography.bodyMedium)
+                            .foregroundColor(sourceURL != nil ? Design.Colors.primaryText : Design.Colors.tertiaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Browse...") {
+                            browseForSource()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(Design.Spacing.sm)
+                    .background(Design.Colors.secondaryBackground)
+                    .cornerRadius(Design.Radius.sm)
+                }
+
+                // Destination section
+                VStack(alignment: .leading, spacing: Design.Spacing.xs) {
+                    Text("Save To")
+                        .font(Design.Typography.labelMedium)
+                        .foregroundColor(Design.Colors.secondaryText)
+
+                    HStack {
+                        Image(systemName: "folder")
+                            .foregroundColor(Design.Colors.tertiaryText)
+                        Text(destinationURL?.lastPathComponent ?? "Choose location...")
+                            .font(Design.Typography.bodyMedium)
+                            .foregroundColor(destinationURL != nil ? Design.Colors.primaryText : Design.Colors.tertiaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Browse...") {
+                            browseForDestination()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(Design.Spacing.sm)
+                    .background(Design.Colors.secondaryBackground)
+                    .cornerRadius(Design.Radius.sm)
+                }
+
+                // Tier selection
+                VStack(alignment: .leading, spacing: Design.Spacing.xs) {
+                    Text("Export Tier")
+                        .font(Design.Typography.labelMedium)
+                        .foregroundColor(Design.Colors.secondaryText)
+
+                    Picker("", selection: $selectedTier) {
+                        ForEach(ExportTier.allCases) { tier in
+                            HStack {
+                                Image(systemName: tier.icon)
+                                Text(tier.displayName)
+                            }
+                            .tag(tier)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text(selectedTier.description)
+                        .font(Design.Typography.labelSmall)
+                        .foregroundColor(Design.Colors.tertiaryText)
                 }
             }
             .padding(.horizontal, Design.Spacing.md)
@@ -87,11 +151,44 @@ struct ExportTierSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(sourceURL == nil || destinationURL == nil)
             }
             .padding(.bottom, Design.Spacing.md)
         }
-        .frame(width: 300, height: 380)
+        .frame(width: 380, height: 360)
         .background(Design.Colors.background)
+    }
+
+    private func browseForSource() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.message = "Select a document to export evidence for"
+        panel.prompt = "Select"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            sourceURL = url
+            // Auto-suggest destination name based on source
+            if destinationURL == nil {
+                let suggestedName = url.deletingPathExtension().lastPathComponent + ".evidence.json"
+                let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+                destinationURL = downloadsURL?.appendingPathComponent(suggestedName)
+            }
+        }
+    }
+
+    private func browseForDestination() {
+        let savePanel = NSSavePanel()
+        if let source = sourceURL {
+            savePanel.nameFieldStringValue = source.deletingPathExtension().lastPathComponent + ".evidence.json"
+        } else {
+            savePanel.nameFieldStringValue = "evidence.json"
+        }
+        savePanel.allowedContentTypes = [.json]
+
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            destinationURL = url
+        }
     }
 }
 
@@ -155,14 +252,26 @@ struct ExportTierRow: View {
     }
 }
 
+// MARK: - Window Management
+
+/// Holds reference to open windows to prevent memory leaks
+@MainActor
+private enum WindowManager {
+    static var historyWindow: NSWindow?
+
+    static func closeHistoryWindow() {
+        historyWindow?.close()
+        historyWindow = nil
+    }
+}
+
 // MARK: - Main Popover Content
 
 struct PopoverContentView: View {
     let bridge: WitnessdBridge
     let closeAction: () -> Void
 
-    @State private var status: WitnessStatus = WitnessStatus()
-    @State private var isLoading = false
+    @State private var service = WitnessdService.shared
     @State private var showingAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
@@ -187,7 +296,7 @@ struct PopoverContentView: View {
         .frame(width: Design.Layout.popoverWidth, height: Design.Layout.popoverHeight)
         .background(Design.Colors.background)
         .task {
-            await refreshStatus()
+            await service.refreshStatus()
         }
         .alert(alertTitle, isPresented: $showingAlert) {
             Button("OK") { }
@@ -197,6 +306,8 @@ struct PopoverContentView: View {
         .sheet(isPresented: $showingTierSheet) {
             ExportTierSheet(
                 selectedTier: $selectedExportTier,
+                sourceURL: $pendingExportSourceURL,
+                destinationURL: $pendingExportDestURL,
                 onExport: {
                     showingTierSheet = false
                     performExport()
@@ -216,11 +327,11 @@ struct PopoverContentView: View {
         HStack(spacing: Design.Spacing.md) {
             // App icon with status
             ZStack(alignment: .bottomTrailing) {
-                Image(systemName: status.isTracking ? "eye.circle.fill" : "eye.circle")
+                Image(systemName: service.isTracking ? "eye.circle.fill" : "eye.circle")
                     .font(.system(size: Design.IconSize.xl, weight: .medium))
-                    .foregroundStyle(status.isTracking ? Design.Colors.brandGradient : LinearGradient(colors: [Design.Colors.secondaryText], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(service.isTracking ? Design.Colors.brandGradient : LinearGradient(colors: [Design.Colors.secondaryText], startPoint: .top, endPoint: .bottom))
 
-                if status.isTracking {
+                if service.isTracking {
                     Circle()
                         .fill(Design.Colors.success)
                         .frame(width: 8, height: 8)
@@ -239,9 +350,9 @@ struct PopoverContentView: View {
                     .foregroundColor(Design.Colors.primaryText)
 
                 HStack(spacing: Design.Spacing.xs) {
-                    if status.isTracking {
+                    if service.isTracking {
                         statusPill(text: "Tracking", style: .success)
-                    } else if status.isInitialized {
+                    } else if service.isInitialized {
                         statusPill(text: "Ready", style: .neutral)
                     } else {
                         statusPill(text: "Setup Required", style: .warning)
@@ -253,14 +364,22 @@ struct PopoverContentView: View {
 
             Spacer()
 
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 20, height: 20)
+            if service.isLoading {
+                HStack(spacing: Design.Spacing.xs) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 16, height: 16)
+                    if !service.loadingMessage.isEmpty {
+                        Text(service.loadingMessage)
+                            .font(Design.Typography.labelSmall)
+                            .foregroundColor(Design.Colors.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
             }
 
             IconButton(icon: "arrow.clockwise", label: "Refresh") {
-                Task { await refreshStatus() }
+                Task { await service.refreshStatus() }
             }
         }
         .padding(Design.Spacing.lg)
@@ -294,8 +413,8 @@ struct PopoverContentView: View {
     }
 
     private var headerSubtitle: String {
-        if status.isTracking { return "Tracking Active" }
-        else if status.isInitialized { return "Ready" }
+        if service.isTracking { return "Tracking Active" }
+        else if service.isInitialized { return "Ready" }
         else { return "Setup Required" }
     }
 
@@ -304,7 +423,7 @@ struct PopoverContentView: View {
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: Design.Spacing.lg) {
-                if !status.isInitialized {
+                if !service.isInitialized {
                     setupRequiredSection
                 } else {
                     trackingSection
@@ -360,7 +479,7 @@ struct PopoverContentView: View {
         VStack(alignment: .leading, spacing: Design.Spacing.md) {
             SectionHeader("Tracking")
 
-            if status.isTracking {
+            if service.isTracking {
                 activeTrackingCard
             } else {
                 inactiveTrackingCard
@@ -371,7 +490,7 @@ struct PopoverContentView: View {
     private var activeTrackingCard: some View {
         VStack(spacing: Design.Spacing.md) {
             // Document info
-            if let doc = status.trackingDocument {
+            if let doc = service.trackingDocument {
                 HStack(spacing: Design.Spacing.sm) {
                     Image(systemName: "doc.text.fill")
                         .font(.system(size: Design.IconSize.sm))
@@ -389,12 +508,13 @@ struct PopoverContentView: View {
                 .accessibilityLabel("Tracking: \(URL(fileURLWithPath: doc).lastPathComponent)")
             }
 
-            // Stats row
+            // Stats row with animated keystroke counter
             HStack(spacing: Design.Spacing.lg) {
-                StatWidget(
+                AnimatedStatWidget(
                     icon: "keyboard",
-                    value: formatNumber(status.keystrokeCount),
-                    label: "Keystrokes"
+                    value: service.displayedKeystrokeCount,
+                    label: "Keystrokes",
+                    isPulsing: service.keystrokePulse
                 )
 
                 Divider()
@@ -402,7 +522,7 @@ struct PopoverContentView: View {
 
                 StatWidget(
                     icon: "clock",
-                    value: status.trackingDuration.isEmpty ? "0:00" : status.trackingDuration,
+                    value: service.trackingDuration.isEmpty ? "0:00" : service.trackingDuration,
                     label: "Duration"
                 )
 
@@ -449,22 +569,11 @@ struct PopoverContentView: View {
 
     private func startTrackingWithFile(_ url: URL) {
         Task {
-            isLoading = true
-            let result = await bridge.startTracking(documentPath: url.path)
-            isLoading = false
-
+            let result = await service.startTracking(documentPath: url.path)
             if !result.success {
                 showAlert(title: "Error", message: result.message)
             }
-            await refreshStatus()
         }
-    }
-
-    private func formatNumber(_ n: Int) -> String {
-        if n >= 1000 {
-            return String(format: "%.1fk", Double(n) / 1000.0)
-        }
-        return "\(n)"
     }
 
     // MARK: - Quick Actions
@@ -511,23 +620,23 @@ struct PopoverContentView: View {
                 SystemStatusRow(
                     icon: "speedometer",
                     title: "VDF",
-                    value: status.vdfCalibrated ? "Calibrated" : "Not calibrated",
-                    isGood: status.vdfCalibrated,
-                    action: status.vdfCalibrated ? nil : calibrateVDF
+                    value: service.vdfCalibrated ? "Calibrated" : "Not calibrated",
+                    isGood: service.vdfCalibrated,
+                    action: service.vdfCalibrated ? nil : { calibrateVDF() }
                 )
 
                 SystemStatusRow(
                     icon: "cpu",
                     title: "TPM",
-                    value: status.tpmAvailable ? "Available" : "Unavailable",
-                    isGood: status.tpmAvailable,
+                    value: service.tpmAvailable ? "Available" : "Unavailable",
+                    isGood: service.tpmAvailable,
                     action: nil
                 )
 
                 SystemStatusRow(
                     icon: "cylinder.split.1x2",
                     title: "Database",
-                    value: "\(status.databaseEvents) events",
+                    value: "\(service.status.databaseEvents) events",
                     isGood: true,
                     action: nil
                 )
@@ -546,7 +655,7 @@ struct PopoverContentView: View {
 
             Spacer()
 
-            Text("v1.0")
+            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
                 .font(Design.Typography.labelSmall)
                 .foregroundColor(Design.Colors.tertiaryText)
 
@@ -563,20 +672,10 @@ struct PopoverContentView: View {
 
     // MARK: - Actions
 
-    private func refreshStatus() async {
-        isLoading = true
-        status = await bridge.getStatus()
-        isLoading = false
-    }
-
     private func initializeWitness() {
         Task {
-            isLoading = true
-            let result = await bridge.initialize()
-            isLoading = false
-
+            let result = await service.initialize()
             if result.success {
-                await refreshStatus()
                 showAlert(title: "Initialized", message: "Witnessd is ready. Consider calibrating VDF for accurate timing proofs.")
             } else {
                 showAlert(title: "Error", message: result.message)
@@ -584,71 +683,47 @@ struct PopoverContentView: View {
         }
     }
 
-    private func startTracking() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Select a document to track"
-        panel.prompt = "Start Tracking"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            Task {
-                isLoading = true
-                let result = await bridge.startTracking(documentPath: url.path)
-                isLoading = false
-
-                if !result.success {
-                    showAlert(title: "Error", message: result.message)
-                }
-                await refreshStatus()
-            }
-        }
-    }
-
     private func stopTracking() {
         Task {
-            isLoading = true
-            let result = await bridge.stopTracking()
-            isLoading = false
-
+            let result = await service.stopTracking()
             if result.success {
                 showAlert(title: "Tracking Stopped", message: result.message)
             } else {
                 showAlert(title: "Error", message: result.message)
             }
-            await refreshStatus()
         }
     }
 
     private func createCheckpoint() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.message = "Select a document to checkpoint"
-        panel.prompt = "Create Checkpoint"
+        closeAction()
+        NSApp.activate(ignoringOtherApps: true)
 
-        if panel.runModal() == .OK, let url = panel.url {
-            let alert = NSAlert()
-            alert.messageText = "Checkpoint Message"
-            alert.informativeText = "Enter an optional message for this checkpoint:"
-            alert.addButton(withTitle: "Create")
-            alert.addButton(withTitle: "Cancel")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.message = "Select a document to checkpoint"
+            panel.prompt = "Create Checkpoint"
 
-            let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-            input.placeholderString = "Optional message..."
-            alert.accessoryView = input
+            if panel.runModal() == .OK, let url = panel.url {
+                let alert = NSAlert()
+                alert.messageText = "Checkpoint Message"
+                alert.informativeText = "Enter an optional message for this checkpoint:"
+                alert.addButton(withTitle: "Create")
+                alert.addButton(withTitle: "Cancel")
 
-            if alert.runModal() == .alertFirstButtonReturn {
-                Task {
-                    isLoading = true
-                    let result = await bridge.commit(filePath: url.path, message: input.stringValue)
-                    isLoading = false
+                let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+                input.placeholderString = "Optional message..."
+                alert.accessoryView = input
 
-                    if result.success {
-                        showAlert(title: "Checkpoint Created", message: result.message)
-                    } else {
-                        showAlert(title: "Error", message: result.message)
+                if alert.runModal() == .alertFirstButtonReturn {
+                    Task {
+                        let result = await self.bridge.commit(filePath: url.path, message: input.stringValue)
+                        if result.success {
+                            self.showAlert(title: "Checkpoint Created", message: result.message)
+                        } else {
+                            self.showAlert(title: "Error", message: result.message)
+                        }
                     }
                 }
             }
@@ -656,25 +731,21 @@ struct PopoverContentView: View {
     }
 
     private func exportEvidence() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.message = "Select a document to export evidence for"
-        panel.prompt = "Select"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            let savePanel = NSSavePanel()
-            savePanel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + ".evidence.json"
-            savePanel.allowedContentTypes = [.json]
-
-            if savePanel.runModal() == .OK, let saveURL = savePanel.url {
-                // Store URLs and show tier selection
-                pendingExportSourceURL = url
-                pendingExportDestURL = saveURL
-                selectedExportTier = .standard
-                showingTierSheet = true
+        // Pre-fill with current tracking document if available
+        if let trackingDoc = service.trackingDocument {
+            pendingExportSourceURL = URL(fileURLWithPath: trackingDoc)
+            // Suggest destination in Downloads folder
+            let suggestedName = URL(fileURLWithPath: trackingDoc).deletingPathExtension().lastPathComponent + ".evidence.json"
+            if let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+                pendingExportDestURL = downloadsURL.appendingPathComponent(suggestedName)
             }
+        } else {
+            pendingExportSourceURL = nil
+            pendingExportDestURL = nil
         }
+
+        selectedExportTier = ExportTier(rawValue: service.settings.defaultExportTier) ?? .standard
+        showingTierSheet = true
     }
 
     private func performExport() {
@@ -684,9 +755,7 @@ struct PopoverContentView: View {
         }
 
         Task {
-            isLoading = true
-            let result = await bridge.export(filePath: sourceURL.path, tier: selectedExportTier.rawValue, outputPath: destURL.path)
-            isLoading = false
+            let result = await service.export(filePath: sourceURL.path, tier: selectedExportTier.rawValue, outputPath: destURL.path)
 
             pendingExportSourceURL = nil
             pendingExportDestURL = nil
@@ -700,23 +769,25 @@ struct PopoverContentView: View {
     }
 
     private func verifyEvidence() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.json]
-        panel.message = "Select an evidence file to verify"
-        panel.prompt = "Verify"
+        closeAction()
+        NSApp.activate(ignoringOtherApps: true)
 
-        if panel.runModal() == .OK, let url = panel.url {
-            Task {
-                isLoading = true
-                let result = await bridge.verify(filePath: url.path)
-                isLoading = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowedContentTypes = [.json]
+            panel.message = "Select an evidence file to verify"
+            panel.prompt = "Verify"
 
-                showAlert(
-                    title: result.success ? "Verification Passed" : "Verification Failed",
-                    message: result.message
-                )
+            if panel.runModal() == .OK, let url = panel.url {
+                Task {
+                    let result = await self.service.verify(filePath: url.path)
+                    self.showAlert(
+                        title: result.success ? "Verification Passed" : "Verification Failed",
+                        message: result.message
+                    )
+                }
             }
         }
     }
@@ -724,21 +795,27 @@ struct PopoverContentView: View {
     private func viewHistory() {
         closeAction()
 
+        // Close existing history window if open
+        WindowManager.closeHistoryWindow()
+
         let historyWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: Design.Layout.historyWidth, height: Design.Layout.historyHeight),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        historyWindow.title = "Tracked Documents"
+        historyWindow.title = "Document History"
         historyWindow.center()
-        historyWindow.isReleasedWhenClosed = false
+        historyWindow.isReleasedWhenClosed = true
         historyWindow.minSize = NSSize(width: 500, height: 400)
+
+        // Store reference to prevent immediate release
+        WindowManager.historyWindow = historyWindow
 
         let historyView = HistoryView(
             bridge: bridge,
-            closeAction: { [weak historyWindow] in
-                historyWindow?.close()
+            closeAction: {
+                WindowManager.closeHistoryWindow()
             }
         )
 
@@ -749,13 +826,9 @@ struct PopoverContentView: View {
 
     private func calibrateVDF() {
         Task {
-            isLoading = true
-            let result = await bridge.calibrate()
-            isLoading = false
-
+            let result = await service.calibrate()
             if result.success {
                 showAlert(title: "Calibration Complete", message: result.message)
-                await refreshStatus()
             } else {
                 showAlert(title: "Error", message: result.message)
             }
@@ -763,17 +836,20 @@ struct PopoverContentView: View {
     }
 
     private func openSettings() {
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        closeAction()
+        NSApp.activate(ignoringOtherApps: true)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if #available(macOS 14.0, *) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } else {
+                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+            }
         }
     }
 
     private func showHelp() {
-        if let url = URL(string: "https://github.com/writerslogic/witnessd") {
-            NSWorkspace.shared.open(url)
-        }
+        NSWorkspace.shared.open(AppConfig.documentationURL)
     }
 
     private func showAlert(title: String, message: String) {
@@ -812,6 +888,59 @@ struct StatWidget: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(value) \(label)")
+    }
+}
+
+struct AnimatedStatWidget: View {
+    let icon: String
+    let value: Int
+    let label: String
+    let isPulsing: Bool
+
+    @State private var scale: CGFloat = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: Design.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: Design.IconSize.sm))
+                .foregroundColor(Design.Colors.tertiaryText)
+                .frame(width: Design.IconSize.lg)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(formatNumber(value))
+                    .font(Design.Typography.statValue)
+                    .foregroundColor(Design.Colors.primaryText)
+                    .scaleEffect(scale)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.5), value: scale)
+
+                Text(label)
+                    .font(Design.Typography.statLabel)
+                    .foregroundColor(Design.Colors.tertiaryText)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(formatNumber(value)) \(label)")
+        .onChange(of: isPulsing) { _, newValue in
+            if newValue && !reduceMotion {
+                scale = 1.15
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    scale = 1.0
+                }
+            }
+        }
+    }
+
+    private func formatNumber(_ n: Int) -> String {
+        if n >= 1000000 {
+            return String(format: "%.1fM", Double(n) / 1000000.0)
+        } else if n >= 1000 {
+            return String(format: "%.1fk", Double(n) / 1000.0)
+        }
+        return "\(n)"
     }
 }
 

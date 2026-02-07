@@ -1,0 +1,128 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/StoreBroker/master/StoreBroker/StoreConfig.schema.json",
+  "packageParameters": {
+    "appId": "YOUR_APP_ID_HERE"
+  },
+  "listingMetadata": {
+    "en-us": {
+      "baseListing": {
+        "title": "Witnessd",
+        "description": "Witnessd provides cryptographic authorship witnessing with keystroke biometrics. It creates tamper-evident proof of document creation timeline, helping writers, creators, and professionals establish authentic authorship evidence.\n\nKey Features:\n\n• Cryptographic Checkpoints: Create verifiable snapshots of your work at any time with VDF (Verifiable Delay Function) proofs that mathematically prove minimum elapsed time between commits.\n\n• Keystroke Biometrics: Non-invasive keystroke timing analysis creates unique behavioral fingerprints without capturing actual keystrokes. Your privacy is protected - only timing patterns are recorded.\n\n• Tamper-Evident Evidence: All evidence is cryptographically chained. Any modification to the chain is mathematically detectable.\n\n• Export & Verify: Generate evidence packets that can be independently verified by anyone, anywhere, without requiring special software.\n\n• Privacy-First Design: No cloud uploads required. All data stays on your device. No accounts needed.\n\nUse Cases:\n• Writers proving original authorship\n• Researchers documenting creation timeline\n• Creators establishing prior art\n• Professionals protecting intellectual property\n• Legal evidence of document provenance\n\nTechnical Excellence:\n• Built with Go for performance and reliability\n• Uses Ed25519 signatures for cryptographic proof\n• VDF proofs based on SHA-256 iteration chains\n• Optional TPM hardware binding for enhanced security\n• Open source and auditable\n\nPatent Pending: USPTO Application No. 19/460,364",
+        "shortDescription": "Cryptographic authorship witnessing with keystroke biometrics",
+        "shortTitle": "Witnessd",
+        "sortTitle": "Witnessd",
+        "voiceTitle": "Witness D",
+        "releaseNotes": "Initial release featuring:\n- Cryptographic checkpoint creation\n- VDF time proofs\n- Evidence export and verification\n- Command-line interface\n- Windows TSF integration for keystroke timing",
+        "features": [
+          "Cryptographic authorship proof",
+          "VDF time verification",
+          "Keystroke biometrics (timing only)",
+          "Tamper-evident evidence chains",
+          "Privacy-first local processing",
+          "Independent verification",
+          "Command-line interface",
+          "Open source codebase"
+        ],
+        "keywords": [
+          "authorship",
+          "cryptographic",
+          "proof",
+          "timestamp",
+          "evidence",
+          "writing",
+          "verification",
+          "blockchain",
+          "security",
+          "privacy",
+          "document",
+          "integrity",
+          "biometrics",
+          "fingerprint",
+          "authentication"
+        ],
+        "copyrightAndTrademarkInfo": "Copyright 2024 Writers Logic LLC. Patent Pending.",
+        "additionalLicenseTerms": "",
+        "developedBy": "Writers Logic LLC",
+        "websiteUrl": "https://github.com/writerslogic/witnessd",
+        "supportContact": "support@writerslogic.com",
+        "privacyPolicy": "https://github.com/writerslogic/witnessd/blob/main/PRIVACY.md",
+        "images": {
+          "screenshot1": {
+            "description": "Witnessd command-line interface showing checkpoint creation",
+            "fileName": "screenshot-1-cli.png"
+          },
+          "screenshot2": {
+            "description": "Evidence export and verification process",
+            "fileName": "screenshot-2-export.png"
+          },
+          "screenshot3": {
+            "description": "Keystroke tracking status display",
+            "fileName": "screenshot-3-tracking.png"
+          },
+          "screenshot4": {
+            "description": "Evidence packet with cryptographic proofs",
+            "fileName": "screenshot-4-evidence.png"
+          }
+        }
+      }
+    }
+  },
+  "applicationMetadata": {
+    "category": "DeveloperTools",
+    "subcategory": "Developer tools",
+    "isGameDvrEnabled": false,
+    "canInstallOnRemovableMedia": true,
+    "automaticBackupEnabled": false,
+    "isPrivacyPolicyRequired": true,
+    "allowTargetFutureDeviceFamilies": {
+      "Desktop": true,
+      "Mobile": false,
+      "Holographic": false,
+      "Xbox": false
+    }
+  },
+  "pricingMetadata": {
+    "priceId": "Free",
+    "trialPeriod": "NoFreeTrial",
+    "markets": [
+      "US",
+      "CA",
+      "GB",
+      "AU",
+      "DE",
+      "FR",
+      "JP",
+      "IN",
+      "BR"
+    ],
+    "visibility": "Public"
+  },
+  "certificationMetadata": {
+    "ageRating": {
+      "category": "NotRated",
+      "values": {
+        "violenceOrGore": "None",
+        "sexualContent": "None",
+        "alcohol": "None",
+        "tobacco": "None",
+        "drugs": "None",
+        "gambling": "None",
+        "discriminationOrHatred": "None",
+        "languageOrProfanity": "None",
+        "onlineInteractivity": "None"
+      }
+    },
+    "hardwarePreferences": {
+      "minimumHardware": [
+        "Windows 10 version 1809 or later",
+        "64-bit processor",
+        "50 MB disk space"
+      ],
+      "recommendedHardware": [
+        "TPM 2.0 (optional, for hardware binding)",
+        "SSD storage"
+      ]
+    },
+    "notes": "This application monitors keystroke timing patterns for biometric authentication. It does NOT capture actual keystrokes or key values - only timing information between key presses. All data is processed locally and never uploaded."
+  }
+}

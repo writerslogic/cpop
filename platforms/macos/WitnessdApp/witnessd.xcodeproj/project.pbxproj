@@ -22,6 +22,15 @@
 		A1000025234567890 /* AccessibilityHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000035234567891 /* AccessibilityHelpers.swift */; };
 		A1000026234567890 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000036234567891 /* DesignSystem.swift */; };
 		A1000027234567890 /* PopoverViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000037234567891 /* PopoverViews.swift */; };
+		A1000028234567890 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000038234567891 /* AppConfig.swift */; };
+		A1000029234567890 /* WitnessdService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000039234567891 /* WitnessdService.swift */; };
+		A2000001234567890 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000011234567890 /* TestHelpers.swift */; };
+		A2000002234567890 /* AppConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000012234567890 /* AppConfigTests.swift */; };
+		A2000003234567890 /* NotificationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013234567890 /* NotificationManagerTests.swift */; };
+		A2000004234567890 /* AccessibilityHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014234567890 /* AccessibilityHelpersTests.swift */; };
+		A2000005234567890 /* ServiceConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000015234567890 /* ServiceConnectionTests.swift */; };
+		A2000006234567890 /* PerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000016234567890 /* PerformanceTests.swift */; };
+		A2000007234567890 /* ViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017234567890 /* ViewModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,10 +52,37 @@
 		A1000035234567891 /* AccessibilityHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityHelpers.swift; sourceTree = "<group>"; };
 		A1000036234567891 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		A1000037234567891 /* PopoverViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverViews.swift; sourceTree = "<group>"; };
+		A1000038234567891 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		A1000039234567891 /* WitnessdService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WitnessdService.swift; sourceTree = "<group>"; };
+		A2000000234567890 /* WitnessdTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WitnessdTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000011234567890 /* TestHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHelpers.swift; sourceTree = "<group>"; };
+		A2000012234567890 /* AppConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigTests.swift; sourceTree = "<group>"; };
+		A2000013234567890 /* NotificationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManagerTests.swift; sourceTree = "<group>"; };
+		A2000014234567890 /* AccessibilityHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityHelpersTests.swift; sourceTree = "<group>"; };
+		A2000015234567890 /* ServiceConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceConnectionTests.swift; sourceTree = "<group>"; };
+		A2000016234567890 /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
+		A2000017234567890 /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		A2000060234567890 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000041234567890 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000080234567890;
+			remoteInfo = witnessd;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A1000030234567890 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2000030234567890 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -60,8 +96,23 @@
 			isa = PBXGroup;
 			children = (
 				A1000050234567890 /* witnessd */,
+				A2000050234567890 /* WitnessdTests */,
 				A1000060234567890 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		A2000050234567890 /* WitnessdTests */ = {
+			isa = PBXGroup;
+			children = (
+				A2000011234567890 /* TestHelpers.swift */,
+				A2000012234567890 /* AppConfigTests.swift */,
+				A2000013234567890 /* NotificationManagerTests.swift */,
+				A2000014234567890 /* AccessibilityHelpersTests.swift */,
+				A2000015234567890 /* ServiceConnectionTests.swift */,
+				A2000016234567890 /* PerformanceTests.swift */,
+				A2000017234567890 /* ViewModelTests.swift */,
+			);
+			path = WitnessdTests;
 			sourceTree = "<group>";
 		};
 		A1000050234567890 /* witnessd */ = {
@@ -80,6 +131,8 @@
 				A1000035234567891 /* AccessibilityHelpers.swift */,
 				A1000036234567891 /* DesignSystem.swift */,
 				A1000037234567891 /* PopoverViews.swift */,
+				A1000038234567891 /* AppConfig.swift */,
+				A1000039234567891 /* WitnessdService.swift */,
 				A1000017234567890 /* Assets.xcassets */,
 				A1000019234567890 /* Info.plist */,
 				A1000020234567890 /* witnessd.entitlements */,
@@ -92,6 +145,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000000234567890 /* witnessd.app */,
+				A2000000234567890 /* WitnessdTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -125,6 +179,24 @@
 			productReference = A1000000234567890 /* witnessd.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A2000080234567890 /* WitnessdTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A2000090234567890 /* Build configuration list for PBXNativeTarget "WitnessdTests" */;
+			buildPhases = (
+				A2000031234567890 /* Sources */,
+				A2000030234567890 /* Frameworks */,
+				A2000032234567890 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A2000070234567890 /* PBXTargetDependency */,
+			);
+			name = WitnessdTests;
+			productName = WitnessdTests;
+			productReference = A2000000234567890 /* WitnessdTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -137,6 +209,10 @@
 				TargetAttributes = {
 					A1000080234567890 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					A2000080234567890 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = A1000080234567890;
 					};
 				};
 			};
@@ -154,9 +230,18 @@
 			projectRoot = "";
 			targets = (
 				A1000080234567890 /* witnessd */,
+				A2000080234567890 /* WitnessdTests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXTargetDependency section */
+		A2000070234567890 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1000080234567890 /* witnessd */;
+			targetProxy = A2000060234567890 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A1000032234567890 /* Resources */ = {
@@ -165,6 +250,13 @@
 			files = (
 				A1000007234567890 /* Assets.xcassets in Resources */,
 				A1000008234567890 /* witnessd in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2000032234567890 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -188,7 +280,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "# Build witnessd for the current architecture\ncd \"${PROJECT_DIR}/..\"\n\nif [ \"${ARCHS}\" = \"arm64\" ]; then\n    GOARCH=arm64\nelse\n    GOARCH=amd64\nfi\n\nCGO_ENABLED=1 GOOS=darwin GOARCH=$GOARCH go build -ldflags=\"-s -w\" -o \"${PROJECT_DIR}/witnessd/Resources/witnessd\" ./cmd/witnessd\n";
+			shellScript = "# Build witnessd for the current architecture\ncd \"${PROJECT_DIR}/../../..\"\n\nif [ \"${ARCHS}\" = \"arm64\" ]; then\n    GOARCH=arm64\nelse\n    GOARCH=amd64\nfi\n\nCGO_ENABLED=1 GOOS=darwin GOARCH=$GOARCH go build -ldflags=\"-s -w\" -o \"${PROJECT_DIR}/witnessd/Resources/witnessd\" ./cmd/witnessd\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -210,6 +302,22 @@
 				A1000025234567890 /* AccessibilityHelpers.swift in Sources */,
 				A1000026234567890 /* DesignSystem.swift in Sources */,
 				A1000027234567890 /* PopoverViews.swift in Sources */,
+				A1000028234567890 /* AppConfig.swift in Sources */,
+				A1000029234567890 /* WitnessdService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2000031234567890 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A2000001234567890 /* TestHelpers.swift in Sources */,
+				A2000002234567890 /* AppConfigTests.swift in Sources */,
+				A2000003234567890 /* NotificationManagerTests.swift in Sources */,
+				A2000004234567890 /* AccessibilityHelpersTests.swift in Sources */,
+				A2000005234567890 /* ServiceConnectionTests.swift in Sources */,
+				A2000006234567890 /* PerformanceTests.swift in Sources */,
+				A2000007234567890 /* ViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -398,6 +506,44 @@
 			};
 			name = Release;
 		};
+		A2000210234567890 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PZN7P3E5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.writerslogic.witnessd.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/witnessd.app/Contents/MacOS/witnessd";
+			};
+			name = Debug;
+		};
+		A2000211234567890 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PZN7P3E5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.writerslogic.witnessd.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/witnessd.app/Contents/MacOS/witnessd";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -415,6 +561,15 @@
 			buildConfigurations = (
 				A1000210234567890 /* Debug */,
 				A1000211234567890 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A2000090234567890 /* Build configuration list for PBXNativeTarget "WitnessdTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A2000210234567890 /* Debug */,
+				A2000211234567890 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

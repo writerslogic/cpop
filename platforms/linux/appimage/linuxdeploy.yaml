@@ -1,0 +1,36 @@
+# linuxdeploy configuration for witnessd AppImage
+# https://github.com/linuxdeploy/linuxdeploy
+
+appimage:
+  name: witnessd
+  version: "1.0.0"
+  arch: x86_64
+  update-information: gh-releases-zsync|writerslogic|witnessd|latest|witnessd-*x86_64.AppImage.zsync
+
+# Files to include
+files:
+  - source: usr/bin/witnessd
+    destination: usr/bin/witnessd
+  - source: usr/bin/witnessctl
+    destination: usr/bin/witnessctl
+  - source: usr/bin/witnessd-ibus
+    destination: usr/bin/witnessd-ibus
+  - source: usr/share/applications/witnessd.desktop
+    destination: usr/share/applications/witnessd.desktop
+  - source: usr/share/icons/hicolor/256x256/apps/witnessd.png
+    destination: usr/share/icons/hicolor/256x256/apps/witnessd.png
+  - source: usr/share/metainfo/witnessd.appdata.xml
+    destination: usr/share/metainfo/witnessd.appdata.xml
+
+# Runtime configuration
+runtime:
+  # Embed update information for AppImageUpdate
+  update-information: true
+
+# Desktop integration
+desktop-integration:
+  enable: true
+
+# Environment variables
+environment:
+  WITNESSD_APPIMAGE: "1"

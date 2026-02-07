@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Witnessd
+GenericName=Authorship Witnessing
+Comment=Cryptographic proof of document authorship through keystroke analysis
+Exec=/usr/local/bin/witnessd
+Icon=witnessd
+Terminal=false
+Categories=Utility;Security;
+Keywords=witnessing;cryptographic;authorship;typing;security;
+
+# Autostart settings
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+
+# Display settings
+NoDisplay=false
+Hidden=false
+
+# Single instance
+DBusActivatable=true

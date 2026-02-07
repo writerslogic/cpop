@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Witnessd IBus Settings
+GenericName=Witnessd Configuration
+Comment=Configure Witnessd cryptographic authorship witnessing
+Exec=/usr/local/bin/witnessd-ibus --configure
+Icon=witnessd
+Terminal=false
+Categories=Settings;IBus;Utility;
+Keywords=keyboard;input;method;witnessing;cryptographic;authorship;
+
+# Show in settings menus
+NoDisplay=false
+
+# X-specific settings
+StartupNotify=true
+StartupWMClass=witnessd-ibus-setup
+
+# Desktop environments
+X-GNOME-Settings-Panel=keyboard
+X-KDE-SubstituteUID=false

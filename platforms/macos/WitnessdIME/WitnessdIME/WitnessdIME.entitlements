@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox required for Mac App Store -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Allow reading/writing files the user explicitly selects -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Allow access to user's Documents folder for evidence storage -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- Network access for external anchoring (OpenTimestamps, RFC 3161) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

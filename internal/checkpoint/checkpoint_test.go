@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -89,6 +90,21 @@ func TestNewChainSameDocumentID(t *testing.T) {
 
 	if chain1.DocumentID != chain2.DocumentID {
 		t.Error("same document path should produce same document ID")
+	}
+}
+
+func TestNewChainDifferentDocuments(t *testing.T) {
+	tmpDir := t.TempDir()
+	doc1 := filepath.Join(tmpDir, "doc1.txt")
+	doc2 := filepath.Join(tmpDir, "doc2.txt")
+	os.WriteFile(doc1, []byte("content1"), 0600)
+	os.WriteFile(doc2, []byte("content2"), 0600)
+
+	chain1, _ := NewChain(doc1, testVDFParams())
+	chain2, _ := NewChain(doc2, testVDFParams())
+
+	if chain1.DocumentID == chain2.DocumentID {
+		t.Error("different documents should have different IDs")
 	}
 }
 
@@ -190,6 +206,39 @@ func TestCommitMissingDocument(t *testing.T) {
 	}
 }
 
+func TestCommitEmptyMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	cp, err := chain.Commit("")
+
+	if err != nil {
+		t.Fatalf("Commit with empty message failed: %v", err)
+	}
+	if cp.Message != "" {
+		t.Error("message should be empty")
+	}
+}
+
+func TestCommitLargeMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Create a long message
+	longMessage := string(make([]byte, 10000))
+	cp, err := chain.Commit(longMessage)
+
+	if err != nil {
+		t.Fatalf("Commit with large message failed: %v", err)
+	}
+	if len(cp.Message) != 10000 {
+		t.Error("message length mismatch")
+	}
+}
+
 // =============================================================================
 // Tests for CommitWithVDFDuration
 // =============================================================================
@@ -212,6 +261,45 @@ func TestCommitWithVDFDuration(t *testing.T) {
 
 	if cp.VDF == nil {
 		t.Error("expected VDF proof")
+	}
+}
+
+func TestCommitWithVDFDurationFirst(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// First commit should NOT have VDF even with duration specified
+	cp, err := chain.CommitWithVDFDuration("First", 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("CommitWithVDFDuration failed: %v", err)
+	}
+
+	if cp.VDF != nil {
+		t.Error("first checkpoint should not have VDF")
+	}
+}
+
+func TestCommitWithVDFDurationExceedsMax(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	params := vdf.Parameters{
+		IterationsPerSecond: 1000,
+		MinIterations:       100,
+		MaxIterations:       1000, // Very low max
+	}
+
+	chain, _ := NewChain(docPath, params)
+	chain.Commit("First")
+
+	os.WriteFile(docPath, []byte("modified"), 0600)
+
+	// This should fail because duration exceeds max iterations
+	_, err := chain.CommitWithVDFDuration("Second", time.Hour)
+	if err == nil {
+		t.Error("expected error when VDF duration exceeds max")
 	}
 }
 
@@ -259,8 +347,56 @@ func TestComputeHashDifferentOrdinal(t *testing.T) {
 	}
 }
 
+func TestComputeHashDifferentContent(t *testing.T) {
+	ts := time.Now()
+
+	cp1 := &Checkpoint{
+		Ordinal:     1,
+		ContentHash: sha256.Sum256([]byte("content1")),
+		ContentSize: 8,
+		Timestamp:   ts,
+	}
+
+	cp2 := &Checkpoint{
+		Ordinal:     1,
+		ContentHash: sha256.Sum256([]byte("content2")),
+		ContentSize: 8,
+		Timestamp:   ts,
+	}
+
+	if cp1.computeHash() == cp2.computeHash() {
+		t.Error("different content should produce different hashes")
+	}
+}
+
+func TestComputeHashWithVDF(t *testing.T) {
+	ts := time.Now()
+	input := sha256.Sum256([]byte("vdf"))
+	vdfProof := vdf.ComputeIterations(input, 100)
+
+	cp1 := &Checkpoint{
+		Ordinal:     1,
+		ContentHash: sha256.Sum256([]byte("content")),
+		ContentSize: 7,
+		Timestamp:   ts,
+		VDF:         nil,
+	}
+
+	cp2 := &Checkpoint{
+		Ordinal:     1,
+		ContentHash: sha256.Sum256([]byte("content")),
+		ContentSize: 7,
+		Timestamp:   ts,
+		VDF:         vdfProof,
+	}
+
+	if cp1.computeHash() == cp2.computeHash() {
+		t.Error("checkpoint with VDF should have different hash")
+	}
+}
+
 // =============================================================================
-// Tests for Verify
+// Tests for Verify - Chain Validation
 // =============================================================================
 
 func TestVerifyValidChain(t *testing.T) {
@@ -345,6 +481,172 @@ func TestVerifyEmptyChain(t *testing.T) {
 	}
 }
 
+func TestVerifyMissingVDF(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	os.WriteFile(docPath, []byte("v2"), 0600)
+	chain.Commit("Second")
+
+	// Remove VDF from second checkpoint (which should have it)
+	chain.Checkpoints[1].VDF = nil
+	// Recompute hash to match
+	chain.Checkpoints[1].Hash = chain.Checkpoints[1].computeHash()
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("chain with missing VDF should fail verification")
+	}
+}
+
+func TestVerifyInvalidVDF(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	os.WriteFile(docPath, []byte("v2"), 0600)
+	chain.Commit("Second")
+
+	// Corrupt VDF output
+	chain.Checkpoints[1].VDF.Output[0] ^= 0xff
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("chain with invalid VDF should fail verification")
+	}
+}
+
+func TestVerifyVDFInputMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	os.WriteFile(docPath, []byte("v2"), 0600)
+	chain.Commit("Second")
+
+	// Corrupt VDF input (while keeping output valid for different input)
+	wrongInput := sha256.Sum256([]byte("wrong"))
+	chain.Checkpoints[1].VDF.Input = wrongInput
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("chain with VDF input mismatch should fail verification")
+	}
+}
+
+// =============================================================================
+// Tests for Tampering Detection
+// =============================================================================
+
+func TestDetectContentTampering(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "original")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	// Save original hash
+	originalHash := chain.Checkpoints[0].ContentHash
+
+	// Tamper with content hash
+	chain.Checkpoints[0].ContentHash = sha256.Sum256([]byte("tampered"))
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("content tampering should be detected")
+	}
+
+	// Restore and verify fix
+	chain.Checkpoints[0].ContentHash = originalHash
+	chain.Checkpoints[0].Hash = chain.Checkpoints[0].computeHash()
+	if err := chain.Verify(); err != nil {
+		t.Errorf("restored chain should verify: %v", err)
+	}
+}
+
+func TestDetectTimestampTampering(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	// Tamper with timestamp (without updating hash)
+	chain.Checkpoints[0].Timestamp = time.Now().Add(-24 * time.Hour)
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("timestamp tampering should be detected via hash mismatch")
+	}
+}
+
+func TestDetectOrdinalTampering(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+	os.WriteFile(docPath, []byte("v2"), 0600)
+	chain.Commit("Second")
+
+	// Tamper with ordinal (without updating hash)
+	chain.Checkpoints[1].Ordinal = 5
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("ordinal tampering should be detected")
+	}
+}
+
+func TestDetectReordering(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Create 3 checkpoints
+	for i := 0; i < 3; i++ {
+		os.WriteFile(docPath, []byte("v"+string(rune('1'+i))), 0600)
+		chain.Commit("Commit")
+	}
+
+	// Swap checkpoints 1 and 2
+	chain.Checkpoints[1], chain.Checkpoints[2] = chain.Checkpoints[2], chain.Checkpoints[1]
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("reordering should be detected")
+	}
+}
+
+func TestDetectGaps(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "v1")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Create 3 checkpoints
+	for i := 0; i < 3; i++ {
+		os.WriteFile(docPath, []byte("v"+string(rune('1'+i))), 0600)
+		chain.Commit("Commit")
+	}
+
+	// Remove middle checkpoint
+	chain.Checkpoints = append(chain.Checkpoints[:1], chain.Checkpoints[2:]...)
+
+	err := chain.Verify()
+	if err == nil {
+		t.Error("gap in chain should be detected")
+	}
+}
+
 // =============================================================================
 // Tests for TotalElapsedTime
 // =============================================================================
@@ -369,6 +671,25 @@ func TestTotalElapsedTime(t *testing.T) {
 	elapsed := chain.TotalElapsedTime()
 	if elapsed < 0 {
 		t.Error("elapsed time should not be negative")
+	}
+}
+
+func TestTotalElapsedTimeMultipleCheckpoints(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Create multiple checkpoints
+	for i := 0; i < 5; i++ {
+		os.WriteFile(docPath, []byte(string(rune('a'+i))), 0600)
+		chain.CommitWithVDFDuration("Commit", 10*time.Millisecond)
+	}
+
+	// Should have elapsed time from all VDFs (4 total, first has none)
+	elapsed := chain.TotalElapsedTime()
+	if elapsed <= 0 {
+		t.Error("should have positive elapsed time")
 	}
 }
 
@@ -421,6 +742,22 @@ func TestSummaryEmpty(t *testing.T) {
 	}
 	if !summary.ChainValid {
 		t.Error("empty chain should be valid")
+	}
+}
+
+func TestSummaryInvalidChain(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+
+	// Corrupt the chain
+	chain.Checkpoints[0].Hash[0] ^= 0xff
+
+	summary := chain.Summary()
+	if summary.ChainValid {
+		t.Error("corrupted chain should have ChainValid=false")
 	}
 }
 
@@ -494,6 +831,29 @@ func TestLoadInvalidJSON(t *testing.T) {
 	_, err := Load(chainPath)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestLoadVerifiesAfterRestore(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := createTestDocument(t, tmpDir, "content")
+	chainPath := filepath.Join(tmpDir, "chain.json")
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	chain.Commit("First")
+	os.WriteFile(docPath, []byte("v2"), 0600)
+	chain.Commit("Second")
+
+	chain.Save(chainPath)
+
+	loaded, err := Load(chainPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Verify the loaded chain is valid
+	if err := loaded.Verify(); err != nil {
+		t.Errorf("loaded chain should be valid: %v", err)
 	}
 }
 
@@ -751,5 +1111,239 @@ func TestTPMBindingJSON(t *testing.T) {
 
 	if decoded.MonotonicCounter != 42 {
 		t.Error("monotonic counter mismatch")
+	}
+}
+
+// =============================================================================
+// Tests with Real File Changes
+// =============================================================================
+
+func TestCommitWithRealFileChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := filepath.Join(tmpDir, "document.txt")
+
+	// Create initial file
+	os.WriteFile(docPath, []byte("Hello, World!"), 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Commit initial version
+	cp1, _ := chain.Commit("Initial version")
+	initialHash := cp1.ContentHash
+
+	// Make actual file changes
+	os.WriteFile(docPath, []byte("Hello, Universe!"), 0600)
+
+	cp2, _ := chain.Commit("Changed World to Universe")
+
+	// Verify hashes are different
+	if cp1.ContentHash == cp2.ContentHash {
+		t.Error("different content should have different hashes")
+	}
+
+	// Verify file size is tracked
+	if cp2.ContentSize != 16 { // "Hello, Universe!"
+		t.Errorf("expected size 16, got %d", cp2.ContentSize)
+	}
+
+	// Append content
+	os.WriteFile(docPath, []byte("Hello, Universe! And beyond!"), 0600)
+
+	cp3, _ := chain.Commit("Added more text")
+
+	if cp3.ContentHash == cp2.ContentHash {
+		t.Error("appended content should have different hash")
+	}
+
+	// Verify chain is valid
+	if err := chain.Verify(); err != nil {
+		t.Errorf("chain should be valid: %v", err)
+	}
+
+	// Verify initial hash is still what we recorded
+	if cp1.ContentHash != initialHash {
+		t.Error("initial hash should not change")
+	}
+}
+
+func TestCommitWithBinaryFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := filepath.Join(tmpDir, "binary.bin")
+
+	// Create binary file
+	binaryData := make([]byte, 1024)
+	for i := range binaryData {
+		binaryData[i] = byte(i % 256)
+	}
+	os.WriteFile(docPath, binaryData, 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	cp, err := chain.Commit("Binary file")
+
+	if err != nil {
+		t.Fatalf("Commit failed for binary file: %v", err)
+	}
+
+	if cp.ContentSize != 1024 {
+		t.Errorf("expected size 1024, got %d", cp.ContentSize)
+	}
+
+	// Verify hash is correct
+	expectedHash := sha256.Sum256(binaryData)
+	if cp.ContentHash != expectedHash {
+		t.Error("binary content hash mismatch")
+	}
+}
+
+func TestCommitWithEmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := filepath.Join(tmpDir, "empty.txt")
+
+	// Create empty file
+	os.WriteFile(docPath, []byte{}, 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	cp, err := chain.Commit("Empty file")
+
+	if err != nil {
+		t.Fatalf("Commit failed for empty file: %v", err)
+	}
+
+	if cp.ContentSize != 0 {
+		t.Errorf("expected size 0, got %d", cp.ContentSize)
+	}
+
+	// Empty file hash
+	expectedHash := sha256.Sum256([]byte{})
+	if cp.ContentHash != expectedHash {
+		t.Error("empty file hash mismatch")
+	}
+}
+
+func TestCommitWithLargeFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := filepath.Join(tmpDir, "large.txt")
+
+	// Create 1MB file
+	largeData := bytes.Repeat([]byte("A"), 1024*1024)
+	os.WriteFile(docPath, largeData, 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	cp, err := chain.Commit("Large file")
+
+	if err != nil {
+		t.Fatalf("Commit failed for large file: %v", err)
+	}
+
+	if cp.ContentSize != 1024*1024 {
+		t.Errorf("expected size %d, got %d", 1024*1024, cp.ContentSize)
+	}
+}
+
+// =============================================================================
+// Test Vectors for Cross-Implementation Compatibility
+// =============================================================================
+
+func TestCheckpointHashVector(t *testing.T) {
+	// Create a deterministic checkpoint for cross-implementation testing
+	ts, _ := time.Parse(time.RFC3339, "2024-01-15T12:00:00Z")
+
+	cp := &Checkpoint{
+		Ordinal:      0,
+		PreviousHash: [32]byte{},
+		ContentHash:  sha256.Sum256([]byte("test content")),
+		ContentSize:  12,
+		Timestamp:    ts,
+		Message:      "test",
+	}
+
+	hash := cp.computeHash()
+
+	// Log for documentation
+	t.Logf("Checkpoint hash vector:")
+	t.Logf("  Ordinal: %d", cp.Ordinal)
+	t.Logf("  PreviousHash: %s", hex.EncodeToString(cp.PreviousHash[:]))
+	t.Logf("  ContentHash: %s", hex.EncodeToString(cp.ContentHash[:]))
+	t.Logf("  ContentSize: %d", cp.ContentSize)
+	t.Logf("  Timestamp: %s", ts.Format(time.RFC3339))
+	t.Logf("  Message: %q", cp.Message)
+	t.Logf("  Computed Hash: %s", hex.EncodeToString(hash[:]))
+
+	// Verify hash is non-zero and deterministic
+	if hash == ([32]byte{}) {
+		t.Error("hash should not be zero")
+	}
+
+	hash2 := cp.computeHash()
+	if hash != hash2 {
+		t.Error("hash should be deterministic")
+	}
+}
+
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
+func BenchmarkCommit(b *testing.B) {
+	tmpDir := b.TempDir()
+	docPath := filepath.Join(tmpDir, "bench.txt")
+	os.WriteFile(docPath, []byte("benchmark content"), 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chain.Commit("Benchmark commit")
+	}
+}
+
+func BenchmarkVerify(b *testing.B) {
+	tmpDir := b.TempDir()
+	docPath := filepath.Join(tmpDir, "bench.txt")
+	os.WriteFile(docPath, []byte("benchmark content"), 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+
+	// Create 10 checkpoints
+	for i := 0; i < 10; i++ {
+		os.WriteFile(docPath, []byte(string(rune('a'+i))), 0600)
+		chain.Commit("Commit")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chain.Verify()
+	}
+}
+
+func BenchmarkComputeHash(b *testing.B) {
+	cp := &Checkpoint{
+		Ordinal:     1,
+		ContentHash: sha256.Sum256([]byte("content")),
+		ContentSize: 7,
+		Timestamp:   time.Now(),
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cp.computeHash()
+	}
+}
+
+func BenchmarkSaveLoad(b *testing.B) {
+	tmpDir := b.TempDir()
+	docPath := filepath.Join(tmpDir, "bench.txt")
+	chainPath := filepath.Join(tmpDir, "chain.json")
+	os.WriteFile(docPath, []byte("content"), 0600)
+
+	chain, _ := NewChain(docPath, testVDFParams())
+	for i := 0; i < 10; i++ {
+		chain.Commit("Commit")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chain.Save(chainPath)
+		Load(chainPath)
 	}
 }

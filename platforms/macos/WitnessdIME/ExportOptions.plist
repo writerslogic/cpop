@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ExportOptions.plist
+  Configuration for App Store distribution export
+
+  Usage:
+  xcodebuild -exportArchive \
+    -archivePath build/WitnessdIME.xcarchive \
+    -exportPath build/AppStore \
+    -exportOptionsPlist ExportOptions.plist
+-->
+<plist version="1.0">
+<dict>
+    <!-- Distribution method -->
+    <key>method</key>
+    <string>app-store-connect</string>
+
+    <!-- Code signing settings -->
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!-- Upload symbols for crash reporting -->
+    <key>uploadSymbols</key>
+    <true/>
+
+    <!-- Compile bitcode (if applicable) -->
+    <key>compileBitcode</key>
+    <false/>
+
+    <!-- Destination for upload -->
+    <key>destination</key>
+    <string>upload</string>
+
+    <!-- Generate App Store information -->
+    <key>generateAppStoreInformation</key>
+    <true/>
+
+    <!-- Team ID (replace with your team ID) -->
+    <!-- <key>teamID</key> -->
+    <!-- <string>YOUR_TEAM_ID</string> -->
+
+    <!-- Manage app version and build number in App Store Connect -->
+    <key>manageAppVersionAndBuildNumber</key>
+    <true/>
+</dict>
+</plist>

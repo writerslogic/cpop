@@ -9,6 +9,7 @@ import (
 	"witnessd/internal/checkpoint"
 	"witnessd/internal/declaration"
 	"witnessd/internal/jitter"
+	"witnessd/internal/keyhierarchy"
 	"witnessd/internal/presence"
 	"witnessd/internal/tpm"
 	"witnessd/internal/vdf"
@@ -1054,4 +1055,132 @@ func FuzzDecode(f *testing.F) {
 			t.Error("Document title mismatch after re-encode")
 		}
 	})
+}
+
+// =============================================================================
+// Tests for WithKeyHierarchy
+// =============================================================================
+
+func TestBuilderWithKeyHierarchy(t *testing.T) {
+	chain := createTestChain(t)
+	decl := createTestDeclaration(t, chain)
+
+	// Create mock key hierarchy evidence
+	masterPubKey := make([]byte, 32)
+	for i := range masterPubKey {
+		masterPubKey[i] = byte(i)
+	}
+
+	sessionPubKey := make([]byte, 32)
+	for i := range sessionPubKey {
+		sessionPubKey[i] = byte(i + 32)
+	}
+
+	ratchetPubKey := make([]byte, 32)
+	for i := range ratchetPubKey {
+		ratchetPubKey[i] = byte(i + 64)
+	}
+
+	evidence := &keyhierarchy.KeyHierarchyEvidence{
+		Version:           1,
+		MasterFingerprint: "abc12345",
+		MasterPublicKey:   masterPubKey,
+		DeviceID:          "test-device-001",
+		SessionID:         "session-001",
+		SessionPublicKey:  sessionPubKey,
+		SessionStarted:    time.Now(),
+		SessionCertificateRaw: make([]byte, 64),
+		RatchetCount:      1,
+		RatchetPublicKeys: []ed25519.PublicKey{ratchetPubKey},
+	}
+
+	builder := NewBuilder("test.md", chain).
+		WithDeclaration(decl).
+		WithKeyHierarchy(evidence)
+
+	if builder.packet.KeyHierarchy == nil {
+		t.Fatal("expected key hierarchy to be set")
+	}
+
+	kh := builder.packet.KeyHierarchy
+	if kh.Version != 1 {
+		t.Errorf("expected version 1, got %d", kh.Version)
+	}
+	if kh.MasterFingerprint != "abc12345" {
+		t.Errorf("expected fingerprint 'abc12345', got %q", kh.MasterFingerprint)
+	}
+	if kh.DeviceID != "test-device-001" {
+		t.Errorf("expected device ID 'test-device-001', got %q", kh.DeviceID)
+	}
+	if kh.RatchetCount != 1 {
+		t.Errorf("expected ratchet count 1, got %d", kh.RatchetCount)
+	}
+	if len(kh.RatchetPublicKeys) != 1 {
+		t.Errorf("expected 1 ratchet public key, got %d", len(kh.RatchetPublicKeys))
+	}
+
+	// Key hierarchy should upgrade to Enhanced strength
+	if builder.packet.Strength < Enhanced {
+		t.Errorf("expected at least Enhanced strength, got %v", builder.packet.Strength)
+	}
+}
+
+func TestBuilderWithKeyHierarchyNil(t *testing.T) {
+	chain := createTestChain(t)
+	decl := createTestDeclaration(t, chain)
+
+	builder := NewBuilder("test.md", chain).
+		WithDeclaration(decl).
+		WithKeyHierarchy(nil)
+
+	if builder.packet.KeyHierarchy != nil {
+		t.Error("expected nil key hierarchy for nil input")
+	}
+}
+
+func TestBuilderWithKeyHierarchyClaims(t *testing.T) {
+	chain := createTestChain(t)
+	decl := createTestDeclaration(t, chain)
+
+	masterPubKey := make([]byte, 32)
+	for i := range masterPubKey {
+		masterPubKey[i] = byte(i)
+	}
+
+	evidence := &keyhierarchy.KeyHierarchyEvidence{
+		Version:           1,
+		MasterFingerprint: "12345678abcdef90",
+		MasterPublicKey:   masterPubKey,
+		DeviceID:          "test-device",
+		SessionID:         "test-session",
+		SessionPublicKey:  make([]byte, 32),
+		SessionStarted:    time.Now(),
+		SessionCertificateRaw: make([]byte, 64),
+		RatchetCount:      5,
+		RatchetPublicKeys: make([]ed25519.PublicKey, 5),
+	}
+
+	packet, err := NewBuilder("test.md", chain).
+		WithDeclaration(decl).
+		WithKeyHierarchy(evidence).
+		Build()
+
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	// Check that key hierarchy claim is generated
+	hasKeyHierarchyClaim := false
+	for _, claim := range packet.Claims {
+		if claim.Type == ClaimKeyHierarchy {
+			hasKeyHierarchyClaim = true
+			if claim.Confidence != "cryptographic" {
+				t.Errorf("expected cryptographic confidence, got %q", claim.Confidence)
+			}
+		}
+	}
+
+	if !hasKeyHierarchyClaim {
+		t.Error("expected key hierarchy claim in packet")
+	}
 }

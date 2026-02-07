@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Witnessd Windows Installer - Main Product Definition
+
+  WiX Toolset v4 installer for witnessd cryptographic authorship witnessing daemon.
+  Supports both per-user and per-machine installation.
+
+  Build: wix build -o witnessd.msi Product.wxs Features.wxs Files.wxs UI.wxs
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!-- Product Information -->
+  <Package Name="Witnessd"
+           Manufacturer="Writers Logic"
+           Version="!(bind.FileVersion.witnessd.exe)"
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-000000000001"
+           ProductCode="*"
+           Language="1033"
+           InstallerVersion="500"
+           Compressed="yes"
+           Scope="perMachine">
+
+    <SummaryInformation Description="Witnessd - Cryptographic Authorship Witnessing"
+                        Keywords="witnessd, cryptography, authorship, witnessing"
+                        Manufacturer="Writers Logic" />
+
+    <!-- Media and Cabinet -->
+    <Media Id="1" Cabinet="witnessd.cab" EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Major Upgrade Strategy -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallInitialize"
+                  AllowSameVersionUpgrades="yes" />
+
+    <!-- Launch Conditions -->
+    <Launch Condition="VersionNT >= 603"
+            Message="This application requires Windows 8.1 or later." />
+
+    <!-- Properties -->
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/writerslogic/witnessd" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/writerslogic/witnessd/releases" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/writerslogic/witnessd/issues" />
+    <Property Id="ARPPRODUCTICON" Value="witnessd.ico" />
+
+    <!-- Installation scope choice -->
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+    <Property Id="ApplicationFolderName" Value="Witnessd" />
+
+    <!-- Service configuration -->
+    <Property Id="SERVICEACCOUNT" Value="LocalSystem" />
+    <Property Id="SERVICESTARTTYPE" Value="auto" />
+
+    <!-- Feature installation choices -->
+    <Property Id="INSTALLSHORTCUTS" Value="1" />
+    <Property Id="ADDTOPATH" Value="1" />
+    <Property Id="INSTALLCONTEXTMENU" Value="1" />
+    <Property Id="INSTALLSERVICE" Value="1" />
+    <Property Id="INSTALLTSF" Value="1" />
+
+    <!-- Directory Structure -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Witnessd">
+        <Directory Id="BinFolder" Name="bin" />
+        <Directory Id="ConfigFolder" Name="config" />
+        <Directory Id="DataFolder" Name="data" />
+        <Directory Id="LogsFolder" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Witnessd" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- Feature References -->
+    <Feature Id="ProductFeature"
+             Title="Witnessd"
+             Description="Cryptographic Authorship Witnessing"
+             Level="1"
+             ConfigurableDirectory="INSTALLFOLDER"
+             AllowAdvertise="no"
+             AllowAbsent="no"
+             Display="expand">
+
+      <Feature Id="Core"
+               Title="Core Components"
+               Description="Essential witnessd daemon and CLI tools"
+               Level="1"
+               AllowAdvertise="no"
+               AllowAbsent="no">
+        <ComponentGroupRef Id="CoreComponents" />
+        <ComponentGroupRef Id="ConfigFiles" />
+      </Feature>
+
+      <Feature Id="Service"
+               Title="Windows Service"
+               Description="Install witnessd as a Windows service for automatic background operation"
+               Level="1"
+               AllowAdvertise="no"
+               AllowAbsent="yes">
+        <Condition Level="0"><![CDATA[NOT INSTALLSERVICE]]></Condition>
+        <ComponentRef Id="WitnessdService" />
+      </Feature>
+
+      <Feature Id="TSF"
+               Title="TSF Input Method"
+               Description="Text Services Framework integration for keystroke witnessing"
+               Level="1"
+               AllowAdvertise="no"
+               AllowAbsent="yes">
+        <Condition Level="0"><![CDATA[NOT INSTALLTSF]]></Condition>
+        <ComponentGroupRef Id="TSFComponents" />
+      </Feature>
+
+      <Feature Id="ShellIntegration"
+               Title="Shell Integration"
+               Description="Add PATH entry, shortcuts, and context menu items"
+               Level="1"
+               AllowAdvertise="no"
+               AllowAbsent="yes">
+
+        <Feature Id="PathEntry"
+                 Title="Add to PATH"
+                 Description="Add witnessd to system PATH for command-line access"
+                 Level="1"
+                 AllowAdvertise="no"
+                 AllowAbsent="yes">
+          <Condition Level="0"><![CDATA[NOT ADDTOPATH]]></Condition>
+          <ComponentRef Id="PathEnvironment" />
+        </Feature>
+
+        <Feature Id="Shortcuts"
+                 Title="Start Menu Shortcuts"
+                 Description="Create Start Menu and optional Desktop shortcuts"
+                 Level="1"
+                 AllowAdvertise="no"
+                 AllowAbsent="yes">
+          <Condition Level="0"><![CDATA[NOT INSTALLSHORTCUTS]]></Condition>
+          <ComponentGroupRef Id="Shortcuts" />
+        </Feature>
+
+        <Feature Id="ContextMenu"
+                 Title="Context Menu"
+                 Description="Add 'Verify with Witnessd' to Explorer context menu"
+                 Level="1"
+                 AllowAdvertise="no"
+                 AllowAbsent="yes">
+          <Condition Level="0"><![CDATA[NOT INSTALLCONTEXTMENU]]></Condition>
+          <ComponentRef Id="ContextMenuRegistration" />
+        </Feature>
+
+      </Feature>
+
+    </Feature>
+
+    <!-- Custom Actions -->
+    <CustomAction Id="SetServiceAccountUser" Property="SERVICEACCOUNT" Value="NT AUTHORITY\LocalService" />
+    <CustomAction Id="SetServiceAccountSystem" Property="SERVICEACCOUNT" Value="LocalSystem" />
+
+    <!-- Initialize witnessd after install -->
+    <CustomAction Id="InitializeWitnessd"
+                  Directory="BinFolder"
+                  ExeCommand="[BinFolder]witnessd.exe init"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Calibrate VDF after install -->
+    <CustomAction Id="CalibrateVDF"
+                  Directory="BinFolder"
+                  ExeCommand="[BinFolder]witnessd.exe calibrate"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Register TSF DLL -->
+    <CustomAction Id="RegisterTSF"
+                  Directory="BinFolder"
+                  ExeCommand="regsvr32.exe /s &quot;[BinFolder]witnessd-tsf.dll&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Unregister TSF DLL -->
+    <CustomAction Id="UnregisterTSF"
+                  Directory="BinFolder"
+                  ExeCommand="regsvr32.exe /u /s &quot;[BinFolder]witnessd-tsf.dll&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Stop service before uninstall -->
+    <CustomAction Id="StopService"
+                  Directory="BinFolder"
+                  ExeCommand="sc.exe stop witnessd"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Install Sequence -->
+    <InstallExecuteSequence>
+      <Custom Action="StopService" Before="InstallValidate" Condition="Installed AND (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="UnregisterTSF" Before="RemoveFiles" Condition="Installed AND (REMOVE=&quot;ALL&quot;) AND &amp;TSF=2" />
+      <Custom Action="RegisterTSF" After="InstallFiles" Condition="NOT Installed AND &amp;TSF=3" />
+      <Custom Action="InitializeWitnessd" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="CalibrateVDF" After="InitializeWitnessd" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+    <!-- UI Sequence -->
+    <UIRef Id="WitnessdUI" />
+
+    <!-- Icon for Add/Remove Programs -->
+    <Icon Id="witnessd.ico" SourceFile="resources\witnessd.ico" />
+
+  </Package>
+
+</Wix>

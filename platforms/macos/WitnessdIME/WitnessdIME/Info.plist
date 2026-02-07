@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle Identification -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Witnessd</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+
+    <!-- App Configuration -->
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSMainNibFile</key>
+    <string></string>
+
+    <!-- Input Method Configuration -->
+    <key>InputMethodConnectionName</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)_Connection</string>
+    <key>InputMethodServerControllerClass</key>
+    <string>WitnessdInputController</string>
+    <key>TISInputSourceID</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>TISIntendedLanguage</key>
+    <string>en</string>
+
+    <!-- Character Repertoire (Latin script) -->
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array>
+        <string>Latn</string>
+    </array>
+
+    <!-- Icon -->
+    <key>tsInputMethodIconFileKey</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+
+    <!-- Privacy Usage Descriptions (Required for App Store) -->
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright 2026 Witnessd. All rights reserved.</string>
+
+    <!-- Category -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+
+    <!-- App Transport Security -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <!-- OpenTimestamps calendar servers -->
+            <key>opentimestamps.org</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
+    <!-- Supported Platforms -->
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Witnessd Windows Installer - File Inventory
+
+  This file defines all files to be installed and can be regenerated
+  using heat.exe for automatic file harvesting.
+
+  Regenerate with:
+    heat.exe dir "$(BuildDir)" -cg HarvestedFiles -dr BinFolder -var var.BuildDir -gg -srd -sfrag -sreg -out Files.wxs
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Fragment>
+    <!-- File Variables (set during build) -->
+    <!--
+      var.BuildDir = path to built binaries
+      var.SourceDir = path to source repository root
+      var.ResourcesDir = path to installer resources
+    -->
+
+    <!-- Binary Files Inventory -->
+    <ComponentGroup Id="BinaryFiles" Directory="BinFolder">
+
+      <!-- witnessd.exe - Main daemon -->
+      <Component Id="Binary_witnessd" Guid="B1B2C3D4-E5F6-7890-ABCD-110000000001">
+        <File Id="file_witnessd.exe"
+              Name="witnessd.exe"
+              Source="$(var.BuildDir)\witnessd.exe"
+              KeyPath="yes"
+              Checksum="yes">
+          <DigitalSignature />
+        </File>
+      </Component>
+
+      <!-- witnessctl.exe - CLI tool -->
+      <Component Id="Binary_witnessctl" Guid="B1B2C3D4-E5F6-7890-ABCD-110000000002">
+        <File Id="file_witnessctl.exe"
+              Name="witnessctl.exe"
+              Source="$(var.BuildDir)\witnessctl.exe"
+              KeyPath="yes"
+              Checksum="yes">
+          <DigitalSignature />
+        </File>
+      </Component>
+
+      <!-- witnessd-tsf.dll - TSF Input Method (optional, conditional) -->
+      <Component Id="Binary_witnessd_tsf" Guid="B1B2C3D4-E5F6-7890-ABCD-110000000003">
+        <Condition><![CDATA[INSTALLTSF]]></Condition>
+        <File Id="file_witnessd_tsf.dll"
+              Name="witnessd-tsf.dll"
+              Source="$(var.BuildDir)\witnessd-tsf.dll"
+              KeyPath="yes"
+              Checksum="yes">
+          <DigitalSignature />
+        </File>
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- Documentation Files -->
+    <ComponentGroup Id="DocumentationFiles" Directory="INSTALLFOLDER">
+
+      <Component Id="Doc_LICENSE" Guid="B1B2C3D4-E5F6-7890-ABCD-120000000001">
+        <File Id="file_LICENSE"
+              Name="LICENSE"
+              Source="$(var.SourceDir)\LICENSE"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="Doc_README" Guid="B1B2C3D4-E5F6-7890-ABCD-120000000002">
+        <File Id="file_README.md"
+              Name="README.md"
+              Source="$(var.SourceDir)\README.md"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="Doc_CHANGELOG" Guid="B1B2C3D4-E5F6-7890-ABCD-120000000003">
+        <File Id="file_CHANGELOG.md"
+              Name="CHANGELOG.md"
+              Source="$(var.SourceDir)\CHANGELOG.md"
+              KeyPath="yes" />
+        <!-- Optional file - allow missing -->
+        <Condition><![CDATA[CHANGELOG_EXISTS]]></Condition>
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- Configuration Templates -->
+    <ComponentGroup Id="ConfigurationFiles" Directory="ConfigFolder">
+
+      <Component Id="Config_Template" Guid="B1B2C3D4-E5F6-7890-ABCD-130000000001">
+        <File Id="file_config.json.template"
+              Name="config.json.template"
+              Source="$(var.ResourcesDir)\config.json.template"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="Config_Attestation" Guid="B1B2C3D4-E5F6-7890-ABCD-130000000002">
+        <File Id="file_attestation.template.json"
+              Name="attestation.template.json"
+              Source="$(var.ResourcesDir)\attestation.template.json"
+              KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- Runtime Dependencies (if any) -->
+    <ComponentGroup Id="RuntimeDependencies" Directory="BinFolder">
+
+      <!-- Visual C++ Runtime (if statically linked, this is empty) -->
+      <!--
+      <Component Id="VCRuntime_msvcp140" Guid="B1B2C3D4-E5F6-7890-ABCD-140000000001">
+        <File Id="file_msvcp140.dll"
+              Name="msvcp140.dll"
+              Source="$(var.VCRedistDir)\msvcp140.dll"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="VCRuntime_vcruntime140" Guid="B1B2C3D4-E5F6-7890-ABCD-140000000002">
+        <File Id="file_vcruntime140.dll"
+              Name="vcruntime140.dll"
+              Source="$(var.VCRedistDir)\vcruntime140.dll"
+              KeyPath="yes" />
+      </Component>
+      -->
+
+    </ComponentGroup>
+
+    <!-- Application Data Directory Structure -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="DataDirectories" Guid="B1B2C3D4-E5F6-7890-ABCD-150000000001">
+        <CreateFolder Directory="DataFolder">
+          <util:PermissionEx User="Users" GenericAll="yes"
+                             xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util" />
+        </CreateFolder>
+        <CreateFolder Directory="LogsFolder">
+          <util:PermissionEx User="Users" GenericAll="yes"
+                             xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util" />
+        </CreateFolder>
+        <CreateFolder Directory="ConfigFolder" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\WritersLogic\Witnessd"
+                       Name="DataFoldersCreated"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- User-specific Data (per-user installation support) -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalAppDataWitnessd" Name="Witnessd">
+        <Directory Id="UserDataFolder" Name="data" />
+        <Directory Id="UserLogsFolder" Name="logs" />
+        <Directory Id="UserConfigFolder" Name="config" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="UserDataDirectories" Directory="LocalAppDataWitnessd">
+      <Component Id="UserDataDirs" Guid="B1B2C3D4-E5F6-7890-ABCD-160000000001">
+        <CreateFolder Directory="LocalAppDataWitnessd" />
+        <CreateFolder Directory="UserDataFolder" />
+        <CreateFolder Directory="UserLogsFolder" />
+        <CreateFolder Directory="UserConfigFolder" />
+        <RemoveFolder Id="RemoveUserDataFolder" Directory="UserDataFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveUserLogsFolder" Directory="UserLogsFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveUserConfigFolder" Directory="UserConfigFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveLocalAppDataWitnessd" Directory="LocalAppDataWitnessd" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\WritersLogic\Witnessd"
+                       Name="UserDataFoldersCreated"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Application Registry Keys -->
+    <ComponentGroup Id="RegistryKeys" Directory="INSTALLFOLDER">
+
+      <Component Id="Registry_InstallInfo" Guid="B1B2C3D4-E5F6-7890-ABCD-170000000001">
+        <RegistryKey Root="HKLM" Key="Software\WritersLogic\Witnessd">
+          <RegistryValue Name="InstallPath" Type="string" Value="[INSTALLFOLDER]" />
+          <RegistryValue Name="Version" Type="string" Value="[ProductVersion]" />
+          <RegistryValue Name="BinPath" Type="string" Value="[BinFolder]" />
+          <RegistryValue Name="DataPath" Type="string" Value="[DataFolder]" />
+          <RegistryValue Name="ConfigPath" Type="string" Value="[ConfigFolder]" />
+        </RegistryKey>
+        <RegistryKey Root="HKLM" Key="Software\WritersLogic\Witnessd" ForceDeleteOnUninstall="yes" />
+      </Component>
+
+      <!-- App Paths Registration (allows running witnessd from Run dialog) -->
+      <Component Id="Registry_AppPaths" Guid="B1B2C3D4-E5F6-7890-ABCD-170000000002">
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\witnessd.exe">
+          <RegistryValue Type="string" Value="[BinFolder]witnessd.exe" />
+          <RegistryValue Name="Path" Type="string" Value="[BinFolder]" />
+        </RegistryKey>
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\witnessctl.exe">
+          <RegistryValue Type="string" Value="[BinFolder]witnessctl.exe" />
+          <RegistryValue Name="Path" Type="string" Value="[BinFolder]" />
+        </RegistryKey>
+      </Component>
+
+    </ComponentGroup>
+
+  </Fragment>
+
+</Wix>

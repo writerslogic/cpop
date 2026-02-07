@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  IgnorableNamespaces="uap uap3 uap5 desktop desktop6 rescap com">
+
+  <Identity
+    Name="WritersLogic.Witnessd"
+    Publisher="CN=Writers Logic LLC, O=Writers Logic LLC, L=San Francisco, S=California, C=US"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Witnessd</DisplayName>
+    <PublisherDisplayName>Writers Logic LLC</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Cryptographic authorship witnessing with keystroke biometrics. Proves document creation timeline with tamper-evident evidence.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <!-- Main Witnessd Application -->
+    <Application Id="Witnessd"
+      Executable="witnessd.exe"
+      EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="Witnessd"
+        Description="Cryptographic authorship witnessing daemon"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\Square71x71Logo.png" Square310x310Logo="Assets\Square310x310Logo.png" ShortName="Witnessd">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo"/>
+            <uap:ShowOn Tile="wide310x150Logo"/>
+            <uap:ShowOn Tile="square310x310Logo"/>
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#1a1a2e"/>
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Protocol activation for witnessd:// URLs -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="witnessd">
+            <uap:DisplayName>Witnessd Evidence Protocol</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+
+        <!-- File type associations for evidence files -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="witnessd-evidence">
+            <uap:DisplayName>Witnessd Evidence</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.wpkt</uap:FileType>
+              <uap:FileType ContentType="application/x-witnessd-evidence">.evidence.json</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+
+        <!-- App execution alias for command line -->
+        <uap5:Extension Category="windows.appExecutionAlias">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="witnessd.exe" />
+            <uap5:ExecutionAlias Alias="witnessctl.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+
+        <!-- Startup task for background service -->
+        <desktop:Extension Category="windows.startupTask">
+          <desktop:StartupTask TaskId="WitnessdStartup" Enabled="false" DisplayName="Witnessd Background Service"/>
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+
+    <!-- Witnessctl CLI Application -->
+    <Application Id="Witnessctl"
+      Executable="witnessctl.exe"
+      EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="Witnessctl"
+        Description="Witnessd command-line control utility"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        AppListEntry="none">
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Standard capabilities -->
+    <Capability Name="internetClient" />
+    <Capability Name="privateNetworkClientServer" />
+
+    <!-- Desktop capabilities -->
+    <uap:Capability Name="documentsLibrary" />
+
+    <!-- Restricted capabilities for keystroke monitoring -->
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <rescap:Capability Name="inputForegroundObservation" />
+    <rescap:Capability Name="inputObservation" />
+    <rescap:Capability Name="inputInjectionBrokered" />
+
+    <!-- Desktop bridge capabilities -->
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="allowElevation" />
+  </Capabilities>
+
+  <Extensions>
+    <!-- TSF Text Input Processor COM registration -->
+    <com:Extension Category="windows.comServer">
+      <com:ComServer>
+        <com:SurrogateServer DisplayName="Witnessd TSF Provider">
+          <com:Class Id="A1B2C3D4-E5F6-7890-ABCD-EF1234567890" Path="witnessd-tsf.dll" ThreadingModel="Apartment">
+            <com:ProgId>Witnessd.TSF.1</com:ProgId>
+            <com:VersionIndependentProgId>Witnessd.TSF</com:VersionIndependentProgId>
+            <com:Interfaces>
+              <com:Interface Id="85619820-9469-11d1-a0c2-00c04fc7b8f5" /> <!-- ITfTextInputProcessor -->
+              <com:Interface Id="aa80e7f5-2021-11d2-93e0-0060b067b86e" /> <!-- ITfKeyEventSink -->
+              <com:Interface Id="42D4D099-7C1A-4a89-B836-6C6F22160DF0" /> <!-- ITfTextInputProcessorEx -->
+            </com:Interfaces>
+          </com:Class>
+        </com:SurrogateServer>
+      </com:ComServer>
+    </com:Extension>
+
+    <!-- TSF Category Registration -->
+    <desktop6:Extension Category="windows.mutablePackageDirectories">
+      <desktop6:MutablePackageDirectories>
+        <desktop6:MutablePackageDirectory Target="$(package.installedPath)\Data" />
+      </desktop6:MutablePackageDirectories>
+    </desktop6:Extension>
+  </Extensions>
+</Package>

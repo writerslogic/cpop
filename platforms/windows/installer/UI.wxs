@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Witnessd Windows Installer - Custom UI Definition
+
+  Provides a customized installation wizard with:
+  - Welcome screen
+  - License agreement
+  - Feature selection
+  - Installation options (service, PATH, shortcuts)
+  - Install progress
+  - Finish screen
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Fragment>
+    <!-- UI Definition -->
+    <UI Id="WitnessdUI">
+
+      <!-- Error and progress text -->
+      <UIText Id="AbsentPath" />
+      <UIText Id="bytes" Value="bytes" />
+      <UIText Id="GB" Value="GB" />
+      <UIText Id="KB" Value="KB" />
+      <UIText Id="MB" Value="MB" />
+      <UIText Id="MenuAbsent" Value="Entire feature will be unavailable." />
+      <UIText Id="MenuAdvertise" Value="Feature will be installed when required." />
+      <UIText Id="MenuAllCD" Value="Entire feature will be installed to run from CD." />
+      <UIText Id="MenuAllLocal" Value="Entire feature will be installed on local hard drive." />
+      <UIText Id="MenuAllNetwork" Value="Entire feature will be installed to run from network." />
+      <UIText Id="MenuCD" Value="Feature will be installed to run from CD." />
+      <UIText Id="MenuLocal" Value="Feature will be installed on local hard drive." />
+      <UIText Id="MenuNetwork" Value="Feature will be installed to run from network." />
+      <UIText Id="ScriptInProgress" Value="Gathering required information..." />
+      <UIText Id="SelAbsentAbsent" Value="This feature will remain uninstalled." />
+      <UIText Id="SelAbsentCD" Value="This feature will be set to be installed to run from CD." />
+      <UIText Id="SelAbsentLocal" Value="This feature will be installed on the local hard drive." />
+      <UIText Id="SelAbsentNetwork" Value="This feature will be installed to run from the network." />
+      <UIText Id="SelCDAbsent" Value="This feature will be uninstalled completely." />
+      <UIText Id="SelCDAdvertise" Value="This feature will change from run from CD state to set to be installed when required." />
+      <UIText Id="SelCDCD" Value="This feature will remain to be run from CD" />
+      <UIText Id="SelCDLocal" Value="This feature will change from run from CD state to be installed on the local hard drive." />
+      <UIText Id="SelLocalAbsent" Value="This feature will be completely removed." />
+      <UIText Id="SelLocalAdvertise" Value="This feature will be removed from your local hard drive but will be set to be installed when required." />
+      <UIText Id="SelLocalCD" Value="This feature will be removed from your local hard drive but will be still available to run from CD." />
+      <UIText Id="SelLocalLocal" Value="This feature will remain on you local hard drive." />
+      <UIText Id="SelLocalNetwork" Value="This feature will be removed from your local hard drive but will be still available to run from the network." />
+      <UIText Id="SelNetworkAbsent" Value="This feature will be uninstalled completely." />
+      <UIText Id="SelNetworkAdvertise" Value="This feature will change from run from network state to set to be installed when required." />
+      <UIText Id="SelNetworkLocal" Value="This feature will change from run from network state to be installed on the local hard drive." />
+      <UIText Id="SelNetworkNetwork" Value="This feature will remain to be run from the network" />
+      <UIText Id="TimeRemaining" Value="Time remaining: [1] minutes [2] seconds" />
+      <UIText Id="VolumeCostAvailable" Value="Available" />
+      <UIText Id="VolumeCostDifference" Value="Difference" />
+      <UIText Id="VolumeCostRequired" Value="Required" />
+      <UIText Id="VolumeCostSize" Value="Disk Size" />
+      <UIText Id="VolumeCostVolume" Value="Volume" />
+
+      <!-- Properties for UI -->
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+      <Property Id="WixUI_Mode" Value="FeatureTree" />
+
+      <!-- Font definitions -->
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+      <!-- Dialog References -->
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <!-- Welcome Dialog -->
+      <Dialog Id="WelcomeDlg" Width="370" Height="270" Title="!(loc.WelcomeDlg_Title)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="!(loc.WelcomeDlgBitmap)" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Bigger}Welcome to the Witnessd Setup Wizard" />
+        <Control Id="Description" Type="Text" X="135" Y="80" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="The Setup Wizard will install Witnessd on your computer. Witnessd provides cryptographic authorship witnessing with kinetic proof of provenance." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- License Agreement Dialog -->
+      <Dialog Id="LicenseAgreementDlg" Width="370" Height="270" Title="!(loc.LicenseAgreementDlg_Title)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.LicenseAgreementDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}License Agreement" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Please read the following license agreement carefully." />
+        <Control Id="LicenseText" Type="ScrollableText" X="20" Y="60" Width="330" Height="140" Sunken="yes" TabSkip="no">
+          <Text SourceFile="resources\license.rtf" />
+        </Control>
+        <Control Id="LicenseAcceptedCheckBox" Type="CheckBox" X="20" Y="207" Width="330" Height="18" CheckBoxValue="1" Property="LicenseAccepted" Text="I accept the terms in the License Agreement" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="WelcomeDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="CustomizeDlg"><![CDATA[LicenseAccepted = "1"]]></Publish>
+          <Condition Action="disable"><![CDATA[LicenseAccepted <> "1"]]></Condition>
+          <Condition Action="enable"><![CDATA[LicenseAccepted = "1"]]></Condition>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- Customization Dialog -->
+      <Dialog Id="CustomizeDlg" Width="370" Height="270" Title="!(loc.CustomizeDlg_Title)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.CustomizeDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Custom Setup" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Select the components you want to install." />
+
+        <!-- Feature Tree -->
+        <Control Id="Tree" Type="SelectionTree" X="25" Y="55" Width="175" Height="95" Property="_BrowseProperty" Sunken="yes" TabSkip="no" Text="!(loc.CustomizeDlgTree)" />
+        <Control Id="ItemDescription" Type="Text" X="210" Y="55" Width="140" Height="60" NoPrefix="yes" Text="Highlight a feature to see its description." />
+        <Control Id="ItemSize" Type="Text" X="210" Y="115" Width="140" Height="35" NoPrefix="yes" Text="[ItemSize]" />
+
+        <!-- Installation Options -->
+        <Control Id="OptionsGroup" Type="GroupBox" X="20" Y="157" Width="330" Height="68" Text="Installation Options" />
+        <Control Id="ServiceCheck" Type="CheckBox" X="30" Y="172" Width="150" Height="17" Property="INSTALLSERVICE" CheckBoxValue="1" Text="Install as Windows Service" />
+        <Control Id="PathCheck" Type="CheckBox" X="30" Y="188" Width="150" Height="17" Property="ADDTOPATH" CheckBoxValue="1" Text="Add to System PATH" />
+        <Control Id="ShortcutsCheck" Type="CheckBox" X="185" Y="172" Width="150" Height="17" Property="INSTALLSHORTCUTS" CheckBoxValue="1" Text="Create Start Menu Shortcuts" />
+        <Control Id="ContextMenuCheck" Type="CheckBox" X="185" Y="188" Width="150" Height="17" Property="INSTALLCONTEXTMENU" CheckBoxValue="1" Text="Add Context Menu Items" />
+        <Control Id="TSFCheck" Type="CheckBox" X="30" Y="204" Width="150" Height="17" Property="INSTALLTSF" CheckBoxValue="1" Text="Install TSF Input Method" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- Ready to Install Dialog -->
+      <Dialog Id="VerifyReadyDlg" Width="370" Height="270" Title="!(loc.VerifyReadyDlg_Title)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.VerifyReadyDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Ready to Install" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Click Install to begin the installation." />
+
+        <Control Id="InstallSummary" Type="Text" X="25" Y="55" Width="320" Height="120" NoPrefix="yes">
+          <Text>
+Witnessd will be installed with the following options:
+
+[INSTALLSERVICE?  - Windows Service: Enabled:  - Windows Service: Disabled]
+[ADDTOPATH?  - Add to PATH: Yes:  - Add to PATH: No]
+[INSTALLSHORTCUTS?  - Start Menu Shortcuts: Yes:  - Start Menu Shortcuts: No]
+[INSTALLCONTEXTMENU?  - Context Menu Integration: Yes:  - Context Menu Integration: No]
+[INSTALLTSF?  - TSF Input Method: Yes:  - TSF Input Method: No]
+
+Install Location: [INSTALLFOLDER]
+          </Text>
+        </Control>
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="CustomizeDlg" />
+        </Control>
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUIInstall)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- Exit/Finish Dialog -->
+      <Dialog Id="ExitDialog" Width="370" Height="270" Title="!(loc.ExitDialog_Title)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="!(loc.ExitDialogBitmap)" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Bigger}Witnessd Setup Complete" />
+        <Control Id="Description" Type="Text" X="135" Y="80" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="Witnessd has been successfully installed. Click Finish to exit the Setup Wizard." />
+        <Control Id="LaunchCheckBox" Type="CheckBox" X="135" Y="150" Width="220" Height="17" Property="LAUNCHAPPONEXIT" CheckBoxValue="1" Text="Initialize Witnessd now" Hidden="yes">
+          <Condition Action="show">NOT Installed</Condition>
+        </Control>
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Finish" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+
+      <!-- Cancel Dialog -->
+      <Dialog Id="CancelDlg" Width="260" Height="85" Title="!(loc.CancelDlg_Title)">
+        <Control Id="Text" Type="Text" X="48" Y="15" Width="194" Height="30" NoPrefix="yes" Text="Are you sure you want to cancel Witnessd installation?" />
+        <Control Id="Yes" Type="PushButton" X="72" Y="57" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIYes)">
+          <Publish Event="EndDialog" Value="Exit" />
+        </Control>
+        <Control Id="No" Type="PushButton" X="132" Y="57" Width="56" Height="17" Text="!(loc.WixUINo)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+
+      <!-- Install UI Sequence -->
+      <InstallUISequence>
+        <Show Dialog="WelcomeDlg" Before="ProgressDlg" Condition="NOT Installed" />
+        <Show Dialog="ResumeDlg" Before="ProgressDlg" Condition="Installed AND (RESUME OR Preselected)" />
+        <Show Dialog="MaintenanceWelcomeDlg" Before="ProgressDlg" Condition="Installed AND NOT RESUME AND NOT Preselected" />
+      </InstallUISequence>
+
+      <!-- Admin UI Sequence -->
+      <AdminUISequence>
+        <Show Dialog="WelcomeDlg" Before="ProgressDlg" />
+      </AdminUISequence>
+
+    </UI>
+
+    <!-- Standard dialogs from WiX UI Extension -->
+    <UIRef Id="WixUI_Common" />
+
+  </Fragment>
+
+</Wix>

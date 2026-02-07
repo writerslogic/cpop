@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy
+  Privacy Manifest for Witnessd Input Method
+
+  Required for App Store submission as of Spring 2024.
+  Documents the privacy practices of the app.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Privacy Nutrition Label Information -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+        <!-- Keystroke Timing Data -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePreciseLocation</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Privacy Tracking Declaration -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <!-- Privacy Tracking Domains - None, we don't track -->
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- Required Reason APIs -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!-- File Timestamp APIs -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Accessing file timestamps for evidence management -->
+                <string>C617.1</string>
+            </array>
+        </dict>
+
+        <!-- User Defaults APIs -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Reading/writing app preferences -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!-- System Boot Time APIs (for timing calculations) -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Calculating elapsed time for keystroke intervals -->
+                <string>35F9.1</string>
+            </array>
+        </dict>
+
+        <!-- Disk Space APIs -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- Checking available space before saving evidence -->
+                <string>E174.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

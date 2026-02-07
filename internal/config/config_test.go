@@ -14,25 +14,26 @@ func TestDefaultConfig(t *testing.T) {
 	}
 
 	// Verify defaults
-	if cfg.Interval != 5 {
-		t.Errorf("expected interval 5, got %d", cfg.Interval)
+	if cfg.Interval() != 5 {
+		t.Errorf("expected interval 5, got %d", cfg.Interval())
 	}
-	if len(cfg.WatchPaths) != 0 {
-		t.Errorf("expected empty watch paths, got %v", cfg.WatchPaths)
+	if len(cfg.WatchPaths()) != 0 {
+		t.Errorf("expected 0 watch paths, got %d", len(cfg.WatchPaths()))
 	}
 
+
 	// Check paths contain .witnessd
-	if !strings.Contains(cfg.DatabasePath, ".witnessd") {
-		t.Errorf("database path should contain .witnessd: %s", cfg.DatabasePath)
+	if !strings.Contains(cfg.DatabasePath(), ".witnessd") {
+		t.Errorf("database path should contain .witnessd: %s", cfg.DatabasePath())
 	}
-	if !strings.Contains(cfg.LogPath, ".witnessd") {
-		t.Errorf("log path should contain .witnessd: %s", cfg.LogPath)
+	if !strings.Contains(cfg.LogPath(), ".witnessd") {
+		t.Errorf("log path should contain .witnessd: %s", cfg.LogPath())
 	}
-	if !strings.Contains(cfg.SignaturesPath, ".witnessd") {
-		t.Errorf("signatures path should contain .witnessd: %s", cfg.SignaturesPath)
+	if !strings.Contains(cfg.Storage.SignaturesPath, ".witnessd") {
+		t.Errorf("signatures path should contain .witnessd: %s", cfg.Storage.SignaturesPath)
 	}
-	if !strings.Contains(cfg.EventStorePath, ".witnessd") {
-		t.Errorf("event store path should contain .witnessd: %s", cfg.EventStorePath)
+	if !strings.Contains(cfg.Storage.EventStorePath, ".witnessd") {
+		t.Errorf("event store path should contain .witnessd: %s", cfg.Storage.EventStorePath)
 	}
 }
 
@@ -70,8 +71,8 @@ func TestLoadNonexistent(t *testing.T) {
 	}
 
 	// Should have defaults
-	if cfg.Interval != 5 {
-		t.Errorf("expected default interval 5, got %d", cfg.Interval)
+	if cfg.Interval() != 5 {
+		t.Errorf("expected interval 5, got %d", cfg.Interval())
 	}
 }
 
@@ -129,11 +130,11 @@ event_store_path = "/custom/path/events.db"
 	if cfg.SigningKeyPath != "/custom/path/key" {
 		t.Errorf("expected signing key path /custom/path/key, got %s", cfg.SigningKeyPath)
 	}
-	if cfg.SignaturesPath != "/custom/path/sigs" {
-		t.Errorf("expected signatures path /custom/path/sigs, got %s", cfg.SignaturesPath)
+	if cfg.Storage.SignaturesPath != "/custom/path/sigs" {
+		t.Errorf("expected signatures path /custom/path/sigs, got %s", cfg.Storage.SignaturesPath)
 	}
-	if cfg.EventStorePath != "/custom/path/events.db" {
-		t.Errorf("expected event store path /custom/path/events.db, got %s", cfg.EventStorePath)
+	if cfg.Storage.EventStorePath != "/custom/path/events.db" {
+		t.Errorf("expected event store path /custom/path/events.db, got %s", cfg.Storage.EventStorePath)
 	}
 }
 
@@ -326,9 +327,10 @@ signing_key_path = "/path/key"
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(cfg.WatchPaths) != 0 {
-		t.Errorf("expected empty watch paths, got %v", cfg.WatchPaths)
+	if len(cfg.WatchPaths()) != 0 {
+		t.Errorf("expected 0 watch paths, got %d", len(cfg.WatchPaths()))
 	}
+
 }
 
 func TestConfigMultipleWatchPaths(t *testing.T) {

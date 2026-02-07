@@ -1,0 +1,58 @@
+#!/bin/bash
+# postinst script for witnessd
+
+set -e
+
+case "$1" in
+    configure)
+        # Create witnessd system user if it doesn't exist
+        if ! getent passwd witnessd >/dev/null 2>&1; then
+            adduser --system --group --home /var/lib/witnessd \
+                --no-create-home --shell /usr/sbin/nologin \
+                --gecos "Witnessd Daemon" witnessd
+        fi
+
+        # Create required directories
+        install -d -m 750 -o witnessd -g witnessd /var/lib/witnessd
+        install -d -m 750 -o witnessd -g witnessd /var/log/witnessd
+        install -d -m 755 /etc/witnessd
+
+        # Create default config if it doesn't exist
+        if [ ! -f /etc/witnessd/config.toml ]; then
+            if [ -f /etc/witnessd/config.toml.default ]; then
+                cp /etc/witnessd/config.toml.default /etc/witnessd/config.toml
+                chmod 640 /etc/witnessd/config.toml
+                chown root:witnessd /etc/witnessd/config.toml
+            fi
+        fi
+
+        # Create environment file if it doesn't exist
+        if [ ! -f /etc/witnessd/environment ]; then
+            cat > /etc/witnessd/environment << 'EOF'
+# Environment variables for witnessd
+# WITNESSD_LOG_LEVEL=info
+# WITNESSD_DATA_DIR=/var/lib/witnessd
+# WITNESSD_CONFIG=/etc/witnessd/config.toml
+EOF
+            chmod 640 /etc/witnessd/environment
+            chown root:witnessd /etc/witnessd/environment
+        fi
+
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

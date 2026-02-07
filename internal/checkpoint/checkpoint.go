@@ -46,6 +46,10 @@ type Checkpoint struct {
 
 	// Hardware binding (optional)
 	TPMBinding *TPMBinding `json:"tpm_binding,omitempty"`
+
+	// Key Hierarchy signature (optional, Layer 6)
+	// Patent Pending: USPTO Application No. 19/460,364
+	Signature []byte `json:"signature,omitempty"`
 }
 
 // TPMBinding contains TPM attestation data.

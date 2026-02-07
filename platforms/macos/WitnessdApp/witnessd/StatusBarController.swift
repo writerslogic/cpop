@@ -142,16 +142,32 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 	// MARK: - Status Updates
 
+	/// Polling intervals - faster when tracking, slower when idle
+	private static let trackingPollInterval: TimeInterval = 3.0
+	private static let idlePollInterval: TimeInterval = 10.0
+
 	private func startStatusUpdates() {
 		Task { @MainActor [weak self] in
 			await self?.updateStatus()
 		}
-		
+
+		scheduleStatusTimer(isTracking: false)
+	}
+
+	private func scheduleStatusTimer(isTracking: Bool) {
 		statusTimer?.invalidate()
-		statusTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+		let interval = isTracking ? Self.trackingPollInterval : Self.idlePollInterval
+		statusTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
 			Task { @MainActor in
 				await self?.updateStatus()
 			}
+		}
+	}
+
+	/// Call this to immediately refresh status after an action
+	private func triggerImmediateStatusUpdate() {
+		Task { @MainActor in
+			await updateStatus()
 		}
 	}
 
@@ -164,6 +180,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 		if status.isTracking != wasTrackingPreviously {
 			wasTrackingPreviously = status.isTracking
 			updateAutoCheckpointTimer()
+			// Adjust polling interval based on tracking state
+			scheduleStatusTimer(isTracking: status.isTracking)
 		}
 	}
 
@@ -213,15 +231,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 	// MARK: - Click Handling
 
 	@objc private func handleClick(_ sender: AnyObject?) {
-		guard let event = NSApp.currentEvent else {
-			togglePopover(sender)
-			return
-		}
-		if event.type == .rightMouseUp {
-			showContextMenu()
-		} else {
-			togglePopover(sender)
-		}
+		// Always show the menu on any click (left or right)
+		// This makes it immediately obvious how to start/stop tracking
+		showContextMenu()
 	}
 
 	private func togglePopover(_ sender: AnyObject?) {
@@ -237,29 +249,58 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 	private func showContextMenu() {
 		let menu = NSMenu()
 
+		// Status header with keystroke count if tracking
 		let header = NSMenuItem()
-		header.title = currentStatus.isTracking ? "● Tracking Active" : "○ Ready"
+		if currentStatus.isTracking {
+			let docName = currentStatus.trackingDocument.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Session"
+			header.title = "● Tracking: \(docName) (\(currentStatus.keystrokeCount) keystrokes)"
+		} else {
+			header.title = "○ Ready to Track"
+		}
 		header.isEnabled = false
 		menu.addItem(header)
 		menu.addItem(.separator())
 
 		if currentStatus.isTracking {
+			// Show stop option when tracking
 			menu.addItem(makeMenuItem(
 				title: "Stop Tracking",
 				systemImage: "stop.fill",
 				action: #selector(quickStopTracking),
 				keyEquivalent: ""
 			))
-		} else {
+
 			menu.addItem(makeMenuItem(
-				title: "Start Tracking…",
-				systemImage: "play.fill",
+				title: "Create Checkpoint Now",
+				systemImage: "checkmark.circle",
+				action: #selector(createCheckpointNow),
+				keyEquivalent: ""
+			))
+		} else {
+			// Show start options when not tracking
+			menu.addItem(makeMenuItem(
+				title: "▶ Start Global Tracking",
+				systemImage: "keyboard",
+				action: #selector(startGlobalTracking),
+				keyEquivalent: "g"
+			))
+
+			menu.addItem(makeMenuItem(
+				title: "Start Tracking Document…",
+				systemImage: "doc",
 				action: #selector(quickStartTracking),
 				keyEquivalent: ""
 			))
 		}
 
 		menu.addItem(.separator())
+
+		menu.addItem(makeMenuItem(
+			title: "View Details…",
+			systemImage: "info.circle",
+			action: #selector(showDetails),
+			keyEquivalent: ""
+		))
 
 		menu.addItem(makeMenuItem(
 			title: "Settings…",
@@ -296,31 +337,65 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 	// MARK: - Quick Actions
 
-	@objc private func quickStartTracking() {
-		guard let window = statusItem.button?.window else {
-			// fallback: if no window, just do blocking modal
-			startTrackingWithModalPanel()
-			return
-		}
+	@objc private func startGlobalTracking() {
+		// Start tracking with a default session file in the data directory
+		// This allows tracking all keystrokes without specifying a document
+		Task { @MainActor in
+			let formatter = DateFormatter()
+			formatter.dateFormat = "yyyy-MM-dd"
+			let dateString = formatter.string(from: Date())
+			let sessionFile = "\(bridge.dataDirectoryPath)/sessions/\(dateString)-session.md"
 
-		let panel = NSOpenPanel()
-		panel.canChooseFiles = true
-		panel.canChooseDirectories = false
-		panel.allowsMultipleSelection = false
-		panel.message = "Select a document to track"
-		panel.prompt = "Start Tracking"
-
-		panel.beginSheetModal(for: window) { [weak self] response in
-			guard let self else { return }
-			guard response == .OK, let url = panel.url else { return }
-			Task { @MainActor in
-				_ = await self.bridge.startTracking(documentPath: url.path)
-				await self.updateStatus()
+			// Ensure sessions directory exists
+			let sessionsDir = "\(bridge.dataDirectoryPath)/sessions"
+			do {
+				try FileManager.default.createDirectory(
+					atPath: sessionsDir,
+					withIntermediateDirectories: true,
+					attributes: nil
+				)
+			} catch {
+				showError(title: "Failed to Start Tracking", message: "Could not create sessions directory: \(error.localizedDescription)")
+				return
 			}
+
+			// Create the session file if it doesn't exist
+			if !FileManager.default.fileExists(atPath: sessionFile) {
+				let header = "# Writing Session - \(dateString)\n\nKeystroke tracking session.\n"
+				do {
+					try header.write(toFile: sessionFile, atomically: true, encoding: .utf8)
+				} catch {
+					showError(title: "Failed to Start Tracking", message: "Could not create session file: \(error.localizedDescription)")
+					return
+				}
+			}
+
+			let result = await bridge.startTracking(documentPath: sessionFile)
+			if !result.success {
+				showError(title: "Failed to Start Tracking", message: result.message ?? "The witnessd daemon could not start tracking. Check that the application has accessibility permissions.")
+				return
+			}
+
+			await updateStatus()
+
+			// Notify user
+			NotificationManager.shared.send(
+				title: "Global Tracking Started",
+				body: "Witnessd is now tracking all keystrokes."
+			)
 		}
 	}
 
-	private func startTrackingWithModalPanel() {
+	private func showError(title: String, message: String) {
+		let alert = NSAlert()
+		alert.messageText = title
+		alert.informativeText = message
+		alert.alertStyle = .warning
+		alert.addButton(withTitle: "OK")
+		alert.runModal()
+	}
+
+	@objc private func quickStartTracking() {
 		let panel = NSOpenPanel()
 		panel.canChooseFiles = true
 		panel.canChooseDirectories = false
@@ -338,9 +413,38 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 	@objc private func quickStopTracking() {
 		Task { @MainActor in
+			// Create final checkpoint before stopping
+			if let doc = currentStatus.trackingDocument {
+				_ = await bridge.commit(filePath: doc, message: "Session ended")
+			}
 			_ = await bridge.stopTracking()
 			await updateStatus()
+
+			NotificationManager.shared.send(
+				title: "Tracking Stopped",
+				body: "Your keystroke session has been saved."
+			)
 		}
+	}
+
+	@objc private func createCheckpointNow() {
+		Task { @MainActor in
+			guard let doc = currentStatus.trackingDocument else { return }
+			let formatter = DateFormatter()
+			formatter.dateFormat = "HH:mm"
+			let timeString = formatter.string(from: Date())
+			let result = await bridge.commit(filePath: doc, message: "Manual checkpoint at \(timeString)")
+			if result.success {
+				NotificationManager.shared.send(
+					title: "Checkpoint Created",
+					body: "Your progress has been saved."
+				)
+			}
+		}
+	}
+
+	@objc private func showDetails() {
+		togglePopover(nil)
 	}
 
 	@objc private func openSettings() {

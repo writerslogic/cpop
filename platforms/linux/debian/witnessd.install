@@ -1,0 +1,3 @@
+# Files to install for witnessd package
+bin/witnessd usr/bin
+bin/witnessctl usr/bin

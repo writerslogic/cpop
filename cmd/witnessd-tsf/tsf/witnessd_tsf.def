@@ -1,0 +1,12 @@
+; witnessd_tsf.def - Module definition file for Witnessd TSF DLL
+;
+; This file defines the exported functions for the TSF COM server.
+; Required for proper DLL linking with Visual Studio.
+
+LIBRARY witnessd-tsf
+
+EXPORTS
+    DllCanUnloadNow         PRIVATE
+    DllGetClassObject       PRIVATE
+    DllRegisterServer       PRIVATE
+    DllUnregisterServer     PRIVATE

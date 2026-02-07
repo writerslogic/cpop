@@ -1,0 +1,25 @@
+# SELinux File Contexts for witnessd
+#
+# This file defines the SELinux file contexts for witnessd files and directories.
+# Install with: semanage fcontext -i witnessd.fc && restorecon -R /
+
+# Executables
+/usr/bin/witnessd             -- gen_context(system_u:object_r:witnessd_exec_t,s0)
+/usr/bin/witnessctl           -- gen_context(system_u:object_r:witnessd_exec_t,s0)
+/usr/bin/witnessd-ibus        -- gen_context(system_u:object_r:witnessd_exec_t,s0)
+
+# Configuration
+/etc/witnessd(/.*)?           gen_context(system_u:object_r:witnessd_etc_t,s0)
+
+# Data directory
+/var/lib/witnessd(/.*)?       gen_context(system_u:object_r:witnessd_var_lib_t,s0)
+
+# Log directory
+/var/log/witnessd(/.*)?       gen_context(system_u:object_r:witnessd_var_log_t,s0)
+
+# Runtime directory (socket, pid)
+/run/witnessd(/.*)?           gen_context(system_u:object_r:witnessd_var_run_t,s0)
+
+# User data directories (for user-mode operation)
+HOME_DIR/\.witnessd(/.*)?     gen_context(system_u:object_r:witnessd_var_lib_t,s0)
+HOME_DIR/\.config/witnessd(/.*)? gen_context(system_u:object_r:witnessd_etc_t,s0)

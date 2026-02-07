@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Witnessd Windows Installer - Feature Tree Definition
+
+  Defines the feature hierarchy for selective installation.
+  Features can be enabled/disabled via command line or UI.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+    <!-- Core Components - Required -->
+    <ComponentGroup Id="CoreComponents" Directory="BinFolder">
+      <!-- Main daemon executable -->
+      <Component Id="WitnessdExe" Guid="A1B2C3D4-E5F6-7890-ABCD-100000000001">
+        <File Id="witnessd.exe"
+              Name="witnessd.exe"
+              Source="$(var.BuildDir)\witnessd.exe"
+              KeyPath="yes"
+              Vital="yes">
+          <!-- Ensure signature is verified -->
+          <DigitalSignature />
+        </File>
+      </Component>
+
+      <!-- CLI control tool -->
+      <Component Id="WitnessctlExe" Guid="A1B2C3D4-E5F6-7890-ABCD-100000000002">
+        <File Id="witnessctl.exe"
+              Name="witnessctl.exe"
+              Source="$(var.BuildDir)\witnessctl.exe"
+              KeyPath="yes">
+          <DigitalSignature />
+        </File>
+      </Component>
+
+      <!-- License file -->
+      <Component Id="LicenseFile" Guid="A1B2C3D4-E5F6-7890-ABCD-100000000003" Directory="INSTALLFOLDER">
+        <File Id="LICENSE"
+              Name="LICENSE"
+              Source="$(var.SourceDir)\LICENSE"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- README -->
+      <Component Id="ReadmeFile" Guid="A1B2C3D4-E5F6-7890-ABCD-100000000004" Directory="INSTALLFOLDER">
+        <File Id="README.md"
+              Name="README.md"
+              Source="$(var.SourceDir)\README.md"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Configuration Templates -->
+    <ComponentGroup Id="ConfigFiles" Directory="ConfigFolder">
+      <Component Id="ConfigTemplate" Guid="A1B2C3D4-E5F6-7890-ABCD-200000000001">
+        <File Id="config.json.template"
+              Name="config.json.template"
+              Source="resources\config.json.template"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="AttestationTemplate" Guid="A1B2C3D4-E5F6-7890-ABCD-200000000002">
+        <File Id="attestation.template.json"
+              Name="attestation.template.json"
+              Source="resources\attestation.template.json"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- TSF (Text Services Framework) Components -->
+    <ComponentGroup Id="TSFComponents" Directory="BinFolder">
+      <!-- TSF DLL -->
+      <Component Id="TSFDll" Guid="A1B2C3D4-E5F6-7890-ABCD-300000000001">
+        <File Id="witnessd_tsf.dll"
+              Name="witnessd-tsf.dll"
+              Source="$(var.BuildDir)\witnessd-tsf.dll"
+              KeyPath="yes">
+          <DigitalSignature />
+        </File>
+
+        <!-- COM Server Registration -->
+        <RegistryKey Root="HKLM" Key="Software\Classes\CLSID\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}">
+          <RegistryValue Type="string" Value="Witnessd TSF" />
+          <RegistryKey Key="InProcServer32">
+            <RegistryValue Type="string" Value="[BinFolder]witnessd-tsf.dll" />
+            <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+
+      <!-- TSF Profile Registration -->
+      <Component Id="TSFProfile" Guid="A1B2C3D4-E5F6-7890-ABCD-300000000002">
+        <!-- Register with ITfInputProcessorProfiles -->
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\CTF\TIP\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}">
+          <RegistryValue Type="string" Value="Witnessd" />
+          <RegistryKey Key="LanguageProfile\0x00000409\{B2C3D4E5-F678-90AB-CDEF-123456789012}">
+            <RegistryValue Name="Description" Type="string" Value="Witnessd Keystroke Witness" />
+            <RegistryValue Name="Enable" Type="integer" Value="1" />
+            <RegistryValue Name="IconFile" Type="string" Value="[BinFolder]witnessd-tsf.dll" />
+            <RegistryValue Name="IconIndex" Type="integer" Value="0" />
+          </RegistryKey>
+        </RegistryKey>
+
+        <!-- Category Registration -->
+        <RegistryKey Root="HKLM" Key="Software\Microsoft\CTF\Category\Category\{534C48C1-0607-4098-A521-4FC899C73E90}\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}">
+          <RegistryValue Type="string" Value="" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <!-- Windows Service -->
+    <Component Id="WitnessdService" Directory="BinFolder" Guid="A1B2C3D4-E5F6-7890-ABCD-400000000001">
+      <File Id="witnessd_service.exe"
+            Name="witnessd.exe"
+            Source="$(var.BuildDir)\witnessd.exe"
+            KeyPath="yes" />
+
+      <ServiceInstall Id="WitnessdServiceInstaller"
+                      Type="ownProcess"
+                      Name="witnessd"
+                      DisplayName="Witnessd Daemon"
+                      Description="Cryptographic authorship witnessing service. Monitors document edits and creates tamper-evident audit trails."
+                      Start="auto"
+                      Account="[SERVICEACCOUNT]"
+                      ErrorControl="normal"
+                      Arguments="sentinel start">
+
+        <!-- Service recovery options: restart on failure -->
+        <ServiceConfig DelayedAutoStart="yes"
+                       OnInstall="yes"
+                       OnReinstall="yes" />
+
+        <!-- Failure actions -->
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="60"
+                            ResetPeriodInDays="1" />
+
+      </ServiceInstall>
+
+      <ServiceControl Id="WitnessdServiceControl"
+                      Name="witnessd"
+                      Start="install"
+                      Stop="both"
+                      Remove="uninstall"
+                      Wait="yes" />
+    </Component>
+
+    <!-- PATH Environment Variable -->
+    <Component Id="PathEnvironment" Directory="BinFolder" Guid="A1B2C3D4-E5F6-7890-ABCD-500000000001">
+      <Environment Id="PATH"
+                   Name="PATH"
+                   Value="[BinFolder]"
+                   Permanent="no"
+                   Part="last"
+                   Action="set"
+                   System="yes" />
+    </Component>
+
+    <!-- Context Menu Registration -->
+    <Component Id="ContextMenuRegistration" Directory="BinFolder" Guid="A1B2C3D4-E5F6-7890-ABCD-600000000001">
+      <!-- Register for all files -->
+      <RegistryKey Root="HKLM" Key="Software\Classes\*\shell\witnessd">
+        <RegistryValue Type="string" Value="Verify with Witnessd" />
+        <RegistryValue Name="Icon" Type="string" Value="[BinFolder]witnessd.exe,0" />
+        <RegistryKey Key="command">
+          <RegistryValue Type="string" Value="&quot;[BinFolder]witnessctl.exe&quot; verify &quot;%1&quot;" />
+        </RegistryKey>
+      </RegistryKey>
+
+      <!-- Register for directories -->
+      <RegistryKey Root="HKLM" Key="Software\Classes\Directory\shell\witnessd">
+        <RegistryValue Type="string" Value="Verify with Witnessd" />
+        <RegistryValue Name="Icon" Type="string" Value="[BinFolder]witnessd.exe,0" />
+        <RegistryKey Key="command">
+          <RegistryValue Type="string" Value="&quot;[BinFolder]witnessctl.exe&quot; verify &quot;%1&quot;" />
+        </RegistryKey>
+      </RegistryKey>
+
+      <!-- Extended context menu (Shift+Right-click) for more options -->
+      <RegistryKey Root="HKLM" Key="Software\Classes\*\shell\witnessd_export">
+        <RegistryValue Type="string" Value="Export Witnessd Evidence" />
+        <RegistryValue Name="Icon" Type="string" Value="[BinFolder]witnessd.exe,0" />
+        <RegistryValue Name="Extended" Type="string" Value="" />
+        <RegistryKey Key="command">
+          <RegistryValue Type="string" Value="&quot;[BinFolder]witnessctl.exe&quot; export &quot;%1&quot;" />
+        </RegistryKey>
+      </RegistryKey>
+    </Component>
+
+    <!-- Shortcuts -->
+    <ComponentGroup Id="Shortcuts">
+      <Component Id="StartMenuShortcuts" Directory="ApplicationProgramsFolder" Guid="A1B2C3D4-E5F6-7890-ABCD-700000000001">
+        <!-- Witnessd Status -->
+        <Shortcut Id="WitnessdStatusShortcut"
+                  Name="Witnessd Status"
+                  Description="Check Witnessd status and statistics"
+                  Target="[BinFolder]witnessctl.exe"
+                  Arguments="status"
+                  WorkingDirectory="BinFolder"
+                  Icon="witnessd.ico" />
+
+        <!-- Witnessd Help -->
+        <Shortcut Id="WitnessdHelpShortcut"
+                  Name="Witnessd Help"
+                  Description="Open Witnessd documentation"
+                  Target="[INSTALLFOLDER]README.md" />
+
+        <!-- Uninstall Shortcut -->
+        <Shortcut Id="UninstallShortcut"
+                  Name="Uninstall Witnessd"
+                  Description="Uninstall Witnessd"
+                  Target="[System64Folder]msiexec.exe"
+                  Arguments="/x [ProductCode]" />
+
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\WritersLogic\Witnessd" Name="StartMenuShortcuts" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!-- Optional Desktop Shortcut -->
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="A1B2C3D4-E5F6-7890-ABCD-700000000002">
+        <Condition>INSTALLDESKTOPSHORTCUT</Condition>
+        <Shortcut Id="WitnessdDesktopShortcut"
+                  Name="Witnessd"
+                  Description="Witnessd Cryptographic Witnessing"
+                  Target="[BinFolder]witnessd.exe"
+                  WorkingDirectory="BinFolder"
+                  Icon="witnessd.ico" />
+        <RegistryValue Root="HKCU" Key="Software\WritersLogic\Witnessd" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+  </Fragment>
+
+</Wix>

@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "storage": {
+    "type": "sqlite",
+    "path": "events.db",
+    "secure": true
+  },
+  "vdf": {
+    "iterations_per_second": 1000000,
+    "min_iterations": 100000,
+    "max_iterations": 3600000000,
+    "calibrated": false
+  },
+  "presence": {
+    "challenge_interval_seconds": 600,
+    "response_window_seconds": 60
+  },
+  "service": {
+    "auto_start": true,
+    "log_level": "info"
+  },
+  "tsf": {
+    "enabled": true,
+    "log_level": "warn"
+  }
+}
