@@ -11,6 +11,8 @@ package sentinel
 #include <windows.h>
 #include <oleauto.h>
 #include <stdint.h>
+#include <UIAutomation.h>
+#include <comdef.h>
 
 // ============================================================================
 // Windows Focus Detection
@@ -42,6 +44,7 @@ static volatile int monitorRunning = 0;
 static DWORD threadId = 0;
 static HANDLE threadHandle = NULL;
 static HWND lastFocusedWindow = NULL;
+static IUIAutomation* pAutomation = NULL;
 
 // File change monitoring
 #define MAX_WATCH_HANDLES 64
@@ -206,96 +209,79 @@ static char* GetProcessPath(DWORD pid) {
     return path;
 }
 
-// Get document path from window (using title parsing)
-// Note: Full UI Automation implementation would be more reliable
-// but significantly more complex
+// Get document path from window using UI Automation
 static char* GetWindowDocumentPath(HWND hwnd) {
-    char* title = GetWindowTitle(hwnd);
-    if (!title) return NULL;
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    char* appName = GetProcessName(pid);
-
-    char* docPath = NULL;
-
-    if (appName) {
-        // VS Code: "filename.ext - FolderName - Visual Studio Code"
-        if (_stricmp(appName, "Code") == 0 ||
-            _stricmp(appName, "Code - Insiders") == 0) {
-            char* dash = strstr(title, " - ");
-            if (dash) {
-                // Get first part
-                size_t len = dash - title;
-                docPath = (char*)malloc(len + 1);
-                if (docPath) {
-                    strncpy(docPath, title, len);
-                    docPath[len] = '\0';
-                }
-            }
-        }
-
-        // Notepad++: "filename.ext - Notepad++"
-        else if (_stricmp(appName, "notepad++") == 0) {
-            char* dash = strstr(title, " - ");
-            if (dash) {
-                size_t len = dash - title;
-                // Check if it's a full path
-                if (title[0] != '*' && (title[1] == ':' || title[0] == '\\')) {
-                    docPath = (char*)malloc(len + 1);
-                    if (docPath) {
-                        strncpy(docPath, title, len);
-                        docPath[len] = '\0';
-                    }
-                }
-            }
-        }
-
-        // Notepad: "filename.ext - Notepad"
-        else if (_stricmp(appName, "notepad") == 0) {
-            char* dash = strstr(title, " - ");
-            if (dash) {
-                size_t len = dash - title;
-                docPath = (char*)malloc(len + 1);
-                if (docPath) {
-                    strncpy(docPath, title, len);
-                    docPath[len] = '\0';
-                }
-            }
-        }
-
-        // Word: "Document1 - Word" or "filename.docx - Word"
-        else if (_stricmp(appName, "WINWORD") == 0) {
-            char* dash = strstr(title, " - ");
-            if (dash) {
-                size_t len = dash - title;
-                docPath = (char*)malloc(len + 1);
-                if (docPath) {
-                    strncpy(docPath, title, len);
-                    docPath[len] = '\0';
-                }
-            }
-        }
-
-        // Generic: check if title looks like a file path
-        else {
-            if ((strlen(title) > 3 && title[1] == ':' && title[2] == '\\') ||
-                (title[0] == '\\' && title[1] == '\\')) {
-                // Looks like a Windows path
-                char* dash = strstr(title, " - ");
-                size_t len = dash ? (size_t)(dash - title) : strlen(title);
-                docPath = (char*)malloc(len + 1);
-                if (docPath) {
-                    strncpy(docPath, title, len);
-                    docPath[len] = '\0';
-                }
-            }
-        }
-
-        free(appName);
+    if (!pAutomation) {
+        HRESULT hr = CoCreateInstance(CLSID_CUIAutomation, NULL,
+                                      CLSCTX_INPROC_SERVER, IID_IUIAutomation,
+                                      (void**)&pAutomation);
+        if (FAILED(hr)) return NULL;
     }
 
-    free(title);
+    IUIAutomationElement* pElement = NULL;
+    HRESULT hr = pAutomation->ElementFromHandle(hwnd, &pElement);
+    if (FAILED(hr) || !pElement) return NULL;
+
+    char* docPath = NULL;
+    VARIANT val;
+    VariantInit(&val);
+
+    // Try ValuePattern (often used for address bars or edit controls)
+    IUIAutomationValuePattern* pValuePattern = NULL;
+    hr = pElement->GetCurrentPattern(UIA_ValuePatternId, (IUnknown**)&pValuePattern);
+    if (SUCCEEDED(hr) && pValuePattern) {
+        BSTR value = NULL;
+        hr = pValuePattern->get_CurrentValue(&value);
+        if (SUCCEEDED(hr) && value) {
+            // Check if it looks like a path
+            if (SysStringLen(value) > 3 && value[1] == L':') {
+                int utf8Len = WideCharToMultiByte(CP_UTF8, 0, value, -1, NULL, 0, NULL, NULL);
+                if (utf8Len > 0) {
+                    docPath = (char*)malloc(utf8Len);
+                    WideCharToMultiByte(CP_UTF8, 0, value, -1, docPath, utf8Len, NULL, NULL);
+                }
+            }
+            SysFreeString(value);
+        }
+        pValuePattern->Release();
+    }
+
+    if (docPath) {
+        pElement->Release();
+        return docPath;
+    }
+
+    // Try finding a child element with Document control type (Word/Excel)
+    IUIAutomationCondition* pCondition = NULL;
+    pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId,
+                                         (VARIANT){.vt = VT_I4, .lVal = UIA_DocumentControlTypeId},
+                                         &pCondition);
+
+    if (pCondition) {
+        IUIAutomationElement* pDocElement = NULL;
+        pElement->FindFirst(TreeScope_Descendants, pCondition, &pDocElement);
+        if (pDocElement) {
+            // Try ValuePattern on document element
+            hr = pDocElement->GetCurrentPattern(UIA_ValuePatternId, (IUnknown**)&pValuePattern);
+            if (SUCCEEDED(hr) && pValuePattern) {
+                BSTR value = NULL;
+                hr = pValuePattern->get_CurrentValue(&value);
+                if (SUCCEEDED(hr) && value) {
+                    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, value, -1, NULL, 0, NULL, NULL);
+                    if (utf8Len > 0) {
+                        docPath = (char*)malloc(utf8Len);
+                        WideCharToMultiByte(CP_UTF8, 0, value, -1, docPath, utf8Len, NULL, NULL);
+                    }
+                    SysFreeString(value);
+                }
+                pValuePattern->Release();
+            }
+            pDocElement->Release();
+        }
+        pCondition->Release();
+    }
+
+    pElement->Release();
     return docPath;
 }
 

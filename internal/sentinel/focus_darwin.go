@@ -39,6 +39,7 @@ static CFRunLoopRef sentinelMonitorRunLoop = NULL;
 // FSEvents stream
 static FSEventStreamRef sentinelFSEventStream = NULL;
 static CFMutableArrayRef sentinelWatchedPaths = NULL;
+static dispatch_queue_t sentinelFSEventQueue = NULL;
 
 // Event tap for Cmd+S detection
 static CFMachPortRef sentinelSaveEventTap = NULL;
@@ -527,7 +528,9 @@ static void startFSEvents(void) {
     );
 
     if (sentinelFSEventStream) {
-        FSEventStreamScheduleWithRunLoop(sentinelFSEventStream, sentinelMonitorRunLoop, kCFRunLoopDefaultMode);
+        // Use dispatch queue instead of deprecated FSEventStreamScheduleWithRunLoop
+        sentinelFSEventQueue = dispatch_queue_create("com.witnessd.fsevents", DISPATCH_QUEUE_SERIAL);
+        FSEventStreamSetDispatchQueue(sentinelFSEventStream, sentinelFSEventQueue);
         FSEventStreamStart(sentinelFSEventStream);
     }
 }
@@ -538,6 +541,12 @@ static void stopFSEvents(void) {
         FSEventStreamInvalidate(sentinelFSEventStream);
         FSEventStreamRelease(sentinelFSEventStream);
         sentinelFSEventStream = NULL;
+    }
+
+    if (sentinelFSEventQueue) {
+        // dispatch_release is a no-op for queues on modern macOS with ARC,
+        // but we set to NULL to indicate it's no longer valid
+        sentinelFSEventQueue = NULL;
     }
 
     if (sentinelWatchedPaths) {

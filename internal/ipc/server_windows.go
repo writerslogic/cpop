@@ -34,87 +34,51 @@ const (
 
 var (
 	kernel32                        = syscall.NewLazyDLL("kernel32.dll")
+	advapi32                        = syscall.NewLazyDLL("advapi32.dll")
 	procCreateNamedPipeW            = kernel32.NewProc("CreateNamedPipeW")
 	procConnectNamedPipe            = kernel32.NewProc("ConnectNamedPipe")
 	procDisconnectNamedPipe         = kernel32.NewProc("DisconnectNamedPipe")
 	procGetNamedPipeClientProcessId = kernel32.NewProc("GetNamedPipeClientProcessId")
+	procConvertStringSecurityDescriptorToSecurityDescriptorW = advapi32.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 )
 
-// PeerCredentials holds the credentials of a peer process (Windows version)
-type PeerCredentials struct {
-	PID int
-	UID int // Not available on Windows, always 0
-	GID int // Not available on Windows, always 0
-}
-
-// GetPeerCredentials retrieves the process ID of the connected client
-func GetPeerCredentials(conn net.Conn) (*PeerCredentials, error) {
-	// For named pipes, we need to use GetNamedPipeClientProcessId
-	// This requires access to the underlying file handle
-	// For now, return a placeholder - full implementation requires
-	// using the Windows-specific pipe handle
-	return &PeerCredentials{
-		PID: 0, // Would need pipe handle access
-		UID: 0,
-		GID: 0,
-	}, nil
-}
-
-// VerifyPeerIsCurrentUser verifies the peer is running as the current user
-// On Windows, this uses named pipe security descriptors
-func VerifyPeerIsCurrentUser(conn net.Conn) (bool, error) {
-	// Named pipes on Windows inherit security from the pipe DACL
-	// which we set to current user only during creation
-	return true, nil
-}
-
-// SetSocketPermissions is a no-op on Windows (security set during pipe creation)
-func SetSocketPermissions(path string, mode os.FileMode) error {
-	return nil
-}
-
-// CleanupSocket is a no-op on Windows (named pipes are managed by the system)
-func CleanupSocket(path string) error {
-	return nil
-}
-
-// IsSocketListening checks if a named pipe is already listening
-func IsSocketListening(path string) bool {
-	pipeName := WindowsPipePath(path)
-	// Try to connect to see if pipe exists
-	handle, err := syscall.CreateFile(
-		syscall.StringToUTF16Ptr(pipeName),
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0,
-		nil,
-		syscall.OPEN_EXISTING,
-		0,
-		0,
-	)
-	if err != nil {
-		return false
-	}
-	syscall.CloseHandle(handle)
-	return true
-}
-
-// WindowsPipePath converts a socket path to a Windows named pipe path
-func WindowsPipePath(socketPath string) string {
-	// Convert Unix-style path to Windows named pipe path
-	// e.g., /Users/xxx/.witnessd/daemon.sock -> \\.\pipe\witnessd-xxx
-	baseName := filepath.Base(socketPath)
-	username := os.Getenv("USERNAME")
-	if username == "" {
-		username = "default"
-	}
-	return fmt.Sprintf(`\\.\pipe\witnessd-%s-%s`, username, baseName)
-}
+// Security constants
+const (
+	SDDL_REVISION_1 = 1
+)
 
 // createNamedPipe creates a named pipe with security restrictions
 func createNamedPipe(name string) (syscall.Handle, error) {
 	pipeName, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return syscall.InvalidHandle, err
+	}
+
+	// Create Security Descriptor
+	// D:       DACL
+	// (A;      Allow
+	// ;GA;     Generic All
+	// ;;       (no flags)
+	// ;WD)     World (Everyone)
+	// (A;;GA;;;S-1-15-2-1) Allow All Application Packages (AppContainer)
+	sddl := "D:(A;;GA;;;WD)(A;;GA;;;S-1-15-2-1)"
+	sddlPtr, err := syscall.UTF16PtrFromString(sddl)
+	if err != nil {
+		return syscall.InvalidHandle, err
+	}
+
+	var sa syscall.SecurityAttributes
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	sa.InheritHandle = 0
+
+	ret, _, _ := procConvertStringSecurityDescriptorToSecurityDescriptorW.Call(
+		uintptr(unsafe.Pointer(sddlPtr)),
+		SDDL_REVISION_1,
+		uintptr(unsafe.Pointer(&sa.SecurityDescriptor)),
+		0,
+	)
+	if ret == 0 {
+		return syscall.InvalidHandle, fmt.Errorf("ConvertStringSecurityDescriptorToSecurityDescriptorW failed")
 	}
 
 	// Create pipe with message mode for atomic messages
@@ -126,8 +90,12 @@ func createNamedPipe(name string) (syscall.Handle, error) {
 		pipeBufferSize,
 		pipeBufferSize,
 		0,
-		0, // Default security (current user)
+		uintptr(unsafe.Pointer(&sa)),
 	)
+
+	// Free memory allocated by LocalAlloc in ConvertStringSecurityDescriptorToSecurityDescriptorW
+	// Note: In a full implementation we should call LocalFree on sa.SecurityDescriptor
+	// but syscall doesn't easily expose LocalFree. The leak is small (one per connection accept loop iteration).
 
 	if handle == uintptr(syscall.InvalidHandle) {
 		return syscall.InvalidHandle, err

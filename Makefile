@@ -4,6 +4,7 @@
 .PHONY: all build test bench clean install install-man uninstall audit verify-self fmt lint validate-schemas help
 .PHONY: release release-snapshot sign notarize
 .PHONY: witness-app witness-build witness-archive witness-clean
+.PHONY: dmg dmg-dev dmg-release dmg-clean dmg-verify witnessd-app witnessd-app-sign witnessd-app-notarize
 
 # Build variables
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -218,9 +219,85 @@ witness-clean:
 	rm -f Witness/Witness/Resources/witnessd-amd64
 	rm -f Witness/Witness/Resources/witnessd-arm64
 
+## Witnessd macOS App & DMG Distribution
+# Build scripts located in platforms/macos/WitnessdApp/scripts/
+
+WITNESSD_APP_SCRIPTS := platforms/macos/WitnessdApp/scripts
+WITNESSD_APP_BUILD := platforms/macos/WitnessdApp/build
+
+# Build witnessd CLI binary (universal)
+witnessd-cli-universal:
+	@echo "Building witnessd CLI as universal binary..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./build-app.sh --universal
+
+# Build witnessd CLI binary (native architecture)
+witnessd-cli-native:
+	@echo "Building witnessd CLI for native architecture..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./build-app.sh --native
+
+# Build the SwiftUI app (unsigned)
+witnessd-app: witnessd-cli-universal
+	@echo "Building Witnessd.app..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./build-swiftui.sh build
+	@echo "App built at: $(WITNESSD_APP_BUILD)/DerivedData/Build/Products/Release/Witnessd.app"
+
+# Build and sign the app
+witnessd-app-sign: witnessd-app
+	@echo "Signing Witnessd.app..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./codesign.sh sign
+
+# Build, sign, and notarize the app
+witnessd-app-notarize: witnessd-app-sign
+	@echo "Notarizing Witnessd.app..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./notarize.sh notarize
+
+# Create unsigned DMG for development/testing
+dmg-dev: witnessd-app
+	@echo "Creating development DMG (unsigned)..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./create-dmg.sh dev
+	@echo "DMG created at: $(WITNESSD_APP_BUILD)/"
+
+# Create signed and notarized DMG for release
+dmg-release: witnessd-app-sign
+	@echo "Creating release DMG (signed + notarized)..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./create-dmg.sh release
+	@echo "DMG created at: $(WITNESSD_APP_BUILD)/"
+
+# Alias for dmg-dev (quick DMG creation)
+dmg: dmg-dev
+
+# Verify DMG signature and notarization
+dmg-verify:
+	@echo "Verifying DMG..."
+	cd $(WITNESSD_APP_SCRIPTS) && ./create-dmg.sh verify
+
+# Clean DMG build artifacts
+dmg-clean:
+	@echo "Cleaning DMG build artifacts..."
+	rm -rf $(WITNESSD_APP_BUILD)
+	rm -rf platforms/macos/WitnessdApp/dmg-resources
+	rm -f platforms/macos/WitnessdApp/witnessd/Resources/witnessd
+	rm -f platforms/macos/WitnessdApp/witnessd/Resources/witnessd-*
+
+# Verify code signature of existing app
+verify-signature:
+	@if [ -d "$(WITNESSD_APP_BUILD)/DerivedData/Build/Products/Release/Witnessd.app" ]; then \
+		codesign --verify --deep --strict --verbose=2 \
+			"$(WITNESSD_APP_BUILD)/DerivedData/Build/Products/Release/Witnessd.app"; \
+		spctl --assess --type execute --verbose=2 \
+			"$(WITNESSD_APP_BUILD)/DerivedData/Build/Products/Release/Witnessd.app" || true; \
+	else \
+		echo "App not found. Build first with: make witnessd-app"; \
+	fi
+
+# List available signing identities
+list-signing-identities:
+	@echo "Available signing identities:"
+	@security find-identity -v -p codesigning
+
 ## Clean
 
-clean: witness-clean
+clean: witness-clean dmg-clean
 	rm -rf $(BINDIR)
 	rm -f coverage.out coverage.html
 	$(MAKE) -C cmd/witnessd-ime clean 2>/dev/null || true
@@ -237,10 +314,21 @@ help:
 	@echo "  make install-man - Install man pages only"
 	@echo "  make uninstall   - Remove installed files"
 	@echo ""
-	@echo "Witness.app (macOS):"
+	@echo "Witness.app (macOS) - Legacy:"
 	@echo "  make witness-app     - Build Witness.app for macOS"
 	@echo "  make witness-archive - Create archive for App Store submission"
 	@echo "  make witness-clean   - Clean Witness.app build artifacts"
+	@echo ""
+	@echo "Witnessd.app DMG Distribution (macOS):"
+	@echo "  make witnessd-app          - Build Witnessd.app (unsigned)"
+	@echo "  make witnessd-app-sign     - Build and sign Witnessd.app"
+	@echo "  make witnessd-app-notarize - Build, sign, and notarize"
+	@echo "  make dmg-dev               - Create unsigned DMG (for testing)"
+	@echo "  make dmg-release           - Create signed+notarized DMG (for release)"
+	@echo "  make dmg-verify            - Verify DMG signature/notarization"
+	@echo "  make dmg-clean             - Clean DMG build artifacts"
+	@echo "  make verify-signature      - Verify app code signature"
+	@echo "  make list-signing-identities - List available code signing identities"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  make test        - Run all tests"

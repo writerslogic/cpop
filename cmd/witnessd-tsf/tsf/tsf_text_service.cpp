@@ -470,6 +470,73 @@ STDMETHODIMP WitnessdTextService::ActivateEx(ITfThreadMgr* pThreadMgr, TfClientI
 }
 
 // ============================================================================
+// IPC Client (Named Pipe)
+// ============================================================================
+
+static HANDLE g_hPipe = INVALID_HANDLE_VALUE;
+
+static void ConnectPipe() {
+    if (g_hPipe != INVALID_HANDLE_VALUE) return;
+
+    wchar_t username[256];
+    DWORD len = 256;
+    GetUserNameW(username, &len);
+
+    wchar_t pipeName[512];
+    StringCbPrintfW(pipeName, sizeof(pipeName), L"\\\\.\\pipe\\witnessd-%s-tsf-ipc", username);
+
+    // Try to connect
+    g_hPipe = CreateFileW(
+        pipeName,
+        GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+}
+
+static void DisconnectPipe() {
+    if (g_hPipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_hPipe);
+        g_hPipe = INVALID_HANDLE_VALUE;
+    }
+}
+
+static void WritePipe(uint16_t vkCode, uint16_t scanCode, uint32_t flags, int64_t timestamp, bool isDown) {
+    if (g_hPipe == INVALID_HANDLE_VALUE) {
+        ConnectPipe();
+        if (g_hPipe == INVALID_HANDLE_VALUE) return;
+    }
+
+    // Simple binary protocol:
+    // [8 bytes timestamp] [2 bytes vk] [2 bytes scan] [4 bytes flags] [1 byte isDown]
+    // Total 17 bytes
+    #pragma pack(push, 1)
+    struct {
+        int64_t timestamp;
+        uint16_t vkCode;
+        uint16_t scanCode;
+        uint32_t flags;
+        uint8_t isDown;
+    } msg;
+    #pragma pack(pop)
+
+    msg.timestamp = timestamp;
+    msg.vkCode = vkCode;
+    msg.scanCode = scanCode;
+    msg.flags = flags;
+    msg.isDown = isDown ? 1 : 0;
+
+    DWORD written;
+    BOOL success = WriteFile(g_hPipe, &msg, sizeof(msg), &written, NULL);
+    
+    if (!success) {
+        DisconnectPipe(); // Reconnect next time
+    }
+}
+
+// ============================================================================
 // ITfKeyEventSink Implementation
 // ============================================================================
 
@@ -503,21 +570,16 @@ STDMETHODIMP WitnessdTextService::OnKeyDown(ITfContext* pContext, WPARAM wParam,
         return S_OK;
     }
 
+    // Record keystroke timing
+    int64_t timestamp = GetTimestampNanos();
+    
+    // Write to named pipe
+    WritePipe((uint16_t)wParam, (uint16_t)((lParam >> 16) & 0xFF), (uint32_t)lParam, timestamp, true);
+
     // Get character from virtual key
     int charCode = VKToChar(wParam, lParam);
 
-    // Record keystroke
-    KeystrokeEvent event;
-    event.wParam = wParam;
-    event.lParam = lParam;
-    event.scanCode = (lParam >> 16) & 0xFF;
-    event.isKeyDown = true;
-    event.isExtended = (lParam & 0x01000000) != 0;
-    event.isAltDown = (lParam & 0x20000000) != 0;
-    event.time = GetTickCount();
-    event.timestamp_ns = GetTimestampNanos();
-
-    // Process through witnessd engine
+    // Process through witnessd engine (Go callback)
     WitnessdOnKeyDown((uint16_t)wParam, (int32_t)charCode);
 
     // Record text commit for printable characters
@@ -539,6 +601,17 @@ STDMETHODIMP WitnessdTextService::OnKeyUp(ITfContext* pContext, WPARAM wParam, L
     (void)wParam;
     (void)lParam;
     *pfEaten = FALSE;
+    
+    if (!isEnabled_) {
+        return S_OK;
+    }
+
+    // Record keystroke timing
+    int64_t timestamp = GetTimestampNanos();
+    
+    // Write to named pipe
+    WritePipe((uint16_t)wParam, (uint16_t)((lParam >> 16) & 0xFF), (uint32_t)lParam, timestamp, false);
+
     return S_OK;
 }
 

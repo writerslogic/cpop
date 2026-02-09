@@ -4,7 +4,9 @@
 class Witnessd < Formula
   desc "Cryptographic authorship witnessing - kinetic proof of provenance"
   homepage "https://github.com/writerslogic/witnessd"
-  license "Apache-2.0"
+  # Dual license: Non-commercial free, commercial license required for business use
+  # See LICENSE file for details. Patent pending: USPTO App. No. 19/460,364
+  license :cannot_represent
   head "https://github.com/writerslogic/witnessd.git", branch: "main"
 
   # Stable release URL will be filled in by goreleaser

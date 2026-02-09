@@ -177,7 +177,7 @@ brews:
     folder: Formula
     homepage: https://github.com/writerslogic/witnessd
     description: Cryptographic authorship witnessing - kinetic proof of provenance
-    license: Apache-2.0
+    license: SEE LICENSE IN LICENSE
     install: |
       bin.install "witnessd"
       bin.install "witnessctl"
@@ -207,7 +207,7 @@ scoops:
     folder: bucket
     homepage: https://github.com/writerslogic/witnessd
     description: Cryptographic authorship witnessing - kinetic proof of provenance
-    license: Apache-2.0
+    license: SEE LICENSE IN LICENSE
 
 # AUR for Arch Linux
 aurs:
@@ -218,7 +218,7 @@ aurs:
     description: Cryptographic authorship witnessing - kinetic proof of provenance
     maintainers:
       - 'David Condrey <david@condrey.dev>'
-    license: Apache-2.0
+    license: SEE LICENSE IN LICENSE
     private_key: '{{ .Env.AUR_SSH_PRIVATE_KEY }}'
     git_url: 'ssh://aur@aur.archlinux.org/witnessd-bin.git'
     package: |
@@ -236,7 +236,7 @@ nfpms:
     homepage: https://github.com/writerslogic/witnessd
     maintainer: David Condrey <david@condrey.dev>
     description: Cryptographic authorship witnessing - kinetic proof of provenance
-    license: Apache-2.0
+    license: SEE LICENSE IN LICENSE
     formats:
       - deb
       - rpm
