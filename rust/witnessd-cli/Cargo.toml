@@ -1,0 +1,21 @@
+[package]
+name = "witnessd-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+witnessd-core = { path = "../witnessd-core" }
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
+tokio = { version = "1.36", features = ["full"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+ed25519-dalek = "2.1"
+sha2 = "0.10"
+getrandom = "0.2"
+hostname = "0.4"
+notify = "6.1"
+glob = "0.3"
