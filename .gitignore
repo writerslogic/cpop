@@ -1,99 +1,38 @@
-###############################################################################
-# Build artifacts (never commit binaries)
-###############################################################################
-/bin/
-/target/
-/dist/
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Go build outputs
-/witnessd
-/witnessctl
-/witnessd-entropy
-/witnessd-test
-*.test
-*.out
-
-###############################################################################
-# macOS / Apple
-###############################################################################
+# macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Xcode / SwiftUI
-DerivedData/
-*.xcuserstate
-*.xcuserdata/
-*.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-*.ipa
-
-# Apple signing / notarization
-*.p8
-*.p12
-*.cer
-*.mobileprovision
-witnessd-notarize.zip
-
-###############################################################################
-# IDEs / editors
-###############################################################################
-.idea/
-.vscode/
 *.swp
-*.swo
-*.bak
-*.tmp
 
-###############################################################################
-# IME / platform build artifacts
-###############################################################################
-cmd/witnessd-ime/build/
-cmd/witnessd-ime/Witnessd.app/
-cmd/witnessd-ime/libwitnessd.a
-cmd/witnessd-ime/libwitnessd.h
+# Rust
+/target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+!rust/witnessd-core/Cargo.lock
+!rust/witnessd-cli/Cargo.lock
 
-###############################################################################
-# Coverage / testing artifacts
-###############################################################################
-coverage.out
-coverage.html
-ca_coverage.out
+# Flutter
+witnessd-gui/.dart_tool/
+witnessd-gui/.packages
+witnessd-gui/build/
+witnessd-gui/.flutter-plugins
+witnessd-gui/.flutter-plugins-dependencies
+witnessd-gui/pubspec.lock
+witnessd-gui/*.iml
+witnessd-gui/.idea/
 
-###############################################################################
-# Research data (NOT for public repo)
-###############################################################################
-data/raw/
-data/processed/
-data/external/
+# IDE
+.vscode/
+.idea/
+*.sublime-*
 
-# Allow scripts + README
-!data/download-datasets.sh
-!data/README.md
+# Test artifacts
+*.evidence.json
 
-###############################################################################
-# Paper directory (private research, not for public repo)
-###############################################################################
-paper/
+# Build artifacts
+*.dmg
+*.msi
+*.exe
+*.app/
 
-###############################################################################
-# Local environment
-###############################################################################
-.env
-.env.local
-.env.*
-
-###############################################################################
-# Archives / installers
-###############################################################################
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.deb
-*.rpm
+# Claude
+.claude/
