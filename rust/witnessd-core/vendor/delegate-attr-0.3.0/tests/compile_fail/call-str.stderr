@@ -1,5 +1,0 @@
-error: expected identifier
- --> $DIR/call-str.rs:7:12
-  |
-7 |     #[call("len")]
-  |            ^^^^^

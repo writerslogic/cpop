@@ -1,7 +1,0 @@
-error: unexpected end of input, expected an expression
- --> $DIR/delegate-empty.rs:5:1
-  |
-5 | #[delegate]
-  | ^^^^^^^^^^^
-  |
-  = note: this error originates in the attribute macro `delegate` (in Nightly builds, run with -Z macro-backtrace for more info)

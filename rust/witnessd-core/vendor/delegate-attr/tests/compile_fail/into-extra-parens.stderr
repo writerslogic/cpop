@@ -1,5 +1,0 @@
-error: unexpected argument
-  --> $DIR/into-extra-parens.rs:15:11
-   |
-15 |     #[into(a)]
-   |           ^^^

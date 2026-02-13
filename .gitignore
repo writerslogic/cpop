@@ -36,3 +36,4 @@ witnessd-gui/.idea/
 
 # Claude
 .claude/
+rust/witnessd-core/vendor/

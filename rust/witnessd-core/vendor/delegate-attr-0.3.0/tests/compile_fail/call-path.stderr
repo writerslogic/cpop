@@ -1,5 +1,0 @@
-error: expected identifier, found keyword `self`
- --> $DIR/call-path.rs:7:12
-  |
-7 |     #[call(self.len)]
-  |            ^^^^

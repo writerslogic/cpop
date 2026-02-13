@@ -1,5 +1,0 @@
-error: duplicate #[call] attribute
- --> $DIR/duplicate-call.rs:8:5
-  |
-8 |     #[call(capacity)]
-  |     ^

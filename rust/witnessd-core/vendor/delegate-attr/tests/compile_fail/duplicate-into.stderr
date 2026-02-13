@@ -1,5 +1,0 @@
-error: duplicate #[into] attribute
-  --> $DIR/duplicate-into.rs:16:5
-   |
-16 |     #[into]
-   |     ^
