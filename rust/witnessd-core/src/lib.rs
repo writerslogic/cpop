@@ -1,3 +1,4 @@
+#[cfg(feature = "flutter")]
 mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
 pub mod crypto;
 pub mod store;
@@ -9,6 +10,7 @@ pub mod vdf;
 pub mod forensics;
 pub mod api;
 pub mod config;
+#[cfg(feature = "flutter")]
 pub mod frb;
 pub mod engine;
 pub mod bridge;

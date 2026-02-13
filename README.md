@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Cryptographic authorship witnessing — Rust implementation with Flutter GUI</strong>
+  <strong>Cryptographic authorship witnessing for writers and creators</strong>
 </p>
 
 <p align="center">
@@ -32,21 +32,69 @@
 
 ## Overview
 
-**witnessd-rust** is a Rust rewrite of [witnessd](https://github.com/writerslogic/witnessd) with a cross-platform Flutter GUI. It creates tamper-evident cryptographic records of document authorship through commit-based temporal witnessing.
+**witnessd** creates tamper-evident cryptographic records of document authorship through commit-based temporal witnessing. It provides irrefutable proof that you wrote what you wrote, when you wrote it.
 
-### Why Rust?
+### Key Benefits
 
-- **Memory safety** without garbage collection
-- **Cross-platform** native performance
-- **flutter_rust_bridge** for seamless Flutter integration
-- **App Store ready** for macOS and Windows distribution
+- **Prove authorship** — Cryptographic evidence chain linking you to your work
+- **Detect AI content** — Forensic analysis identifies non-human writing patterns
+- **Hardware-backed** — TPM 2.0 and Secure Enclave integration for device binding
+- **Verify independently** — Evidence can be verified by anyone, anywhere
 
 ## Installation
 
-### App Store (Coming Soon)
+### macOS
 
-- **macOS**: Available on the Mac App Store
-- **Windows**: Available on the Microsoft Store
+**Homebrew (recommended):**
+```bash
+brew install writerslogic/tap/witnessd
+```
+
+**Or install via script:**
+```bash
+curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd/main/install.sh | sh
+```
+
+### Linux
+
+**Homebrew:**
+```bash
+brew install writerslogic/tap/witnessd
+```
+
+**Or install via script:**
+```bash
+curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd/main/install.sh | sh
+```
+
+**Or download directly:**
+```bash
+# x86_64
+curl -LO https://github.com/writerslogic/witnessd/releases/latest/download/witnessd_v0.1.1_x86_64-unknown-linux-gnu.tar.gz
+tar -xzf witnessd_v0.1.1_x86_64-unknown-linux-gnu.tar.gz
+sudo mv witnessd-cli /usr/local/bin/witnessd
+
+# ARM64
+curl -LO https://github.com/writerslogic/witnessd/releases/latest/download/witnessd_v0.1.1_aarch64-unknown-linux-gnu.tar.gz
+tar -xzf witnessd_v0.1.1_aarch64-unknown-linux-gnu.tar.gz
+sudo mv witnessd-cli /usr/local/bin/witnessd
+```
+
+### Windows
+
+**Download from releases:**
+1. Download [witnessd_v0.1.1_x86_64-pc-windows-msvc.zip](https://github.com/writerslogic/witnessd/releases/latest)
+2. Extract and add to your PATH
+
+**Or using PowerShell:**
+```powershell
+# Download and extract
+Invoke-WebRequest -Uri "https://github.com/writerslogic/witnessd/releases/latest/download/witnessd_v0.1.1_x86_64-pc-windows-msvc.zip" -OutFile "witnessd.zip"
+Expand-Archive -Path "witnessd.zip" -DestinationPath "$env:LOCALAPPDATA\witnessd"
+
+# Add to PATH (current session)
+$env:PATH += ";$env:LOCALAPPDATA\witnessd"
+```
 
 ### From Source
 
@@ -55,18 +103,10 @@
 git clone https://github.com/writerslogic/witnessd-rust
 cd witnessd-rust
 
-# Build the Rust core library
-cd rust/witnessd-core
+# Build and install the CLI
+cd rust/witnessd-cli
 cargo build --release
-
-# Build the CLI
-cd ../witnessd-cli
-cargo build --release
-
-# Build the Flutter GUI
-cd ../../witnessd-gui
-flutter pub get
-flutter build macos --release  # or: flutter build windows --release
+sudo cp target/release/witnessd-cli /usr/local/bin/witnessd
 ```
 
 ### Binary Releases
@@ -80,32 +120,25 @@ All releases include:
 
 ## Quick Start
 
-### CLI
-
 ```bash
 # Initialize witnessd
-witnessd-cli init
+witnessd init
 
 # Calibrate VDF for your machine
-witnessd-cli calibrate
+witnessd calibrate
 
 # Create checkpoints as you write
-witnessd-cli commit document.md -m "First draft"
+witnessd commit document.md -m "First draft"
 
 # View history
-witnessd-cli log document.md
+witnessd log document.md
 
 # Export evidence
-witnessd-cli export document.md --tier enhanced
+witnessd export document.md --tier enhanced
+
+# Verify evidence
+witnessd verify evidence-packet.json
 ```
-
-### GUI
-
-1. Launch the Witnessd app
-2. Complete the setup wizard (generates signing keys)
-3. Add documents to track
-4. Write naturally — the app monitors in the background
-5. Export evidence packets when ready
 
 ## Architecture
 
@@ -119,17 +152,16 @@ witnessd-rust/
 │   │   │   ├── vdf/           # Verifiable delay functions
 │   │   │   ├── forensics.rs   # Authorship analysis
 │   │   │   ├── presence.rs    # Human verification
-│   │   │   ├── tpm/           # Hardware security
+│   │   │   ├── tpm/           # Hardware security (TPM/Secure Enclave)
 │   │   │   └── evidence.rs    # Evidence export
 │   │   └── Cargo.toml
 │   │
 │   └── witnessd-cli/      # Command-line interface
 │
-└── witnessd-gui/          # Flutter cross-platform GUI
-    ├── lib/
-    │   ├── core/              # State management
-    │   └── ui/                # Screens and widgets
-    └── pubspec.yaml
+└── platforms/             # Platform-specific code
+    ├── macos/             # SwiftUI app (coming soon)
+    ├── windows/           # Windows packaging
+    └── linux/             # Linux packaging
 ```
 
 ## Features
@@ -187,7 +219,7 @@ slsa-verifier verify-artifact witnessd-rust_v1.0.0_x86_64-unknown-linux-gnu.tar.
 
 ```bash
 # Using the CLI
-witnessd-cli verify evidence-packet.json
+witnessd verify evidence-packet.json
 
 # Outputs verification report with:
 # - Chain integrity status
@@ -241,7 +273,7 @@ Dual licensed:
 
 ## Related Projects
 
-- [witnessd](https://github.com/writerslogic/witnessd) — Original Go implementation
+- [witnessd (Go)](https://github.com/writerslogic/witnessd/tree/legacy-go-v1) — Original Go implementation (archived)
 - [C2PA](https://c2pa.org/) — Content Authenticity Initiative (interoperability planned)
 
 ## Links

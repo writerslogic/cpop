@@ -1887,7 +1887,7 @@ mod tests {
             "/path/to/doc.txt".to_string(),
             "com.test.app".to_string(),
             "Test App".to_string(),
-            "doc.txt".to_string(),
+            ObfuscatedString::new("doc.txt"),
         );
 
         assert!(!session.is_focused());

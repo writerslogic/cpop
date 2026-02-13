@@ -26,8 +26,7 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
         return Err("calibration duration too short".to_string());
     }
 
-    let mut hash = [0u8; 32];
-    hash[..].copy_from_slice(b"witnessd-calibration-input-v1");
+    let mut hash: [u8; 32] = Sha256::digest(b"witnessd-calibration-input-v1").into();
 
     let mut iterations = 0u64;
     let start = Instant::now();

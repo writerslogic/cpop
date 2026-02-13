@@ -1045,13 +1045,6 @@ pub fn start_jitter_stream(sink: crate::frb::StreamSink<SimpleJitterSample>) -> 
     Ok(())
 }
 
-#[cfg(not(feature = "flutter"))]
-pub fn start_jitter_stream(_sink: crate::frb::StreamSink<SimpleJitterSample>) -> Result<()> {
-    Err(anyhow!(
-        "start_jitter_stream requires the `flutter` feature and generated FRB bindings"
-    ))
-}
-
 // =============================================================================
 // Helper Functions
 // =============================================================================

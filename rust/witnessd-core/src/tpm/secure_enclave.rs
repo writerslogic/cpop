@@ -14,7 +14,7 @@ use security_framework_sys::access_control::{
     kSecAccessControlPrivateKeyUsage, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
     SecAccessControlCreateWithFlags,
 };
-use security_framework_sys::base::{errSecItemNotFound, errSecSuccess, SecKeyRef};
+use security_framework_sys::base::{errSecSuccess, SecKeyRef};
 use security_framework_sys::key::{
     kSecKeyAlgorithmECDSASignatureMessageX962SHA256, SecKeyCopyExternalRepresentation,
     SecKeyCopyPublicKey, SecKeyCreateRandomKey, SecKeyCreateSignature,
@@ -29,34 +29,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use anyhow::Result;
-use std::ffi::CString;
 use std::fs;
 use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-#[link(name = "Security", kind = "framework")]
-extern "C" {
-    // DeviceCheck framework bindings for attestation (iOS 14+, macOS 11+)
-    // Note: Full attestation requires App Attest service which needs entitlements
-}
-
-#[link(name = "IOKit", kind = "framework")]
-extern "C" {
-    fn IOServiceGetMatchingService(
-        master_port: u32,
-        matching: core_foundation_sys::dictionary::CFDictionaryRef,
-    ) -> u32;
-    fn IOServiceMatching(name: *const i8) -> core_foundation_sys::dictionary::CFDictionaryRef;
-    fn IORegistryEntryCreateCFProperty(
-        entry: u32,
-        key: core_foundation_sys::string::CFStringRef,
-        allocator: core_foundation_sys::base::CFAllocatorRef,
-        options: u32,
-    ) -> core_foundation_sys::base::CFTypeRef;
-    fn IOObjectRelease(object: u32) -> i32;
-}
+// Note: We use command-line tools (sysctl, ioreg) instead of direct IOKit FFI
+// for safer hardware detection that won't crash on edge cases.
 
 // Key tags for different purposes
 const SE_KEY_TAG: &str = "com.witnessd.secureenclave.signing";
@@ -206,44 +186,25 @@ fn collect_hardware_info() -> HardwareInfo {
     info
 }
 
-/// Get the Mac model identifier.
+/// Get the Mac model identifier using sysctl (safer than IOKit).
 fn get_model_identifier() -> Option<String> {
-    unsafe {
-        let name = CString::new("IOPlatformExpertDevice").ok()?;
-        let service = IOServiceGetMatchingService(0, IOServiceMatching(name.as_ptr()));
-        if service == 0 {
-            return None;
-        }
+    use std::process::Command;
 
-        let key = CFString::new("model");
-        let value = IORegistryEntryCreateCFProperty(
-            service,
-            key.as_concrete_TypeRef(),
-            kCFAllocatorDefault,
-            0,
-        );
-        IOObjectRelease(service);
+    // Use sysctl which is more reliable and doesn't require unsafe FFI
+    let output = Command::new("sysctl")
+        .arg("-n")
+        .arg("hw.model")
+        .output()
+        .ok()?;
 
-        if value.is_null() {
-            return None;
-        }
-
-        // The model is stored as CFData
-        let data = CFData::wrap_under_create_rule(value as *mut _);
-        let bytes = data.bytes();
-
-        // Convert to string, removing trailing null if present
-        let s = String::from_utf8_lossy(bytes);
-        let trimmed = s.trim_end_matches('\0').to_string();
-
-        core_foundation_sys::base::CFRelease(value as *mut std::ffi::c_void);
-
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
+    if output.status.success() {
+        let model = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !model.is_empty() {
+            return Some(model);
         }
     }
+
+    None
 }
 
 /// Get macOS version string.
@@ -348,9 +309,8 @@ fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), 
     let mut error: CFErrorRef = null_mut();
     let key_ref = unsafe { SecKeyCreateRandomKey(key_attrs.as_concrete_TypeRef(), &mut error) };
 
-    if !access.is_null() {
-        unsafe { core_foundation_sys::base::CFRelease(access as CFTypeRef) };
-    }
+    // Note: Do NOT call CFRelease on `access` here - it was passed to wrap_under_create_rule
+    // which took ownership and will release it when private_attrs is dropped
 
     if key_ref.is_null() {
         return Err(TPMError::KeyGeneration(
@@ -452,9 +412,8 @@ fn load_or_create_key(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
 
     let mut error: CFErrorRef = null_mut();
     let key_ref = unsafe { SecKeyCreateRandomKey(key_attrs.as_concrete_TypeRef(), &mut error) };
-    if !access.is_null() {
-        unsafe { core_foundation_sys::base::CFRelease(access as CFTypeRef) };
-    }
+    // Note: Do NOT call CFRelease on `access` here - it was passed to wrap_under_create_rule
+    // which took ownership and will release it when private_attrs is dropped
     if key_ref.is_null() {
         return Err(TPMError::KeyGeneration("Secure Enclave key generation failed".into()));
     }
@@ -913,31 +872,60 @@ fn verify_ecdsa_signature(
 }
 
 fn is_secure_enclave_available() -> bool {
-    let query = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrTokenID) },
-            unsafe { CFType::wrap_under_get_rule(kSecAttrTokenIDSecureEnclave as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecClass) },
-            unsafe { CFType::wrap_under_get_rule(kSecClassKey as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrKeyType) },
-            unsafe { CFType::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecReturnRef) },
-            CFBoolean::false_value().as_CFType(),
-        ),
-    ]);
-
-    let mut result: CFTypeRef = null_mut();
-    let status = unsafe { SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result) };
-    if !result.is_null() {
-        unsafe { core_foundation_sys::base::CFRelease(result) };
+    // Check if Secure Enclave is explicitly disabled
+    if std::env::var("WITNESSD_DISABLE_SECURE_ENCLAVE").is_ok() {
+        log::info!("Secure Enclave disabled via environment variable");
+        return false;
     }
-    status == errSecSuccess || status == errSecItemNotFound
+
+    // Check if we're on Apple Silicon (M1/M2/etc) or T2 Mac (both have Secure Enclave)
+    // Use sysctl to safely check the CPU brand - all Apple Silicon Macs have SE
+    use std::process::Command;
+
+    let output = match Command::new("sysctl")
+        .arg("-n")
+        .arg("machdep.cpu.brand_string")
+        .output()
+    {
+        Ok(out) => out,
+        Err(_) => return false,
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let cpu_brand = String::from_utf8_lossy(&output.stdout);
+    let has_apple_silicon = cpu_brand.contains("Apple");
+
+    // If not Apple Silicon, check for T2 chip (Intel Macs with SE)
+    if !has_apple_silicon {
+        // Check for T2 by looking for AppleT2Controller in ioreg
+        let t2_check = Command::new("ioreg")
+            .args(["-l", "-w0"])
+            .output();
+
+        if let Ok(out) = t2_check {
+            if out.status.success() {
+                let ioreg_output = String::from_utf8_lossy(&out.stdout);
+                if !ioreg_output.contains("AppleT2Controller") {
+                    // No T2 chip, no Secure Enclave
+                    return false;
+                }
+            }
+        }
+    }
+
+    // We have hardware that supports SE, now check if the Security framework works
+    // Use a minimal, safer check via security command
+    let security_check = Command::new("security")
+        .args(["list-keychains"])
+        .output();
+
+    match security_check {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
 }
 
 fn extract_public_key(key_ref: SecKeyRef) -> Result<Vec<u8>, TPMError> {
@@ -955,37 +943,48 @@ fn extract_public_key(key_ref: SecKeyRef) -> Result<Vec<u8>, TPMError> {
 }
 
 fn hardware_uuid() -> Option<String> {
-    unsafe {
-        let name = CString::new("IOPlatformExpertDevice").ok()?;
-        let service = IOServiceGetMatchingService(0, IOServiceMatching(name.as_ptr()));
-        if service == 0 {
-            return None;
+    use std::process::Command;
+
+    // Use ioreg command which is safer than direct IOKit FFI calls
+    let output = Command::new("ioreg")
+        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Parse the output to find IOPlatformUUID
+        for line in stdout.lines() {
+            if line.contains("IOPlatformUUID") {
+                // Format: "IOPlatformUUID" = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                if let Some(start) = line.rfind('"') {
+                    let before_last = &line[..start];
+                    if let Some(uuid_start) = before_last.rfind('"') {
+                        let uuid = &before_last[uuid_start + 1..];
+                        if !uuid.is_empty() && uuid.contains('-') {
+                            return Some(uuid.to_string());
+                        }
+                    }
+                }
+            }
         }
-        let key = core_foundation::string::CFString::new("IOPlatformUUID");
-        let value = IORegistryEntryCreateCFProperty(
-            service,
-            key.as_concrete_TypeRef(),
-            core_foundation_sys::base::kCFAllocatorDefault,
-            0,
-        );
-        IOObjectRelease(service);
-        if value.is_null() {
-            return None;
-        }
-        let mut buffer = vec![0i8; 64];
-        let ok = core_foundation_sys::string::CFStringGetCString(
-            value as core_foundation_sys::string::CFStringRef,
-            buffer.as_mut_ptr(),
-            buffer.len() as core_foundation_sys::base::CFIndex,
-            core_foundation_sys::string::kCFStringEncodingUTF8,
-        );
-        core_foundation_sys::base::CFRelease(value);
-        if ok == 0 {
-            return None;
-        }
-        let c_str = std::ffi::CStr::from_ptr(buffer.as_ptr());
-        Some(c_str.to_string_lossy().to_string())
     }
+
+    // Fallback: try sysctl for kern.uuid
+    let output = Command::new("sysctl")
+        .arg("-n")
+        .arg("kern.uuid")
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !uuid.is_empty() {
+            return Some(uuid);
+        }
+    }
+
+    None
 }
 
 fn witnessd_dir() -> PathBuf {

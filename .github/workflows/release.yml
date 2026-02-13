@@ -27,9 +27,14 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libtss2-dev libsqlite3-dev
 
       - name: Validate tag format
         run: |
@@ -83,7 +88,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
@@ -97,7 +102,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev
+          sudo apt-get install -y libsqlite3-dev libtss2-dev
+
+      - name: Install cross-compilation TPM libraries (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          # For aarch64 cross-compilation, we need to use pkg-config override
+          # The tss-esapi crate uses pkg-config to find libtss2
+          sudo apt-get install -y libtss2-dev:arm64 || true
+          # If arm64 packages aren't available, set PKG_CONFIG to allow cross-compile
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       - name: Build CLI
         working-directory: rust/witnessd-cli
@@ -304,80 +319,3 @@ jobs:
             ---
             **Full Changelog**: https://github.com/writerslogic/witnessd-rust/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ github.ref_name }}
 
-  # ============================================================================
-  # Build Flutter Apps (App Store / Microsoft Store)
-  # ============================================================================
-  build-flutter-macos:
-    name: Build Flutter macOS
-    runs-on: macos-14
-    needs: validate
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
-          cache: true
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-
-      - name: Install flutter_rust_bridge dependencies
-        run: |
-          cargo install flutter_rust_bridge_codegen
-
-      - name: Build Rust library for macOS
-        working-directory: rust/witnessd-core
-        run: |
-          cargo build --release
-
-      - name: Get Flutter dependencies
-        working-directory: witnessd-gui
-        run: flutter pub get
-
-      - name: Build macOS app
-        working-directory: witnessd-gui
-        run: flutter build macos --release
-
-      - name: Upload macOS app
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-macos
-          path: witnessd-gui/build/macos/Build/Products/Release/*.app
-
-  build-flutter-windows:
-    name: Build Flutter Windows
-    runs-on: windows-latest
-    needs: validate
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
-          cache: true
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-
-      - name: Build Rust library for Windows
-        working-directory: rust/witnessd-core
-        run: cargo build --release
-
-      - name: Get Flutter dependencies
-        working-directory: witnessd-gui
-        run: flutter pub get
-
-      - name: Build Windows app
-        working-directory: witnessd-gui
-        run: flutter build windows --release
-
-      - name: Upload Windows app
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-windows
-          path: witnessd-gui/build/windows/x64/runner/Release/
