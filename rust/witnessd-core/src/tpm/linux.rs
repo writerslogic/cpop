@@ -1,5 +1,3 @@
-#![cfg(target_os = "linux")]
-
 use super::{
     default_pcr_selection, Attestation, Binding, Capabilities, PCRSelection, PcrValue, Provider,
     Quote, TPMError,

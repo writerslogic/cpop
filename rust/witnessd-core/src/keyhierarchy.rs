@@ -1020,7 +1020,7 @@ struct HardwarePUF {
 impl HardwarePUF {
     fn new() -> Result<Self, KeyHierarchyError> {
         let seed = SiliconPUF::generate_fingerprint();
-        let digest = Sha256::digest(&seed);
+        let digest = Sha256::digest(seed);
         Ok(Self {
             device_id: format!("puf-{}", hex::encode(&digest[0..4])),
             seed,
@@ -1043,6 +1043,7 @@ impl PUFProvider for HardwarePUF {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

@@ -28,11 +28,11 @@ impl AmbientSensing {
         if let Some(host) = System::host_name() {
             hasher.update(host.as_bytes());
         }
-        hasher.update(&sys.total_memory().to_be_bytes());
+        hasher.update(sys.total_memory().to_be_bytes());
 
-        for (_, process) in sys.processes() {
-            hasher.update(&process.pid().as_u32().to_be_bytes());
-            hasher.update(&process.start_time().to_be_bytes());
+        for process in sys.processes().values() {
+            hasher.update(process.pid().as_u32().to_be_bytes());
+            hasher.update(process.start_time().to_be_bytes());
         }
 
         let is_vm = {

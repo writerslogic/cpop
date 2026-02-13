@@ -21,7 +21,7 @@ impl ClockSkew {
                 }
 
                 let end_tsc = std::arch::x86_64::_rdtsc();
-                (end_tsc - start_tsc) // Returns cycles per ~100us
+                end_tsc - start_tsc // Returns cycles per ~100us
             }
         }
         #[cfg(target_arch = "aarch64")]

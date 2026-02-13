@@ -37,6 +37,12 @@ pub struct WitnessdContext {
     pub identity_fingerprint: Mutex<Option<String>>,
 }
 
+impl Default for WitnessdContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WitnessdContext {
     pub fn new() -> Self {
         Self {
@@ -282,7 +288,7 @@ pub fn init_witnessd(data_dir: Option<String>, mnemonic: Option<String>) -> Resu
     fs::create_dir_all(dir.join("evidence"))?;
 
     // Generate or use provided mnemonic
-    let phrase = mnemonic.unwrap_or_else(|| MnemonicHandler::generate());
+    let phrase = mnemonic.unwrap_or_else(MnemonicHandler::generate);
 
     // Derive identity and get fingerprint
     let seed = MnemonicHandler::derive_silicon_seed(&phrase)?;
@@ -513,7 +519,9 @@ pub fn export_evidence(path: String, title: String, _tier: String) -> Result<Exp
     // Add presence evidence if available
     if let Some(verifier) = GLOBAL_CONTEXT.presence_verifier.lock().unwrap().as_ref() {
         if let Some(session) = verifier.active_session() {
-            builder = builder.with_presence(&[session.clone()]);
+            #[allow(clippy::cloned_ref_to_slice_refs)]
+            let slice = &[session.clone()];
+            builder = builder.with_presence(slice);
         }
     }
 

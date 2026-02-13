@@ -20,11 +20,11 @@ pub fn compute_event_hash(
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-event-v1");
     hasher.update(device_id);
-    hasher.update(&timestamp_ns.to_be_bytes());
+    hasher.update(timestamp_ns.to_be_bytes());
     hasher.update(file_path.as_bytes());
     hasher.update(content_hash);
-    hasher.update(&file_size.to_be_bytes());
-    hasher.update(&size_delta.to_be_bytes());
+    hasher.update(file_size.to_be_bytes());
+    hasher.update(size_delta.to_be_bytes());
     hasher.update(previous_hash);
 
     let result = hasher.finalize();
@@ -33,6 +33,7 @@ pub fn compute_event_hash(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn compute_event_hmac(
     key: &[u8],
     device_id: &[u8; 16],

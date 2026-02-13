@@ -3,7 +3,6 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 use witnessd_core::api;
-use witnessd_core::config::WitnessdConfig;
 
 #[test]
 fn test_full_pipeline() {

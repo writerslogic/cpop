@@ -25,6 +25,12 @@ pub struct SimpleJitterSession {
     pub samples: Vec<SimpleJitterSample>,
 }
 
+impl Default for SimpleJitterSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleJitterSession {
     pub fn new() -> Self {
         Self {
@@ -188,7 +194,10 @@ impl Session {
 
     pub fn record_keystroke(&mut self) -> Result<(u32, bool), String> {
         self.keystroke_count += 1;
-        if self.keystroke_count % self.params.sample_interval != 0 {
+        if !self
+            .keystroke_count
+            .is_multiple_of(self.params.sample_interval)
+        {
             return Ok((0, false));
         }
 
@@ -254,6 +263,7 @@ impl Session {
         evidence
     }
 
+    #[allow(clippy::field_reassign_with_default)]
     fn compute_stats(&self) -> Statistics {
         let mut stats = Statistics::default();
         stats.total_keystrokes = self.keystroke_count;
@@ -1642,7 +1652,7 @@ pub fn char_to_zone(c: char) -> i32 {
 }
 
 pub fn encode_zone_transition(from: i32, to: i32) -> u8 {
-    if from < 0 || from > 7 || to < 0 || to > 7 {
+    if !(0..=7).contains(&from) || !(0..=7).contains(&to) {
         return 0xFF;
     }
     ((from << 3) | to) as u8
@@ -1697,6 +1707,8 @@ impl ZoneTransition {
 }
 
 #[cfg(test)]
+#[allow(clippy::manual_range_contains)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use std::fs;

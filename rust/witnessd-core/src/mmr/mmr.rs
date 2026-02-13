@@ -259,12 +259,10 @@ impl MMR {
         let right_sibling = left_parent.saturating_sub(1);
         if right_sibling < state.size && right_sibling != pos {
             let right_node = self.store.get(right_sibling)?;
-            if right_node.height == height {
-                if left_parent < state.size {
-                    let parent = self.store.get(left_parent)?;
-                    if parent.height == height + 1 {
-                        return Ok((right_sibling, left_parent, false, true));
-                    }
+            if right_node.height == height && left_parent < state.size {
+                let parent = self.store.get(left_parent)?;
+                if parent.height == height + 1 {
+                    return Ok((right_sibling, left_parent, false, true));
                 }
             }
         }
@@ -274,12 +272,10 @@ impl MMR {
             let left_sibling = right_parent - offset;
             if left_sibling < state.size && left_sibling != pos {
                 let left_node = self.store.get(left_sibling)?;
-                if left_node.height == height {
-                    if right_parent < state.size {
-                        let parent = self.store.get(right_parent)?;
-                        if parent.height == height + 1 {
-                            return Ok((left_sibling, right_parent, true, true));
-                        }
+                if left_node.height == height && right_parent < state.size {
+                    let parent = self.store.get(right_parent)?;
+                    if parent.height == height + 1 {
+                        return Ok((left_sibling, right_parent, true, true));
                     }
                 }
             }

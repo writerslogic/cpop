@@ -437,7 +437,7 @@ fn compute_median(values: &[f64]) -> f64 {
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     let n = sorted.len();
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
     } else {
         sorted[n / 2]
@@ -1028,7 +1028,7 @@ pub fn calculate_assessment_score(
     // Penalize anomalies
     score -= 0.05 * anomaly_count as f64;
 
-    score.max(0.0).min(1.0)
+    score.clamp(0.0, 1.0)
 }
 
 /// Determines risk level from assessment score.
@@ -1488,6 +1488,7 @@ pub struct DimensionScores {
 }
 
 /// Compares two profiles for authorship consistency.
+#[allow(clippy::field_reassign_with_default)]
 pub fn compare_profiles(
     profile_a: &AuthorshipProfile,
     profile_b: &AuthorshipProfile,
@@ -2182,7 +2183,7 @@ mod tests {
     fn test_session_detection() {
         let mut events = create_test_events(10);
         // Add a gap
-        events[5].timestamp_ns = events[4].timestamp_ns + 3600_000_000_000; // 1 hour gap
+        events[5].timestamp_ns = events[4].timestamp_ns + 3_600_000_000_000; // 1 hour gap
 
         let sessions = detect_sessions(&events, 1800.0); // 30 min threshold
         assert_eq!(sessions.len(), 2);

@@ -20,6 +20,12 @@ pub struct TimeKeeper {
     start_instant: Instant,
 }
 
+impl Default for TimeKeeper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeKeeper {
     pub fn new() -> Self {
         Self {

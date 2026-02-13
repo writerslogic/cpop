@@ -25,6 +25,7 @@ impl FileStore {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false) // MMR store is appended to, not truncated
             .open(path)?;
         let metadata = file.metadata()?;
         let len = metadata.len();
@@ -92,6 +93,12 @@ impl Store for FileStore {
 
 pub struct MemoryStore {
     nodes: RwLock<Vec<Node>>,
+}
+
+impl Default for MemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MemoryStore {

@@ -23,14 +23,14 @@ impl PhysicalContext {
 
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-physics-v2"); // Versioned
-        hasher.update(&skew.to_be_bytes());
-        hasher.update(&thermal.to_be_bytes());
-        hasher.update(&puf);
-        hasher.update(&io_latency.to_be_bytes());
+        hasher.update(skew.to_be_bytes());
+        hasher.update(thermal.to_be_bytes());
+        hasher.update(puf);
+        hasher.update(io_latency.to_be_bytes());
 
         // Bind the biological signature
         for sample in biological_cadence.iter().take(10) {
-            hasher.update(&sample.duration_since_last_ns.to_be_bytes());
+            hasher.update(sample.duration_since_last_ns.to_be_bytes());
         }
 
         let result = hasher.finalize();

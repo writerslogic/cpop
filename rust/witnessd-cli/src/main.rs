@@ -569,8 +569,8 @@ fn cmd_export(file_path: &PathBuf, tier: &str, output: Option<PathBuf>) -> Resul
                 "content_hash": hex::encode(ev.content_hash),
                 "content_size": ev.file_size,
                 "message": ev.context_type,
-                "vdf_input": ev.vdf_input.map(|h| hex::encode(h)),
-                "vdf_output": ev.vdf_output.map(|h| hex::encode(h)),
+                "vdf_input": ev.vdf_input.map(hex::encode),
+                "vdf_output": ev.vdf_output.map(hex::encode),
                 "vdf_iterations": ev.vdf_iterations,
                 "elapsed_time": {
                     "secs": elapsed_dur.as_secs(),

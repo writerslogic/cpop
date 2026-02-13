@@ -1,4 +1,3 @@
-#![cfg(target_os = "macos")]
 #![allow(dead_code)]
 
 use super::{Attestation, Binding, Capabilities, Provider, Quote, TPMError};
@@ -171,6 +170,7 @@ fn init_state(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
 }
 
 /// Collect hardware information for attestation context.
+#[allow(clippy::field_reassign_with_default)]
 fn collect_hardware_info() -> HardwareInfo {
     let mut info = HardwareInfo::default();
 

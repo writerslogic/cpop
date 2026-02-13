@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 pub mod errors;
 pub mod mmr;
 pub mod node;

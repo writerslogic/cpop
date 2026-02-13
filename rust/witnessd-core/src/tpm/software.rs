@@ -12,6 +12,12 @@ struct SoftwareState {
     counter: u64,
 }
 
+impl Default for SoftwareProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SoftwareProvider {
     pub fn new() -> Self {
         let seed = Utc::now().to_rfc3339();

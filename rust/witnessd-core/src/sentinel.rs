@@ -634,7 +634,6 @@ impl<P: WindowProvider + ?Sized> FocusMonitor for PollingFocusMonitor<P> {
 pub mod macos_focus {
     use super::*;
     use objc::runtime::Object;
-    use std::ptr::null_mut;
 
     /// macOS-specific focus monitor using NSWorkspace and Accessibility APIs
     pub struct MacOSFocusMonitor {
@@ -657,7 +656,7 @@ pub mod macos_focus {
                 let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
                 let active_app: *mut Object = msg_send![workspace, frontmostApplication];
 
-                if active_app == null_mut() {
+                if active_app.is_null() {
                     return None;
                 }
 
@@ -712,7 +711,7 @@ pub mod macos_focus {
     }
 
     unsafe fn nsstring_to_string(ns_str: *mut Object) -> String {
-        if ns_str == null_mut() {
+        if ns_str.is_null() {
             return String::new();
         }
         let char_ptr: *const std::os::raw::c_char = msg_send![ns_str, UTF8String];
@@ -1094,6 +1093,7 @@ impl Sentinel {
     }
 
     /// Stop the sentinel daemon
+    #[allow(clippy::await_holding_lock)]
     pub async fn stop(&self) -> Result<()> {
         {
             let mut running = self.running.write().unwrap();
@@ -1178,6 +1178,7 @@ impl Sentinel {
 }
 
 // Event handling functions (synchronous to avoid Send issues with RwLock guards)
+#[allow(clippy::too_many_arguments)]
 fn handle_focus_event_sync(
     event: FocusEvent,
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
@@ -1269,6 +1270,7 @@ fn handle_focus_event_sync(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn focus_document_sync(
     path: &str,
     event: &FocusEvent,
@@ -1410,7 +1412,6 @@ fn handle_change_event_sync(
                 let event_path = event.path.clone();
                 drop(sessions_map);
                 end_session_sync(&event_path, sessions, session_events_tx);
-                return;
             }
             ChangeEventType::Created => {
                 // New document - will be picked up on focus
@@ -1654,12 +1655,8 @@ impl DaemonManager {
         use nix::unistd::Pid;
 
         let pid = self.read_pid()?;
-        kill(Pid::from_raw(pid), Signal::SIGTERM).map_err(|e| {
-            SentinelError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            ))
-        })?;
+        kill(Pid::from_raw(pid), Signal::SIGTERM)
+            .map_err(|e| SentinelError::Io(std::io::Error::other(e.to_string())))?;
         Ok(())
     }
 
@@ -1677,12 +1674,8 @@ impl DaemonManager {
         use nix::unistd::Pid;
 
         let pid = self.read_pid()?;
-        kill(Pid::from_raw(pid), Signal::SIGHUP).map_err(|e| {
-            SentinelError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            ))
-        })?;
+        kill(Pid::from_raw(pid), Signal::SIGHUP)
+            .map_err(|e| SentinelError::Io(std::io::Error::other(e.to_string())))?;
         Ok(())
     }
 

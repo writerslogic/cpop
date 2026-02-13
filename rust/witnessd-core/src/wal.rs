@@ -140,6 +140,7 @@ impl Wal {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false) // WAL files are appended to, not truncated
             .open(path)?;
 
         let mut state = WalState {

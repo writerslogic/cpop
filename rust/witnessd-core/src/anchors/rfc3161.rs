@@ -64,6 +64,7 @@ impl Rfc3161Provider {
         Ok(token.to_vec())
     }
 
+    #[allow(clippy::vec_init_then_push)]
     fn build_timestamp_request(&self, hash: &[u8; 32]) -> Result<Vec<u8>, AnchorError> {
         let mut nonce = [0u8; 8];
         getrandom::getrandom(&mut nonce)

@@ -38,14 +38,14 @@ impl MnemonicHandler {
 
         let mut hasher = Sha256::new();
         hasher.update(seed_bytes);
-        hasher.update(&puf);
+        hasher.update(puf);
 
         let mut out = [0u8; 64];
         let hash_result = hasher.finalize();
         out[..32].copy_from_slice(&hash_result);
 
         let mut hasher2 = Sha256::new();
-        hasher2.update(&hash_result);
+        hasher2.update(hash_result);
         hasher2.update(b"expansion");
         out[32..].copy_from_slice(&hasher2.finalize());
 

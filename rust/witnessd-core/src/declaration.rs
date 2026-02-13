@@ -209,7 +209,7 @@ impl Builder {
             }
             total += modality.percentage;
         }
-        if total < 95.0 || total > 105.0 {
+        if !(95.0..=105.0).contains(&total) {
             return Err(format!(
                 "modality percentages sum to {:.1}%, expected ~100%",
                 total

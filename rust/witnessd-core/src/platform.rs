@@ -400,7 +400,7 @@ pub mod macos {
     // =============================================================================
 
     unsafe fn nsstring_to_string(ns_str: *mut Object) -> String {
-        if ns_str == null_mut() {
+        if ns_str.is_null() {
             return String::new();
         }
         let char_ptr: *const std::os::raw::c_char = msg_send![ns_str, UTF8String];
@@ -417,7 +417,7 @@ pub mod macos {
         unsafe {
             let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
             let active_app: *mut Object = msg_send![workspace, frontmostApplication];
-            if active_app == null_mut() {
+            if active_app.is_null() {
                 return Err(anyhow!("No active application found"));
             }
 
@@ -691,7 +691,7 @@ pub mod macos {
             }
 
             // Filter to actual key codes (4-231 are standard keys)
-            if usage < 4 || usage > 231 {
+            if !(4..=231).contains(&usage) {
                 return;
             }
 
@@ -806,7 +806,7 @@ pub mod macos {
                     move |_proxy, event_type, event| {
                         if matches!(event_type, CGEventType::KeyDown) {
                             // Verify event source
-                            let verification = verify_event_source(&event);
+                            let verification = verify_event_source(event);
 
                             match verification {
                                 EventVerificationResult::Synthetic => {
@@ -918,9 +918,8 @@ pub mod macos {
         #[test]
         fn test_permission_check() {
             // This will return false in CI environments without permissions
-            let status = get_permission_status();
             // Just verify it doesn't panic
-            assert!(status.accessibility || !status.accessibility);
+            let _ = get_permission_status();
         }
 
         #[test]

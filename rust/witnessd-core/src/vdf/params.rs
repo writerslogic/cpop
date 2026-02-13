@@ -34,7 +34,7 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
 
     while Instant::now() < deadline {
         for _ in 0..1000 {
-            hash = Sha256::digest(&hash).into();
+            hash = Sha256::digest(hash).into();
             iterations += 1;
         }
     }

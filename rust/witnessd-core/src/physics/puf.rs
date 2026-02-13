@@ -28,7 +28,7 @@ impl SiliconPUF {
         // Hash the timing distribution
         let mut hasher = sha2::Sha256::new();
         for sample in samples {
-            sha2::Digest::update(&mut hasher, &sample.to_be_bytes());
+            sha2::Digest::update(&mut hasher, sample.to_be_bytes());
         }
 
         let result = sha2::Digest::finalize(hasher);
