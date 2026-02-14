@@ -7,13 +7,11 @@ targets = [
 ]
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-unsound = "warn"
-notice = "warn"
+version = 2
+ignore = []
 
 [licenses]
-unlicensed = "deny"
+version = 2
 allow = [
     "MIT",
     "Apache-2.0",
@@ -23,8 +21,12 @@ allow = [
     "CC0-1.0",
     "OpenSSL",
     "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
 ]
+confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+highlight = "all"
