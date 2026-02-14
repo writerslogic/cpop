@@ -14,6 +14,7 @@ use crate::jitter::{
     self, SimpleJitterSample, SimpleJitterSession, Statistics as JitterStatistics,
 };
 use crate::presence::{Challenge, Config as PresenceConfig, Verifier};
+use crate::research::ResearchCollector;
 use crate::vdf::{self, Parameters as VdfParameters};
 use crate::MnemonicHandler;
 use anyhow::{anyhow, Result};
@@ -35,6 +36,7 @@ pub struct WitnessdContext {
     pub pending_challenge: Mutex<Option<Challenge>>,
     pub witnessd_dir: Mutex<Option<PathBuf>>,
     pub identity_fingerprint: Mutex<Option<String>>,
+    pub research_collector: Mutex<Option<ResearchCollector>>,
 }
 
 impl Default for WitnessdContext {
@@ -53,6 +55,7 @@ impl WitnessdContext {
             pending_challenge: Mutex::new(None),
             witnessd_dir: Mutex::new(None),
             identity_fingerprint: Mutex::new(None),
+            research_collector: Mutex::new(None),
         }
     }
 }
@@ -610,6 +613,8 @@ pub fn start_tracking(path: String) -> Result<()> {
 /// Stop the current keystroke tracking session.
 ///
 /// Ends the tracking session and saves the collected data.
+/// If research contribution is enabled, anonymized timing data
+/// is automatically collected for research purposes.
 pub fn stop_tracking() -> Result<TrackingStatistics> {
     let mut guard = GLOBAL_CONTEXT.tracking_session.lock().unwrap();
 
@@ -628,6 +633,14 @@ pub fn stop_tracking() -> Result<TrackingStatistics> {
     }
 
     let evidence = session.export();
+
+    // Contribute to research if enabled
+    if let Ok(mut collector_guard) = GLOBAL_CONTEXT.research_collector.lock() {
+        if let Some(collector) = collector_guard.as_mut() {
+            collector.add_session(&evidence);
+        }
+    }
+
     Ok(TrackingStatistics::from(evidence.statistics))
 }
 
@@ -983,6 +996,239 @@ pub fn calibrate_vdf() -> Result<VdfParams> {
     }
 
     Ok(VdfParams::from(params))
+}
+
+// =============================================================================
+// Research Data Contribution API
+// =============================================================================
+
+/// Status of research data contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchStatus {
+    /// Whether research contribution is enabled
+    pub enabled: bool,
+    /// Whether automatic uploads are enabled
+    pub auto_upload: bool,
+    /// Number of sessions collected
+    pub sessions_collected: usize,
+    /// Minimum sessions required before upload
+    pub min_sessions_for_upload: usize,
+    /// Whether ready for upload
+    pub ready_for_upload: bool,
+    /// Path to research data directory
+    pub data_dir: String,
+    /// Upload endpoint URL
+    pub upload_url: String,
+}
+
+/// Enable or disable research data contribution.
+///
+/// When enabled, anonymized jitter timing samples are collected
+/// to help improve the security analysis of the proof-of-process primitive.
+///
+/// ## What is collected:
+/// - Jitter timing samples (inter-keystroke intervals)
+/// - Hardware class (CPU architecture, core count range)
+/// - OS type (macOS, Linux, Windows)
+/// - Sample timestamps (rounded to hour for privacy)
+///
+/// ## What is NOT collected:
+/// - Document content or paths
+/// - Actual keystrokes or text
+/// - User identity or device identifiers
+/// - Exact hardware model or serial numbers
+pub fn set_research_contribution(enabled: bool) -> Result<()> {
+    let mut config = get_config()?;
+    config.research.contribute_to_research = enabled;
+    config.persist()?;
+
+    // Initialize or update collector
+    let mut guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+    if enabled {
+        let collector = ResearchCollector::new(config.research);
+        *guard = Some(collector);
+    } else {
+        *guard = None;
+    }
+
+    Ok(())
+}
+
+/// Get the current research contribution status.
+pub fn get_research_status() -> Result<ResearchStatus> {
+    use crate::research::{MIN_SESSIONS_FOR_UPLOAD, RESEARCH_UPLOAD_URL};
+
+    let config = get_config()?;
+    let guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+
+    let sessions_collected = guard.as_ref().map(|c| c.session_count()).unwrap_or(0);
+    let ready_for_upload = guard
+        .as_ref()
+        .map(|c| c.should_upload())
+        .unwrap_or(false);
+
+    Ok(ResearchStatus {
+        enabled: config.research.contribute_to_research,
+        auto_upload: config.research.auto_upload,
+        sessions_collected,
+        min_sessions_for_upload: MIN_SESSIONS_FOR_UPLOAD,
+        ready_for_upload,
+        data_dir: config.research.research_data_dir.to_string_lossy().to_string(),
+        upload_url: RESEARCH_UPLOAD_URL.to_string(),
+    })
+}
+
+/// Export collected research data as JSON.
+///
+/// Returns anonymized jitter timing data suitable for research purposes.
+/// This data contains no identifying information about the user,
+/// their documents, or their typing content.
+pub fn export_research_data() -> Result<String> {
+    let guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+
+    let collector = guard
+        .as_ref()
+        .ok_or_else(|| anyhow!("Research contribution not enabled"))?;
+
+    collector.export_json().map_err(|e| anyhow!(e))
+}
+
+/// Save collected research data to disk.
+pub fn save_research_data() -> Result<()> {
+    let guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+
+    let collector = guard
+        .as_ref()
+        .ok_or_else(|| anyhow!("Research contribution not enabled"))?;
+
+    collector.save().map_err(|e| anyhow!(e))
+}
+
+/// Clear all collected research data.
+///
+/// Deletes all locally stored anonymized research data.
+pub fn clear_research_data() -> Result<()> {
+    let mut guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+
+    if let Some(collector) = guard.as_mut() {
+        collector.clear().map_err(|e| anyhow!(e))?;
+    }
+
+    Ok(())
+}
+
+/// Initialize the research collector from configuration.
+///
+/// This should be called during application startup if research
+/// contribution was previously enabled.
+pub fn init_research_collector() -> Result<()> {
+    let config = get_config()?;
+
+    if config.research.contribute_to_research {
+        let mut collector = ResearchCollector::new(config.research);
+        // Load any previously saved research data
+        let _ = collector.load();
+
+        let mut guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+        *guard = Some(collector);
+    }
+
+    Ok(())
+}
+
+/// Upload collected research data to the research server.
+///
+/// This uploads anonymized jitter timing data to help improve
+/// the security analysis of the proof-of-process primitive.
+///
+/// Returns information about the upload result.
+pub async fn upload_research_data() -> Result<ResearchUploadResult> {
+    use crate::research::{RESEARCH_UPLOAD_URL, WITNESSD_VERSION};
+
+    // Extract data while holding the lock briefly
+    let (export, should_clear) = {
+        let guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+        let collector = guard
+            .as_ref()
+            .ok_or_else(|| anyhow!("Research contribution not enabled"))?;
+
+        if !collector.is_enabled() {
+            return Err(anyhow!("Research contribution not enabled"));
+        }
+
+        if collector.session_count() == 0 {
+            return Ok(ResearchUploadResult {
+                sessions_uploaded: 0,
+                samples_uploaded: 0,
+                message: "No sessions to upload".to_string(),
+            });
+        }
+
+        (collector.export(), collector.should_upload())
+    }; // Lock released here
+
+    if !should_clear {
+        return Ok(ResearchUploadResult {
+            sessions_uploaded: 0,
+            samples_uploaded: 0,
+            message: format!(
+                "Waiting for more sessions ({} collected)",
+                export.sessions.len()
+            ),
+        });
+    }
+
+    // Perform the upload without holding the lock
+    let client = reqwest::Client::new();
+    let response = client
+        .post(RESEARCH_UPLOAD_URL)
+        .header("Content-Type", "application/json")
+        .header("X-Witnessd-Version", WITNESSD_VERSION)
+        .json(&export)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| anyhow!("Upload failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(anyhow!("Upload failed with status {}: {}", status, body));
+    }
+
+    #[derive(Deserialize)]
+    struct UploadResponse {
+        uploaded: usize,
+        samples: usize,
+        message: String,
+    }
+
+    let result: UploadResponse = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("Failed to parse response: {}", e))?;
+
+    // Clear uploaded sessions on success
+    if result.uploaded > 0 {
+        let mut guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
+        if let Some(collector) = guard.as_mut() {
+            let _ = collector.clear();
+        }
+    }
+
+    Ok(ResearchUploadResult {
+        sessions_uploaded: result.uploaded,
+        samples_uploaded: result.samples,
+        message: result.message,
+    })
+}
+
+/// Result of a research data upload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchUploadResult {
+    pub sessions_uploaded: usize,
+    pub samples_uploaded: usize,
+    pub message: String,
 }
 
 // =============================================================================

@@ -23,6 +23,71 @@ pub struct WitnessdConfig {
 
     #[serde(default)]
     pub sentinel: SentinelConfig,
+
+    #[serde(default)]
+    pub research: ResearchConfig,
+}
+
+/// Configuration for anonymous research data contribution.
+/// When enabled, anonymized jitter timing samples are collected to help
+/// improve the security analysis of the proof-of-process primitive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchConfig {
+    /// Opt-in toggle for contributing anonymous research data.
+    /// Default: false (must be explicitly enabled by user)
+    #[serde(default = "default_false")]
+    pub contribute_to_research: bool,
+
+    /// Directory for storing research data before export.
+    #[serde(default = "default_research_dir")]
+    pub research_data_dir: PathBuf,
+
+    /// Maximum number of sessions to retain locally before export.
+    #[serde(default = "default_max_research_sessions")]
+    pub max_sessions: usize,
+
+    /// Minimum samples per session before it's eligible for research.
+    #[serde(default = "default_min_samples_for_research")]
+    pub min_samples_per_session: usize,
+
+    /// Upload interval in seconds (default: 4 hours).
+    #[serde(default = "default_upload_interval")]
+    pub upload_interval_secs: u64,
+
+    /// Enable automatic periodic uploads.
+    #[serde(default = "default_true")]
+    pub auto_upload: bool,
+}
+
+impl Default for ResearchConfig {
+    fn default() -> Self {
+        Self {
+            contribute_to_research: false,
+            research_data_dir: default_research_dir(),
+            max_sessions: default_max_research_sessions(),
+            min_samples_per_session: default_min_samples_for_research(),
+            upload_interval_secs: default_upload_interval(),
+            auto_upload: true,
+        }
+    }
+}
+
+fn default_research_dir() -> PathBuf {
+    dirs::home_dir()
+        .map(|h| h.join(".witnessd").join("research"))
+        .unwrap_or_else(|| PathBuf::from(".witnessd/research"))
+}
+
+fn default_max_research_sessions() -> usize {
+    100
+}
+
+fn default_min_samples_for_research() -> usize {
+    10
+}
+
+fn default_upload_interval() -> u64 {
+    4 * 60 * 60 // 4 hours
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +377,10 @@ impl WitnessdConfig {
             presence: PresenceConfig::default(),
             vdf: VdfConfig::default(),
             sentinel: SentinelConfig::default(),
+            research: ResearchConfig {
+                research_data_dir: data_dir.join("research"),
+                ..Default::default()
+            },
         }
     }
 

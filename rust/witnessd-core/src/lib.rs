@@ -20,6 +20,7 @@ pub mod mmr;
 pub mod physics;
 pub mod platform;
 pub mod presence;
+pub mod research;
 pub mod sentinel;
 pub mod store;
 pub mod tpm;
@@ -27,7 +28,7 @@ pub mod vdf;
 pub mod wal;
 
 // Re-export common types
-pub use crate::config::SentinelConfig;
+pub use crate::config::{ResearchConfig, SentinelConfig};
 pub use crate::crypto::{compute_event_hash, compute_event_hmac, derive_hmac_key};
 pub use crate::identity::MnemonicHandler;
 pub use crate::physics::PhysicalContext;
@@ -35,6 +36,9 @@ pub use crate::sentinel::{
     ChangeEvent, ChangeEventType, DaemonManager, DaemonState, DaemonStatus, DocumentSession,
     FocusEvent, FocusEventType, Sentinel, SentinelError, SessionEvent, SessionEventType,
     ShadowManager, WindowInfo,
+};
+pub use crate::research::{
+    AnonymizedSession, ResearchCollector, ResearchDataExport, ResearchUploader, UploadResult,
 };
 pub use crate::store::{SecureEvent, SecureStore};
 pub use crate::vdf::{RoughtimeClient, TimeAnchor, TimeKeeper, VdfProof};
