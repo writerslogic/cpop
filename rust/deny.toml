@@ -8,7 +8,14 @@ targets = [
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+    # RSA Marvin Attack - no fix available, low risk for our use case
+    "RUSTSEC-2023-0071",
+    # rustls-pemfile unmaintained - transitive dep from reqwest, no fix available
+    "RUSTSEC-2025-0134",
+    # bincode unmaintained - works fine, will migrate eventually
+    "RUSTSEC-2025-0141",
+]
 
 [licenses]
 version = 2
@@ -21,10 +28,17 @@ allow = [
     "CC0-1.0",
     "OpenSSL",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
 ]
 confidence-threshold = 0.8
+
+# allo-isolate doesn't specify a license in Cargo.toml but is MIT licensed
+[[licenses.clarify]]
+name = "allo-isolate"
+expression = "MIT"
+license-files = []
 
 [bans]
 multiple-versions = "warn"
