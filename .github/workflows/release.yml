@@ -26,6 +26,8 @@ jobs:
   validate:
     name: Pre-Release Validation
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,9 +43,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libtss2-dev libsqlite3-dev
 
-      - name: Validate tag format
+      - name: Get and validate tag
+        id: get_tag
         run: |
-          TAG="${{ github.ref_name }}"
+          # Use input tag for workflow_dispatch, otherwise use ref_name (for tag push)
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "Invalid tag format: $TAG"
             echo "Expected format: vX.Y.Z or vX.Y.Z-suffix"
@@ -110,8 +119,8 @@ jobs:
       - name: Create archive (Unix)
         if: runner.os != 'Windows'
         run: |
-          VERSION="${{ github.ref_name }}"
-          ARCHIVE="witnessd-rust_${VERSION}_${{ matrix.target }}.tar.gz"
+          VERSION="${{ needs.validate.outputs.tag }}"
+          ARCHIVE="witnessd_${VERSION}_${{ matrix.target }}.tar.gz"
           tar -czvf "$ARCHIVE" \
             -C rust/witnessd-cli/target/${{ matrix.target }}/release \
             witnessd-cli${{ matrix.ext }}
@@ -121,8 +130,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $VERSION = "${{ github.ref_name }}"
-          $ARCHIVE = "witnessd-rust_${VERSION}_${{ matrix.target }}.zip"
+          $VERSION = "${{ needs.validate.outputs.tag }}"
+          $ARCHIVE = "witnessd_${VERSION}_${{ matrix.target }}.zip"
           Compress-Archive -Path "rust/witnessd-cli/target/${{ matrix.target }}/release/witnessd-cli${{ matrix.ext }}" -DestinationPath $ARCHIVE
           echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
@@ -227,7 +236,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-rust, slsa-provenance, sbom]
+    needs: [validate, build-rust, slsa-provenance, sbom]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -266,9 +275,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: witnessd-rust ${{ github.ref_name }}
+          name: witnessd ${{ needs.validate.outputs.tag }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.validate.outputs.tag, '-') }}
           files: |
             artifacts/*.tar.gz
             artifacts/*.zip
@@ -276,7 +285,7 @@ jobs:
             artifacts/witnessd-rust-sbom.spdx.json
             artifacts/witnessd-rust-sbom.cdx.json
           body: |
-            ## witnessd-rust ${{ github.ref_name }}
+            ## witnessd ${{ needs.validate.outputs.tag }}
 
             Cryptographic Authorship Witnessing - Rust Implementation
 
@@ -284,10 +293,10 @@ jobs:
 
             | Platform | Architecture | Download |
             |----------|--------------|----------|
-            | Linux | x86_64 | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ github.ref_name }}/witnessd_${{ github.ref_name }}_x86_64-unknown-linux-gnu.tar.gz) |
-            | macOS | x86_64 | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ github.ref_name }}/witnessd_${{ github.ref_name }}_x86_64-apple-darwin.tar.gz) |
-            | macOS | aarch64 (Apple Silicon) | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ github.ref_name }}/witnessd_${{ github.ref_name }}_aarch64-apple-darwin.tar.gz) |
-            | Windows | x86_64 | [zip](https://github.com/writerslogic/witnessd/releases/download/${{ github.ref_name }}/witnessd_${{ github.ref_name }}_x86_64-pc-windows-msvc.zip) |
+            | Linux | x86_64 | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ needs.validate.outputs.tag }}/witnessd_${{ needs.validate.outputs.tag }}_x86_64-unknown-linux-gnu.tar.gz) |
+            | macOS | x86_64 | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ needs.validate.outputs.tag }}/witnessd_${{ needs.validate.outputs.tag }}_x86_64-apple-darwin.tar.gz) |
+            | macOS | aarch64 (Apple Silicon) | [tar.gz](https://github.com/writerslogic/witnessd/releases/download/${{ needs.validate.outputs.tag }}/witnessd_${{ needs.validate.outputs.tag }}_aarch64-apple-darwin.tar.gz) |
+            | Windows | x86_64 | [zip](https://github.com/writerslogic/witnessd/releases/download/${{ needs.validate.outputs.tag }}/witnessd_${{ needs.validate.outputs.tag }}_x86_64-pc-windows-msvc.zip) |
 
             ### Verification
 
@@ -301,7 +310,7 @@ jobs:
             sha256sum -c checksums.txt
 
             # Verify SLSA provenance
-            slsa-verifier verify-artifact witnessd-rust_${{ github.ref_name }}_x86_64-unknown-linux-gnu.tar.gz \
+            slsa-verifier verify-artifact witnessd_${{ needs.validate.outputs.tag }}_x86_64-unknown-linux-gnu.tar.gz \
               --provenance-path multiple.intoto.jsonl \
               --source-uri github.com/writerslogic/witnessd-rust
             ```
@@ -310,5 +319,5 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/writerslogic/witnessd-rust/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ github.ref_name }}
+            **Full Changelog**: https://github.com/writerslogic/witnessd/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ needs.validate.outputs.tag }}
 
