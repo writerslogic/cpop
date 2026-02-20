@@ -5,15 +5,12 @@ on:
     branches: [main]
     paths-ignore:
       - '**.md'
-      - 'docs/**'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
-      - '.github/workflows/update-package-managers.yml'
   pull_request:
     branches: [main]
     paths-ignore:
       - '**.md'
-      - 'docs/**'
   schedule:
     - cron: '0 6 * * 1'  # Weekly on Monday
 
@@ -44,7 +41,6 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run audit
-        working-directory: rust/witnessd-core
         run: |
           cargo audit --json > audit-results.json 2>&1 || true
           echo "Audit completed"
@@ -54,7 +50,7 @@ jobs:
         if: always()
         with:
           name: cargo-audit-results
-          path: rust/witnessd-core/audit-results.json
+          path: audit-results.json
 
   cargo-deny:
     name: Cargo Deny
@@ -69,17 +65,14 @@ jobs:
         run: cargo install cargo-deny
 
       - name: Check advisories
-        working-directory: rust/witnessd-core
         run: cargo deny check advisories
         continue-on-error: true
 
       - name: Check licenses
-        working-directory: rust/witnessd-core
         run: cargo deny check licenses
         continue-on-error: true
 
       - name: Check bans
-        working-directory: rust/witnessd-core
         run: cargo deny check bans
         continue-on-error: true
 

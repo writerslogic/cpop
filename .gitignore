@@ -1,71 +1,20 @@
 ###############################################################################
 # Build artifacts
 ###############################################################################
-/bin/
-/dist/
+/target/
+**/target/
+**/*.rs.bk
+!Cargo.lock
+
 *.exe
 *.dll
 *.so
 *.dylib
 
-# Rust
-/target/
-**/target/
-**/*.rs.bk
-Cargo.lock
-!rust/witnessd-core/Cargo.lock
-!rust/witnessd-cli/Cargo.lock
-
-# Go (legacy branch)
-/witnessd
-/witnessctl
-/witnessd-entropy
-/witnessd-test
-*.test
-*.out
-
-###############################################################################
-# macOS / Apple
-###############################################################################
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Xcode / SwiftUI
-DerivedData/
-build/
-*.xcuserstate
-*.xcuserdata/
-*.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-*.ipa
-XCBuildData/
-
-# Apple signing / notarization
-*.p8
-*.p12
-*.cer
-*.mobileprovision
-witnessd-notarize.zip
-
-###############################################################################
-# Flutter
-###############################################################################
-witnessd-gui/.dart_tool/
-witnessd-gui/.packages
-witnessd-gui/build/
-witnessd-gui/.flutter-plugins
-witnessd-gui/.flutter-plugins-dependencies
-witnessd-gui/pubspec.lock
-witnessd-gui/*.iml
-witnessd-gui/.idea/
-platforms/windows/flutter/build/
-platforms/windows/flutter/.dart_tool/
-
 ###############################################################################
 # IDEs / editors
 ###############################################################################
+.DS_Store
 .idea/
 .vscode/
 *.swp
@@ -79,18 +28,7 @@ platforms/windows/flutter/.dart_tool/
 ###############################################################################
 coverage.out
 coverage.html
-ca_coverage.out
 *.evidence.json
-
-###############################################################################
-# Research data (NOT for public repo)
-###############################################################################
-data/raw/
-data/processed/
-data/external/
-!data/download-datasets.sh
-!data/README.md
-paper/
 
 ###############################################################################
 # Local environment
@@ -100,41 +38,15 @@ paper/
 .env.*
 
 ###############################################################################
-# Archives / installers
+# Archives
 ###############################################################################
 *.zip
 *.tar
 *.tar.gz
 *.tgz
-*.deb
-*.rpm
-*.dmg
-*.msi
-*.app/
 
-
-rust/witnessd-core/vendor/
+# Vendored dependencies
+vendor/
 
 # Scratchpad
 .scratchpad/
-
-# RFC drafts (private until published)
-rfc/
-
-# PKI keys and certificates (private)
-pki/
-
-# Patent documents (private)
-patent/
-
-# Research data (private)
-data/
-
-# Docs directories (keep only user/ and man/)
-docs/dev/
-docs/research/
-docs/schema/
-docs/spec/
-docs/*.md
-!docs/user/
-!docs/man/
