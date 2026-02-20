@@ -2461,13 +2461,14 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "physjitter"
-version = "0.1.8"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7434e230c2eb14cf74d61baa3810d1b4b2623d938c580df885fc96c00731f81"
+checksum = "8d885c7d051814fae49c9e1a0bd4ee75a26e2317b6d86c4f5d2ac5270c86f395"
 dependencies = [
  "getrandom 0.3.4",
  "hkdf",
  "hmac",
+ "libm",
  "serde",
  "serde_json",
  "sha2",

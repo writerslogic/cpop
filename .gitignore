@@ -36,3 +36,6 @@ witnessd-gui/.idea/
 
 
 rust/witnessd-core/vendor/
+
+# Scratchpad
+.scratchpad/

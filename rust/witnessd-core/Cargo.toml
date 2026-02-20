@@ -69,7 +69,7 @@ chacha20poly1305 = "0.10.1"
 dashmap = "6.0"
 
 # PhysJitter - hardware entropy for proof-of-process
-physjitter = { version = "0.1.8", optional = true }
+physjitter = { version = "0.2", optional = true }
 
 # Windows Specific
 [target.'cfg(windows)'.dependencies]

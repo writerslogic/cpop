@@ -23,7 +23,7 @@
 //! ```
 
 use chrono::{DateTime, Utc};
-use physjitter::Session as PhysSession;
+use physjitter::{derive_session_secret, EvidenceChain as PhysEvidenceChain, Session as PhysSession};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -299,9 +299,11 @@ impl HybridJitterSession {
         let document_tracker = DocumentTracker::new(document_path.as_ref())?;
         let document_path_str = document_tracker.path.clone();
 
-        // Generate random secret for physjitter session
-        let mut secret = [0u8; 32];
-        getrandom::getrandom(&mut secret).map_err(|e| format!("failed to generate secret: {e}"))?;
+        // Generate random key material and derive session secret using HKDF
+        let mut key_material = [0u8; 32];
+        getrandom::getrandom(&mut key_material)
+            .map_err(|e| format!("failed to generate key material: {e}"))?;
+        let secret = derive_session_secret(&key_material, b"witnessd-hybrid-session-v1");
 
         let physjitter_session = PhysSession::new(secret);
 
@@ -576,8 +578,11 @@ impl HybridJitterSession {
         let data: HybridSessionData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
 
         // We can't restore the exact physjitter session, but we can recreate one
-        let mut secret = [0u8; 32];
-        getrandom::getrandom(&mut secret).map_err(|e| format!("failed to generate secret: {e}"))?;
+        // using HKDF-derived secret for consistency
+        let mut key_material = [0u8; 32];
+        getrandom::getrandom(&mut key_material)
+            .map_err(|e| format!("failed to generate key material: {e}"))?;
+        let secret = derive_session_secret(&key_material, b"witnessd-hybrid-session-v1");
 
         let document_tracker = DocumentTracker {
             path: data.document_path.clone(),
@@ -647,8 +652,16 @@ pub struct HybridEvidence {
 }
 
 impl HybridEvidence {
-    /// Verify the evidence chain.
+    /// Verify the evidence chain including embedded physjitter evidence.
+    ///
+    /// This verifies:
+    /// - Hash integrity for each sample
+    /// - Chain link integrity (previous_hash matches)
+    /// - Timestamp monotonicity
+    /// - Keystroke count monotonicity
+    /// - Physjitter evidence sequence and timestamp ordering (if present)
     pub fn verify(&self) -> Result<(), String> {
+        // Verify witnessd hybrid sample chain
         for (i, sample) in self.samples.iter().enumerate() {
             if sample.compute_hash() != sample.hash {
                 return Err(format!("sample {i}: hash mismatch"));
@@ -667,6 +680,30 @@ impl HybridEvidence {
                 return Err(format!("sample {i}: keystroke count not monotonic"));
             }
         }
+
+        // Verify embedded physjitter evidence chain (if present)
+        if let Some(ref physjitter_json) = self.physjitter_evidence {
+            self.verify_physjitter_evidence(physjitter_json)?;
+        }
+
+        Ok(())
+    }
+
+    /// Verify the embedded physjitter evidence chain.
+    fn verify_physjitter_evidence(&self, json: &str) -> Result<(), String> {
+        let chain: PhysEvidenceChain =
+            serde_json::from_str(json).map_err(|e| format!("physjitter evidence parse error: {e}"))?;
+
+        // Validate sequence numbers are monotonic (0, 1, 2, ...)
+        if !chain.validate_sequences() {
+            return Err("physjitter evidence: sequence numbers not monotonic".to_string());
+        }
+
+        // Validate timestamps are monotonic
+        if !chain.validate_timestamps() {
+            return Err("physjitter evidence: timestamps not monotonic".to_string());
+        }
+
         Ok(())
     }
 
