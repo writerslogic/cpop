@@ -133,10 +133,14 @@ impl VoiceFingerprint {
             &self.word_length_distribution,
             &other.word_length_distribution,
         );
-        let punct_sim = self.punctuation_signature.similarity(&other.punctuation_signature);
+        let punct_sim = self
+            .punctuation_signature
+            .similarity(&other.punctuation_signature);
         let ngram_sim = self.ngram_signature.similarity(&other.ngram_signature);
-        let correction_sim =
-            1.0 - (self.correction_rate - other.correction_rate).abs().min(1.0);
+        let correction_sim = 1.0
+            - (self.correction_rate - other.correction_rate)
+                .abs()
+                .min(1.0);
 
         // Weighted combination
         (word_len_sim * 0.25 + punct_sim * 0.25 + ngram_sim * 0.35 + correction_sim * 0.15)
@@ -149,21 +153,12 @@ impl VoiceFingerprint {
 // =============================================================================
 
 /// Punctuation usage patterns.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PunctuationSignature {
     /// Frequency of common punctuation marks (normalized)
     pub frequencies: HashMap<char, f32>,
     /// Punctuation after word patterns (e.g., comma after "and")
     pub context_patterns: Vec<u64>, // Hashed patterns
-}
-
-impl Default for PunctuationSignature {
-    fn default() -> Self {
-        Self {
-            frequencies: HashMap::new(),
-            context_patterns: Vec::new(),
-        }
-    }
 }
 
 impl PunctuationSignature {
@@ -451,7 +446,8 @@ impl VoiceCollector {
     }
 
     fn add_to_ngram_buffer(&mut self, c: char) {
-        self.ngram_buffer.push_back(c.to_lowercase().next().unwrap_or(c));
+        self.ngram_buffer
+            .push_back(c.to_lowercase().next().unwrap_or(c));
         if self.ngram_buffer.len() > NGRAM_SIZE {
             self.ngram_buffer.pop_front();
         }
@@ -522,7 +518,7 @@ fn is_backspace_keycode(keycode: u16) -> bool {
     keycode == 0x33     // macOS
         || keycode == 14    // Linux evdev
         || keycode == 0x08  // Windows VK_BACK
-        || keycode == 0x7F  // ASCII DEL
+        || keycode == 0x7F // ASCII DEL
 }
 
 /// Calculate histogram similarity (Bhattacharyya coefficient).

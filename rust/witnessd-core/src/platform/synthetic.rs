@@ -22,6 +22,7 @@ const MIN_HUMAN_CV: f64 = 0.15;
 const MIN_HUMAN_IKI_MS: f64 = 20.0;
 
 /// Maximum inter-key interval for burst analysis (milliseconds)
+#[allow(dead_code)]
 const MAX_BURST_IKI_MS: f64 = 500.0;
 
 /// Window size for statistical analysis
@@ -148,7 +149,12 @@ impl StatisticalAnomalyDetector {
 
         let n = self.iki_window.len() as f64;
         let mean = self.iki_window.iter().sum::<f64>() / n;
-        let variance = self.iki_window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        let variance = self
+            .iki_window
+            .iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>()
+            / n;
         let std = variance.sqrt();
 
         (mean, std)
@@ -268,7 +274,10 @@ pub enum StatisticalResult {
 impl StatisticalResult {
     /// Check if the event should be accepted.
     pub fn is_accepted(&self) -> bool {
-        matches!(self, Self::Insufficient | Self::Normal | Self::Suspicious(_))
+        matches!(
+            self,
+            Self::Insufficient | Self::Normal | Self::Suspicious(_)
+        )
     }
 
     /// Check if the event appears synthetic.
@@ -340,7 +349,9 @@ impl SyntheticDetector {
         match (&platform_result, &statistical_result) {
             // Both agree it's good
             (PlatformResult::Hardware, StatisticalResult::Normal) => DetectionResult::Verified,
-            (PlatformResult::Hardware, StatisticalResult::Insufficient) => DetectionResult::Verified,
+            (PlatformResult::Hardware, StatisticalResult::Insufficient) => {
+                DetectionResult::Verified
+            }
 
             // Platform says synthetic
             (PlatformResult::Synthetic, _) => DetectionResult::Synthetic {
@@ -370,10 +381,6 @@ impl SyntheticDetector {
             (_, StatisticalResult::Suspicious(flags)) => DetectionResult::Suspicious {
                 flags: flags.clone(),
             },
-
-            // Platform OK, stats OK
-            (PlatformResult::Hardware, StatisticalResult::Normal) => DetectionResult::Verified,
-            (PlatformResult::Hardware, StatisticalResult::Insufficient) => DetectionResult::Verified,
         }
     }
 
@@ -504,8 +511,8 @@ impl TypingRhythmAnalyzer {
 
         let first_mean: f64 =
             self.session_ikis[..first_quarter_len].iter().sum::<f64>() / first_quarter_len as f64;
-        let last_mean: f64 = self.session_ikis[last_quarter_start..].iter().sum::<f64>()
-            / first_quarter_len as f64;
+        let last_mean: f64 =
+            self.session_ikis[last_quarter_start..].iter().sum::<f64>() / first_quarter_len as f64;
 
         // Positive = slowing down (fatigue), negative = speeding up
         Some((last_mean - first_mean) / first_mean)

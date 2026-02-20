@@ -406,7 +406,10 @@ impl SessionBinding {
         match self {
             Self::FilePath(path) => path.to_string_lossy().to_string(),
             Self::AppContext { shadow_id, .. } => format!("app:{}", shadow_id),
-            Self::UrlContext { domain_hash, page_hash } => format!("url:{}:{}", domain_hash, page_hash),
+            Self::UrlContext {
+                domain_hash,
+                page_hash,
+            } => format!("url:{}:{}", domain_hash, page_hash),
             Self::Universal { session_id } => format!("universal:{}", session_id),
         }
     }
@@ -434,7 +437,9 @@ fn hash_string(s: &str) -> String {
 
 fn parse_url_parts(url: &str) -> (String, String) {
     // Simple URL parsing
-    let url = url.trim_start_matches("https://").trim_start_matches("http://");
+    let url = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
     let parts: Vec<&str> = url.splitn(2, '/').collect();
     let domain = parts.first().unwrap_or(&"").to_string();
     let path = parts.get(1).unwrap_or(&"").to_string();
@@ -1050,7 +1055,8 @@ pub struct Sentinel {
     /// Activity fingerprint accumulator for authorship verification
     activity_accumulator: Arc<RwLock<crate::fingerprint::ActivityFingerprintAccumulator>>,
     /// Keystroke event receiver handle
-    keystroke_receiver: Arc<Mutex<Option<std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent>>>>,
+    keystroke_receiver:
+        Arc<Mutex<Option<std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent>>>>,
     /// Voice collector for writing style (if consent given)
     voice_collector: Arc<RwLock<Option<crate::fingerprint::VoiceCollector>>>,
     /// Mouse idle statistics for fingerprinting
@@ -1090,7 +1096,9 @@ impl Sentinel {
             voice_collector: Arc::new(RwLock::new(None)),
             mouse_idle_stats: Arc::new(RwLock::new(crate::platform::MouseIdleStats::new())),
             mouse_receiver: Arc::new(Mutex::new(None)),
-            mouse_stego_engine: Arc::new(RwLock::new(crate::platform::MouseStegoEngine::new(mouse_stego_seed))),
+            mouse_stego_engine: Arc::new(RwLock::new(crate::platform::MouseStegoEngine::new(
+                mouse_stego_seed,
+            ))),
         })
     }
 
@@ -1110,12 +1118,19 @@ impl Sentinel {
 
     /// Get the current activity fingerprint.
     pub fn current_activity_fingerprint(&self) -> crate::fingerprint::ActivityFingerprint {
-        self.activity_accumulator.read().unwrap().current_fingerprint()
+        self.activity_accumulator
+            .read()
+            .unwrap()
+            .current_fingerprint()
     }
 
     /// Get the current voice fingerprint (if enabled).
     pub fn current_voice_fingerprint(&self) -> Option<crate::fingerprint::VoiceFingerprint> {
-        self.voice_collector.read().unwrap().as_ref().map(|c| c.current_fingerprint())
+        self.voice_collector
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|c| c.current_fingerprint())
     }
 
     /// Get the current mouse idle statistics for fingerprinting.
@@ -1156,7 +1171,10 @@ impl Sentinel {
             duration_since_last_ns: 0, // Will be calculated by accumulator
             zone: event.zone,
         };
-        self.activity_accumulator.write().unwrap().add_sample(&sample);
+        self.activity_accumulator
+            .write()
+            .unwrap()
+            .add_sample(&sample);
 
         // Update voice fingerprint if enabled
         if let Some(ref mut collector) = *self.voice_collector.write().unwrap() {
@@ -1229,7 +1247,8 @@ impl Sentinel {
         let mut change_rx = focus_monitor.change_events();
 
         // Start platform keystroke capture and bridge to tokio channel
-        let (keystroke_tx, mut keystroke_rx) = tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(1000);
+        let (keystroke_tx, mut keystroke_rx) =
+            tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(1000);
         let keystroke_running = Arc::clone(&running);
 
         #[cfg(target_os = "macos")]
@@ -1239,8 +1258,11 @@ impl Sentinel {
         #[cfg(target_os = "linux")]
         let keystroke_capture_result = crate::platform::linux::LinuxKeystrokeCapture::new();
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let keystroke_capture_result: anyhow::Result<Box<dyn crate::platform::KeystrokeCapture>> =
-            Err(anyhow::anyhow!("Keystroke capture not supported on this platform"));
+        let keystroke_capture_result: anyhow::Result<
+            Box<dyn crate::platform::KeystrokeCapture>,
+        > = Err(anyhow::anyhow!(
+            "Keystroke capture not supported on this platform"
+        ));
 
         if let Ok(mut keystroke_capture) = keystroke_capture_result {
             if let Ok(sync_rx) = keystroke_capture.start() {
@@ -1261,14 +1283,16 @@ impl Sentinel {
         }
 
         // Start platform mouse capture and bridge to tokio channel
-        let (mouse_tx, mut mouse_rx) = tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(1000);
+        let (mouse_tx, mut mouse_rx) =
+            tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(1000);
         let mouse_running = Arc::clone(&running);
 
         #[cfg(target_os = "macos")]
         let mouse_capture_result = crate::platform::macos::MacOSMouseCapture::new();
-        #[cfg(not(target_os = "macos"))]
-        let mouse_capture_result: anyhow::Result<crate::platform::macos::MacOSMouseCapture> =
-            Err(anyhow::anyhow!("Mouse capture not yet implemented for this platform"));
+        #[cfg(target_os = "linux")]
+        let mouse_capture_result = crate::platform::linux::LinuxMouseCapture::new();
+        #[cfg(target_os = "windows")]
+        let mouse_capture_result = crate::platform::windows::WindowsMouseCapture::new();
 
         if let Ok(mut mouse_capture) = mouse_capture_result {
             if let Ok(sync_rx) = mouse_capture.start() {
@@ -1488,7 +1512,10 @@ impl Sentinel {
 
     /// Start tracking a specific file.
     /// This is called internally when receiving a StartWitnessing IPC message.
-    pub fn start_witnessing(&self, file_path: &Path) -> std::result::Result<(), (IpcErrorCode, String)> {
+    pub fn start_witnessing(
+        &self,
+        file_path: &Path,
+    ) -> std::result::Result<(), (IpcErrorCode, String)> {
         // Check if file exists
         if !file_path.exists() {
             return Err((
@@ -1514,8 +1541,8 @@ impl Sentinel {
         let mut sessions = self.sessions.write().unwrap();
         let mut session = DocumentSession::new(
             path_str.clone(),
-            "cli".to_string(),       // app_bundle_id for CLI-initiated tracking
-            "witnessd".to_string(),  // app_name
+            "cli".to_string(),      // app_bundle_id for CLI-initiated tracking
+            "witnessd".to_string(), // app_name
             ObfuscatedString::new(&path_str),
         );
 
@@ -1526,7 +1553,10 @@ impl Sentinel {
         }
 
         // Open WAL for session
-        let wal_path = self.config.wal_dir.join(format!("{}.wal", session.session_id));
+        let wal_path = self
+            .config
+            .wal_dir
+            .join(format!("{}.wal", session.session_id));
         let mut session_id_bytes = [0u8; 32];
         if session.session_id.len() >= 32 {
             hex::decode_to_slice(
@@ -1556,7 +1586,10 @@ impl Sentinel {
 
     /// Stop tracking a specific file.
     /// This is called internally when receiving a StopWitnessing IPC message.
-    pub fn stop_witnessing(&self, file_path: &Path) -> std::result::Result<(), (IpcErrorCode, String)> {
+    pub fn stop_witnessing(
+        &self,
+        file_path: &Path,
+    ) -> std::result::Result<(), (IpcErrorCode, String)> {
         let path_str = file_path.to_string_lossy().to_string();
 
         // Remove the session
@@ -1669,11 +1702,7 @@ impl IpcMessageHandler for SentinelIpcHandler {
 
             IpcMessage::GetStatus => {
                 let tracked_files = self.sentinel.tracked_files();
-                let uptime_secs = self
-                    .start_time
-                    .elapsed()
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                let uptime_secs = self.start_time.elapsed().map(|d| d.as_secs()).unwrap_or(0);
 
                 IpcMessage::StatusResponse {
                     running: self.sentinel.is_running(),
@@ -2335,7 +2364,10 @@ pub async fn cmd_start(witnessd_dir: &Path) -> Result<()> {
 
     // Start IPC server in background
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc_server.run_with_shutdown(ipc_handler, ipc_shutdown_rx).await {
+        if let Err(e) = ipc_server
+            .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
+            .await
+        {
             eprintln!("IPC server error: {}", e);
         }
     });
@@ -2409,7 +2441,10 @@ pub async fn cmd_start_foreground(witnessd_dir: &Path) -> Result<()> {
     // Start IPC server in background
     let sentinel_clone = Arc::clone(&sentinel);
     let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc_server.run_with_shutdown(ipc_handler, ipc_shutdown_rx).await {
+        if let Err(e) = ipc_server
+            .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
+            .await
+        {
             eprintln!("IPC server error: {}", e);
         }
     });
@@ -2418,7 +2453,8 @@ pub async fn cmd_start_foreground(witnessd_dir: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
 
         tokio::select! {
@@ -2434,7 +2470,9 @@ pub async fn cmd_start_foreground(witnessd_dir: &Path) -> Result<()> {
     #[cfg(not(unix))]
     {
         // On non-Unix platforms, just wait for Ctrl+C
-        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
         println!("Received shutdown signal, shutting down...");
     }
 

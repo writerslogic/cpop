@@ -327,21 +327,16 @@ fn compute_anonymized_statistics(
         (0.0, 0.0)
     } else {
         let mean = jitter_values.iter().sum::<f64>() / jitter_values.len() as f64;
-        let variance =
-            jitter_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / jitter_values.len() as f64;
+        let variance = jitter_values
+            .iter()
+            .map(|v| (v - mean).powi(2))
+            .sum::<f64>()
+            / jitter_values.len() as f64;
         (mean, variance.sqrt())
     };
 
-    let min_jitter = samples
-        .iter()
-        .map(|s| s.jitter_micros)
-        .min()
-        .unwrap_or(0);
-    let max_jitter = samples
-        .iter()
-        .map(|s| s.jitter_micros)
-        .max()
-        .unwrap_or(0);
+    let min_jitter = samples.iter().map(|s| s.jitter_micros).min().unwrap_or(0);
+    let max_jitter = samples.iter().map(|s| s.jitter_micros).max().unwrap_or(0);
 
     AnonymizedStatistics {
         total_samples: samples.len(),

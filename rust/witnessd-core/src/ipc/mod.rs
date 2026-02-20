@@ -1,39 +1,61 @@
+pub mod secure_channel;
 #[cfg(unix)]
 pub mod unix_socket;
-pub mod secure_channel;
 
-use serde::{Serialize, Deserialize};
+use crate::jitter::SimpleJitterSample;
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-#[cfg(unix)]
-use tokio::net::{UnixListener, UnixStream};
+use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use tokio::net::windows::named_pipe;
-use anyhow::{anyhow, Result};
-use std::sync::Arc;
-use crate::jitter::SimpleJitterSample;
+#[cfg(unix)]
+use tokio::net::{UnixListener, UnixStream};
 
 /// IPC Message Protocol for high-performance communication between Brain and Face.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcMessage {
     // Requests
-    Handshake { version: String },
-    StartWitnessing { file_path: PathBuf },
-    StopWitnessing { file_path: Option<PathBuf> },
+    Handshake {
+        version: String,
+    },
+    StartWitnessing {
+        file_path: PathBuf,
+    },
+    StopWitnessing {
+        file_path: Option<PathBuf>,
+    },
     GetStatus,
 
     // Events (Push from Brain to Face)
     Pulse(SimpleJitterSample),
-    CheckpointCreated { id: i64, hash: [u8; 32] },
-    SystemAlert { level: String, message: String },
+    CheckpointCreated {
+        id: i64,
+        hash: [u8; 32],
+    },
+    SystemAlert {
+        level: String,
+        message: String,
+    },
 
     // Status
     Heartbeat,
 
     // Responses
-    Ok { message: Option<String> },
-    Error { code: IpcErrorCode, message: String },
-    HandshakeAck { version: String, server_version: String },
-    HeartbeatAck { timestamp_ns: u64 },
+    Ok {
+        message: Option<String>,
+    },
+    Error {
+        code: IpcErrorCode,
+        message: String,
+    },
+    HandshakeAck {
+        version: String,
+        server_version: String,
+    },
+    HeartbeatAck {
+        timestamp_ns: u64,
+    },
     StatusResponse {
         running: bool,
         tracked_files: Vec<String>,
@@ -395,8 +417,13 @@ pub struct IpcClient {
 impl IpcClient {
     /// Connect to the daemon socket at the given path.
     pub fn connect(path: PathBuf) -> Result<Self> {
-        let stream = std::os::unix::net::UnixStream::connect(&path)
-            .map_err(|e| anyhow!("Failed to connect to daemon socket at {}: {}", path.display(), e))?;
+        let stream = std::os::unix::net::UnixStream::connect(&path).map_err(|e| {
+            anyhow!(
+                "Failed to connect to daemon socket at {}: {}",
+                path.display(),
+                e
+            )
+        })?;
 
         // Set read/write timeouts to prevent hanging
         stream.set_read_timeout(Some(Duration::from_secs(5)))?;
@@ -546,7 +573,9 @@ impl AsyncIpcClient {
     ///
     /// # Arguments
     /// * `path` - Path to the Unix domain socket (e.g., `/tmp/witnessd.sock`)
-    pub async fn connect<P: AsRef<std::path::Path>>(path: P) -> std::result::Result<Self, AsyncIpcClientError> {
+    pub async fn connect<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> std::result::Result<Self, AsyncIpcClientError> {
         let stream = UnixStream::connect(path.as_ref())
             .await
             .map_err(AsyncIpcClientError::ConnectionFailed)?;
@@ -559,10 +588,16 @@ impl AsyncIpcClient {
     /// Send an IPC message to the daemon
     ///
     /// Messages are serialized using bincode with a 4-byte little-endian length prefix.
-    pub async fn send_message(&mut self, msg: &IpcMessage) -> std::result::Result<(), AsyncIpcClientError> {
+    pub async fn send_message(
+        &mut self,
+        msg: &IpcMessage,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
         use tokio::io::AsyncWriteExt;
 
-        let stream = self.stream.as_mut().ok_or(AsyncIpcClientError::NotConnected)?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(AsyncIpcClientError::NotConnected)?;
 
         // Serialize the message using bincode
         let encoded = encode_message(msg)
@@ -570,18 +605,24 @@ impl AsyncIpcClient {
 
         // Check message size
         if encoded.len() > MAX_MESSAGE_SIZE {
-            return Err(AsyncIpcClientError::MessageTooLarge(encoded.len(), MAX_MESSAGE_SIZE));
+            return Err(AsyncIpcClientError::MessageTooLarge(
+                encoded.len(),
+                MAX_MESSAGE_SIZE,
+            ));
         }
 
         // Write length prefix (4 bytes, little-endian) followed by payload
         let len = encoded.len() as u32;
-        stream.write_all(&len.to_le_bytes())
+        stream
+            .write_all(&len.to_le_bytes())
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
-        stream.write_all(&encoded)
+        stream
+            .write_all(&encoded)
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
-        stream.flush()
+        stream
+            .flush()
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
 
@@ -594,7 +635,10 @@ impl AsyncIpcClient {
     pub async fn recv_message(&mut self) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
         use tokio::io::AsyncReadExt;
 
-        let stream = self.stream.as_mut().ok_or(AsyncIpcClientError::NotConnected)?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(AsyncIpcClientError::NotConnected)?;
 
         // Read length prefix (4 bytes, little-endian)
         let mut len_buf = [0u8; 4];
@@ -615,7 +659,8 @@ impl AsyncIpcClient {
 
         // Read the payload
         let mut buffer = vec![0u8; len];
-        stream.read_exact(&mut buffer)
+        stream
+            .read_exact(&mut buffer)
             .await
             .map_err(AsyncIpcClientError::ReceiveFailed)?;
 
@@ -627,7 +672,10 @@ impl AsyncIpcClient {
     }
 
     /// Send a message and wait for a response (request-response pattern)
-    pub async fn request(&mut self, msg: &IpcMessage) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
+    pub async fn request(
+        &mut self,
+        msg: &IpcMessage,
+    ) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
         self.send_message(msg).await?;
         self.recv_message().await
     }
@@ -648,19 +696,26 @@ impl AsyncIpcClient {
     /// Perform a handshake with the daemon
     ///
     /// Sends a Handshake message and expects a HandshakeAck response.
-    pub async fn handshake(&mut self, client_version: &str) -> std::result::Result<String, AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::Handshake {
-            version: client_version.to_string(),
-        }).await?;
+    pub async fn handshake(
+        &mut self,
+        client_version: &str,
+    ) -> std::result::Result<String, AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::Handshake {
+                version: client_version.to_string(),
+            })
+            .await?;
 
         match response {
             IpcMessage::HandshakeAck { server_version, .. } => Ok(server_version),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Handshake failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response to handshake: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Handshake failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response to handshake: {:?}",
+                other
+            ))),
         }
     }
 
@@ -670,59 +725,81 @@ impl AsyncIpcClient {
 
         match response {
             IpcMessage::HeartbeatAck { timestamp_ns } => Ok(timestamp_ns),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Heartbeat failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response to heartbeat: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Heartbeat failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response to heartbeat: {:?}",
+                other
+            ))),
         }
     }
 
     /// Request the daemon to start witnessing a file
-    pub async fn start_witnessing(&mut self, file_path: PathBuf) -> std::result::Result<(), AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::StartWitnessing { file_path }).await?;
+    pub async fn start_witnessing(
+        &mut self,
+        file_path: PathBuf,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::StartWitnessing { file_path })
+            .await?;
 
         match response {
             IpcMessage::Ok { .. } => Ok(()),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Start witnessing failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Start witnessing failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 
     /// Request the daemon to stop witnessing a file (or all files if None)
-    pub async fn stop_witnessing(&mut self, file_path: Option<PathBuf>) -> std::result::Result<(), AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::StopWitnessing { file_path }).await?;
+    pub async fn stop_witnessing(
+        &mut self,
+        file_path: Option<PathBuf>,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::StopWitnessing { file_path })
+            .await?;
 
         match response {
             IpcMessage::Ok { .. } => Ok(()),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Stop witnessing failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Stop witnessing failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 
     /// Get daemon status
-    pub async fn get_status(&mut self) -> std::result::Result<(bool, Vec<String>, u64), AsyncIpcClientError> {
+    pub async fn get_status(
+        &mut self,
+    ) -> std::result::Result<(bool, Vec<String>, u64), AsyncIpcClientError> {
         let response = self.request(&IpcMessage::GetStatus).await?;
 
         match response {
-            IpcMessage::StatusResponse { running, tracked_files, uptime_secs } => {
-                Ok((running, tracked_files, uptime_secs))
-            }
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Get status failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::StatusResponse {
+                running,
+                tracked_files,
+                uptime_secs,
+            } => Ok((running, tracked_files, uptime_secs)),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Get status failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 }
@@ -751,7 +828,9 @@ impl AsyncIpcClient {
     ///
     /// # Arguments
     /// * `path` - Named pipe path (e.g., `\\.\pipe\witnessd`)
-    pub async fn connect<P: AsRef<std::path::Path>>(path: P) -> std::result::Result<Self, AsyncIpcClientError> {
+    pub async fn connect<P: AsRef<std::path::Path>>(
+        path: P,
+    ) -> std::result::Result<Self, AsyncIpcClientError> {
         let client = named_pipe::ClientOptions::new()
             .open(path.as_ref())
             .map_err(AsyncIpcClientError::ConnectionFailed)?;
@@ -762,10 +841,16 @@ impl AsyncIpcClient {
     }
 
     /// Send an IPC message to the daemon
-    pub async fn send_message(&mut self, msg: &IpcMessage) -> std::result::Result<(), AsyncIpcClientError> {
+    pub async fn send_message(
+        &mut self,
+        msg: &IpcMessage,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
         use tokio::io::AsyncWriteExt;
 
-        let client = self.client.as_mut().ok_or(AsyncIpcClientError::NotConnected)?;
+        let client = self
+            .client
+            .as_mut()
+            .ok_or(AsyncIpcClientError::NotConnected)?;
 
         // Serialize the message using bincode
         let encoded = encode_message(msg)
@@ -773,18 +858,24 @@ impl AsyncIpcClient {
 
         // Check message size
         if encoded.len() > MAX_MESSAGE_SIZE {
-            return Err(AsyncIpcClientError::MessageTooLarge(encoded.len(), MAX_MESSAGE_SIZE));
+            return Err(AsyncIpcClientError::MessageTooLarge(
+                encoded.len(),
+                MAX_MESSAGE_SIZE,
+            ));
         }
 
         // Write length prefix (4 bytes, little-endian) followed by payload
         let len = encoded.len() as u32;
-        client.write_all(&len.to_le_bytes())
+        client
+            .write_all(&len.to_le_bytes())
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
-        client.write_all(&encoded)
+        client
+            .write_all(&encoded)
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
-        client.flush()
+        client
+            .flush()
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
 
@@ -795,7 +886,10 @@ impl AsyncIpcClient {
     pub async fn recv_message(&mut self) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
         use tokio::io::AsyncReadExt;
 
-        let client = self.client.as_mut().ok_or(AsyncIpcClientError::NotConnected)?;
+        let client = self
+            .client
+            .as_mut()
+            .ok_or(AsyncIpcClientError::NotConnected)?;
 
         // Read length prefix (4 bytes, little-endian)
         let mut len_buf = [0u8; 4];
@@ -816,7 +910,8 @@ impl AsyncIpcClient {
 
         // Read the payload
         let mut buffer = vec![0u8; len];
-        client.read_exact(&mut buffer)
+        client
+            .read_exact(&mut buffer)
             .await
             .map_err(AsyncIpcClientError::ReceiveFailed)?;
 
@@ -828,7 +923,10 @@ impl AsyncIpcClient {
     }
 
     /// Send a message and wait for a response (request-response pattern)
-    pub async fn request(&mut self, msg: &IpcMessage) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
+    pub async fn request(
+        &mut self,
+        msg: &IpcMessage,
+    ) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
         self.send_message(msg).await?;
         self.recv_message().await
     }
@@ -844,19 +942,26 @@ impl AsyncIpcClient {
     }
 
     /// Perform a handshake with the daemon
-    pub async fn handshake(&mut self, client_version: &str) -> std::result::Result<String, AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::Handshake {
-            version: client_version.to_string(),
-        }).await?;
+    pub async fn handshake(
+        &mut self,
+        client_version: &str,
+    ) -> std::result::Result<String, AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::Handshake {
+                version: client_version.to_string(),
+            })
+            .await?;
 
         match response {
             IpcMessage::HandshakeAck { server_version, .. } => Ok(server_version),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Handshake failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response to handshake: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Handshake failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response to handshake: {:?}",
+                other
+            ))),
         }
     }
 
@@ -866,59 +971,81 @@ impl AsyncIpcClient {
 
         match response {
             IpcMessage::HeartbeatAck { timestamp_ns } => Ok(timestamp_ns),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Heartbeat failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response to heartbeat: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Heartbeat failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response to heartbeat: {:?}",
+                other
+            ))),
         }
     }
 
     /// Request the daemon to start witnessing a file
-    pub async fn start_witnessing(&mut self, file_path: PathBuf) -> std::result::Result<(), AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::StartWitnessing { file_path }).await?;
+    pub async fn start_witnessing(
+        &mut self,
+        file_path: PathBuf,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::StartWitnessing { file_path })
+            .await?;
 
         match response {
             IpcMessage::Ok { .. } => Ok(()),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Start witnessing failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Start witnessing failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 
     /// Request the daemon to stop witnessing a file (or all files if None)
-    pub async fn stop_witnessing(&mut self, file_path: Option<PathBuf>) -> std::result::Result<(), AsyncIpcClientError> {
-        let response = self.request(&IpcMessage::StopWitnessing { file_path }).await?;
+    pub async fn stop_witnessing(
+        &mut self,
+        file_path: Option<PathBuf>,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
+        let response = self
+            .request(&IpcMessage::StopWitnessing { file_path })
+            .await?;
 
         match response {
             IpcMessage::Ok { .. } => Ok(()),
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Stop witnessing failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Stop witnessing failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 
     /// Get daemon status
-    pub async fn get_status(&mut self) -> std::result::Result<(bool, Vec<String>, u64), AsyncIpcClientError> {
+    pub async fn get_status(
+        &mut self,
+    ) -> std::result::Result<(bool, Vec<String>, u64), AsyncIpcClientError> {
         let response = self.request(&IpcMessage::GetStatus).await?;
 
         match response {
-            IpcMessage::StatusResponse { running, tracked_files, uptime_secs } => {
-                Ok((running, tracked_files, uptime_secs))
-            }
-            IpcMessage::Error { message, .. } => {
-                Err(AsyncIpcClientError::ProtocolError(format!("Get status failed: {}", message)))
-            }
-            other => Err(AsyncIpcClientError::ProtocolError(
-                format!("Unexpected response: {:?}", other)
-            )),
+            IpcMessage::StatusResponse {
+                running,
+                tracked_files,
+                uptime_secs,
+            } => Ok((running, tracked_files, uptime_secs)),
+            IpcMessage::Error { message, .. } => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Get status failed: {}",
+                message
+            ))),
+            other => Err(AsyncIpcClientError::ProtocolError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
         }
     }
 }
@@ -952,7 +1079,9 @@ mod tests {
                 IpcMessage::Heartbeat => IpcMessage::HeartbeatAck {
                     timestamp_ns: 123456789,
                 },
-                _ => IpcMessage::Ok { message: Some("Handled".to_string()) },
+                _ => IpcMessage::Ok {
+                    message: Some("Handled".to_string()),
+                },
             }
         }
     }
@@ -960,8 +1089,12 @@ mod tests {
     #[test]
     fn test_message_serialization_roundtrip() {
         let messages = vec![
-            IpcMessage::Handshake { version: "1.0".to_string() },
-            IpcMessage::StartWitnessing { file_path: PathBuf::from("/tmp/test") },
+            IpcMessage::Handshake {
+                version: "1.0".to_string(),
+            },
+            IpcMessage::StartWitnessing {
+                file_path: PathBuf::from("/tmp/test"),
+            },
             IpcMessage::StopWitnessing { file_path: None },
             IpcMessage::GetStatus,
             IpcMessage::Heartbeat,
@@ -970,11 +1103,25 @@ mod tests {
                 duration_since_last_ns: 10,
                 zone: 1,
             }),
-            IpcMessage::CheckpointCreated { id: 1, hash: [0u8; 32] },
-            IpcMessage::SystemAlert { level: "info".to_string(), message: "hello".to_string() },
-            IpcMessage::Ok { message: Some("all good".to_string()) },
-            IpcMessage::Error { code: IpcErrorCode::FileNotFound, message: "not found".to_string() },
-            IpcMessage::HandshakeAck { version: "1.0".to_string(), server_version: "1.1".to_string() },
+            IpcMessage::CheckpointCreated {
+                id: 1,
+                hash: [0u8; 32],
+            },
+            IpcMessage::SystemAlert {
+                level: "info".to_string(),
+                message: "hello".to_string(),
+            },
+            IpcMessage::Ok {
+                message: Some("all good".to_string()),
+            },
+            IpcMessage::Error {
+                code: IpcErrorCode::FileNotFound,
+                message: "not found".to_string(),
+            },
+            IpcMessage::HandshakeAck {
+                version: "1.0".to_string(),
+                server_version: "1.1".to_string(),
+            },
             IpcMessage::HeartbeatAck { timestamp_ns: 999 },
             IpcMessage::StatusResponse {
                 running: true,
@@ -997,23 +1144,28 @@ mod tests {
     async fn test_ipc_server_client_interaction() {
         let dir = tempdir().unwrap();
         let socket_path = dir.path().join("test.sock");
-        
+
         let server = IpcServer::bind(socket_path.clone()).expect("bind failed");
         let handler = Arc::new(TestHandler);
-        
+
         let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
-        
+
         let server_path = socket_path.clone();
         let server_handle = tokio::spawn(async move {
-            server.run_with_shutdown(handler, shutdown_rx).await.expect("server run failed");
+            server
+                .run_with_shutdown(handler, shutdown_rx)
+                .await
+                .expect("server run failed");
         });
 
         // Give server a moment to start
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Use AsyncIpcClient
-        let mut client = AsyncIpcClient::connect(&server_path).await.expect("client connect failed");
-        
+        let mut client = AsyncIpcClient::connect(&server_path)
+            .await
+            .expect("client connect failed");
+
         let version = client.handshake("0.1.0").await.expect("handshake failed");
         assert_eq!(version, "1.0.0-test");
 
@@ -1026,11 +1178,13 @@ mod tests {
         assert_eq!(ts, 123456789);
 
         // Test start_witnessing
-        client.start_witnessing(PathBuf::from("new.txt")).await.expect("start_witnessing failed");
+        client
+            .start_witnessing(PathBuf::from("new.txt"))
+            .await
+            .expect("start_witnessing failed");
 
         // Shutdown server
         shutdown_tx.send(()).await.unwrap();
         server_handle.await.unwrap();
     }
 }
-

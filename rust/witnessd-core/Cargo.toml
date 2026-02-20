@@ -100,10 +100,7 @@ tss-esapi = "7.6"
 evdev = "0.12"
 input-linux = "0.6"
 libc = "0.2"
-
-# Optional X11 support for focus detection
-[target.'cfg(all(target_os = "linux", feature = "x11"))'.dependencies]
-x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
+x11rb = { version = "0.13", features = ["allow-unsafe-code"], optional = true }
 
 [features]
 default = []
@@ -111,7 +108,7 @@ flutter = []
 cargo-clippy = []
 secure-enclave = []
 physjitter = ["dep:physjitter"]
-x11 = []  # Enable X11 focus detection on Linux
+x11 = ["x11rb"]  # Enable X11 focus detection on Linux
 
 [dev-dependencies]
 tempfile = "3"

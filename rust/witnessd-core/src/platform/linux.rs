@@ -55,8 +55,8 @@ pub fn linux_keycode_to_zone(keycode: u16) -> u8 {
         9 | 24 | 38 | 52 => 6, // 8, O, L, .
 
         // Right pinky zone (7)
-        10 | 11 | 12 | 13 | 25 | 26 | 27 | 39 | 40 | 41 | 43 | 53 | 54 | 28 | 14 | 57 | 100 |
-        97 | 56 => 7, // 9, 0, -, =, P, [, ], ;, ', `, \, /, RSHIFT, ENTER, BKSP, SPACE, RALT, RCTRL, LALT
+        10 | 11 | 12 | 13 | 25 | 26 | 27 | 39 | 40 | 41 | 43 | 53 | 54 | 28 | 14 | 57 | 100
+        | 97 | 56 => 7, // 9, 0, -, =, P, [, ], ;, ', `, \, /, RSHIFT, ENTER, BKSP, SPACE, RALT, RCTRL, LALT
 
         // Default to zone 0 for unknown keys
         _ => 0,
@@ -77,9 +77,10 @@ fn check_input_device_access() -> bool {
                 if path.to_string_lossy().contains("event") {
                     if let Ok(device) = Device::open(&path) {
                         // Check if it's a keyboard
-                        if device.supported_keys().map_or(false, |keys| {
-                            keys.contains(Key::KEY_A)
-                        }) {
+                        if device
+                            .supported_keys()
+                            .is_some_and(|keys| keys.contains(Key::KEY_A))
+                        {
                             return true;
                         }
                     }
@@ -95,7 +96,7 @@ fn check_input_device_access() -> bool {
 pub fn get_permission_status() -> PermissionStatus {
     let input_devices = check_input_device_access();
     PermissionStatus {
-        accessibility: true, // Not applicable on Linux
+        accessibility: true,    // Not applicable on Linux
         input_monitoring: true, // Not applicable on Linux
         input_devices,
         all_granted: input_devices,
@@ -162,7 +163,7 @@ impl LinuxInputDevice {
         }
 
         // Empty phys path usually indicates virtual device
-        if self.phys.is_none() || self.phys.as_ref().map_or(false, |p| p.is_empty()) {
+        if self.phys.is_none() || self.phys.as_ref().is_some_and(|p| p.is_empty()) {
             return true;
         }
 
@@ -194,7 +195,7 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
         // Check if it's a keyboard (has KEY_A)
         let is_keyboard = device
             .supported_keys()
-            .map_or(false, |keys| keys.contains(Key::KEY_A));
+            .is_some_and(|keys| keys.contains(Key::KEY_A));
 
         if !is_keyboard {
             continue;
@@ -240,20 +241,20 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
     }
 
     // Empty or missing phys path indicates virtual
-    if phys.map_or(true, |p| p.is_empty()) {
+    if phys.is_none_or(|p| p.is_empty()) {
         return true;
     }
 
     // Zero VID:PID is suspicious (though some embedded keyboards have this)
-    if vendor_id == 0 && product_id == 0 {
-        // Check if name looks like a real keyboard
-        if !name_lower.contains("keyboard")
-            && !name_lower.contains("kbd")
-            && !name_lower.contains("usb")
-            && !name_lower.contains("at translated")
-        {
-            return true;
-        }
+    // Check if name looks like a real keyboard
+    if vendor_id == 0
+        && product_id == 0
+        && !name_lower.contains("keyboard")
+        && !name_lower.contains("kbd")
+        && !name_lower.contains("usb")
+        && !name_lower.contains("at translated")
+    {
+        return true;
     }
 
     false
@@ -306,7 +307,7 @@ fn get_focus_from_proc() -> Result<FocusInfo> {
                         .next()
                         .unwrap_or("")
                         .split('/')
-                        .last()
+                        .next_back()
                         .unwrap_or("unknown")
                         .to_string();
 
@@ -535,7 +536,7 @@ impl LinuxKeystrokeCapture {
         devices: Arc<RwLock<HashMap<PathBuf, LinuxInputDevice>>>,
         strict: bool,
     ) {
-        let device = match Device::open(&path) {
+        let mut device = match Device::open(&path) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Failed to open device {:?}: {}", path, e);
@@ -545,7 +546,7 @@ impl LinuxKeystrokeCapture {
 
         // Get device info for synthetic detection
         let device_info = devices.read().unwrap().get(&path).cloned();
-        let is_physical = device_info.as_ref().map_or(false, |d| d.is_physical);
+        let is_physical = device_info.as_ref().is_some_and(|d| d.is_physical);
         let device_id = device_info
             .as_ref()
             .map(|d| format!("{:04x}:{:04x}", d.vendor_id, d.product_id));
@@ -741,6 +742,7 @@ impl FocusMonitor for LinuxFocusMonitor {
 }
 
 /// Linux HID enumerator implementation.
+#[derive(Default)]
 pub struct LinuxHIDEnumerator;
 
 impl LinuxHIDEnumerator {
@@ -767,9 +769,9 @@ impl HIDEnumerator for LinuxHIDEnumerator {
 
     fn is_device_connected(&self, vendor_id: u32, product_id: u32) -> bool {
         if let Ok(devices) = enumerate_keyboards() {
-            devices.iter().any(|d| {
-                d.vendor_id as u32 == vendor_id && d.product_id as u32 == product_id
-            })
+            devices
+                .iter()
+                .any(|d| d.vendor_id as u32 == vendor_id && d.product_id as u32 == product_id)
         } else {
             false
         }
@@ -797,7 +799,7 @@ pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
         };
 
         // Check if it's a mouse (has REL_X and REL_Y)
-        let is_mouse = device.supported_relative_axes().map_or(false, |axes| {
+        let is_mouse = device.supported_relative_axes().is_some_and(|axes| {
             axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
         });
 
@@ -840,25 +842,26 @@ fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: 
         || name_lower.contains("xdotool")
         || name_lower.contains("py-evdev")
         || name_lower.contains("synthetic")
-        || name_lower.contains("wacom") // Exclude tablet devices
+        || name_lower.contains("wacom")
+    // Exclude tablet devices
     {
         return true;
     }
 
     // Empty or missing phys path indicates virtual
-    if phys.map_or(true, |p| p.is_empty()) {
+    if phys.is_none_or(|p| p.is_empty()) {
         return true;
     }
 
     // Zero VID:PID is suspicious
-    if vendor_id == 0 && product_id == 0 {
-        if !name_lower.contains("mouse")
-            && !name_lower.contains("touchpad")
-            && !name_lower.contains("trackpad")
-            && !name_lower.contains("trackpoint")
-        {
-            return true;
-        }
+    if vendor_id == 0
+        && product_id == 0
+        && !name_lower.contains("mouse")
+        && !name_lower.contains("touchpad")
+        && !name_lower.contains("trackpad")
+        && !name_lower.contains("trackpoint")
+    {
+        return true;
     }
 
     false
@@ -917,7 +920,7 @@ impl LinuxMouseCapture {
         last_position: Arc<RwLock<(f64, f64)>>,
         idle_only_mode: Arc<AtomicBool>,
     ) {
-        let device = match Device::open(&path) {
+        let mut device = match Device::open(&path) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Failed to open mouse device {:?}: {}", path, e);
@@ -927,7 +930,7 @@ impl LinuxMouseCapture {
 
         // Get device info for synthetic detection
         let device_info = devices.read().unwrap().get(&path).cloned();
-        let is_physical = device_info.as_ref().map_or(false, |d| d.is_physical);
+        let is_physical = device_info.as_ref().is_some_and(|d| d.is_physical);
         let device_id = device_info
             .as_ref()
             .map(|d| format!("{:04x}:{:04x}", d.vendor_id, d.product_id));
@@ -980,10 +983,10 @@ impl LinuxMouseCapture {
                                 }
 
                                 // Send if not in idle-only mode, or if it's idle movement
-                                if !idle_only_mode.load(Ordering::Relaxed) || is_micro {
-                                    if tx.send(mouse_event).is_err() {
-                                        return;
-                                    }
+                                if (!idle_only_mode.load(Ordering::Relaxed) || is_micro)
+                                    && tx.send(mouse_event).is_err()
+                                {
+                                    return;
                                 }
 
                                 pending_dx = 0.0;
@@ -1148,7 +1151,12 @@ mod tests {
     fn test_is_virtual_device() {
         assert!(is_virtual_device("uinput keyboard", None, 0, 0));
         assert!(is_virtual_device("Virtual Keyboard", Some(""), 0, 0));
-        assert!(is_virtual_device("xtest keyboard", Some("usb-0000:00:1d.0-1.4/input0"), 0, 0));
+        assert!(is_virtual_device(
+            "xtest keyboard",
+            Some("usb-0000:00:1d.0-1.4/input0"),
+            0,
+            0
+        ));
         assert!(!is_virtual_device(
             "AT Translated Set 2 keyboard",
             Some("isa0060/serio0/input0"),
@@ -1169,7 +1177,12 @@ mod tests {
         // Virtual mice
         assert!(is_virtual_mouse("uinput mouse", None, 0, 0));
         assert!(is_virtual_mouse("Virtual Mouse", Some(""), 0, 0));
-        assert!(is_virtual_mouse("xtest pointer", Some("usb-0000:00:1d.0"), 0, 0));
+        assert!(is_virtual_mouse(
+            "xtest pointer",
+            Some("usb-0000:00:1d.0"),
+            0,
+            0
+        ));
         assert!(is_virtual_mouse(
             "xdotool virtual mouse",
             Some("/dev/input/event0"),

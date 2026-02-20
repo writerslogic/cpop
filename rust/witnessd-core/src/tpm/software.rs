@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn test_software_provider_lifecycle() {
         let provider = SoftwareProvider::new();
-        
+
         // 1. Capabilities
         let caps = provider.capabilities();
         assert!(!caps.hardware_backed);
@@ -149,7 +149,7 @@ mod tests {
         let binding = provider.bind(data).expect("bind failed");
         assert_eq!(binding.provider_type, "software");
         assert_eq!(binding.device_id, device_id);
-        
+
         provider.verify(&binding).expect("verify failed");
 
         // 4. Quote

@@ -601,7 +601,10 @@ pub fn try_init() -> Option<WindowsTpmProvider> {
                     None
                 }
                 Err(e) => {
-                    log::warn!("Failed to get TPM device info: {}, using software fallback", e);
+                    log::warn!(
+                        "Failed to get TPM device info: {}, using software fallback",
+                        e
+                    );
                     None
                 }
             }

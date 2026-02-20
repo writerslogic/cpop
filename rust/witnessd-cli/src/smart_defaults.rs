@@ -83,12 +83,33 @@ pub fn get_recently_modified_files(dir: &Path, max_count: usize) -> Vec<PathBuf>
             // Skip common non-document extensions
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 let ext_lower = ext.to_lowercase();
-                if matches!(ext_lower.as_str(),
-                    "exe" | "dll" | "so" | "dylib" | "o" | "a" |
-                    "zip" | "tar" | "gz" | "rar" | "7z" |
-                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "ico" |
-                    "mp3" | "mp4" | "avi" | "mov" | "wav" |
-                    "db" | "sqlite" | "lock"
+                if matches!(
+                    ext_lower.as_str(),
+                    "exe"
+                        | "dll"
+                        | "so"
+                        | "dylib"
+                        | "o"
+                        | "a"
+                        | "zip"
+                        | "tar"
+                        | "gz"
+                        | "rar"
+                        | "7z"
+                        | "jpg"
+                        | "jpeg"
+                        | "png"
+                        | "gif"
+                        | "bmp"
+                        | "ico"
+                        | "mp3"
+                        | "mp4"
+                        | "avi"
+                        | "mov"
+                        | "wav"
+                        | "db"
+                        | "sqlite"
+                        | "lock"
                 ) {
                     continue;
                 }
@@ -106,7 +127,8 @@ pub fn get_recently_modified_files(dir: &Path, max_count: usize) -> Vec<PathBuf>
     files.sort_by(|a, b| b.1.cmp(&a.1));
 
     // Take top N
-    files.into_iter()
+    files
+        .into_iter()
         .take(max_count)
         .map(|(path, _)| path)
         .collect()
@@ -124,7 +146,8 @@ pub fn select_file_from_list(files: &[PathBuf], prompt_prefix: &str) -> Result<O
 
     println!();
     for (i, file) in files.iter().enumerate() {
-        let display = file.file_name()
+        let display = file
+            .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| file.display().to_string());
         println!("  [{}] {}", i + 1, display);
@@ -176,8 +199,7 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
 
     // Expand tilde
     let expanded = if path_str.starts_with("~/") || path_str == "~" {
-        let home = dirs::home_dir()
-            .ok_or_else(|| anyhow!("Could not determine home directory"))?;
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
         if path_str == "~" {
             home
         } else {
@@ -192,9 +214,8 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
 
     // Try to canonicalize if the path exists
     if cleaned.exists() {
-        fs::canonicalize(&cleaned).map_err(|e| {
-            anyhow!("Cannot access path {}: {}", cleaned.display(), e)
-        })
+        fs::canonicalize(&cleaned)
+            .map_err(|e| anyhow!("Cannot access path {}: {}", cleaned.display(), e))
     } else {
         // For non-existent paths, just return the cleaned version
         Ok(cleaned)
@@ -316,7 +337,10 @@ mod tests {
 
     #[test]
     fn test_clean_path() {
-        assert_eq!(clean_path(Path::new("/foo//bar/")), PathBuf::from("/foo/bar"));
+        assert_eq!(
+            clean_path(Path::new("/foo//bar/")),
+            PathBuf::from("/foo/bar")
+        );
         assert_eq!(clean_path(Path::new("./foo")), PathBuf::from("./foo"));
         assert_eq!(clean_path(Path::new("/")), PathBuf::from("/"));
     }
@@ -347,7 +371,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f1 = dir.path().join("a.txt");
         let f2 = dir.path().join("b.txt");
-        
+
         fs::write(&f1, "a").unwrap();
         // Wait a bit to ensure different mtime if filesystem precision is low
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -360,4 +384,3 @@ mod tests {
         assert_eq!(files[1].file_name().unwrap(), "a.txt");
     }
 }
-

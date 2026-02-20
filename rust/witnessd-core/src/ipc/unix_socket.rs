@@ -1,9 +1,9 @@
 //! Unix domain socket IPC with peer credential verification
 
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::fd::AsFd;
-use std::path::Path;
 use nix::sys::socket::getsockopt;
+use std::os::fd::AsFd;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,10 +13,7 @@ pub enum IpcError {
     #[error("nix error: {0}")]
     Nix(#[from] nix::Error),
     #[error("unauthorized peer: expected uid {expected_uid}, got {actual_uid}")]
-    UnauthorizedPeer {
-        expected_uid: u32,
-        actual_uid: u32,
-    },
+    UnauthorizedPeer { expected_uid: u32, actual_uid: u32 },
     #[error("invalid peer executable")]
     InvalidPeerExecutable,
     #[error("unauthorized executable: expected one of {expected:?}, got {actual}")]
@@ -84,7 +81,10 @@ impl SecureUnixSocket {
 
         let allowed_uid = nix::unistd::getuid().as_raw();
 
-        Ok(Self { listener, allowed_uid })
+        Ok(Self {
+            listener,
+            allowed_uid,
+        })
     }
 
     pub fn accept(&self) -> Result<VerifiedConnection, IpcError> {
@@ -119,18 +119,19 @@ impl VerifiedConnection {
     pub fn verify_peer_executable(&self, allowed_names: &[&str]) -> Result<(), IpcError> {
         let exe_path = format!("/proc/{}/exe", self.peer_pid);
         let exe = std::fs::read_link(&exe_path)?;
-        
-        let exe_name = exe.file_name()
+
+        let exe_name = exe
+            .file_name()
             .and_then(|n| n.to_str())
             .ok_or(IpcError::InvalidPeerExecutable)?;
-        
+
         if !allowed_names.contains(&exe_name) {
             return Err(IpcError::UnauthorizedExecutable {
                 expected: allowed_names.iter().map(|s| s.to_string()).collect(),
                 actual: exe_name.to_string(),
             });
         }
-        
+
         Ok(())
     }
 }

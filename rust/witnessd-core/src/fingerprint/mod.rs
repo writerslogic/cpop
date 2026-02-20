@@ -339,10 +339,7 @@ impl FingerprintManager {
     /// Use this when integrating with HybridJitterSession to include
     /// the phys_ratio in the fingerprint.
     #[cfg(feature = "physjitter")]
-    pub fn current_author_fingerprint_with_phys_ratio(
-        &self,
-        phys_ratio: f64,
-    ) -> AuthorFingerprint {
+    pub fn current_author_fingerprint_with_phys_ratio(&self, phys_ratio: f64) -> AuthorFingerprint {
         let mut activity = self.current_activity_fingerprint();
         activity.set_phys_ratio(phys_ratio);
 
@@ -366,10 +363,7 @@ impl FingerprintManager {
         FingerprintStatus {
             activity_enabled: self.config.activity_enabled,
             voice_enabled: self.config.voice_enabled,
-            voice_consent: self
-                .consent_manager
-                .has_voice_consent()
-                .unwrap_or(false),
+            voice_consent: self.consent_manager.has_voice_consent().unwrap_or(false),
             current_profile_id: self.current_profile_id.clone(),
             activity_samples: self.activity_accumulator.sample_count(),
             voice_samples: self

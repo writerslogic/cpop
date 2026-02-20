@@ -18,10 +18,10 @@ pub mod identity;
 pub mod ipc;
 pub mod jitter;
 pub mod keyhierarchy;
-#[cfg(feature = "physjitter")]
-pub mod physjitter_bridge;
 pub mod mmr;
 pub mod physics;
+#[cfg(feature = "physjitter")]
+pub mod physjitter_bridge;
 pub mod platform;
 pub mod presence;
 pub mod research;
@@ -36,22 +36,21 @@ pub use crate::config::{FingerprintConfig, PrivacyConfig, ResearchConfig, Sentin
 pub use crate::crypto::{compute_event_hash, compute_event_hmac, derive_hmac_key};
 pub use crate::identity::MnemonicHandler;
 pub use crate::physics::PhysicalContext;
+pub use crate::research::{
+    AnonymizedSession, ResearchCollector, ResearchDataExport, ResearchUploader, UploadResult,
+};
 pub use crate::sentinel::{
     ChangeEvent, ChangeEventType, DaemonManager, DaemonState, DaemonStatus, DocumentSession,
     FocusEvent, FocusEventType, Sentinel, SentinelError, SessionEvent, SessionEventType,
     ShadowManager, WindowInfo,
-};
-pub use crate::research::{
-    AnonymizedSession, ResearchCollector, ResearchDataExport, ResearchUploader, UploadResult,
 };
 pub use crate::store::{SecureEvent, SecureStore};
 pub use crate::vdf::{RoughtimeClient, TimeAnchor, TimeKeeper, VdfProof};
 
 // Re-export fingerprint types
 pub use crate::fingerprint::{
-    ActivityFingerprint, AuthorFingerprint, ConsentManager, ConsentStatus,
-    FingerprintComparison, FingerprintManager, FingerprintStatus,
-    ProfileId, VoiceFingerprint,
+    ActivityFingerprint, AuthorFingerprint, ConsentManager, ConsentStatus, FingerprintComparison,
+    FingerprintManager, FingerprintStatus, ProfileId, VoiceFingerprint,
 };
 
 #[cfg(feature = "physjitter")]

@@ -266,15 +266,24 @@ pub fn format_consent_record(record: &ConsentRecord) -> String {
     lines.push(format!("Status: {}", format_consent_status(record.status)));
 
     if let Some(first) = record.first_requested {
-        lines.push(format!("First requested: {}", first.format("%Y-%m-%d %H:%M:%S UTC")));
+        lines.push(format!(
+            "First requested: {}",
+            first.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
     }
 
     if let Some(granted) = record.granted_at {
-        lines.push(format!("Granted at: {}", granted.format("%Y-%m-%d %H:%M:%S UTC")));
+        lines.push(format!(
+            "Granted at: {}",
+            granted.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
     }
 
     if let Some(revoked) = record.revoked_at {
-        lines.push(format!("Revoked at: {}", revoked.format("%Y-%m-%d %H:%M:%S UTC")));
+        lines.push(format!(
+            "Revoked at: {}",
+            revoked.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
     }
 
     lines.push(format!("Consent version: {}", record.consent_version));

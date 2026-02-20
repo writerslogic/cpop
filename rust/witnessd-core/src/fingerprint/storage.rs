@@ -186,7 +186,8 @@ impl FingerprintStorage {
             // Secure delete: overwrite with random data before removing
             let size = fs::metadata(&path)?.len() as usize;
             let mut random_data = vec![0u8; size];
-            getrandom::getrandom(&mut random_data).map_err(|e| anyhow!("Failed to generate random data: {}", e))?;
+            getrandom::getrandom(&mut random_data)
+                .map_err(|e| anyhow!("Failed to generate random data: {}", e))?;
             fs::write(&path, &random_data)?;
             fs::remove_file(&path)?;
         }
@@ -223,7 +224,8 @@ impl FingerprintStorage {
 
     /// Get the path for a profile.
     fn profile_path(&self, id: &ProfileId) -> PathBuf {
-        self.storage_dir.join(format!("{}{}", id, PROFILE_EXTENSION))
+        self.storage_dir
+            .join(format!("{}{}", id, PROFILE_EXTENSION))
     }
 
     /// Encrypt data.
@@ -233,7 +235,8 @@ impl FingerprintStorage {
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; NONCE_SIZE];
-        getrandom::getrandom(&mut nonce_bytes).map_err(|e| anyhow!("Failed to generate nonce: {}", e))?;
+        getrandom::getrandom(&mut nonce_bytes)
+            .map_err(|e| anyhow!("Failed to generate nonce: {}", e))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt
@@ -299,7 +302,8 @@ fn derive_storage_key(storage_dir: &Path) -> Result<[u8; KEY_SIZE]> {
     } else {
         // Generate new key material
         let mut material = vec![0u8; 32];
-        getrandom::getrandom(&mut material).map_err(|e| anyhow!("Failed to generate key material: {}", e))?;
+        getrandom::getrandom(&mut material)
+            .map_err(|e| anyhow!("Failed to generate key material: {}", e))?;
         fs::write(&key_file, &material)?;
 
         // Set restrictive permissions on Unix

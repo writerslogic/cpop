@@ -23,7 +23,9 @@
 //! ```
 
 use chrono::{DateTime, Utc};
-use physjitter::{derive_session_secret, EvidenceChain as PhysEvidenceChain, Session as PhysSession};
+use physjitter::{
+    derive_session_secret, EvidenceChain as PhysEvidenceChain, Session as PhysSession,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -124,7 +126,12 @@ impl ZoneTrackingEngine {
         self.profile.total_transitions += 1;
         if self.profile.total_transitions > 0 {
             // Count alternating transitions for hand_alternation calculation
-            let alternating_count: u64 = self.profile.alternating_hist.iter().map(|&x| x as u64).sum();
+            let alternating_count: u64 = self
+                .profile
+                .alternating_hist
+                .iter()
+                .map(|&x| x as u64)
+                .sum();
             self.profile.hand_alternation =
                 alternating_count as f32 / self.profile.total_transitions as f32;
         }
@@ -146,8 +153,8 @@ struct DocumentTracker {
 
 impl DocumentTracker {
     fn new(path: impl AsRef<Path>) -> Result<Self, String> {
-        let abs_path = fs::canonicalize(path.as_ref())
-            .map_err(|e| format!("invalid document path: {e}"))?;
+        let abs_path =
+            fs::canonicalize(path.as_ref()).map_err(|e| format!("invalid document path: {e}"))?;
 
         Ok(Self {
             path: abs_path.to_string_lossy().to_string(),
@@ -341,7 +348,10 @@ impl HybridJitterSession {
         self.keystroke_count += 1;
 
         // Check if we should sample
-        if !self.keystroke_count.is_multiple_of(self.params.sample_interval) {
+        if !self
+            .keystroke_count
+            .is_multiple_of(self.params.sample_interval)
+        {
             // Still record zone for profile tracking
             self.zone_engine.record_keycode(keycode);
             return Ok((0, false));
@@ -362,12 +372,14 @@ impl HybridJitterSession {
         input.extend_from_slice(&now.timestamp_nanos_opt().unwrap_or(0).to_be_bytes());
 
         // Sample from physjitter
-        let jitter = self.physjitter_session
+        let jitter = self
+            .physjitter_session
             .sample(&input)
             .map_err(|e| format!("physjitter sample failed: {e}"))?;
 
         // Check if this sample used hardware entropy
-        let is_phys = self.physjitter_session
+        let is_phys = self
+            .physjitter_session
             .evidence()
             .records
             .last()
@@ -492,14 +504,18 @@ impl HybridJitterSession {
     pub fn export_standard(&self) -> Evidence {
         let end = self.ended_at.unwrap_or_else(Utc::now);
 
-        let samples: Vec<Sample> = self.samples.iter().map(|hs| Sample {
-            timestamp: hs.timestamp,
-            keystroke_count: hs.keystroke_count,
-            document_hash: hs.document_hash,
-            jitter_micros: hs.jitter_micros,
-            hash: hs.hash,
-            previous_hash: hs.previous_hash,
-        }).collect();
+        let samples: Vec<Sample> = self
+            .samples
+            .iter()
+            .map(|hs| Sample {
+                timestamp: hs.timestamp,
+                keystroke_count: hs.keystroke_count,
+                document_hash: hs.document_hash,
+                jitter_micros: hs.jitter_micros,
+                hash: hs.hash,
+                previous_hash: hs.previous_hash,
+            })
+            .collect();
 
         Evidence {
             session_id: self.id.clone(),
@@ -691,8 +707,8 @@ impl HybridEvidence {
 
     /// Verify the embedded physjitter evidence chain.
     fn verify_physjitter_evidence(&self, json: &str) -> Result<(), String> {
-        let chain: PhysEvidenceChain =
-            serde_json::from_str(json).map_err(|e| format!("physjitter evidence parse error: {e}"))?;
+        let chain: PhysEvidenceChain = serde_json::from_str(json)
+            .map_err(|e| format!("physjitter evidence parse error: {e}"))?;
 
         // Validate sequence numbers are monotonic (0, 1, 2, ...)
         if !chain.validate_sequences() {
@@ -783,8 +799,8 @@ fn interval_to_bucket(duration: Duration) -> u8 {
 mod tests {
     use super::*;
     use crate::jitter::decode_zone_transition;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     fn create_temp_doc() -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
@@ -826,10 +842,14 @@ mod tests {
     #[test]
     fn test_hybrid_session_record_keystroke() {
         let doc = create_temp_doc();
-        let mut session = HybridJitterSession::new(doc.path(), Some(crate::jitter::Parameters {
-            sample_interval: 1, // Sample every keystroke
-            ..crate::jitter::default_parameters()
-        })).unwrap();
+        let mut session = HybridJitterSession::new(
+            doc.path(),
+            Some(crate::jitter::Parameters {
+                sample_interval: 1, // Sample every keystroke
+                ..crate::jitter::default_parameters()
+            }),
+        )
+        .unwrap();
 
         // Record keystroke
         let result = session.record_keystroke(0x0C); // 'q'
@@ -847,13 +867,18 @@ mod tests {
     #[test]
     fn test_hybrid_session_export() {
         let doc = create_temp_doc();
-        let mut session = HybridJitterSession::new(doc.path(), Some(crate::jitter::Parameters {
-            sample_interval: 1,
-            ..crate::jitter::default_parameters()
-        })).unwrap();
+        let mut session = HybridJitterSession::new(
+            doc.path(),
+            Some(crate::jitter::Parameters {
+                sample_interval: 1,
+                ..crate::jitter::default_parameters()
+            }),
+        )
+        .unwrap();
 
         // Record some keystrokes
-        for keycode in [0x0C, 0x0D, 0x0E] { // q, w, e
+        for keycode in [0x0C, 0x0D, 0x0E] {
+            // q, w, e
             session.record_keystroke(keycode).unwrap();
         }
 
@@ -869,10 +894,14 @@ mod tests {
     #[test]
     fn test_phys_ratio() {
         let doc = create_temp_doc();
-        let mut session = HybridJitterSession::new(doc.path(), Some(crate::jitter::Parameters {
-            sample_interval: 1,
-            ..crate::jitter::default_parameters()
-        })).unwrap();
+        let mut session = HybridJitterSession::new(
+            doc.path(),
+            Some(crate::jitter::Parameters {
+                sample_interval: 1,
+                ..crate::jitter::default_parameters()
+            }),
+        )
+        .unwrap();
 
         // Record keystrokes
         for _ in 0..10 {
@@ -888,10 +917,14 @@ mod tests {
     #[test]
     fn test_entropy_quality() {
         let doc = create_temp_doc();
-        let mut session = HybridJitterSession::new(doc.path(), Some(crate::jitter::Parameters {
-            sample_interval: 1,
-            ..crate::jitter::default_parameters()
-        })).unwrap();
+        let mut session = HybridJitterSession::new(
+            doc.path(),
+            Some(crate::jitter::Parameters {
+                sample_interval: 1,
+                ..crate::jitter::default_parameters()
+            }),
+        )
+        .unwrap();
 
         for _ in 0..5 {
             session.record_keystroke(0x0C).unwrap();

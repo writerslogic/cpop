@@ -424,7 +424,7 @@ mod tests {
         assert_eq!(idx1, 0);
         assert_eq!(mmr.size(), 1);
         let root1 = mmr.get_root().unwrap();
-        
+
         // 2. Append second leaf -> creates parent
         let idx2 = mmr.append(b"2").unwrap();
         assert_eq!(idx2, 1);
@@ -451,7 +451,7 @@ mod tests {
     fn test_inclusion_proof() {
         let store = Box::new(MemoryStore::new());
         let mmr = MMR::new(store).unwrap();
-        
+
         for i in 0..10 {
             mmr.append(&[i as u8]).unwrap();
         }
@@ -462,7 +462,7 @@ mod tests {
             // We need to find the node index for leaf ordinal i
             let leaf_idx = mmr.get_leaf_index(i).unwrap();
             let proof = mmr.generate_proof(leaf_idx).unwrap();
-            
+
             assert_eq!(proof.leaf_index, leaf_idx);
             assert_eq!(proof.root, mmr.get_root().unwrap());
         }

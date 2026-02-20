@@ -1028,12 +1028,14 @@ mod tests {
             return;
         }
 
-        // We might fail here if the test runner isn't signed/entitled, 
+        // We might fail here if the test runner isn't signed/entitled,
         // but it's better to try than not test at all.
         let provider = match try_init() {
             Some(p) => p,
             None => {
-                println!("try_init returned None despite is_secure_enclave_available returning true");
+                println!(
+                    "try_init returned None despite is_secure_enclave_available returning true"
+                );
                 return;
             }
         };
@@ -1043,7 +1045,7 @@ mod tests {
         assert!(caps.hardware_backed);
         assert!(caps.secure_clock);
         assert!(caps.monotonic_counter);
-        
+
         let device_id = provider.device_id();
         assert!(!device_id.is_empty());
         assert!(device_id.starts_with("se-"));
@@ -1054,10 +1056,10 @@ mod tests {
         // 2. Binding (Sign)
         let data = b"test-binding-data";
         let binding = provider.bind(data).expect("Bind failed");
-        
+
         assert_eq!(binding.provider_type, "secure-enclave");
         assert_eq!(binding.device_id, device_id);
-        
+
         // 3. Verify
         provider.verify(&binding).expect("Verification failed");
 
@@ -1071,7 +1073,7 @@ mod tests {
         let secret = b"my-secret-data";
         let sealed = provider.seal(secret, &[]).expect("Seal failed");
         assert_ne!(sealed, secret);
-        
+
         let unsealed = provider.unseal(&sealed).expect("Unseal failed");
         assert_eq!(unsealed, secret);
 
@@ -1080,13 +1082,14 @@ mod tests {
         // This might fail if the key wasn't generated with attestation capabilities
         // or if the test env restricts it, so we handle it gracefully-ish
         if let Ok(attestation) = provider.generate_key_attestation(challenge) {
-            let verified = provider.verify_key_attestation(&attestation, challenge)
+            let verified = provider
+                .verify_key_attestation(&attestation, challenge)
                 .expect("Attestation verification failed");
             assert!(verified);
         } else {
             println!("Key attestation generation failed (expected in some test environments)");
         }
-        
+
         // 7. Counter
         let count1 = provider.get_counter();
         let count2 = provider.increment_counter();

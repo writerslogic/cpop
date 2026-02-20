@@ -227,7 +227,7 @@ mod tests {
     fn mock_samples(intervals_ms: &[u64]) -> Vec<SimpleJitterSample> {
         let mut samples = Vec::new();
         let mut current_ns = 1_000_000_000u64;
-        
+
         // First sample
         samples.push(SimpleJitterSample {
             timestamp_ns: current_ns as i64,
@@ -260,7 +260,7 @@ mod tests {
         let intervals = vec![200, 250, 180, 220, 400, 210, 190, 230, 220, 200];
         let samples = mock_samples(&intervals);
         let fp = BehavioralFingerprint::from_samples(&samples);
-        
+
         assert!(fp.keystroke_interval_mean > 200.0 && fp.keystroke_interval_mean < 300.0);
         assert!(fp.keystroke_interval_std > 0.0);
         assert!(fp.keystroke_interval_skewness > 0.0); // Should be positively skewed by the 400ms interval
@@ -272,18 +272,23 @@ mod tests {
         let intervals = vec![200; 20];
         let samples = mock_samples(&intervals);
         let analysis = BehavioralFingerprint::detect_forgery(&samples);
-        
+
         assert!(analysis.is_suspicious);
-        assert!(analysis.flags.iter().any(|f| matches!(f, ForgeryFlag::TooRegular { .. })));
+        assert!(analysis
+            .flags
+            .iter()
+            .any(|f| matches!(f, ForgeryFlag::TooRegular { .. })));
     }
 
     #[test]
     fn test_detect_forgery_human_plausible() {
         // Varied intervals, positive skew, micro-pauses
-        let intervals = vec![180, 220, 190, 450, 210, 170, 230, 200, 190, 210, 500, 180, 220, 200, 190];
+        let intervals = vec![
+            180, 220, 190, 450, 210, 170, 230, 200, 190, 210, 500, 180, 220, 200, 190,
+        ];
         let samples = mock_samples(&intervals);
         let analysis = BehavioralFingerprint::detect_forgery(&samples);
-        
+
         assert!(!analysis.is_suspicious);
     }
 
@@ -294,9 +299,11 @@ mod tests {
         intervals.extend(vec![10, 5, 10, 5, 10]); // Robotic/Superhuman burst
         let samples = mock_samples(&intervals);
         let analysis = BehavioralFingerprint::detect_forgery(&samples);
-        
+
         assert!(analysis.is_suspicious);
-        assert!(analysis.flags.iter().any(|f| matches!(f, ForgeryFlag::SuperhumanSpeed { .. })));
+        assert!(analysis
+            .flags
+            .iter()
+            .any(|f| matches!(f, ForgeryFlag::SuperhumanSpeed { .. })));
     }
 }
-

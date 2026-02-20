@@ -118,10 +118,7 @@ extern "C" {
         attribute: CFStringRef,
         value: *mut CFTypeRef,
     ) -> i32;
-    fn AXUIElementCopyAttributeNames(
-        element: *mut std::ffi::c_void,
-        names: *mut CFTypeRef,
-    ) -> i32;
+    fn AXUIElementCopyAttributeNames(element: *mut std::ffi::c_void, names: *mut CFTypeRef) -> i32;
 }
 
 // AXError codes
@@ -465,17 +462,22 @@ fn get_document_info_for_pid(pid: i32) -> (Option<String>, Option<String>, Optio
     }
 }
 
-unsafe fn get_ax_string_attribute(element: *mut std::ffi::c_void, attribute: &str) -> Option<String> {
+unsafe fn get_ax_string_attribute(
+    element: *mut std::ffi::c_void,
+    attribute: &str,
+) -> Option<String> {
     let mut value: CFTypeRef = null_mut();
     let attr_name = CFString::new(attribute);
-    let result = AXUIElementCopyAttributeValue(element, attr_name.as_concrete_TypeRef(), &mut value);
+    let result =
+        AXUIElementCopyAttributeValue(element, attr_name.as_concrete_TypeRef(), &mut value);
 
     if result != K_AX_ERROR_SUCCESS || value.is_null() {
         return None;
     }
 
     // Try to interpret as CFString
-    let cf_string = CFString::wrap_under_create_rule(value as core_foundation_sys::string::CFStringRef);
+    let cf_string =
+        CFString::wrap_under_create_rule(value as core_foundation_sys::string::CFStringRef);
     let s = cf_string.to_string();
     if s.is_empty() {
         None
@@ -487,7 +489,8 @@ unsafe fn get_ax_string_attribute(element: *mut std::ffi::c_void, attribute: &st
 unsafe fn get_ax_url_as_path(element: *mut std::ffi::c_void) -> Option<String> {
     let mut value: CFTypeRef = null_mut();
     let attr_name = CFString::new(K_AX_URL_ATTRIBUTE);
-    let result = AXUIElementCopyAttributeValue(element, attr_name.as_concrete_TypeRef(), &mut value);
+    let result =
+        AXUIElementCopyAttributeValue(element, attr_name.as_concrete_TypeRef(), &mut value);
 
     if result != K_AX_ERROR_SUCCESS || value.is_null() {
         return None;

@@ -17,7 +17,6 @@
   <a href="https://github.com/writerslogic/witnessd/actions/workflows/release.yml"><img src="https://github.com/writerslogic/witnessd/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="https://slsa.dev/spec/v1.0/levels#build-l3"><img src="https://slsa.dev/images/gh-badge-level3.svg" alt="SLSA Level 3"></a>
   <a href="https://github.com/writerslogic/witnessd/releases"><img src="https://img.shields.io/github/v/release/writerslogic/witnessd" alt="GitHub release"></a>
-  <a href="https://github.com/writerslogic/witnessd/releases"><img src="https://img.shields.io/github/downloads/writerslogic/witnessd/total" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/coverage-95%25-orange" alt="Coverage">
 </p>
 

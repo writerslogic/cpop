@@ -99,12 +99,17 @@ impl Default for ActivityFingerprint {
 impl ActivityFingerprint {
     /// Create a fingerprint from a collection of samples.
     pub fn from_samples(samples: &[SimpleJitterSample]) -> Self {
-        let mut fp = Self::default();
-        fp.sample_count = samples.len() as u64;
-
         if samples.len() < 2 {
-            return fp;
+            return Self {
+                sample_count: samples.len() as u64,
+                ..Self::default()
+            };
         }
+
+        let mut fp = Self {
+            sample_count: samples.len() as u64,
+            ..Self::default()
+        };
 
         // Calculate IKIs
         let ikis: Vec<f64> = samples
@@ -254,8 +259,8 @@ impl IkiDistribution {
             return Self::default();
         }
 
-        let mean = intervals.iter().copied().collect::<Vec<_>>().mean();
-        let std_dev = intervals.iter().copied().collect::<Vec<_>>().std_dev();
+        let mean = intervals.to_vec().mean();
+        let std_dev = intervals.to_vec().std_dev();
 
         // Calculate skewness and kurtosis
         let skewness = calculate_skewness(intervals, mean, std_dev);
@@ -309,8 +314,7 @@ impl IkiDistribution {
         }
 
         for i in 0..self.histogram.len().min(other.histogram.len()) {
-            self.histogram[i] =
-                self.histogram[i] * self_weight + other.histogram[i] * other_weight;
+            self.histogram[i] = self.histogram[i] * self_weight + other.histogram[i] * other_weight;
         }
     }
 
@@ -385,8 +389,8 @@ impl ZoneProfile {
         }
         let total: usize = zone_counts.iter().sum();
         if total > 0 {
-            for i in 0..8 {
-                profile.zone_frequencies[i] = zone_counts[i] as f64 / total as f64;
+            for (i, &count) in zone_counts.iter().enumerate() {
+                profile.zone_frequencies[i] = count as f64 / total as f64;
             }
         }
 
@@ -399,8 +403,8 @@ impl ZoneProfile {
         }
         let trans_total: usize = transitions.iter().sum();
         if trans_total > 0 {
-            for i in 0..ZONE_TRANSITIONS {
-                profile.zone_transitions[i] = transitions[i] as f64 / trans_total as f64;
+            for (i, &count) in transitions.iter().enumerate() {
+                profile.zone_transitions[i] = count as f64 / trans_total as f64;
             }
         }
 
@@ -438,7 +442,11 @@ impl ZoneProfile {
                 self.zone_frequencies[i] * self_weight + other.zone_frequencies[i] * other_weight;
         }
 
-        for i in 0..self.zone_transitions.len().min(other.zone_transitions.len()) {
+        for i in 0..self
+            .zone_transitions
+            .len()
+            .min(other.zone_transitions.len())
+        {
             self.zone_transitions[i] =
                 self.zone_transitions[i] * self_weight + other.zone_transitions[i] * other_weight;
         }
@@ -600,9 +608,18 @@ impl PauseSignature {
             relative_similarity(self.thinking_pause_mean, other.thinking_pause_mean),
         ];
         let freq_sims = [
-            relative_similarity(self.sentence_pause_frequency, other.sentence_pause_frequency),
-            relative_similarity(self.paragraph_pause_frequency, other.paragraph_pause_frequency),
-            relative_similarity(self.thinking_pause_frequency, other.thinking_pause_frequency),
+            relative_similarity(
+                self.sentence_pause_frequency,
+                other.sentence_pause_frequency,
+            ),
+            relative_similarity(
+                self.paragraph_pause_frequency,
+                other.paragraph_pause_frequency,
+            ),
+            relative_similarity(
+                self.thinking_pause_frequency,
+                other.thinking_pause_frequency,
+            ),
         ];
 
         let mean_sim: f64 = mean_sims.iter().sum::<f64>() / 3.0;
@@ -852,7 +869,11 @@ mod tests {
         for (i, &interval) in intervals_ms.iter().enumerate() {
             samples.push(SimpleJitterSample {
                 timestamp_ns: ts,
-                duration_since_last_ns: if i == 0 { 0 } else { interval as u64 * 1_000_000 },
+                duration_since_last_ns: if i == 0 {
+                    0
+                } else {
+                    interval as u64 * 1_000_000
+                },
                 zone: (i % 8) as u8,
             });
             ts += interval * 1_000_000;

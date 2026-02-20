@@ -1062,10 +1062,7 @@ pub fn get_research_status() -> Result<ResearchStatus> {
     let guard = GLOBAL_CONTEXT.research_collector.lock().unwrap();
 
     let sessions_collected = guard.as_ref().map(|c| c.session_count()).unwrap_or(0);
-    let ready_for_upload = guard
-        .as_ref()
-        .map(|c| c.should_upload())
-        .unwrap_or(false);
+    let ready_for_upload = guard.as_ref().map(|c| c.should_upload()).unwrap_or(false);
 
     Ok(ResearchStatus {
         enabled: config.research.contribute_to_research,
@@ -1073,7 +1070,11 @@ pub fn get_research_status() -> Result<ResearchStatus> {
         sessions_collected,
         min_sessions_for_upload: MIN_SESSIONS_FOR_UPLOAD,
         ready_for_upload,
-        data_dir: config.research.research_data_dir.to_string_lossy().to_string(),
+        data_dir: config
+            .research
+            .research_data_dir
+            .to_string_lossy()
+            .to_string(),
         upload_url: RESEARCH_UPLOAD_URL.to_string(),
     })
 }
@@ -1367,14 +1368,14 @@ fn get_default_data_dir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_api_full_lifecycle() {
         let dir = tempdir().unwrap();
         let data_dir = dir.path().to_string_lossy().to_string();
-        
+
         // 1. Init
         let fingerprint = init_witnessd(Some(data_dir.clone()), None).expect("init failed");
         assert!(!fingerprint.is_empty());
@@ -1388,7 +1389,8 @@ mod tests {
         let doc_path = fs::canonicalize(&doc_path).unwrap();
         let path_str = doc_path.to_string_lossy().to_string();
 
-        let info = commit_document(path_str.clone(), Some("Initial commit".to_string())).expect("commit failed");
+        let info = commit_document(path_str.clone(), Some("Initial commit".to_string()))
+            .expect("commit failed");
         assert_eq!(info.ordinal, 0);
         assert_eq!(info.message, Some("Initial commit".to_string()));
 
@@ -1418,13 +1420,13 @@ mod tests {
         // 4. Presence
         let session_id = start_presence_session().expect("start presence failed");
         assert!(!session_id.is_empty());
-        
+
         let presence_status = get_presence_status();
         assert!(presence_status.session_active);
-        
-        // Depending on timing, a challenge might not be issued immediately 
+
+        // Depending on timing, a challenge might not be issued immediately
         // unless we force it or wait.
-        let _ = get_pending_challenge(); 
+        let _ = get_pending_challenge();
 
         let final_presence = end_presence_session().expect("end presence failed");
         assert!(!final_presence.session_active);
@@ -1433,7 +1435,7 @@ mod tests {
         let mut config = get_config().expect("get config failed");
         config.retention_days = 99;
         set_config(config).expect("set config failed");
-        
+
         let updated_config = get_config().expect("get config failed");
         assert_eq!(updated_config.retention_days, 99);
     }
@@ -1446,4 +1448,3 @@ mod tests {
         assert_eq!(m1.split_whitespace().count(), 12);
     }
 }
-

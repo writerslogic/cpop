@@ -119,7 +119,9 @@ pub fn compare_fingerprints(a: &AuthorFingerprint, b: &AuthorFingerprint) -> Fin
                 &va.word_length_distribution,
                 &vb.word_length_distribution,
             );
-            let punct = va.punctuation_signature.similarity(&vb.punctuation_signature);
+            let punct = va
+                .punctuation_signature
+                .similarity(&vb.punctuation_signature);
             let ngram = va.ngram_signature.similarity(&vb.ngram_signature);
             (Some(sim), Some(word_len), Some(punct), Some(ngram))
         } else {
@@ -219,7 +221,11 @@ impl ProfileMatcher {
             .collect();
 
         // Sort by similarity (descending)
-        results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit results
         results.truncate(self.max_results);

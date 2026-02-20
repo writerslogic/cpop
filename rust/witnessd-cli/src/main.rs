@@ -11,9 +11,7 @@ use std::time::{Duration, Instant};
 use witnessd_core::config::WitnessdConfig;
 use witnessd_core::declaration::{self, AIExtent, AIPurpose, ModalityType};
 use witnessd_core::evidence;
-use witnessd_core::fingerprint::{
-    ConsentManager, ConsentStatus, FingerprintManager, FingerprintStatus, ProfileId,
-};
+use witnessd_core::fingerprint::{ConsentManager, ConsentStatus, FingerprintManager, ProfileId};
 use witnessd_core::jitter::{
     default_parameters as default_jitter_params, Session as JitterSession,
 };
@@ -24,7 +22,7 @@ use witnessd_core::presence::{
 use witnessd_core::tpm;
 use witnessd_core::vdf;
 use witnessd_core::vdf::params::{calibrate, Parameters as VdfParameters};
-use witnessd_core::{derive_hmac_key, DaemonManager, DaemonStatus, SecureEvent, SecureStore};
+use witnessd_core::{derive_hmac_key, DaemonManager, SecureEvent, SecureStore};
 
 mod smart_defaults;
 
@@ -66,11 +64,15 @@ enum Commands {
     /// Initialize witnessd - creates keys, identity, and database
     ///
     /// Creates ~/.witnessd with signing keys and tamper-evident database.
-    #[command(alias = "INIT", alias = "Init", after_help = "\
+    #[command(
+        alias = "INIT",
+        alias = "Init",
+        after_help = "\
 WHAT IT CREATES:\n  \
     ~/.witnessd/signing_key     Your private key (keep secure!)\n  \
     ~/.witnessd/events.db       Tamper-evident checkpoint database\n\n\
-NEXT: Run 'witnessd calibrate' to optimize for your CPU.")]
+NEXT: Run 'witnessd calibrate' to optimize for your CPU."
+    )]
     Init {
         /// Optional path (ignored, for forgiveness of 'witnessd init .')
         #[arg(hide = true)]
@@ -79,12 +81,17 @@ NEXT: Run 'witnessd calibrate' to optimize for your CPU.")]
     /// Create a checkpoint for a file with VDF time proof
     ///
     /// Records file state with cryptographic hash and VDF proof.
-    #[command(alias = "COMMIT", alias = "Commit", alias = "checkpoint", after_help = "\
+    #[command(
+        alias = "COMMIT",
+        alias = "Commit",
+        alias = "checkpoint",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd commit essay.txt -m \"Draft 1\"\n  \
     witnessd commit thesis.tex -m \"Chapter 2\"\n  \
     witnessd commit              (select from recently modified files)\n\n\
-TIP: Checkpoint after sections, before revisions, and on breaks.")]
+TIP: Checkpoint after sections, before revisions, and on breaks."
+    )]
     Commit {
         /// Path to the file to checkpoint (optional - will prompt if omitted)
         file: Option<PathBuf>,
@@ -95,10 +102,15 @@ TIP: Checkpoint after sections, before revisions, and on breaks.")]
     /// Show checkpoint history for a file
     ///
     /// Displays all checkpoints with timestamps, hashes, and VDF elapsed times.
-    #[command(alias = "LOG", alias = "Log", alias = "history", after_help = "\
+    #[command(
+        alias = "LOG",
+        alias = "Log",
+        alias = "history",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd log essay.txt      View checkpoint history\n  \
-    witnessd log                List all tracked documents")]
+    witnessd log                List all tracked documents"
+    )]
     Log {
         /// Path to the file (optional - lists all tracked files if omitted)
         file: Option<PathBuf>,
@@ -185,13 +197,17 @@ WHEN TO RE-CALIBRATE:\n  \
     /// Watch folders for automatic checkpointing
     ///
     /// Monitors directories and creates checkpoints when files change.
-    #[command(alias = "WATCH", alias = "Watch", after_help = "\
+    #[command(
+        alias = "WATCH",
+        alias = "Watch",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd watch add ./documents\n  \
     witnessd watch add ./thesis -p \"*.tex,*.bib\"\n  \
     witnessd watch start\n  \
     witnessd watch                  (start watching if folders configured)\n\n\
-DEFAULT PATTERNS: *.txt,*.md,*.rtf,*.doc,*.docx")]
+DEFAULT PATTERNS: *.txt,*.md,*.rtf,*.doc,*.docx"
+    )]
     Watch {
         #[command(subcommand)]
         action: Option<WatchAction>,
@@ -202,7 +218,10 @@ DEFAULT PATTERNS: *.txt,*.md,*.rtf,*.doc,*.docx")]
     /// Start the witnessd daemon
     ///
     /// Starts background monitoring with keystroke capture and automatic checkpointing.
-    #[command(alias = "START", alias = "Start", after_help = "\
+    #[command(
+        alias = "START",
+        alias = "Start",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd start                  Start daemon in background\n  \
     witnessd start --foreground     Run in foreground (for debugging)\n\n\
@@ -210,7 +229,8 @@ The daemon provides:\n  \
     - System-wide keystroke monitoring (timing only, not content)\n  \
     - Automatic checkpointing on file save\n  \
     - Activity fingerprint accumulation\n  \
-    - Idle detection")]
+    - Idle detection"
+    )]
     Start {
         /// Run in foreground instead of background
         #[arg(short, long)]
@@ -223,7 +243,11 @@ The daemon provides:\n  \
     ///
     /// Activity fingerprinting captures HOW you type (timing, cadence).
     /// Voice fingerprinting captures writing style (requires explicit consent).
-    #[command(alias = "FINGERPRINT", alias = "Fingerprint", alias = "fp", after_help = "\
+    #[command(
+        alias = "FINGERPRINT",
+        alias = "Fingerprint",
+        alias = "fp",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd fingerprint status          Show fingerprint status\n  \
     witnessd fingerprint enable-voice    Enable voice fingerprinting\n  \
@@ -231,7 +255,8 @@ EXAMPLES:\n  \
     witnessd fingerprint compare A B     Compare two profiles\n\n\
 PRIVACY:\n  \
     Activity fingerprinting is ON by default (captures timing only).\n  \
-    Voice fingerprinting is OFF by default (requires explicit consent).")]
+    Voice fingerprinting is OFF by default (requires explicit consent)."
+    )]
     Fingerprint {
         #[command(subcommand)]
         action: FingerprintAction,
@@ -239,21 +264,30 @@ PRIVACY:\n  \
     /// Manage document sessions
     ///
     /// Sessions track work on documents across editing sessions.
-    #[command(alias = "SESSION", alias = "Session", after_help = "\
+    #[command(
+        alias = "SESSION",
+        alias = "Session",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd session list            List active sessions\n  \
     witnessd session show <id>       Show session details\n  \
-    witnessd session export <id>     Export session evidence")]
+    witnessd session export <id>     Export session evidence"
+    )]
     Session {
         #[command(subcommand)]
         action: SessionAction,
     },
     /// Manage witnessd configuration
-    #[command(alias = "CONFIG", alias = "Config", alias = "cfg", after_help = "\
+    #[command(
+        alias = "CONFIG",
+        alias = "Config",
+        alias = "cfg",
+        after_help = "\
 EXAMPLES:\n  \
     witnessd config show             Show all configuration\n  \
     witnessd config set sentinel.auto_start true\n  \
-    witnessd config edit             Open in editor")]
+    witnessd config edit             Open in editor"
+    )]
     Config {
         #[command(subcommand)]
         action: ConfigAction,
@@ -894,7 +928,10 @@ fn cmd_export(
                 // Pick most recent
                 candidates.sort_by(|a, b| b.1.cmp(&a.1));
                 if let Some((path, _)) = candidates.first() {
-                    println!("Found matching tracking session: {:?}", path.file_name().unwrap());
+                    println!(
+                        "Found matching tracking session: {:?}",
+                        path.file_name().unwrap()
+                    );
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                         // Extract ID from filename (id.session.json or id.hybrid.json)
                         let id = name.split('.').next().unwrap_or("").to_string();
@@ -909,13 +946,15 @@ fn cmd_export(
         if let Some(id) = session_to_load {
             let session_path = tracking_dir.join(format!("{}.session.json", id));
             let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", id));
-            
+
             keystroke_evidence = if hybrid_path.exists() {
                 #[cfg(feature = "physjitter")]
                 {
                     match witnessd_core::HybridJitterSession::load(&hybrid_path) {
-                        Ok(s) => serde_json::to_value(s.export()).unwrap_or(serde_json::Value::Null),
-                        Err(_) => serde_json::Value::Null
+                        Ok(s) => {
+                            serde_json::to_value(s.export()).unwrap_or(serde_json::Value::Null)
+                        }
+                        Err(_) => serde_json::Value::Null,
                     }
                 }
                 #[cfg(not(feature = "physjitter"))]
@@ -925,7 +964,7 @@ fn cmd_export(
             } else if session_path.exists() {
                 match JitterSession::load(&session_path) {
                     Ok(s) => serde_json::to_value(s.export()).unwrap_or(serde_json::Value::Null),
-                    Err(_) => serde_json::Value::Null
+                    Err(_) => serde_json::Value::Null,
                 }
             } else {
                 serde_json::Value::Null
@@ -938,7 +977,9 @@ fn cmd_export(
             }
         } else {
             println!("No matching tracking session found for this document.");
-            println!("Tip: Run 'witnessd track start' before writing to generate enhanced evidence.");
+            println!(
+                "Tip: Run 'witnessd track start' before writing to generate enhanced evidence."
+            );
         }
     }
 
@@ -1862,7 +1903,6 @@ fn cmd_stop() -> Result<()> {
             // Send SIGTERM to the daemon process
             #[cfg(unix)]
             {
-                use std::os::unix::process::CommandExt;
                 let _ = std::process::Command::new("kill")
                     .arg("-TERM")
                     .arg(pid.to_string())
@@ -1952,9 +1992,13 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 println!("Profile: None created yet");
                 println!("  Start the daemon to begin building your fingerprint.");
             } else if fp_status.activity_samples < min_samples {
-                let progress = (fp_status.activity_samples as f64 / min_samples as f64 * 100.0).min(100.0);
+                let progress =
+                    (fp_status.activity_samples as f64 / min_samples as f64 * 100.0).min(100.0);
                 println!("Profile: Building ({:.0}% complete)", progress);
-                println!("  Samples: {} / {} minimum", fp_status.activity_samples, min_samples);
+                println!(
+                    "  Samples: {} / {} minimum",
+                    fp_status.activity_samples, min_samples
+                );
             } else {
                 println!("Profile: Ready");
                 println!("  Confidence: {:.1}%", fp_status.confidence * 100.0);
@@ -2002,7 +2046,10 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             // Show consent explanation
             println!("=== Voice Fingerprinting Consent ===");
             println!();
-            println!("{}", witnessd_core::fingerprint::consent::CONSENT_EXPLANATION);
+            println!(
+                "{}",
+                witnessd_core::fingerprint::consent::CONSENT_EXPLANATION
+            );
             println!();
 
             // Ask for consent
@@ -2015,7 +2062,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             let response = response.trim().to_lowercase();
 
             if response == "yes" || response == "y" {
-                consent_manager.grant_consent()
+                consent_manager
+                    .grant_consent()
                     .map_err(|e| anyhow!("Failed to record consent: {}", e))?;
 
                 let mut config = config;
@@ -2026,7 +2074,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 println!("Voice fingerprinting enabled.");
                 println!("Your writing style will now be analyzed (no raw text stored).");
             } else {
-                consent_manager.deny_consent()
+                consent_manager
+                    .deny_consent()
                     .map_err(|e| anyhow!("Failed to record denial: {}", e))?;
 
                 println!();
@@ -2039,7 +2088,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
 
             // Revoke consent
-            consent_manager.revoke_consent()
+            consent_manager
+                .revoke_consent()
                 .map_err(|e| anyhow!("Failed to revoke consent: {}", e))?;
 
             // Update config
@@ -2060,7 +2110,10 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
 
             let profile_id: ProfileId = id.unwrap_or_else(|| {
                 // Try to get current profile ID
-                manager.status().current_profile_id.unwrap_or_else(|| "default".to_string())
+                manager
+                    .status()
+                    .current_profile_id
+                    .unwrap_or_else(|| "default".to_string())
             });
 
             match manager.load(&profile_id) {
@@ -2077,16 +2130,16 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                     println!("Activity Fingerprint:");
                     println!("  IKI mean: {:.1} ms", fp.activity.iki_distribution.mean);
                     println!("  IKI std: {:.1} ms", fp.activity.iki_distribution.std_dev);
-                    println!("  Zone preference: {}", fp.activity.zone_profile.dominant_zone());
+                    println!(
+                        "  Zone preference: {}",
+                        fp.activity.zone_profile.dominant_zone()
+                    );
 
                     if let Some(voice) = &fp.voice {
                         println!();
                         println!("Voice Fingerprint:");
                         println!("  Word samples: {}", voice.total_words);
-                        println!(
-                            "  Avg word length: {:.1}",
-                            voice.avg_word_length()
-                        );
+                        println!("  Avg word length: {:.1}", voice.avg_word_length());
                     }
                 }
                 Err(e) => {
@@ -2099,7 +2152,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             let manager = FingerprintManager::new(&fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
-            let comparison = manager.compare(&id1, &id2)
+            let comparison = manager
+                .compare(&id1, &id2)
                 .map_err(|e| anyhow!("Failed to compare profiles: {}", e))?;
 
             println!("=== Fingerprint Comparison ===");
@@ -2108,7 +2162,10 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             println!("Profile B: {}", comparison.profile_b);
             println!();
             println!("Overall Similarity: {:.1}%", comparison.similarity * 100.0);
-            println!("Activity Similarity: {:.1}%", comparison.activity_similarity * 100.0);
+            println!(
+                "Activity Similarity: {:.1}%",
+                comparison.activity_similarity * 100.0
+            );
             if let Some(voice_sim) = comparison.voice_similarity {
                 println!("Voice Similarity: {:.1}%", voice_sim * 100.0);
             }
@@ -2121,7 +2178,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             let manager = FingerprintManager::new(&fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
-            let profiles = manager.list_profiles()
+            let profiles = manager
+                .list_profiles()
                 .map_err(|e| anyhow!("Failed to list profiles: {}", e))?;
 
             if profiles.is_empty() {
@@ -2164,7 +2222,8 @@ fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             let mut manager = FingerprintManager::new(&fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
-            manager.delete(&id)
+            manager
+                .delete(&id)
                 .map_err(|e| anyhow!("Failed to delete profile: {}", e))?;
 
             println!("Profile '{}' deleted.", id);
@@ -2204,9 +2263,18 @@ fn cmd_session(action: SessionAction) -> Result<()> {
 
             println!("Active sessions:");
             for session in sessions {
-                let id = session.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let binding = session.get("binding_type").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let samples = session.get("sample_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let id = session
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let binding = session
+                    .get("binding_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let samples = session
+                    .get("sample_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
 
                 println!("  {}: {} binding, {} samples", id, binding, samples);
             }
@@ -2262,24 +2330,39 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
             println!("Data directory: {}", config.data_dir.display());
             println!();
             println!("[VDF]");
-            println!("  iterations_per_second: {}", config.vdf.iterations_per_second);
+            println!(
+                "  iterations_per_second: {}",
+                config.vdf.iterations_per_second
+            );
             println!("  min_iterations: {}", config.vdf.min_iterations);
             println!("  max_iterations: {}", config.vdf.max_iterations);
             println!();
             println!("[Sentinel]");
             println!("  auto_start: {}", config.sentinel.auto_start);
-            println!("  heartbeat_interval_secs: {}", config.sentinel.heartbeat_interval_secs);
-            println!("  checkpoint_interval_secs: {}", config.sentinel.checkpoint_interval_secs);
+            println!(
+                "  heartbeat_interval_secs: {}",
+                config.sentinel.heartbeat_interval_secs
+            );
+            println!(
+                "  checkpoint_interval_secs: {}",
+                config.sentinel.checkpoint_interval_secs
+            );
             println!("  idle_timeout_secs: {}", config.sentinel.idle_timeout_secs);
             println!();
             println!("[Fingerprint]");
-            println!("  activity_enabled: {}", config.fingerprint.activity_enabled);
+            println!(
+                "  activity_enabled: {}",
+                config.fingerprint.activity_enabled
+            );
             println!("  voice_enabled: {}", config.fingerprint.voice_enabled);
             println!("  retention_days: {}", config.fingerprint.retention_days);
             println!("  min_samples: {}", config.fingerprint.min_samples);
             println!();
             println!("[Privacy]");
-            println!("  detect_sensitive_fields: {}", config.privacy.detect_sensitive_fields);
+            println!(
+                "  detect_sensitive_fields: {}",
+                config.privacy.detect_sensitive_fields
+            );
             println!("  hash_urls: {}", config.privacy.hash_urls);
             println!("  obfuscate_titles: {}", config.privacy.obfuscate_titles);
             println!();
@@ -2294,47 +2377,58 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
 
             match parts.as_slice() {
                 ["sentinel", "auto_start"] => {
-                    config.sentinel.auto_start = value.parse()
+                    config.sentinel.auto_start = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["sentinel", "heartbeat_interval_secs"] => {
-                    config.sentinel.heartbeat_interval_secs = value.parse()
+                    config.sentinel.heartbeat_interval_secs = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid integer value: {}", value))?;
                 }
                 ["sentinel", "checkpoint_interval_secs"] => {
-                    config.sentinel.checkpoint_interval_secs = value.parse()
+                    config.sentinel.checkpoint_interval_secs = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid integer value: {}", value))?;
                 }
                 ["sentinel", "idle_timeout_secs"] => {
-                    config.sentinel.idle_timeout_secs = value.parse()
+                    config.sentinel.idle_timeout_secs = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid integer value: {}", value))?;
                 }
                 ["fingerprint", "activity_enabled"] => {
-                    config.fingerprint.activity_enabled = value.parse()
+                    config.fingerprint.activity_enabled = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["fingerprint", "voice_enabled"] => {
-                    config.fingerprint.voice_enabled = value.parse()
+                    config.fingerprint.voice_enabled = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["fingerprint", "retention_days"] => {
-                    config.fingerprint.retention_days = value.parse()
+                    config.fingerprint.retention_days = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid integer value: {}", value))?;
                 }
                 ["fingerprint", "min_samples"] => {
-                    config.fingerprint.min_samples = value.parse()
+                    config.fingerprint.min_samples = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid integer value: {}", value))?;
                 }
                 ["privacy", "detect_sensitive_fields"] => {
-                    config.privacy.detect_sensitive_fields = value.parse()
+                    config.privacy.detect_sensitive_fields = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["privacy", "hash_urls"] => {
-                    config.privacy.hash_urls = value.parse()
+                    config.privacy.hash_urls = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["privacy", "obfuscate_titles"] => {
-                    config.privacy.obfuscate_titles = value.parse()
+                    config.privacy.obfuscate_titles = value
+                        .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 _ => {
@@ -2634,16 +2728,16 @@ async fn run() -> Result<()> {
 
     // Auto-start daemon if configured and not already running
     // (Skip for start/stop/status/init commands to avoid recursion)
-    let should_auto_start = match &cli.command {
+    let should_auto_start = !matches!(
+        &cli.command,
         Some(Commands::Start { .. })
-        | Some(Commands::Stop)
-        | Some(Commands::Status)
-        | Some(Commands::Init { .. })
-        | Some(Commands::Calibrate)
-        | Some(Commands::Config { .. })
-        | None => false,
-        _ => true,
-    };
+            | Some(Commands::Stop)
+            | Some(Commands::Status)
+            | Some(Commands::Init { .. })
+            | Some(Commands::Calibrate)
+            | Some(Commands::Config { .. })
+            | None
+    );
 
     if should_auto_start {
         if let Ok(dir) = witnessd_dir() {
@@ -2675,11 +2769,7 @@ async fn run() -> Result<()> {
             // Use smart log to handle optional file
             cmd_log_smart(file)?;
         }
-        Some(Commands::Export {
-            file,
-            tier,
-            output,
-        }) => {
+        Some(Commands::Export { file, tier, output }) => {
             cmd_export(&file, &tier, output, None)?;
         }
         Some(Commands::Verify { file, key }) => {

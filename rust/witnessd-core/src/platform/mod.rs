@@ -38,21 +38,21 @@ pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-pub mod synthetic;
-pub mod mouse_stego;
 pub mod broadcaster;
+pub mod mouse_stego;
+pub mod synthetic;
 
 // Re-export mouse steganography
 pub use mouse_stego::{compute_mouse_jitter, MouseStegoEngine};
 
 // Re-export event broadcaster
-pub use broadcaster::{EventBroadcaster, SyncEventBroadcaster, SubscriptionId};
+pub use broadcaster::{EventBroadcaster, SubscriptionId, SyncEventBroadcaster};
 
 // Re-export common types
 pub use types::{
     DualLayerValidation, EventVerificationResult, FocusInfo, HIDDeviceInfo, KeystrokeEvent,
-    MouseEvent, MouseIdleStats, MouseStegoMode, MouseStegoParams,
-    PermissionStatus, RejectionReasons, SyntheticStats,
+    MouseEvent, MouseIdleStats, MouseStegoMode, MouseStegoParams, PermissionStatus,
+    RejectionReasons, SyntheticStats,
 };
 
 use anyhow::Result;
@@ -268,11 +268,14 @@ pub use macos::{
     get_active_focus as macos_get_active_focus, get_hid_keystroke_count, get_strict_mode,
     get_synthetic_stats, is_hid_monitoring_running, request_accessibility_permissions,
     request_input_monitoring_permissions, reset_hid_keystroke_count, reset_synthetic_stats,
-    set_strict_mode, validate_dual_layer, verify_event_source, DualLayerValidation as MacOSDualLayerValidation,
+    set_strict_mode, validate_dual_layer, verify_event_source,
+    DualLayerValidation as MacOSDualLayerValidation,
     EventVerificationResult as MacOSEventVerificationResult, FocusInfo as MacOSFocusInfo,
     HIDDeviceInfo as MacOSHIDDeviceInfo, KeystrokeInfo, KeystrokeMonitor,
     PermissionStatus as MacOSPermissionStatus, SyntheticEventStats,
 };
 
 #[cfg(target_os = "windows")]
-pub use windows::{get_active_focus as windows_get_active_focus, FocusInfo as WindowsFocusInfo};
+pub use types::FocusInfo as WindowsFocusInfo;
+#[cfg(target_os = "windows")]
+pub use windows::get_active_focus as windows_get_active_focus;

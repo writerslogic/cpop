@@ -275,7 +275,7 @@ fn test_mouse_stego_engine() {
     let different_jitter = engine3.next_jitter().unwrap();
     // Very unlikely to match (1 in 1500 chance)
     // We just verify it runs without error
-    assert!(different_jitter >= 500 && different_jitter <= 2000);
+    assert!((500..=2000).contains(&different_jitter));
 }
 
 #[test]

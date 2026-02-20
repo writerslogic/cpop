@@ -40,12 +40,7 @@ impl KeystrokeEvent {
     }
 
     /// Create a keystroke event with hardware verification status.
-    pub fn with_verification(
-        timestamp_ns: i64,
-        keycode: u16,
-        zone: u8,
-        is_hardware: bool,
-    ) -> Self {
+    pub fn with_verification(timestamp_ns: i64, keycode: u16, zone: u8, is_hardware: bool) -> Self {
         Self {
             timestamp_ns,
             keycode,
@@ -62,7 +57,7 @@ impl KeystrokeEvent {
 // =============================================================================
 
 /// Information about the currently focused application and document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FocusInfo {
     /// Name of the application
     pub app_name: String,
@@ -76,19 +71,6 @@ pub struct FocusInfo {
     pub doc_title: Option<String>,
     /// Title of the window
     pub window_title: Option<String>,
-}
-
-impl Default for FocusInfo {
-    fn default() -> Self {
-        Self {
-            app_name: String::new(),
-            bundle_id: String::new(),
-            pid: 0,
-            doc_path: None,
-            doc_title: None,
-            window_title: None,
-        }
-    }
 }
 
 // =============================================================================
@@ -249,7 +231,7 @@ impl EventVerificationResult {
 // =============================================================================
 
 /// Permission status for platform-specific security features.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PermissionStatus {
     /// Accessibility/automation permissions (macOS)
     pub accessibility: bool,
@@ -259,17 +241,6 @@ pub struct PermissionStatus {
     pub input_devices: bool,
     /// All required permissions granted
     pub all_granted: bool,
-}
-
-impl Default for PermissionStatus {
-    fn default() -> Self {
-        Self {
-            accessibility: false,
-            input_monitoring: false,
-            input_devices: false,
-            all_granted: false,
-        }
-    }
 }
 
 impl PermissionStatus {
@@ -491,7 +462,8 @@ impl MouseIdleStats {
             return 0.0;
         }
         let expected = self.total_events as f64 / 4.0;
-        let chi_squared: f64 = self.quadrant_counts
+        let chi_squared: f64 = self
+            .quadrant_counts
             .iter()
             .map(|&count| {
                 let diff = count as f64 - expected;
@@ -524,20 +496,15 @@ impl MouseIdleStats {
 // =============================================================================
 
 /// Mode for mouse steganography.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MouseStegoMode {
     /// Inject timing jitter only (safest, default)
+    #[default]
     TimingOnly,
     /// Inject in sub-pixel coordinates (higher bandwidth, platform-specific)
     SubPixel,
     /// Inject signature on first move only (minimal footprint)
     FirstMoveOnly,
-}
-
-impl Default for MouseStegoMode {
-    fn default() -> Self {
-        Self::TimingOnly
-    }
 }
 
 /// Parameters for mouse steganography.

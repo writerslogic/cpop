@@ -438,7 +438,8 @@ impl Builder {
             return self;
         }
         if evidence.verify().is_err() {
-            self.errors.push("hybrid keystroke evidence invalid".to_string());
+            self.errors
+                .push("hybrid keystroke evidence invalid".to_string());
             return self;
         }
 

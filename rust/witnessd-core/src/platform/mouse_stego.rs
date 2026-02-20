@@ -240,11 +240,7 @@ impl MouseStegoEngine {
         for &(event_count, actual_jitter) in jitter_values {
             let expected = compute_mouse_jitter(seed, doc_hash, event_count, prev_hash, params);
 
-            let diff = if actual_jitter > expected {
-                actual_jitter - expected
-            } else {
-                expected - actual_jitter
-            };
+            let diff = actual_jitter.abs_diff(expected);
 
             if diff > tolerance_micros {
                 return false;
@@ -400,10 +396,7 @@ mod tests {
         let mut tampered = jitter_values.clone();
         tampered[2].1 += 500; // Add 500μs to third value
         assert!(!MouseStegoEngine::verify_sequence(
-            &seed,
-            doc_hash,
-            &tampered,
-            &params
+            &seed, doc_hash, &tampered, &params
         ));
     }
 
