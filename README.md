@@ -33,7 +33,7 @@ This repository contains only the core Rust library. For the full witnessd ecosy
 | Repository | Description |
 |:-----------|:------------|
 | **[witnessd](https://github.com/writerslogic/witnessd)** | Core cryptographic library (this repo) |
-| **[witnessd-cli](https://github.com/writerslogic/witnessd-cli)** | Command-line interface + Linux packaging |
+| **[witnessd-cli](https://github.com/writerslogic/witnessd-cli)** | Command-line interface + Linux packaging (GPL-3.0) |
 | **[witnessd-docs](https://github.com/writerslogic/witnessd-docs)** | Documentation, schemas, and specifications |
 
 ## Usage
