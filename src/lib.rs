@@ -105,6 +105,13 @@ pub use crate::rfc::{
     VdfProofRfc,
 };
 
+// Re-export wire format types (CDDL-conformant)
+pub use crate::rfc::wire_types::{
+    AttestationResultWire, CheckpointWire, DocumentRef as WireDocumentRef, EvidencePacketWire,
+    HashAlgorithm, HashValue as WireHashValue, ProcessProof as WireProcessProof, Verdict,
+    CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET as CBOR_TAG_EVIDENCE_PACKET_WIRE,
+};
+
 // Re-export unified error types
 pub use crate::error::{Error, Result};
 

@@ -21,6 +21,7 @@ pub mod jitter_binding;
 pub mod packet;
 pub mod time_evidence;
 pub mod vdf;
+pub mod wire_types;
 
 // Re-export commonly used types
 pub use biology::{
@@ -43,3 +44,13 @@ pub use time_evidence::{
     BlockchainAnchor, RoughtimeSample, TimeBindingTier, TimeEvidence, TsaResponse,
 };
 pub use vdf::{CalibrationAttestation, VdfProofRfc};
+pub use wire_types::{
+    AbsenceClaim, AbsenceType, ActiveProbe, AttestationResultWire,
+    AttestationTier as WireAttestationTier, BindingType, ChannelBinding, CheckpointWire,
+    CompactRef as WireCompactRef, ContentTier, CostUnit, DocumentRef, EditDelta, EntropyReport,
+    EvidencePacketWire, ForensicFlag, ForensicSummary, ForgeryCostEstimate, HashAlgorithm,
+    HashSaltMode, HashValue, JitterBindingWire, MerkleProof as WireMerkleProof, PhysicalLiveness,
+    PhysicalState, PresenceChallenge, ProbeType, ProcessProof, ProfileDeclarationWire,
+    ProofAlgorithm, ProofParams, SelfReceipt, TimeWindow, Verdict, CBOR_TAG_ATTESTATION_RESULT,
+    CBOR_TAG_EVIDENCE_PACKET as CBOR_TAG_EVIDENCE_PACKET_WIRE,
+};

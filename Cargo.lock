@@ -4817,6 +4817,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "serde",
+ "serde_bytes",
  "serde_json",
  "sha2",
  "statrs",
