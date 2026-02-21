@@ -7,6 +7,33 @@ use std::time::Duration;
 
 use crate::vdf::{self, Parameters, VdfProof};
 
+/// Entanglement mode for checkpoint chain computation.
+///
+/// WAR/1.0 (Legacy): VDF input = hash(content_hash ‖ previous_checkpoint_hash ‖ ordinal)
+/// WAR/1.1 (Entangled): VDF input = hash(previous_vdf_output ‖ jitter_hash ‖ content_hash ‖ ordinal)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EntanglementMode {
+    /// Legacy mode (WAR/1.0): parallel computation possible
+    #[default]
+    Legacy,
+    /// Entangled mode (WAR/1.1): each VDF depends on previous VDF output + jitter
+    Entangled,
+}
+
+/// Jitter binding for entangled checkpoints.
+///
+/// This captures the jitter evidence hash at the time of checkpoint creation,
+/// creating a cryptographic link between behavioral timing and the checkpoint chain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JitterBinding {
+    /// Hash of the jitter evidence structure at checkpoint time
+    pub jitter_hash: [u8; 32],
+    /// Session ID of the jitter session
+    pub session_id: String,
+    /// Number of keystrokes at checkpoint time
+    pub keystroke_count: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub ordinal: u64,
@@ -20,6 +47,9 @@ pub struct Checkpoint {
     pub vdf: Option<VdfProof>,
     pub tpm_binding: Option<TpmBinding>,
     pub signature: Option<Vec<u8>>,
+    /// Jitter binding for entangled mode (WAR/1.1)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jitter_binding: Option<JitterBinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,12 +68,27 @@ pub struct Chain {
     pub created_at: DateTime<Utc>,
     pub checkpoints: Vec<Checkpoint>,
     pub vdf_params: Parameters,
+    /// Entanglement mode for this chain (defaults to Legacy for backward compatibility)
+    #[serde(default)]
+    pub entanglement_mode: EntanglementMode,
     #[serde(skip)]
     storage_path: Option<PathBuf>,
 }
 
 impl Chain {
     pub fn new(document_path: impl AsRef<Path>, vdf_params: Parameters) -> Result<Self, String> {
+        Self::new_with_mode(document_path, vdf_params, EntanglementMode::Legacy)
+    }
+
+    /// Create a new chain with specified entanglement mode.
+    ///
+    /// Use `EntanglementMode::Entangled` for WAR/1.1 chains where each checkpoint's
+    /// VDF is seeded by the previous checkpoint's VDF output + jitter + document state.
+    pub fn new_with_mode(
+        document_path: impl AsRef<Path>,
+        vdf_params: Parameters,
+        entanglement_mode: EntanglementMode,
+    ) -> Result<Self, String> {
         let abs_path = fs::canonicalize(document_path.as_ref())
             .map_err(|e| format!("invalid document path: {e}"))?;
         let path_bytes = abs_path.to_string_lossy();
@@ -56,6 +101,7 @@ impl Chain {
             created_at: Utc::now(),
             checkpoints: Vec::new(),
             vdf_params,
+            entanglement_mode,
             storage_path: None,
         })
     }
@@ -88,6 +134,7 @@ impl Chain {
             vdf: None,
             tpm_binding: None,
             signature: None,
+            jitter_binding: None,
         };
 
         if ordinal > 0 {
@@ -133,6 +180,7 @@ impl Chain {
             vdf: None,
             tpm_binding: None,
             signature: None,
+            jitter_binding: None,
         };
 
         if ordinal > 0 {
@@ -140,6 +188,81 @@ impl Chain {
             let proof = vdf::compute(vdf_input, vdf_duration, self.vdf_params)?;
             checkpoint.vdf = Some(proof);
         }
+
+        checkpoint.hash = checkpoint.compute_hash();
+        self.checkpoints.push(checkpoint.clone());
+        Ok(checkpoint)
+    }
+
+    /// Commit with entangled VDF computation (WAR/1.1 mode).
+    ///
+    /// This creates a checkpoint where the VDF input is derived from:
+    /// - Previous checkpoint's VDF output (or zeros for first checkpoint)
+    /// - Current jitter evidence hash (behavioral timing entropy)
+    /// - Current document content hash (content binding)
+    ///
+    /// This makes the checkpoint chain impossible to precompute, as each VDF
+    /// depends on the actual computed output of the previous VDF.
+    pub fn commit_entangled(
+        &mut self,
+        message: Option<String>,
+        jitter_hash: [u8; 32],
+        jitter_session_id: String,
+        keystroke_count: u64,
+        vdf_duration: Duration,
+    ) -> Result<Checkpoint, String> {
+        if self.entanglement_mode != EntanglementMode::Entangled {
+            return Err("commit_entangled requires EntanglementMode::Entangled".to_string());
+        }
+
+        let content =
+            fs::read(&self.document_path).map_err(|e| format!("failed to read document: {e}"))?;
+        let content_hash: [u8; 32] = Sha256::digest(&content).into();
+        let ordinal = self.checkpoints.len() as u64;
+
+        let previous_hash = if ordinal > 0 {
+            self.checkpoints[ordinal as usize - 1].hash
+        } else {
+            [0u8; 32]
+        };
+
+        // For entangled mode, get the previous VDF output (or zeros for first checkpoint)
+        let previous_vdf_output = if ordinal > 0 {
+            self.checkpoints[ordinal as usize - 1]
+                .vdf
+                .as_ref()
+                .map(|v| v.output)
+                .unwrap_or([0u8; 32])
+        } else {
+            [0u8; 32]
+        };
+
+        let jitter_binding = JitterBinding {
+            jitter_hash,
+            session_id: jitter_session_id,
+            keystroke_count,
+        };
+
+        let mut checkpoint = Checkpoint {
+            ordinal,
+            previous_hash,
+            hash: [0u8; 32],
+            content_hash,
+            content_size: content.len() as i64,
+            file_path: self.document_path.clone(),
+            timestamp: Utc::now(),
+            message,
+            vdf: None,
+            tpm_binding: None,
+            signature: None,
+            jitter_binding: Some(jitter_binding),
+        };
+
+        // Compute entangled VDF input
+        let vdf_input =
+            vdf::chain_input_entangled(previous_vdf_output, jitter_hash, content_hash, ordinal);
+        let proof = vdf::compute(vdf_input, vdf_duration, self.vdf_params)?;
+        checkpoint.vdf = Some(proof);
 
         checkpoint.hash = checkpoint.compute_hash();
         self.checkpoints.push(checkpoint.clone());
@@ -160,20 +283,67 @@ impl Chain {
                 return Err("checkpoint 0: non-zero previous hash".to_string());
             }
 
-            if i > 0 {
-                let vdf = checkpoint.vdf.as_ref().ok_or_else(|| {
-                    format!("checkpoint {i}: missing VDF proof (required for time verification)")
-                })?;
-                let expected_input = vdf::chain_input(
-                    checkpoint.content_hash,
-                    checkpoint.previous_hash,
-                    checkpoint.ordinal,
-                );
-                if vdf.input != expected_input {
-                    return Err(format!("checkpoint {i}: VDF input mismatch"));
+            // VDF verification depends on entanglement mode
+            match self.entanglement_mode {
+                EntanglementMode::Legacy => {
+                    // Legacy mode: VDF required for checkpoints after first
+                    if i > 0 {
+                        let vdf = checkpoint.vdf.as_ref().ok_or_else(|| {
+                            format!(
+                                "checkpoint {i}: missing VDF proof (required for time verification)"
+                            )
+                        })?;
+                        let expected_input = vdf::chain_input(
+                            checkpoint.content_hash,
+                            checkpoint.previous_hash,
+                            checkpoint.ordinal,
+                        );
+                        if vdf.input != expected_input {
+                            return Err(format!("checkpoint {i}: VDF input mismatch"));
+                        }
+                        if !vdf::verify(vdf) {
+                            return Err(format!("checkpoint {i}: VDF verification failed"));
+                        }
+                    }
                 }
-                if !vdf::verify(vdf) {
-                    return Err(format!("checkpoint {i}: VDF verification failed"));
+                EntanglementMode::Entangled => {
+                    // Entangled mode: VDF required for ALL checkpoints, including first
+                    let vdf = checkpoint.vdf.as_ref().ok_or_else(|| {
+                        format!(
+                            "checkpoint {i}: missing VDF proof (required for entangled verification)"
+                        )
+                    })?;
+
+                    // Get jitter binding (required for entangled mode)
+                    let jitter_binding = checkpoint.jitter_binding.as_ref().ok_or_else(|| {
+                        format!(
+                            "checkpoint {i}: missing jitter binding (required for entangled mode)"
+                        )
+                    })?;
+
+                    // Get previous VDF output (zeros for first checkpoint)
+                    let previous_vdf_output = if i > 0 {
+                        self.checkpoints[i - 1]
+                            .vdf
+                            .as_ref()
+                            .map(|v| v.output)
+                            .unwrap_or([0u8; 32])
+                    } else {
+                        [0u8; 32]
+                    };
+
+                    let expected_input = vdf::chain_input_entangled(
+                        previous_vdf_output,
+                        jitter_binding.jitter_hash,
+                        checkpoint.content_hash,
+                        checkpoint.ordinal,
+                    );
+                    if vdf.input != expected_input {
+                        return Err(format!("checkpoint {i}: VDF input mismatch (entangled)"));
+                    }
+                    if !vdf::verify(vdf) {
+                        return Err(format!("checkpoint {i}: VDF verification failed"));
+                    }
                 }
             }
         }
@@ -290,7 +460,12 @@ impl Chain {
 impl Checkpoint {
     fn compute_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-checkpoint-v1");
+        // Use v2 domain separator if jitter binding present (WAR/1.1)
+        if self.jitter_binding.is_some() {
+            hasher.update(b"witnessd-checkpoint-v2");
+        } else {
+            hasher.update(b"witnessd-checkpoint-v1");
+        }
         hasher.update(self.ordinal.to_be_bytes());
         hasher.update(self.previous_hash);
         hasher.update(self.content_hash);
@@ -301,6 +476,13 @@ impl Checkpoint {
 
         if let Some(vdf) = &self.vdf {
             hasher.update(vdf.encode());
+        }
+
+        // Include jitter binding in hash for entangled mode
+        if let Some(jitter) = &self.jitter_binding {
+            hasher.update(jitter.jitter_hash);
+            hasher.update(jitter.session_id.as_bytes());
+            hasher.update(jitter.keystroke_count.to_be_bytes());
         }
 
         hasher.finalize().into()
@@ -692,6 +874,274 @@ mod tests {
             err
         );
 
+        drop(dir);
+    }
+
+    // =========================================================================
+    // Entangled mode tests (WAR/1.1)
+    // =========================================================================
+
+    #[test]
+    fn test_entangled_chain_creation() {
+        let (dir, path) = temp_document();
+        let chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create entangled chain");
+        assert_eq!(chain.entanglement_mode, EntanglementMode::Entangled);
+        assert!(chain.checkpoints.is_empty());
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_commit_requires_entangled_mode() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new(&path, test_vdf_params()).expect("create legacy chain");
+
+        let err = chain
+            .commit_entangled(
+                None,
+                [1u8; 32],
+                "session-1".to_string(),
+                100,
+                Duration::from_millis(10),
+            )
+            .unwrap_err();
+        assert!(err.contains("EntanglementMode::Entangled"));
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_single_commit() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        let jitter_hash = [0xABu8; 32];
+        let checkpoint = chain
+            .commit_entangled(
+                Some("first entangled commit".to_string()),
+                jitter_hash,
+                "session-1".to_string(),
+                50,
+                Duration::from_millis(10),
+            )
+            .expect("commit entangled");
+
+        assert_eq!(checkpoint.ordinal, 0);
+        assert!(checkpoint.vdf.is_some()); // Entangled mode has VDF even on first commit
+        assert!(checkpoint.jitter_binding.is_some());
+        let binding = checkpoint.jitter_binding.as_ref().unwrap();
+        assert_eq!(binding.jitter_hash, jitter_hash);
+        assert_eq!(binding.session_id, "session-1");
+        assert_eq!(binding.keystroke_count, 50);
+
+        chain.verify().expect("verify entangled chain");
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_multiple_commits() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        // First commit
+        let cp0 = chain
+            .commit_entangled(
+                None,
+                [1u8; 32],
+                "session-1".to_string(),
+                10,
+                Duration::from_millis(10),
+            )
+            .expect("commit 0");
+
+        // Update document and commit again
+        fs::write(&path, b"updated content").expect("update");
+        let cp1 = chain
+            .commit_entangled(
+                None,
+                [2u8; 32],
+                "session-1".to_string(),
+                25,
+                Duration::from_millis(10),
+            )
+            .expect("commit 1");
+
+        // Update again
+        fs::write(&path, b"final content").expect("final update");
+        let cp2 = chain
+            .commit_entangled(
+                None,
+                [3u8; 32],
+                "session-1".to_string(),
+                50,
+                Duration::from_millis(10),
+            )
+            .expect("commit 2");
+
+        assert_eq!(chain.checkpoints.len(), 3);
+        assert_eq!(cp1.previous_hash, cp0.hash);
+        assert_eq!(cp2.previous_hash, cp1.hash);
+
+        // Verify the VDF chain - each VDF input depends on previous VDF output
+        let vdf0 = cp0.vdf.as_ref().unwrap();
+        let vdf1 = cp1.vdf.as_ref().unwrap();
+
+        // The second checkpoint's VDF input should use first checkpoint's VDF output
+        let expected_input1 =
+            vdf::chain_input_entangled(vdf0.output, [2u8; 32], cp1.content_hash, 1);
+        assert_eq!(vdf1.input, expected_input1);
+
+        chain.verify().expect("verify entangled chain");
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_verify_detects_vdf_tampering() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        chain
+            .commit_entangled(
+                None,
+                [1u8; 32],
+                "session-1".to_string(),
+                10,
+                Duration::from_millis(10),
+            )
+            .expect("commit 0");
+
+        fs::write(&path, b"updated").expect("update");
+        chain
+            .commit_entangled(
+                None,
+                [2u8; 32],
+                "session-1".to_string(),
+                20,
+                Duration::from_millis(10),
+            )
+            .expect("commit 1");
+
+        // Tamper with VDF output (this breaks the entanglement chain)
+        if let Some(ref mut vdf) = chain.checkpoints[0].vdf {
+            vdf.output = [0xFFu8; 32];
+        }
+        chain.checkpoints[0].hash = chain.checkpoints[0].compute_hash();
+
+        let err = chain.verify().unwrap_err();
+        // The first checkpoint's VDF verification itself will fail
+        assert!(
+            err.contains("VDF verification failed"),
+            "Expected VDF verification failure, got: {}",
+            err
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_verify_detects_jitter_tampering() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        chain
+            .commit_entangled(
+                None,
+                [1u8; 32],
+                "session-1".to_string(),
+                10,
+                Duration::from_millis(10),
+            )
+            .expect("commit 0");
+
+        // Tamper with jitter hash (but not VDF input - this should cause mismatch)
+        chain.checkpoints[0]
+            .jitter_binding
+            .as_mut()
+            .unwrap()
+            .jitter_hash = [0xFFu8; 32];
+        chain.checkpoints[0].hash = chain.checkpoints[0].compute_hash();
+
+        let err = chain.verify().unwrap_err();
+        assert!(
+            err.contains("VDF input mismatch"),
+            "Expected VDF input mismatch, got: {}",
+            err
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_verify_requires_jitter_binding() {
+        let (dir, path) = temp_document();
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        chain
+            .commit_entangled(
+                None,
+                [1u8; 32],
+                "session-1".to_string(),
+                10,
+                Duration::from_millis(10),
+            )
+            .expect("commit 0");
+
+        // Remove jitter binding
+        chain.checkpoints[0].jitter_binding = None;
+        chain.checkpoints[0].hash = chain.checkpoints[0].compute_hash();
+
+        let err = chain.verify().unwrap_err();
+        assert!(
+            err.contains("missing jitter binding"),
+            "Expected missing jitter binding error, got: {}",
+            err
+        );
+        drop(dir);
+    }
+
+    #[test]
+    fn test_entangled_chain_save_load() {
+        let dir = TempDir::new().expect("create temp dir");
+        let canonical_dir = dir.path().canonicalize().expect("canonicalize");
+        let path = canonical_dir.join("test_doc.txt");
+        fs::write(&path, b"test content").expect("write");
+
+        let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
+            .expect("create chain");
+
+        chain
+            .commit_entangled(
+                Some("entangled test".to_string()),
+                [0xABu8; 32],
+                "session-test".to_string(),
+                42,
+                Duration::from_millis(10),
+            )
+            .expect("commit");
+
+        let chain_path = canonical_dir.join("chain.json");
+        chain.save(&chain_path).expect("save");
+
+        let loaded = Chain::load(&chain_path).expect("load");
+        assert_eq!(loaded.entanglement_mode, EntanglementMode::Entangled);
+        assert_eq!(loaded.checkpoints.len(), 1);
+
+        let binding = loaded.checkpoints[0].jitter_binding.as_ref().unwrap();
+        assert_eq!(binding.jitter_hash, [0xABu8; 32]);
+        assert_eq!(binding.session_id, "session-test");
+        assert_eq!(binding.keystroke_count, 42);
+
+        loaded.verify().expect("verify loaded chain");
+        drop(dir);
+    }
+
+    #[test]
+    fn test_legacy_mode_default() {
+        let (dir, path) = temp_document();
+        let chain = Chain::new(&path, test_vdf_params()).expect("create chain");
+        assert_eq!(chain.entanglement_mode, EntanglementMode::Legacy);
         drop(dir);
     }
 }

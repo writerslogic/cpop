@@ -81,6 +81,32 @@ pub fn chain_input(content_hash: [u8; 32], previous_hash: [u8; 32], ordinal: u64
     hasher.finalize().into()
 }
 
+/// Compute VDF input with full entanglement for WAR/1.1 chained evidence.
+///
+/// The entangled input combines:
+/// - Previous checkpoint's VDF output (temporal chain)
+/// - Current jitter evidence hash (behavioral entropy)
+/// - Current document state hash (content binding)
+/// - Ordinal (sequence position)
+///
+/// This creates a cryptographic entanglement where each checkpoint's VDF
+/// depends on the previous checkpoint's computed output, making the chain
+/// impossible to precompute and requiring genuine sequential authorship.
+pub fn chain_input_entangled(
+    previous_vdf_output: [u8; 32],
+    jitter_hash: [u8; 32],
+    content_hash: [u8; 32],
+    ordinal: u64,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"witnessd-vdf-entangled-v1");
+    hasher.update(previous_vdf_output);
+    hasher.update(jitter_hash);
+    hasher.update(content_hash);
+    hasher.update(ordinal.to_be_bytes());
+    hasher.finalize().into()
+}
+
 pub struct BatchVerifier {
     workers: usize,
 }
@@ -180,5 +206,52 @@ mod tests {
         let input = [9u8; 32];
         let proof = compute(input, Duration::from_millis(5), params).expect("compute");
         assert!(verify(&proof));
+    }
+
+    #[test]
+    fn test_chain_input_entangled_deterministic() {
+        let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        assert_eq!(input1, input2);
+    }
+
+    #[test]
+    fn test_chain_input_entangled_differs_from_legacy() {
+        // Entangled and legacy chain inputs should produce different results
+        let legacy = chain_input([1u8; 32], [2u8; 32], 7);
+        let entangled = chain_input_entangled([2u8; 32], [3u8; 32], [1u8; 32], 7);
+        assert_ne!(legacy, entangled);
+    }
+
+    #[test]
+    fn test_chain_input_entangled_sensitive_to_vdf_output() {
+        // Changing the previous VDF output changes the result
+        let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        let input2 = chain_input_entangled([4u8; 32], [2u8; 32], [3u8; 32], 7);
+        assert_ne!(input1, input2);
+    }
+
+    #[test]
+    fn test_chain_input_entangled_sensitive_to_jitter() {
+        // Changing the jitter hash changes the result
+        let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        let input2 = chain_input_entangled([1u8; 32], [5u8; 32], [3u8; 32], 7);
+        assert_ne!(input1, input2);
+    }
+
+    #[test]
+    fn test_chain_input_entangled_sensitive_to_content() {
+        // Changing the content hash changes the result
+        let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [6u8; 32], 7);
+        assert_ne!(input1, input2);
+    }
+
+    #[test]
+    fn test_chain_input_entangled_sensitive_to_ordinal() {
+        // Changing the ordinal changes the result
+        let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
+        let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 8);
+        assert_ne!(input1, input2);
     }
 }
