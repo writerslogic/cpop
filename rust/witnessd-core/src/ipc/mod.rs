@@ -1187,4 +1187,252 @@ mod tests {
         shutdown_tx.send(()).await.unwrap();
         server_handle.await.unwrap();
     }
+
+    #[test]
+    fn test_encode_all_message_variants() {
+        // Test that all message variants can be encoded
+        let variants: Vec<IpcMessage> = vec![
+            IpcMessage::Handshake {
+                version: "test".to_string(),
+            },
+            IpcMessage::StartWitnessing {
+                file_path: PathBuf::from("/test"),
+            },
+            IpcMessage::StopWitnessing { file_path: None },
+            IpcMessage::StopWitnessing {
+                file_path: Some(PathBuf::from("/test")),
+            },
+            IpcMessage::GetStatus,
+            IpcMessage::Pulse(SimpleJitterSample {
+                timestamp_ns: 0,
+                duration_since_last_ns: 0,
+                zone: 0,
+            }),
+            IpcMessage::CheckpointCreated {
+                id: 0,
+                hash: [0u8; 32],
+            },
+            IpcMessage::SystemAlert {
+                level: "warn".to_string(),
+                message: "test".to_string(),
+            },
+            IpcMessage::Heartbeat,
+            IpcMessage::Ok { message: None },
+            IpcMessage::Ok {
+                message: Some("test".to_string()),
+            },
+            IpcMessage::Error {
+                code: IpcErrorCode::Unknown,
+                message: "error".to_string(),
+            },
+            IpcMessage::HandshakeAck {
+                version: "1".to_string(),
+                server_version: "2".to_string(),
+            },
+            IpcMessage::HeartbeatAck { timestamp_ns: 0 },
+            IpcMessage::StatusResponse {
+                running: false,
+                tracked_files: vec![],
+                uptime_secs: 0,
+            },
+        ];
+
+        for msg in variants {
+            let result = encode_message(&msg);
+            assert!(result.is_ok(), "Failed to encode {:?}", msg);
+            let bytes = result.unwrap();
+            assert!(!bytes.is_empty(), "Empty encoding for {:?}", msg);
+        }
+    }
+
+    #[test]
+    fn test_decode_truncated_message() {
+        // Create a valid message, then truncate it
+        let msg = IpcMessage::StatusResponse {
+            running: true,
+            tracked_files: vec!["file1.txt".to_string(), "file2.txt".to_string()],
+            uptime_secs: 12345,
+        };
+        let full_bytes = encode_message(&msg).unwrap();
+
+        // Truncate to less than half
+        let truncated = &full_bytes[..full_bytes.len() / 3];
+        let result = decode_message(truncated);
+        // Should either fail or not decode to the same message
+        match result {
+            Err(_) => {} // Expected failure
+            Ok(decoded) => {
+                // If it somehow decoded, it shouldn't match original
+                let re_encoded = encode_message(&decoded).unwrap();
+                assert_ne!(
+                    re_encoded,
+                    full_bytes,
+                    "Truncated message should not decode to original"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_empty_message() {
+        let result = decode_message(&[]);
+        assert!(result.is_err(), "Should fail on empty message");
+    }
+
+    #[test]
+    fn test_decode_corrupted_message() {
+        // Create a valid message then corrupt it
+        let msg = IpcMessage::Heartbeat;
+        let mut bytes = encode_message(&msg).unwrap();
+        // Corrupt some bytes
+        if bytes.len() > 2 {
+            bytes[1] = 0xFF;
+            bytes[2] = 0xFF;
+        }
+        // May or may not decode to something valid, but shouldn't panic
+        let _ = decode_message(&bytes);
+    }
+
+    #[test]
+    fn test_all_error_codes() {
+        let codes = vec![
+            IpcErrorCode::Unknown,
+            IpcErrorCode::InvalidMessage,
+            IpcErrorCode::FileNotFound,
+            IpcErrorCode::AlreadyTracking,
+            IpcErrorCode::NotTracking,
+            IpcErrorCode::PermissionDenied,
+            IpcErrorCode::VersionMismatch,
+            IpcErrorCode::InternalError,
+        ];
+
+        for code in codes {
+            let msg = IpcMessage::Error {
+                code,
+                message: format!("Test error: {:?}", code),
+            };
+            let encoded = encode_message(&msg).expect("encode");
+            let decoded = decode_message(&encoded).expect("decode");
+            match decoded {
+                IpcMessage::Error {
+                    code: decoded_code, ..
+                } => {
+                    assert_eq!(decoded_code, code);
+                }
+                _ => panic!("Wrong message type decoded"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_message_handler_trait() {
+        let handler = TestHandler;
+
+        // Test handshake handling
+        let response = handler.handle(IpcMessage::Handshake {
+            version: "1.0".to_string(),
+        });
+        match response {
+            IpcMessage::HandshakeAck { version, .. } => {
+                assert_eq!(version, "1.0");
+            }
+            _ => panic!("Expected HandshakeAck"),
+        }
+
+        // Test status handling
+        let response = handler.handle(IpcMessage::GetStatus);
+        match response {
+            IpcMessage::StatusResponse { running, .. } => {
+                assert!(running);
+            }
+            _ => panic!("Expected StatusResponse"),
+        }
+
+        // Test heartbeat handling
+        let response = handler.handle(IpcMessage::Heartbeat);
+        match response {
+            IpcMessage::HeartbeatAck { timestamp_ns } => {
+                assert_eq!(timestamp_ns, 123456789);
+            }
+            _ => panic!("Expected HeartbeatAck"),
+        }
+
+        // Test other message handling (falls through to Ok)
+        let response = handler.handle(IpcMessage::StopWitnessing { file_path: None });
+        match response {
+            IpcMessage::Ok { message } => {
+                assert_eq!(message, Some("Handled".to_string()));
+            }
+            _ => panic!("Expected Ok"),
+        }
+    }
+
+    #[test]
+    fn test_pulse_message_data_integrity() {
+        let sample = SimpleJitterSample {
+            timestamp_ns: 1234567890123456789,
+            duration_since_last_ns: 100000,
+            zone: 42,
+        };
+        let msg = IpcMessage::Pulse(sample.clone());
+        let encoded = encode_message(&msg).expect("encode");
+        let decoded = decode_message(&encoded).expect("decode");
+
+        match decoded {
+            IpcMessage::Pulse(decoded_sample) => {
+                assert_eq!(decoded_sample.timestamp_ns, sample.timestamp_ns);
+                assert_eq!(
+                    decoded_sample.duration_since_last_ns,
+                    sample.duration_since_last_ns
+                );
+                assert_eq!(decoded_sample.zone, sample.zone);
+            }
+            _ => panic!("Expected Pulse"),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_created_hash_integrity() {
+        let hash: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ];
+        let msg = IpcMessage::CheckpointCreated { id: 999, hash };
+        let encoded = encode_message(&msg).expect("encode");
+        let decoded = decode_message(&encoded).expect("decode");
+
+        match decoded {
+            IpcMessage::CheckpointCreated {
+                id: decoded_id,
+                hash: decoded_hash,
+            } => {
+                assert_eq!(decoded_id, 999);
+                assert_eq!(decoded_hash, hash);
+            }
+            _ => panic!("Expected CheckpointCreated"),
+        }
+    }
+
+    #[test]
+    fn test_status_response_with_many_files() {
+        let files: Vec<String> = (0..100).map(|i| format!("file_{}.txt", i)).collect();
+        let msg = IpcMessage::StatusResponse {
+            running: true,
+            tracked_files: files.clone(),
+            uptime_secs: 86400,
+        };
+        let encoded = encode_message(&msg).expect("encode");
+        let decoded = decode_message(&encoded).expect("decode");
+
+        match decoded {
+            IpcMessage::StatusResponse {
+                tracked_files: decoded_files,
+                ..
+            } => {
+                assert_eq!(decoded_files.len(), 100);
+                assert_eq!(decoded_files, files);
+            }
+            _ => panic!("Expected StatusResponse"),
+        }
+    }
 }

@@ -16,6 +16,31 @@ pub struct Declaration {
     pub version: u64,
     pub author_public_key: Vec<u8>,
     pub signature: Vec<u8>,
+    /// Declaration jitter seal (WAR/1.1): Hardware-sealed typing proof captured
+    /// during interactive declaration input. This binds the declaration to live
+    /// human presence at the time of signing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jitter_sealed: Option<DeclarationJitter>,
+}
+
+/// Jitter evidence captured during declaration input.
+///
+/// This captures keystroke timing during the interactive typing of the
+/// declaration statement, providing proof of human presence at signing time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeclarationJitter {
+    /// SHA-256 hash of the jitter samples collected during declaration typing
+    pub jitter_hash: [u8; 32],
+    /// Number of keystrokes recorded during declaration
+    pub keystroke_count: u64,
+    /// Duration of declaration typing in milliseconds
+    pub duration_ms: u64,
+    /// Average interval between keystrokes in milliseconds
+    pub avg_interval_ms: f64,
+    /// Entropy bits accumulated from timing jitter
+    pub entropy_bits: f64,
+    /// Whether hardware entropy was used (TPM/Secure Enclave)
+    pub hardware_sealed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,6 +139,7 @@ impl Builder {
                 version: 1,
                 author_public_key: Vec::new(),
                 signature: Vec::new(),
+                jitter_sealed: None,
             },
             err: None,
         }
@@ -169,6 +195,16 @@ impl Builder {
 
     pub fn with_statement(mut self, statement: impl Into<String>) -> Self {
         self.decl.statement = statement.into();
+        self
+    }
+
+    /// Add jitter evidence captured during interactive declaration typing.
+    ///
+    /// This binds the declaration to live human presence at the time of signing.
+    /// The jitter evidence should be collected while the user types their
+    /// declaration statement.
+    pub fn with_jitter_seal(mut self, jitter: DeclarationJitter) -> Self {
+        self.decl.jitter_sealed = Some(jitter);
         self
     }
 
@@ -338,7 +374,30 @@ impl Declaration {
         hasher.update(self.version.to_be_bytes());
         hasher.update(&self.author_public_key);
 
+        // Include jitter seal in signing payload (WAR/1.1)
+        if let Some(jitter) = &self.jitter_sealed {
+            hasher.update(b"witnessd-jitter-seal-v1");
+            hasher.update(jitter.jitter_hash);
+            hasher.update(jitter.keystroke_count.to_be_bytes());
+            hasher.update(jitter.duration_ms.to_be_bytes());
+            // Convert floats to fixed-point with explicit rounding for deterministic hashing
+            let avg_fixed = (jitter.avg_interval_ms * 1000.0).round() as u64;
+            hasher.update(avg_fixed.to_be_bytes());
+            let entropy_fixed = (jitter.entropy_bits * 1000.0).round() as u64;
+            hasher.update(entropy_fixed.to_be_bytes());
+            hasher.update(if jitter.hardware_sealed {
+                &[1u8]
+            } else {
+                &[0u8]
+            });
+        }
+
         hasher.finalize().to_vec()
+    }
+
+    /// Check if this declaration has jitter seal (WAR/1.1 feature)
+    pub fn has_jitter_seal(&self) -> bool {
+        self.jitter_sealed.is_some()
     }
 }
 
@@ -423,6 +482,80 @@ pub fn ai_assisted_declaration(
     title: impl Into<String>,
 ) -> Builder {
     Builder::new(document_hash, chain_hash, title)
+}
+
+impl DeclarationJitter {
+    /// Create a new declaration jitter from captured timing data.
+    ///
+    /// # Arguments
+    /// * `jitter_samples` - Raw jitter timing samples (microseconds)
+    /// * `duration_ms` - Total duration of typing in milliseconds
+    /// * `hardware_sealed` - Whether hardware entropy was used
+    pub fn from_samples(jitter_samples: &[u32], duration_ms: u64, hardware_sealed: bool) -> Self {
+        let keystroke_count = jitter_samples.len() as u64;
+
+        // Compute hash of jitter samples
+        let mut hasher = Sha256::new();
+        hasher.update(b"witnessd-declaration-jitter-v1");
+        hasher.update(keystroke_count.to_be_bytes());
+        for sample in jitter_samples {
+            hasher.update(sample.to_be_bytes());
+        }
+        let jitter_hash: [u8; 32] = hasher.finalize().into();
+
+        // Calculate average interval between keystrokes
+        // For N keystrokes, there are N-1 intervals
+        let avg_interval_ms = if keystroke_count > 1 {
+            duration_ms as f64 / (keystroke_count - 1) as f64
+        } else if keystroke_count == 1 {
+            // Single keystroke: no intervals between keystrokes
+            // Return duration as a reasonable estimate (time to first keystroke)
+            duration_ms as f64
+        } else {
+            // No keystrokes
+            0.0
+        };
+
+        // Estimate entropy (simplified: ~4 bits per sample for timing jitter)
+        let entropy_bits = jitter_samples
+            .iter()
+            .map(|&j| {
+                if j > 0 {
+                    (j as f64).log2().clamp(0.5, 8.0)
+                } else {
+                    0.0
+                }
+            })
+            .sum();
+
+        Self {
+            jitter_hash,
+            keystroke_count,
+            duration_ms,
+            avg_interval_ms,
+            entropy_bits,
+            hardware_sealed,
+        }
+    }
+
+    /// Create a declaration jitter directly from computed values.
+    pub fn new(
+        jitter_hash: [u8; 32],
+        keystroke_count: u64,
+        duration_ms: u64,
+        avg_interval_ms: f64,
+        entropy_bits: f64,
+        hardware_sealed: bool,
+    ) -> Self {
+        Self {
+            jitter_hash,
+            keystroke_count,
+            duration_ms,
+            avg_interval_ms,
+            entropy_bits,
+            hardware_sealed,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -870,5 +1003,133 @@ mod tests {
             .with_statement("Test")
             .sign(&signing_key);
         assert!(result.is_err(), "Expected error for 105%, got success");
+    }
+
+    // =========================================================================
+    // Declaration Jitter Seal Tests (WAR/1.1)
+    // =========================================================================
+
+    #[test]
+    fn test_declaration_jitter_from_samples() {
+        let samples = vec![1000u32, 1500, 2000, 1200, 1800];
+        let jitter = DeclarationJitter::from_samples(&samples, 500, false);
+
+        assert_eq!(jitter.keystroke_count, 5);
+        assert_eq!(jitter.duration_ms, 500);
+        assert!(!jitter.hardware_sealed);
+        assert!(jitter.entropy_bits > 0.0);
+        // Average interval: 500ms / 4 intervals = 125ms
+        assert!((jitter.avg_interval_ms - 125.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_declaration_jitter_hash_deterministic() {
+        let samples = vec![1000u32, 1500, 2000];
+        let jitter1 = DeclarationJitter::from_samples(&samples, 300, false);
+        let jitter2 = DeclarationJitter::from_samples(&samples, 300, false);
+
+        assert_eq!(jitter1.jitter_hash, jitter2.jitter_hash);
+    }
+
+    #[test]
+    fn test_declaration_jitter_hash_changes_with_samples() {
+        let samples1 = vec![1000u32, 1500, 2000];
+        let samples2 = vec![1000u32, 1500, 2001]; // One sample different
+        let jitter1 = DeclarationJitter::from_samples(&samples1, 300, false);
+        let jitter2 = DeclarationJitter::from_samples(&samples2, 300, false);
+
+        assert_ne!(jitter1.jitter_hash, jitter2.jitter_hash);
+    }
+
+    #[test]
+    fn test_declaration_with_jitter_seal() {
+        let signing_key = test_signing_key();
+        let jitter = DeclarationJitter::from_samples(&[1000u32; 10], 1000, true);
+
+        let decl = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "I wrote this.")
+            .with_jitter_seal(jitter.clone())
+            .sign(&signing_key)
+            .expect("sign");
+
+        assert!(decl.has_jitter_seal());
+        assert!(decl.verify());
+
+        let sealed = decl.jitter_sealed.as_ref().unwrap();
+        assert_eq!(sealed.keystroke_count, 10);
+        assert!(sealed.hardware_sealed);
+    }
+
+    #[test]
+    fn test_declaration_jitter_seal_in_signature() {
+        let signing_key = test_signing_key();
+        let jitter1 = DeclarationJitter::from_samples(&[1000u32; 10], 1000, false);
+        let jitter2 = DeclarationJitter::from_samples(&[2000u32; 10], 1000, false);
+
+        let decl1 = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "Statement")
+            .with_jitter_seal(jitter1)
+            .sign(&signing_key)
+            .expect("sign 1");
+
+        let decl2 = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "Statement")
+            .with_jitter_seal(jitter2)
+            .sign(&signing_key)
+            .expect("sign 2");
+
+        // Different jitter should produce different signatures
+        assert_ne!(decl1.signature, decl2.signature);
+    }
+
+    #[test]
+    fn test_declaration_jitter_seal_tampering_detected() {
+        let signing_key = test_signing_key();
+        let jitter = DeclarationJitter::from_samples(&[1000u32; 10], 1000, false);
+
+        let mut decl = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "Statement")
+            .with_jitter_seal(jitter)
+            .sign(&signing_key)
+            .expect("sign");
+
+        // Tamper with jitter hash
+        decl.jitter_sealed.as_mut().unwrap().jitter_hash = [0xFFu8; 32];
+
+        // Signature should no longer verify
+        assert!(!decl.verify());
+    }
+
+    #[test]
+    fn test_declaration_without_jitter_seal() {
+        let signing_key = test_signing_key();
+        let decl = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "Statement")
+            .sign(&signing_key)
+            .expect("sign");
+
+        assert!(!decl.has_jitter_seal());
+        assert!(decl.jitter_sealed.is_none());
+        assert!(decl.verify());
+    }
+
+    #[test]
+    fn test_declaration_jitter_encode_decode_roundtrip() {
+        let signing_key = test_signing_key();
+        let jitter = DeclarationJitter::new([0xABu8; 32], 50, 5000, 100.0, 32.5, true);
+
+        let original = no_ai_declaration([1u8; 32], [2u8; 32], "Test", "Statement")
+            .with_jitter_seal(jitter)
+            .sign(&signing_key)
+            .expect("sign");
+
+        let encoded = original.encode().expect("encode");
+        let decoded = Declaration::decode(&encoded).expect("decode");
+
+        assert!(decoded.has_jitter_seal());
+        assert!(decoded.verify());
+
+        let sealed = decoded.jitter_sealed.unwrap();
+        assert_eq!(sealed.jitter_hash, [0xABu8; 32]);
+        assert_eq!(sealed.keystroke_count, 50);
+        assert_eq!(sealed.duration_ms, 5000);
+        assert!((sealed.avg_interval_ms - 100.0).abs() < 0.01);
+        assert!((sealed.entropy_bits - 32.5).abs() < 0.01);
+        assert!(sealed.hardware_sealed);
     }
 }

@@ -218,11 +218,18 @@ impl Wal {
         let verifying_key = state.signing_key.verifying_key();
 
         let mut file = state.file.try_clone()?;
+
+        // Read header to get last_checkpoint_seq for truncated WALs
+        file.seek(SeekFrom::Start(0))?;
+        let mut header_buf = vec![0u8; HEADER_SIZE];
+        file.read_exact(&mut header_buf)?;
+        let header = deserialize_header(&header_buf)?;
+
         file.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
 
         let mut prev_hash = [0u8; 32];
         let mut cumulative_hasher = Hasher::new();
-        let mut expected_sequence = 0u64;
+        let mut expected_sequence = header.last_checkpoint_seq;
         let mut last_timestamp = 0i64;
         let mut count = 0u64;
 
@@ -633,7 +640,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "truncate verification needs investigation"]
     fn test_wal_truncate() {
         let path = temp_wal_path();
         let session_id = [3u8; 32];
@@ -648,6 +654,219 @@ mod tests {
         let verification = wal.verify().expect("verify");
         assert!(verification.valid);
         assert_eq!(verification.entries, 2);
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_reopen_after_close() {
+        let path = temp_wal_path();
+        let session_id = [8u8; 32];
+        let signing_key = test_signing_key();
+
+        // Create and populate WAL
+        {
+            let wal = Wal::open(&path, session_id, signing_key.clone()).expect("open wal");
+            wal.append(EntryType::Heartbeat, vec![1, 2, 3])
+                .expect("append");
+            wal.append(EntryType::DocumentHash, vec![4, 5, 6])
+                .expect("append");
+            wal.close().expect("close");
+        }
+
+        // Reopen and verify
+        {
+            let wal = Wal::open(&path, session_id, signing_key).expect("reopen wal");
+            let verification = wal.verify().expect("verify");
+            assert!(verification.valid);
+            assert_eq!(verification.entries, 2);
+            wal.close().expect("close");
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_append_to_closed() {
+        let path = temp_wal_path();
+        let session_id = [9u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+        wal.close().expect("close");
+
+        // Appending to closed WAL should fail
+        let result = wal.append(EntryType::Heartbeat, vec![1, 2, 3]);
+        assert!(result.is_err());
+        match result {
+            Err(WalError::Closed) => {} // Expected
+            Err(e) => panic!("Expected WalError::Closed, got {:?}", e),
+            Ok(_) => panic!("Expected error on append to closed WAL"),
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_all_entry_types() {
+        let path = temp_wal_path();
+        let session_id = [10u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+
+        // Append all entry types
+        wal.append(EntryType::Heartbeat, vec![1])
+            .expect("append heartbeat");
+        wal.append(EntryType::DocumentHash, vec![2])
+            .expect("append document hash");
+        wal.append(EntryType::KeystrokeBatch, vec![3])
+            .expect("append keystroke batch");
+        wal.append(EntryType::JitterSample, vec![4])
+            .expect("append jitter sample");
+        wal.append(EntryType::SessionStart, vec![5])
+            .expect("append session start");
+        wal.append(EntryType::SessionEnd, vec![6])
+            .expect("append session end");
+        wal.append(EntryType::Checkpoint, vec![7])
+            .expect("append checkpoint");
+
+        let verification = wal.verify().expect("verify");
+        assert!(verification.valid);
+        assert_eq!(verification.entries, 7);
+        assert_eq!(wal.entry_count(), 7);
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_large_payload() {
+        let path = temp_wal_path();
+        let session_id = [11u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+
+        // Append a large payload (1MB)
+        let large_payload = vec![0xABu8; 1024 * 1024];
+        wal.append(EntryType::KeystrokeBatch, large_payload.clone())
+            .expect("append large payload");
+
+        let verification = wal.verify().expect("verify");
+        assert!(verification.valid);
+        assert_eq!(verification.entries, 1);
+
+        // Check size is reasonable
+        let size = wal.size();
+        assert!(size > 1024 * 1024, "Size should be at least 1MB");
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_exists() {
+        let path = temp_wal_path();
+        let session_id = [12u8; 32];
+        let signing_key = test_signing_key();
+
+        // Should not exist yet
+        assert!(!Wal::exists(&path));
+
+        // Create WAL
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+        wal.append(EntryType::Heartbeat, vec![1]).expect("append");
+        wal.close().expect("close");
+
+        // Should exist now
+        assert!(Wal::exists(&path));
+
+        let _ = fs::remove_file(&path);
+
+        // Should not exist after deletion
+        assert!(!Wal::exists(&path));
+    }
+
+    #[test]
+    fn test_wal_size_and_entry_count() {
+        let path = temp_wal_path();
+        let session_id = [13u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+
+        assert_eq!(wal.entry_count(), 0);
+
+        wal.append(EntryType::Heartbeat, vec![1, 2, 3])
+            .expect("append 1");
+        assert_eq!(wal.entry_count(), 1);
+
+        wal.append(EntryType::Heartbeat, vec![4, 5, 6])
+            .expect("append 2");
+        assert_eq!(wal.entry_count(), 2);
+
+        let size = wal.size();
+        assert!(size > 0, "Size should be positive");
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_last_sequence() {
+        let path = temp_wal_path();
+        let session_id = [14u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+
+        // Fresh WAL with no entries should have last_sequence 0
+        assert_eq!(wal.last_sequence(), 0);
+
+        wal.append(EntryType::Heartbeat, vec![1]).expect("append 1");
+        // After first append (sequence 0), last_sequence should be 0
+        assert_eq!(wal.last_sequence(), 0);
+
+        wal.append(EntryType::Heartbeat, vec![2]).expect("append 2");
+        // After second append (sequence 1), last_sequence should be 1
+        assert_eq!(wal.last_sequence(), 1);
+
+        wal.append(EntryType::Heartbeat, vec![3]).expect("append 3");
+        assert_eq!(wal.last_sequence(), 2);
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_path() {
+        let path = temp_wal_path();
+        let session_id = [15u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+        assert_eq!(wal.path(), path);
+
+        let _ = wal.close();
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_wal_truncate_empty() {
+        let path = temp_wal_path();
+        let session_id = [16u8; 32];
+        let signing_key = test_signing_key();
+
+        let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
+
+        // Truncate empty WAL should succeed without error
+        wal.truncate(0).expect("truncate empty");
+
+        let verification = wal.verify().expect("verify");
+        assert!(verification.valid);
+        assert_eq!(verification.entries, 0);
 
         let _ = wal.close();
         let _ = fs::remove_file(&path);

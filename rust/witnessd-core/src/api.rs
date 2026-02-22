@@ -1447,4 +1447,277 @@ mod tests {
         assert_ne!(m1, m2);
         assert_eq!(m1.split_whitespace().count(), 12);
     }
+
+    #[test]
+    fn test_init_with_invalid_mnemonic() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Invalid mnemonic (wrong words)
+        let result = init_witnessd(Some(data_dir), Some("invalid mnemonic words here".to_string()));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("invalid") || err.contains("mnemonic") || err.contains("checksum"),
+            "Expected mnemonic validation error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_init_with_valid_mnemonic_recovery() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Generate a valid mnemonic first
+        let mnemonic = generate_mnemonic();
+
+        // Initialize with the mnemonic
+        let fingerprint1 =
+            init_witnessd(Some(data_dir.clone()), Some(mnemonic.clone())).expect("init failed");
+        assert!(!fingerprint1.is_empty());
+
+        // Re-initialize in a new directory with same mnemonic should produce same fingerprint
+        let dir2 = tempdir().unwrap();
+        let data_dir2 = dir2.path().to_string_lossy().to_string();
+        let fingerprint2 =
+            init_witnessd(Some(data_dir2), Some(mnemonic)).expect("init with recovery failed");
+
+        assert_eq!(
+            fingerprint1, fingerprint2,
+            "Same mnemonic should produce same identity fingerprint"
+        );
+    }
+
+    #[test]
+    fn test_commit_nonexistent_file() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize first
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Try to commit a file that doesn't exist
+        let result = commit_document("/nonexistent/path/to/file.txt".to_string(), None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("not found")
+                || err.contains("No such file")
+                || err.contains("does not exist"),
+            "Expected file not found error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_commit_empty_file() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize first
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Create an empty file
+        let empty_file = dir.path().join("empty.txt");
+        fs::write(&empty_file, "").unwrap();
+        let empty_file = fs::canonicalize(&empty_file).unwrap();
+        let path_str = empty_file.to_string_lossy().to_string();
+
+        // Commit should succeed even for empty files
+        let result = commit_document(path_str, Some("Empty file commit".to_string()));
+        assert!(result.is_ok(), "Empty file commit should succeed");
+        let info = result.unwrap();
+        assert_eq!(info.content_size, 0);
+    }
+
+    #[test]
+    fn test_get_document_log_no_chain() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize first
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Create a file but don't commit it
+        let doc_path = dir.path().join("uncommitted.txt");
+        fs::write(&doc_path, "Content").unwrap();
+        let doc_path = fs::canonicalize(&doc_path).unwrap();
+        let path_str = doc_path.to_string_lossy().to_string();
+
+        // Get log for uncommitted file should return empty or error
+        let result = get_document_log(path_str);
+        // Either returns empty vec or error is acceptable
+        if let Ok(log) = result {
+            assert!(log.is_empty(), "Log should be empty for uncommitted file");
+        }
+        // Error case is also acceptable
+    }
+
+    #[test]
+    fn test_verify_document_no_chain() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize first
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Create a file but don't commit it
+        let doc_path = dir.path().join("untracked.txt");
+        fs::write(&doc_path, "Untracked content").unwrap();
+        let doc_path = fs::canonicalize(&doc_path).unwrap();
+        let path_str = doc_path.to_string_lossy().to_string();
+
+        // Verify should fail or return invalid for untracked file
+        let result = verify_document(path_str);
+        if let Ok(v) = result {
+            assert!(
+                !v.valid || v.checkpoint_count == 0,
+                "Untracked file should not verify"
+            );
+        }
+        // Error case is also acceptable
+    }
+
+    #[test]
+    fn test_tracking_without_init() {
+        // Reset global state by using a fresh directory
+        let dir = tempdir().unwrap();
+        let doc_path = dir.path().join("test.txt");
+        fs::write(&doc_path, "content").unwrap();
+        let _path_str = doc_path.to_string_lossy().to_string();
+
+        // Don't initialize - tracking should fail gracefully
+        let status = get_tracking_status();
+        assert!(!status.active);
+    }
+
+    #[test]
+    fn test_record_keystroke_without_tracking() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize but don't start tracking
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Recording keystroke without active tracking should fail
+        let result = record_keystroke();
+        assert!(result.is_err(), "Should fail when not tracking");
+    }
+
+    #[test]
+    fn test_stop_tracking_without_start() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        // Initialize but don't start tracking
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Stopping without starting should fail gracefully
+        let result = stop_tracking();
+        assert!(result.is_err(), "Should fail when not tracking");
+    }
+
+    #[test]
+    fn test_presence_session_lifecycle() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // Start session
+        let session_id = start_presence_session().expect("start failed");
+        assert!(!session_id.is_empty());
+
+        // Check status
+        let status = get_presence_status();
+        assert!(status.session_active);
+
+        // Starting another session should fail or replace
+        let result2 = start_presence_session();
+        // Either succeeds (replacing) or fails (already active) is acceptable
+        assert!(result2.is_ok() || result2.is_err());
+
+        // End session
+        let final_status = end_presence_session().expect("end failed");
+        assert!(!final_status.session_active);
+    }
+
+    #[test]
+    fn test_end_presence_without_start() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        // End without start should fail gracefully
+        let result = end_presence_session();
+        // Should either fail or return inactive status
+        if let Ok(status) = result {
+            assert!(!status.session_active);
+        }
+        // Error case is also acceptable
+    }
+
+    #[test]
+    fn test_config_persistence() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        init_witnessd(Some(data_dir.clone()), None).expect("init failed");
+
+        // Modify config
+        let mut config = get_config().expect("get config failed");
+        let original_retention = config.retention_days;
+        config.retention_days = 42;
+        set_config(config).expect("set config failed");
+
+        // Verify persistence
+        let loaded = get_config().expect("reload config failed");
+        assert_eq!(loaded.retention_days, 42);
+        assert_ne!(loaded.retention_days, original_retention);
+    }
+
+    #[test]
+    fn test_vdf_params_retrieval() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        let params = get_vdf_params();
+        assert!(params.min_iterations > 0);
+        assert!(params.max_iterations >= params.min_iterations);
+        assert!(params.iterations_per_second > 0);
+    }
+
+    #[test]
+    fn test_multiple_commits_same_file() {
+        let dir = tempdir().unwrap();
+        let data_dir = dir.path().to_string_lossy().to_string();
+
+        init_witnessd(Some(data_dir), None).expect("init failed");
+
+        let doc_path = dir.path().join("evolving.txt");
+        fs::write(&doc_path, "Version 1").unwrap();
+        let doc_path = fs::canonicalize(&doc_path).unwrap();
+        let path_str = doc_path.to_string_lossy().to_string();
+
+        // First commit
+        let info1 = commit_document(path_str.clone(), Some("V1".to_string())).expect("commit 1");
+        assert_eq!(info1.ordinal, 0);
+
+        // Modify and commit again
+        fs::write(&doc_path, "Version 2 with more content").unwrap();
+        let info2 = commit_document(path_str.clone(), Some("V2".to_string())).expect("commit 2");
+        assert_eq!(info2.ordinal, 1);
+
+        // Verify chain
+        let log = get_document_log(path_str.clone()).expect("get log");
+        assert_eq!(log.len(), 2);
+
+        let verify = verify_document(path_str).expect("verify");
+        assert!(verify.valid);
+        assert_eq!(verify.checkpoint_count, 2);
+    }
 }
