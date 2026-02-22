@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use witnessd_core::config::WitnessdConfig;
 use witnessd_core::declaration::{self, AIExtent, AIPurpose, ModalityType};
+use witnessd_core::war;
 use witnessd_core::evidence;
 use witnessd_core::fingerprint::{ConsentManager, ConsentStatus, FingerprintManager, ProfileId};
 use witnessd_core::jitter::{
@@ -125,28 +126,40 @@ EVIDENCE TIERS:\n  \
     standard  + VDF time proofs + signed declaration (recommended)\n  \
     enhanced  + keystroke timing evidence (requires track sessions)\n  \
     maximum   + presence verification (full forensic package)\n\n\
+OUTPUT FORMATS:\n  \
+    json      Machine-readable JSON (default)\n  \
+    war       ASCII-armored WAR block (human-readable)\n\n\
 EXAMPLES:\n  \
     witnessd export essay.txt -t standard\n  \
-    witnessd export thesis.tex -t enhanced -o proof.json")]
+    witnessd export thesis.tex -t enhanced -o proof.json\n  \
+    witnessd export essay.txt -f war -o proof.war")]
     Export {
         /// Path to the file to export evidence for
         file: PathBuf,
         /// Evidence tier: basic, standard, enhanced, maximum (see --help)
         #[arg(short = 't', long, visible_alias = "tier", default_value = "basic")]
         tier: String,
-        /// Output file path (default: <filename>.evidence.json)
+        /// Output file path (default: <filename>.evidence.json or .war)
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
+        /// Output format: json (default) or war (ASCII-armored)
+        #[arg(short = 'f', long, default_value = "json")]
+        format: String,
     },
     /// Verify the integrity of a database or evidence packet
     ///
     /// Checks that an evidence packet is valid and unmodified.
     #[command(after_help = "\
+INPUT FORMATS:\n  \
+    .json     JSON evidence packet\n  \
+    .war      ASCII-armored WAR block\n  \
+    .db       Local SQLite database\n\n\
 EXAMPLES:\n  \
     witnessd verify essay.evidence.json   Verify evidence packet\n  \
+    witnessd verify proof.war             Verify WAR block\n  \
     witnessd verify ~/.witnessd/events.db Verify local database")]
     Verify {
-        /// Path to the file (evidence packet .json or database .db)
+        /// Path to the file (evidence packet .json, WAR block .war, or database .db)
         file: PathBuf,
         /// Path to signing_key file (for database verification only)
         #[arg(short, long)]
@@ -843,6 +856,7 @@ fn cmd_export(
     tier: &str,
     output: Option<PathBuf>,
     session_id: Option<String>,
+    format: &str,
 ) -> Result<()> {
     // Get absolute path
     let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
@@ -1094,25 +1108,56 @@ fn cmd_export(
         }
     }
 
-    // Determine output path
+    // Determine output path and format
+    let format_lower = format.to_lowercase();
     let out_path = output.unwrap_or_else(|| {
         let name = file_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        PathBuf::from(format!("{}.evidence.json", name))
+        match format_lower.as_str() {
+            "war" => PathBuf::from(format!("{}.war", name)),
+            _ => PathBuf::from(format!("{}.evidence.json", name)),
+        }
     });
 
-    // Save
-    let data = serde_json::to_string_pretty(&packet)?;
-    fs::write(&out_path, data)?;
+    // Save based on format
+    match format_lower.as_str() {
+        "war" => {
+            // Parse the JSON packet into an evidence::Packet for WAR block creation
+            let evidence_packet: evidence::Packet = serde_json::from_value(packet.clone())
+                .context("Failed to create evidence packet")?;
 
-    println!();
-    println!("Evidence exported to: {}", out_path.display());
-    println!("  Checkpoints: {}", events.len());
-    println!("  Total VDF time: {:?}", total_vdf_time);
-    println!("  Tier: {}", tier);
+            // Create and sign WAR block
+            let war_block = war::Block::from_packet_signed(&evidence_packet, &signing_key)
+                .map_err(|e| anyhow!("Failed to create WAR block: {}", e))?;
+
+            // Encode as ASCII-armored text
+            let data = war_block.encode_ascii();
+            fs::write(&out_path, data)?;
+
+            println!();
+            println!("WAR block exported to: {}", out_path.display());
+            println!("  Version: {}", war_block.version.as_str());
+            println!("  Author: {}", war_block.author);
+            println!("  Signed: {}", if war_block.signed { "yes" } else { "no" });
+            println!("  Checkpoints: {}", events.len());
+            println!("  Total VDF time: {:?}", total_vdf_time);
+            println!("  Tier: {}", tier);
+        }
+        _ => {
+            // JSON format (default)
+            let data = serde_json::to_string_pretty(&packet)?;
+            fs::write(&out_path, data)?;
+
+            println!();
+            println!("Evidence exported to: {}", out_path.display());
+            println!("  Checkpoints: {}", events.len());
+            println!("  Total VDF time: {:?}", total_vdf_time);
+            println!("  Tier: {}", tier);
+        }
+    }
 
     Ok(())
 }
@@ -1192,7 +1237,7 @@ fn collect_declaration(
 // =============================================================================
 
 fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()> {
-    // Check if it's a JSON file (evidence packet) or database
+    // Check if it's a JSON file (evidence packet), WAR file, or database
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     if ext == "json" {
@@ -1219,6 +1264,36 @@ fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()> {
             Err(e) => {
                 println!("[FAILED] Evidence packet INVALID: {}", e);
             }
+        }
+    } else if ext == "war" {
+        // Verify WAR block
+        let data = fs::read_to_string(file_path).context("Failed to read WAR file")?;
+        let war_block = war::Block::decode_ascii(&data)
+            .map_err(|e| anyhow!("Failed to parse WAR block: {}", e))?;
+
+        let report = war_block.verify();
+
+        if report.valid {
+            println!("[OK] WAR block VERIFIED");
+        } else {
+            println!("[FAILED] WAR block INVALID");
+        }
+
+        println!("  Version: {}", report.details.version);
+        println!("  Author: {}", report.details.author);
+        println!("  Document: {}", &report.details.document_id[..16]);
+        println!("  Timestamp: {}", report.details.timestamp);
+
+        println!();
+        println!("Verification checks:");
+        for check in &report.checks {
+            let status = if check.passed { "[OK]" } else { "[FAIL]" };
+            println!("  {} {}: {}", status, check.name, check.message);
+        }
+
+        if !report.valid {
+            println!();
+            println!("Summary: {}", report.summary);
         }
     } else {
         // Verify database
@@ -2769,8 +2844,8 @@ async fn run() -> Result<()> {
             // Use smart log to handle optional file
             cmd_log_smart(file)?;
         }
-        Some(Commands::Export { file, tier, output }) => {
-            cmd_export(&file, &tier, output, None)?;
+        Some(Commands::Export { file, tier, output, format }) => {
+            cmd_export(&file, &tier, output, None, &format)?;
         }
         Some(Commands::Verify { file, key }) => {
             cmd_verify(&file, key)?;
