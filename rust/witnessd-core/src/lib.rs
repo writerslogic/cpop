@@ -3,7 +3,10 @@ pub mod anchors;
 pub mod api;
 pub mod bridge;
 pub mod checkpoint;
+pub mod collaboration;
+pub mod compact_ref;
 pub mod config;
+pub mod continuation;
 pub mod crypto;
 pub mod declaration;
 pub mod engine;
@@ -24,12 +27,16 @@ pub mod physics;
 pub mod physjitter_bridge;
 pub mod platform;
 pub mod presence;
+pub mod provenance;
 pub mod research;
 pub mod sentinel;
 pub mod store;
+pub mod timing;
 pub mod tpm;
+pub mod trust_policy;
 pub mod vdf;
 pub mod wal;
+pub mod war;
 
 // Re-export common types
 pub use crate::config::{FingerprintConfig, PrivacyConfig, ResearchConfig, SentinelConfig};
@@ -46,6 +53,38 @@ pub use crate::sentinel::{
 };
 pub use crate::store::{SecureEvent, SecureStore};
 pub use crate::vdf::{RoughtimeClient, TimeAnchor, TimeKeeper, VdfProof};
+
+// Re-export collaboration types
+pub use crate::collaboration::{
+    CollaborationMode, CollaborationPolicy, CollaborationSection, Collaborator, CollaboratorRole,
+    ContributionClaim, ContributionSummary, ContributionType, MergeEvent, MergeRecord,
+    MergeStrategy, TimeInterval,
+};
+
+// Re-export compact reference types
+pub use crate::compact_ref::{
+    CompactEvidenceRef, CompactMetadata, CompactRefBuilder, CompactRefError, CompactSummary,
+};
+
+// Re-export continuation types
+pub use crate::continuation::{ContinuationSection, ContinuationSummary};
+
+// Re-export provenance types
+pub use crate::provenance::{
+    DerivationClaim, DerivationType, ProvenanceLink, ProvenanceMetadata, ProvenanceSection,
+};
+
+// Re-export trust policy types
+pub use crate::trust_policy::{
+    AppraisalPolicy, FactorEvidence, FactorType, PolicyMetadata, ThresholdType, TrustComputation,
+    TrustFactor, TrustThreshold,
+};
+
+// Re-export VDF aggregation types
+pub use crate::vdf::{
+    AggregateError, AggregateMetadata, AggregationMethod, MerkleSample, MerkleVdfBuilder,
+    MerkleVdfProof, SnarkScheme, SnarkVdfProof, VdfAggregateProof, VerificationMode,
+};
 
 // Re-export fingerprint types
 pub use crate::fingerprint::{

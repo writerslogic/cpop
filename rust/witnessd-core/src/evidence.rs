@@ -6,10 +6,13 @@ use std::time::Duration;
 
 use crate::anchors;
 use crate::checkpoint;
+use crate::collaboration;
+use crate::continuation;
 use crate::declaration;
 use crate::jitter;
 use crate::keyhierarchy;
 use crate::presence;
+use crate::provenance;
 use crate::tpm;
 use crate::vdf;
 
@@ -51,6 +54,14 @@ pub struct Packet {
     pub contexts: Vec<ContextPeriod>,
     pub external: Option<ExternalAnchors>,
     pub key_hierarchy: Option<KeyHierarchyEvidencePacket>,
+    /// Cross-document provenance links (RFC Section: Provenance Links)
+    pub provenance_links: Option<provenance::ProvenanceSection>,
+    /// Multi-packet continuation info (RFC Section: Continuation Tokens)
+    pub continuation: Option<continuation::ContinuationSection>,
+    /// Collaborative authorship attestations (RFC Section: Collaborative Authorship)
+    pub collaboration: Option<collaboration::CollaborationSection>,
+    /// VDF aggregate proof for efficient verification (RFC Section: VDF Aggregation)
+    pub vdf_aggregate: Option<vdf::VdfAggregateProof>,
     pub claims: Vec<Claim>,
     pub limitations: Vec<String>,
 }
@@ -308,6 +319,10 @@ impl Builder {
             contexts: Vec::new(),
             external: None,
             key_hierarchy: None,
+            provenance_links: None,
+            continuation: None,
+            collaboration: None,
+            vdf_aggregate: None,
             claims: Vec::new(),
             limitations: Vec::new(),
         };
@@ -602,6 +617,36 @@ impl Builder {
         if self.packet.strength < Strength::Enhanced {
             self.packet.strength = Strength::Enhanced;
         }
+        self
+    }
+
+    /// Add provenance links for cross-document relationships
+    pub fn with_provenance_links(mut self, section: provenance::ProvenanceSection) -> Self {
+        if section.parent_links.is_empty() {
+            return self;
+        }
+        self.packet.provenance_links = Some(section);
+        self
+    }
+
+    /// Add continuation section for multi-packet series
+    pub fn with_continuation(mut self, section: continuation::ContinuationSection) -> Self {
+        self.packet.continuation = Some(section);
+        self
+    }
+
+    /// Add collaboration section for multi-author attestations
+    pub fn with_collaboration(mut self, section: collaboration::CollaborationSection) -> Self {
+        if section.participants.is_empty() {
+            return self;
+        }
+        self.packet.collaboration = Some(section);
+        self
+    }
+
+    /// Add VDF aggregate proof for efficient verification
+    pub fn with_vdf_aggregate(mut self, proof: vdf::VdfAggregateProof) -> Self {
+        self.packet.vdf_aggregate = Some(proof);
         self
     }
 
