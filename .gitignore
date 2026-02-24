@@ -1,62 +1,49 @@
-# macOS
-.DS_Store
-*.swp
-
-# Rust
+###############################################################################
+# Build artifacts
+###############################################################################
 /target/
 **/target/
 **/*.rs.bk
-Cargo.lock
-!rust/witnessd-core/Cargo.lock
-!rust/witnessd-cli/Cargo.lock
+!Cargo.lock
 
-# Flutter
-witnessd-gui/.dart_tool/
-witnessd-gui/.packages
-witnessd-gui/build/
-witnessd-gui/.flutter-plugins
-witnessd-gui/.flutter-plugins-dependencies
-witnessd-gui/pubspec.lock
-witnessd-gui/*.iml
-witnessd-gui/.idea/
+*.exe
+*.dll
+*.so
+*.dylib
 
-# IDE
+###############################################################################
+# IDEs / editors
+###############################################################################
+.DS_Store
+.idea/
 .vscode/
 .idea/
 *.sublime-*
 
-# Test artifacts
+###############################################################################
+# Coverage / testing artifacts
+###############################################################################
+coverage.out
+coverage.html
 *.evidence.json
 
-# Build artifacts
-*.dmg
-*.msi
-*.exe
-*.app/
+###############################################################################
+# Local environment
+###############################################################################
+.env
+.env.local
+.env.*
 
+###############################################################################
+# Archives
+###############################################################################
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 
-rust/witnessd-core/vendor/
+# Vendored dependencies
+vendor/
 
 # Scratchpad
 .scratchpad/
-
-# RFC drafts (private until published)
-rfc/
-
-# PKI keys and certificates (private)
-pki/
-
-# Patent documents (private)
-patent/
-
-# Research data (private)
-data/
-
-# Docs directories (keep only user/ and man/)
-docs/dev/
-docs/research/
-docs/schema/
-docs/spec/
-docs/*.md
-!docs/user/
-!docs/man/

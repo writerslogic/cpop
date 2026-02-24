@@ -38,13 +38,7 @@ you are expected to uphold this code.
 
 4. **Run Tests**
    ```bash
-   # Run core library tests
-   cd rust/witnessd-core
-   cargo test
-
-   # Run CLI tests
-   cd ../witnessd-cli
-   cargo test
+   cargo test --all-features
    ```
 
 ### Making Changes
@@ -70,7 +64,6 @@ you are expected to uphold this code.
 
 4. **Run All Checks**
    ```bash
-   # From project root or rust/ directory
    cargo fmt --all -- --check  # Check formatting
    cargo clippy --all-targets --all-features -- -D warnings  # Linting
    cargo test --all-features   # Run all tests
@@ -102,7 +95,7 @@ Extra care is required for cryptographic code:
 - Update README.md for user-facing changes
 - Update inline docs for API changes
 - Add examples for new features
-- Keep specs/ in sync with implementation
+- Keep [specs](https://github.com/writerslogic/witnessd-docs) in sync with implementation
 
 ## Pull Request Process
 
@@ -122,7 +115,7 @@ Releases are managed by maintainers:
 ## Getting Help
 
 - [GitHub Discussions](https://github.com/writerslogic/witnessd/discussions)
-- Documentation in `docs/`
+- Documentation in [witnessd-docs](https://github.com/writerslogic/witnessd-docs)
 - Test files for usage examples
 
 ## License and Contributor Agreement
