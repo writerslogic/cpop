@@ -1361,7 +1361,7 @@ pub fn compute_events_binding_hash(events: &[crate::store::SecureEvent]) -> [u8;
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-events-binding-v1");
     for e in events {
-        hasher.update(&e.event_hash);
+        hasher.update(e.event_hash);
     }
     hasher.finalize().into()
 }

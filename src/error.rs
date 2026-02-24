@@ -32,6 +32,7 @@ pub enum Error {
     Forensics(#[from] crate::forensics::ForensicsError),
 
     /// IPC communication error
+    #[cfg(unix)]
     #[error("ipc: {0}")]
     Ipc(#[from] crate::ipc::unix_socket::IpcError),
 

@@ -740,19 +740,27 @@ impl<P: WindowProvider + ?Sized> FocusMonitor for PollingFocusMonitor<P> {
     }
 
     fn focus_events(&self) -> mpsc::Receiver<FocusEvent> {
-        self.focus_rx.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(|| {
-            log::error!("Focus receiver already consumed - returning dummy receiver");
-            let (_tx, rx) = mpsc::channel(1);
-            rx
-        })
+        self.focus_rx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .unwrap_or_else(|| {
+                log::error!("Focus receiver already consumed - returning dummy receiver");
+                let (_tx, rx) = mpsc::channel(1);
+                rx
+            })
     }
 
     fn change_events(&self) -> mpsc::Receiver<ChangeEvent> {
-        self.change_rx.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(|| {
-            log::error!("Change receiver already consumed - returning dummy receiver");
-            let (_tx, rx) = mpsc::channel(1);
-            rx
-        })
+        self.change_rx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .unwrap_or_else(|| {
+                log::error!("Change receiver already consumed - returning dummy receiver");
+                let (_tx, rx) = mpsc::channel(1);
+                rx
+            })
     }
 }
 
@@ -944,19 +952,27 @@ pub mod stub_focus {
         }
 
         fn focus_events(&self) -> mpsc::Receiver<FocusEvent> {
-            self.focus_rx.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(|| {
-                log::error!("Focus receiver already consumed - returning dummy receiver");
-                let (_tx, rx) = mpsc::channel(1);
-                rx
-            })
+            self.focus_rx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+                .unwrap_or_else(|| {
+                    log::error!("Focus receiver already consumed - returning dummy receiver");
+                    let (_tx, rx) = mpsc::channel(1);
+                    rx
+                })
         }
 
         fn change_events(&self) -> mpsc::Receiver<ChangeEvent> {
-            self.change_rx.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(|| {
-                log::error!("Change receiver already consumed - returning dummy receiver");
-                let (_tx, rx) = mpsc::channel(1);
-                rx
-            })
+            self.change_rx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+                .unwrap_or_else(|| {
+                    log::error!("Change receiver already consumed - returning dummy receiver");
+                    let (_tx, rx) = mpsc::channel(1);
+                    rx
+                })
         }
     }
 }
@@ -1774,7 +1790,12 @@ impl IpcMessageHandler for SentinelIpcHandler {
                 verifier_nonce,
             } => {
                 let db_path = self.sentinel.config.witnessd_dir.join("events.db");
-                let key_bytes = self.sentinel.signing_key.read().unwrap_or_else(|e| e.into_inner()).to_bytes();
+                let key_bytes = self
+                    .sentinel
+                    .signing_key
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .to_bytes();
                 let hmac_key = if key_bytes == [0u8; 32] {
                     log::warn!("Using zero signing key for HMAC derivation - identity may not be initialized");
                     crate::crypto::derive_hmac_key(&[0u8; 32])
@@ -1786,9 +1807,10 @@ impl IpcMessageHandler for SentinelIpcHandler {
                     Ok(db) => {
                         match db.get_events_for_file(&file_path.to_string_lossy()) {
                             Ok(events) => {
-                                let evidence_hash = crate::evidence::compute_events_binding_hash(&events);
+                                let evidence_hash =
+                                    crate::evidence::compute_events_binding_hash(&events);
                                 let attestation_nonce = self.sentinel.get_or_generate_nonce();
-                                
+
                                 let provider = crate::tpm::detect_provider();
                                 match crate::tpm::generate_attestation_report(
                                     &*provider,
@@ -1797,7 +1819,8 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                     evidence_hash,
                                 ) {
                                     Ok(report) => {
-                                        let report_json = serde_json::to_string(&report).unwrap_or_default();
+                                        let report_json =
+                                            serde_json::to_string(&report).unwrap_or_default();
                                         IpcMessage::NonceExportResponse {
                                             success: true,
                                             output_path: None, // Direct JSON for now
@@ -1807,7 +1830,7 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                             attestation_report: Some(report_json),
                                             error: None,
                                         }
-                                    },
+                                    }
                                     Err(e) => IpcMessage::NonceExportResponse {
                                         success: false,
                                         output_path: None,
@@ -1816,9 +1839,9 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                         attestation_nonce: None,
                                         attestation_report: None,
                                         error: Some(format!("Hardware quote failed: {}", e)),
-                                    }
+                                    },
                                 }
-                            },
+                            }
                             Err(e) => IpcMessage::NonceExportResponse {
                                 success: false,
                                 output_path: None,
@@ -1827,9 +1850,9 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                 attestation_nonce: None,
                                 attestation_report: None,
                                 error: Some(format!("Failed to load events: {}", e)),
-                            }
+                            },
                         }
-                    },
+                    }
                     Err(e) => IpcMessage::NonceExportResponse {
                         success: false,
                         output_path: None,
@@ -1838,7 +1861,7 @@ impl IpcMessageHandler for SentinelIpcHandler {
                         attestation_nonce: None,
                         attestation_report: None,
                         error: Some(format!("Database error: {}", e)),
-                    }
+                    },
                 }
             }
 
@@ -1853,22 +1876,27 @@ impl IpcMessageHandler for SentinelIpcHandler {
                             Ok(packet) => {
                                 let vdf_params = packet.vdf_params;
                                 let chain_ok = packet.verify(vdf_params).is_ok();
-                                let sig_ok = packet.verify_signature(expected_nonce.as_ref()).is_ok();
+                                let sig_ok =
+                                    packet.verify_signature(expected_nonce.as_ref()).is_ok();
                                 let cp_count = packet.checkpoints.len() as u64;
                                 let total_elapsed = packet.total_elapsed_time();
                                 let total_elapsed_secs = total_elapsed.as_secs_f64();
 
                                 // Extract nonce info from the packet
-                                let pkt_verifier_nonce = packet.get_verifier_nonce().map(hex::encode);
-                                let pkt_attestation_nonce = packet.hardware.as_ref()
+                                let pkt_verifier_nonce =
+                                    packet.get_verifier_nonce().map(hex::encode);
+                                let pkt_attestation_nonce = packet
+                                    .hardware
+                                    .as_ref()
                                     .and_then(|hw| hw.attestation_nonce)
-                                    .map(|n| hex::encode(n));
+                                    .map(hex::encode);
 
-                                let nonce_valid = match (&expected_nonce, packet.get_verifier_nonce()) {
-                                    (Some(expected), Some(actual)) => *actual == *expected,
-                                    (None, None) => true,
-                                    _ => false,
-                                };
+                                let nonce_valid =
+                                    match (&expected_nonce, packet.get_verifier_nonce()) {
+                                        (Some(expected), Some(actual)) => *actual == *expected,
+                                        (None, None) => true,
+                                        _ => false,
+                                    };
 
                                 let mut errors = Vec::new();
                                 if !chain_ok {
@@ -1878,7 +1906,9 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                     errors.push("Signature verification failed (nonce mismatch or invalid signature)".to_string());
                                 }
                                 if !nonce_valid {
-                                    errors.push("Verifier nonce does not match expected nonce".to_string());
+                                    errors.push(
+                                        "Verifier nonce does not match expected nonce".to_string(),
+                                    );
                                 }
 
                                 IpcMessage::NonceVerifyResponse {
@@ -2005,33 +2035,21 @@ impl IpcMessageHandler for SentinelIpcHandler {
             }
 
             // P2 crypto operation: Verify an evidence file
-            IpcMessage::VerifyFile { path } => {
-                match std::fs::read(&path) {
-                    Ok(data) => {
-                        match crate::evidence::Packet::decode(&data) {
-                            Ok(packet) => {
-                                let vdf_params = packet.vdf_params;
-                                let chain_ok = packet.verify(vdf_params).is_ok();
-                                let sig_ok = packet.verify_signature(None).is_ok();
-                                let cp_count = packet.checkpoints.len() as u32;
+            IpcMessage::VerifyFile { path } => match std::fs::read(&path) {
+                Ok(data) => match crate::evidence::Packet::decode(&data) {
+                    Ok(packet) => {
+                        let vdf_params = packet.vdf_params;
+                        let chain_ok = packet.verify(vdf_params).is_ok();
+                        let sig_ok = packet.verify_signature(None).is_ok();
+                        let cp_count = packet.checkpoints.len() as u32;
 
-                                IpcMessage::VerifyFileResponse {
-                                    success: chain_ok,
-                                    checkpoint_count: cp_count,
-                                    signature_valid: sig_ok,
-                                    chain_integrity: chain_ok,
-                                    vdf_iterations_per_second: vdf_params.iterations_per_second,
-                                    error: None,
-                                }
-                            }
-                            Err(e) => IpcMessage::VerifyFileResponse {
-                                success: false,
-                                checkpoint_count: 0,
-                                signature_valid: false,
-                                chain_integrity: false,
-                                vdf_iterations_per_second: 0,
-                                error: Some(format!("Failed to decode evidence: {}", e)),
-                            },
+                        IpcMessage::VerifyFileResponse {
+                            success: chain_ok,
+                            checkpoint_count: cp_count,
+                            signature_valid: sig_ok,
+                            chain_integrity: chain_ok,
+                            vdf_iterations_per_second: vdf_params.iterations_per_second,
+                            error: None,
                         }
                     }
                     Err(e) => IpcMessage::VerifyFileResponse {
@@ -2040,13 +2058,25 @@ impl IpcMessageHandler for SentinelIpcHandler {
                         signature_valid: false,
                         chain_integrity: false,
                         vdf_iterations_per_second: 0,
-                        error: Some(format!("Failed to read file: {}", e)),
+                        error: Some(format!("Failed to decode evidence: {}", e)),
                     },
-                }
-            }
+                },
+                Err(e) => IpcMessage::VerifyFileResponse {
+                    success: false,
+                    checkpoint_count: 0,
+                    signature_valid: false,
+                    chain_integrity: false,
+                    vdf_iterations_per_second: 0,
+                    error: Some(format!("Failed to read file: {}", e)),
+                },
+            },
 
             // P2 crypto operation: Export evidence for a file
-            IpcMessage::ExportFile { path, tier: _, output } => {
+            IpcMessage::ExportFile {
+                path,
+                tier: _,
+                output,
+            } => {
                 let witnessd_dir = &self.sentinel.config.witnessd_dir;
 
                 // Find and load chain
@@ -2076,7 +2106,8 @@ impl IpcMessageHandler for SentinelIpcHandler {
                 }
 
                 // Build evidence packet
-                let title = path.file_name()
+                let title = path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "Untitled".to_string());
                 let mut builder = crate::evidence::Builder::new(&title, &chain);
@@ -2092,7 +2123,11 @@ impl IpcMessageHandler for SentinelIpcHandler {
                     }
                     arr
                 };
-                let signing_key = self.sentinel.signing_key.read().unwrap_or_else(|e| e.into_inner());
+                let signing_key = self
+                    .sentinel
+                    .signing_key
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
                 let decl = crate::declaration::no_ai_declaration(
                     latest.content_hash,
                     chain_hash_bytes,
@@ -2147,7 +2182,12 @@ impl IpcMessageHandler for SentinelIpcHandler {
             // P2 crypto operation: Get forensic analysis for a file
             IpcMessage::GetFileForensics { path } => {
                 let db_path = self.sentinel.config.witnessd_dir.join("events.db");
-                let key_bytes = self.sentinel.signing_key.read().unwrap_or_else(|e| e.into_inner()).to_bytes();
+                let key_bytes = self
+                    .sentinel
+                    .signing_key
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .to_bytes();
                 let hmac_key = if key_bytes == [0u8; 32] {
                     log::warn!("Using zero signing key for HMAC derivation - identity may not be initialized");
                     crate::crypto::derive_hmac_key(&[0u8; 32])
@@ -2156,59 +2196,61 @@ impl IpcMessageHandler for SentinelIpcHandler {
                 };
 
                 match crate::store::SecureStore::open(&db_path, hmac_key) {
-                    Ok(db) => {
-                        match db.get_events_for_file(&path.to_string_lossy()) {
-                            Ok(events) => {
-                                if events.is_empty() {
-                                    return IpcMessage::ForensicsResponse {
-                                        assessment_score: 0.0,
-                                        risk_level: "INSUFFICIENT DATA".to_string(),
-                                        anomaly_count: 0,
-                                        monotonic_append_ratio: 0.0,
-                                        edit_entropy: 0.0,
-                                        median_interval: 0.0,
-                                        error: Some("No events found for file".to_string()),
-                                    };
-                                }
-
-                                let event_data: Vec<crate::forensics::EventData> = events
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, e)| crate::forensics::EventData {
-                                        id: e.id.unwrap_or(i as i64),
-                                        timestamp_ns: e.timestamp_ns,
-                                        file_size: e.file_size,
-                                        size_delta: e.size_delta,
-                                        file_path: e.file_path.clone(),
-                                    })
-                                    .collect();
-
-                                let regions = std::collections::HashMap::new();
-                                let metrics = crate::forensics::analyze_forensics(
-                                    &event_data, &regions, None, None, None,
-                                );
-
-                                IpcMessage::ForensicsResponse {
-                                    assessment_score: metrics.assessment_score,
-                                    risk_level: metrics.risk_level.to_string(),
-                                    anomaly_count: metrics.anomaly_count as u32,
-                                    monotonic_append_ratio: metrics.primary.monotonic_append_ratio,
-                                    edit_entropy: metrics.primary.edit_entropy,
-                                    median_interval: metrics.primary.median_interval,
-                                    error: None,
-                                }
+                    Ok(db) => match db.get_events_for_file(&path.to_string_lossy()) {
+                        Ok(events) => {
+                            if events.is_empty() {
+                                return IpcMessage::ForensicsResponse {
+                                    assessment_score: 0.0,
+                                    risk_level: "INSUFFICIENT DATA".to_string(),
+                                    anomaly_count: 0,
+                                    monotonic_append_ratio: 0.0,
+                                    edit_entropy: 0.0,
+                                    median_interval: 0.0,
+                                    error: Some("No events found for file".to_string()),
+                                };
                             }
-                            Err(e) => IpcMessage::ForensicsResponse {
-                                assessment_score: 0.0,
-                                risk_level: "INSUFFICIENT DATA".to_string(),
-                                anomaly_count: 0,
-                                monotonic_append_ratio: 0.0,
-                                edit_entropy: 0.0,
-                                median_interval: 0.0,
-                                error: Some(format!("Failed to load events: {}", e)),
-                            },
+
+                            let event_data: Vec<crate::forensics::EventData> = events
+                                .iter()
+                                .enumerate()
+                                .map(|(i, e)| crate::forensics::EventData {
+                                    id: e.id.unwrap_or(i as i64),
+                                    timestamp_ns: e.timestamp_ns,
+                                    file_size: e.file_size,
+                                    size_delta: e.size_delta,
+                                    file_path: e.file_path.clone(),
+                                })
+                                .collect();
+
+                            let regions = std::collections::HashMap::new();
+                            let metrics = crate::forensics::analyze_forensics(
+                                &event_data,
+                                &regions,
+                                None,
+                                None,
+                                None,
+                            );
+
+                            IpcMessage::ForensicsResponse {
+                                assessment_score: metrics.assessment_score,
+                                risk_level: metrics.risk_level.to_string(),
+                                anomaly_count: metrics.anomaly_count as u32,
+                                monotonic_append_ratio: metrics.primary.monotonic_append_ratio,
+                                edit_entropy: metrics.primary.edit_entropy,
+                                median_interval: metrics.primary.median_interval,
+                                error: None,
+                            }
                         }
-                    }
+                        Err(e) => IpcMessage::ForensicsResponse {
+                            assessment_score: 0.0,
+                            risk_level: "INSUFFICIENT DATA".to_string(),
+                            anomaly_count: 0,
+                            monotonic_append_ratio: 0.0,
+                            edit_entropy: 0.0,
+                            median_interval: 0.0,
+                            error: Some(format!("Failed to load events: {}", e)),
+                        },
+                    },
                     Err(e) => IpcMessage::ForensicsResponse {
                         assessment_score: 0.0,
                         risk_level: "INSUFFICIENT DATA".to_string(),
@@ -2224,7 +2266,12 @@ impl IpcMessageHandler for SentinelIpcHandler {
             // P2 crypto operation: Compute Process Score for a file
             IpcMessage::ComputeProcessScore { path } => {
                 let db_path = self.sentinel.config.witnessd_dir.join("events.db");
-                let key_bytes = self.sentinel.signing_key.read().unwrap_or_else(|e| e.into_inner()).to_bytes();
+                let key_bytes = self
+                    .sentinel
+                    .signing_key
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .to_bytes();
                 let hmac_key = if key_bytes == [0u8; 32] {
                     log::warn!("Using zero signing key for HMAC derivation - identity may not be initialized");
                     crate::crypto::derive_hmac_key(&[0u8; 32])
@@ -2261,7 +2308,11 @@ impl IpcMessageHandler for SentinelIpcHandler {
 
                                 let regions = std::collections::HashMap::new();
                                 let metrics = crate::forensics::analyze_forensics(
-                                    &event_data, &regions, None, None, None,
+                                    &event_data,
+                                    &regions,
+                                    None,
+                                    None,
+                                    None,
                                 );
 
                                 // PS = 0.3*R + 0.3*S + 0.4*B
@@ -2270,12 +2321,10 @@ impl IpcMessageHandler for SentinelIpcHandler {
                                 } else {
                                     events.len() as f64 / 5.0
                                 };
-                                let sequence =
-                                    (metrics.primary.edit_entropy.min(3.0) / 3.0 * 0.5)
-                                        + (metrics.primary.monotonic_append_ratio * 0.5);
+                                let sequence = (metrics.primary.edit_entropy.min(3.0) / 3.0 * 0.5)
+                                    + (metrics.primary.monotonic_append_ratio * 0.5);
                                 let behavioral = metrics.assessment_score;
-                                let composite =
-                                    0.3 * residency + 0.3 * sequence + 0.4 * behavioral;
+                                let composite = 0.3 * residency + 0.3 * sequence + 0.4 * behavioral;
 
                                 IpcMessage::ProcessScoreResponse {
                                     residency,
@@ -2655,10 +2704,13 @@ fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
     let hash_bytes = session
         .initial_hash
         .as_ref()
-        .and_then(|h| hex::decode(h).map_err(|e| {
-            log::warn!("Failed to decode initial hash '{}': {}", h, e);
-            e
-        }).ok())
+        .and_then(|h| {
+            hex::decode(h)
+                .inspect_err(|e| {
+                    log::warn!("Failed to decode initial hash '{}': {}", h, e);
+                })
+                .ok()
+        })
         .unwrap_or_else(|| {
             log::debug!("No initial hash available for session, using zero hash");
             vec![0u8; 32]

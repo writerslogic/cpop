@@ -101,9 +101,11 @@ impl SecureStore {
     }
 
     pub fn get_fingerprint(&self, profile_id: &str) -> anyhow::Result<Option<AuthorFingerprint>> {
-        let mut stmt = self.conn.prepare("SELECT data_json FROM fingerprints WHERE profile_id = ?")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT data_json FROM fingerprints WHERE profile_id = ?")?;
         let mut rows = stmt.query([profile_id])?;
-        
+
         if let Some(row) = rows.next()? {
             let json: String = row.get(0)?;
             let fingerprint: AuthorFingerprint = serde_json::from_str(&json)?;
@@ -116,7 +118,7 @@ impl SecureStore {
     pub fn save_fingerprint(&self, fingerprint: &AuthorFingerprint) -> anyhow::Result<()> {
         let json = serde_json::to_string(fingerprint)?;
         let now = chrono::Utc::now().timestamp();
-        
+
         self.conn.execute(
             "INSERT OR REPLACE INTO fingerprints (profile_id, data_json, updated_at) VALUES (?, ?, ?)",
             params![fingerprint.id, json, now]
@@ -430,29 +432,29 @@ impl SecureStore {
     pub fn get_global_activity(&self, start_ts: i64) -> anyhow::Result<Vec<(i64, i64)>> {
         // Returns (timestamp_ns, count) grouped by day
         // SQLite doesn't have easy day truncation in nanoseconds, so we fetch timestamps and aggregate in Rust
-        // or we can use strftime if we convert to seconds. 
+        // or we can use strftime if we convert to seconds.
         // For simplicity and portability, let's fetch timestamps > start_ts and aggregate in Rust.
-        
+
         let mut stmt = self.conn.prepare(
             "SELECT timestamp_ns FROM secure_events WHERE timestamp_ns >= ? ORDER BY timestamp_ns ASC"
         )?;
-        
+
         let rows = stmt.query_map([start_ts], |row| row.get(0))?;
-        
+
         let mut timestamps = Vec::new();
         for row in rows {
             timestamps.push(row?);
         }
-        
+
         // Aggregation will happen in the caller (CLI) for now to keep store simple
         // Or we can return the raw list of timestamps which is what I'll do here
-        // Actually, returning a list of timestamps is fine if the volume isn't huge. 
+        // Actually, returning a list of timestamps is fine if the volume isn't huge.
         // But for "global activity", let's return count per day if possible.
-        
+
         // Let's stick to returning raw timestamps for now, it's flexible.
         // But the return type signature I proposed was Vec<(i64, i64)>.
         // Let's change it to just return Vec<i64> of all event timestamps.
-        
+
         Ok(timestamps.into_iter().map(|ts| (ts, 1)).collect())
     }
 
@@ -460,7 +462,7 @@ impl SecureStore {
         let mut stmt = self.conn.prepare(
             "SELECT timestamp_ns FROM secure_events WHERE timestamp_ns >= ? ORDER BY timestamp_ns ASC"
         )?;
-        
+
         let rows = stmt.query_map([start_ts], |row| row.get(0))?;
         let mut timestamps = Vec::new();
         for row in rows {
@@ -471,9 +473,9 @@ impl SecureStore {
 
     pub fn get_all_events_summary(&self) -> anyhow::Result<Vec<(i64, i32)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT timestamp_ns, size_delta FROM secure_events ORDER BY timestamp_ns ASC"
+            "SELECT timestamp_ns, size_delta FROM secure_events ORDER BY timestamp_ns ASC",
         )?;
-        
+
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
         let mut events = Vec::new();
         for row in rows {
@@ -484,17 +486,17 @@ impl SecureStore {
     pub fn prune_payloads(&self, days_to_keep: i64) -> anyhow::Result<usize> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days_to_keep);
         let cutoff_ns = cutoff.timestamp_nanos_opt().unwrap_or(0);
-        
+
         let count = self.conn.execute(
             "UPDATE secure_events 
              SET context_note = NULL, vdf_input = NULL, vdf_output = NULL 
              WHERE timestamp_ns < ?",
             [cutoff_ns],
         )?;
-        
+
         // Optional: Vacuum to reclaim space, but this locks the DB
         // self.conn.execute("VACUUM", [])?;
-        
+
         Ok(count)
     }
 }

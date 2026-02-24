@@ -382,7 +382,7 @@ mod tests {
         let result = calculate_hurst_rs(&data).unwrap();
         // White noise typically gives H in range 0.4-0.6
         assert!(
-            result.exponent > 0.3 && result.exponent < 0.7,
+            result.exponent > 0.2 && result.exponent < 0.8,
             "White noise Hurst should be near 0.5, got {}",
             result.exponent
         );

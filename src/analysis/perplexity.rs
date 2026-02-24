@@ -21,14 +21,21 @@ impl PerplexityModel {
 
     /// Trains the model on a piece of text.
     pub fn train(&mut self, text: &str) {
-        if text.len() < self.n { return; }
-        
+        if text.len() < self.n {
+            return;
+        }
+
         let chars: Vec<char> = text.chars().collect();
         for i in 0..(chars.len() - self.n) {
             let context: String = chars[i..(i + self.n)].iter().collect();
             let next_char = chars[i + self.n];
-            
-            *self.counts.entry(context.clone()).or_default().entry(next_char).or_default() += 1;
+
+            *self
+                .counts
+                .entry(context.clone())
+                .or_default()
+                .entry(next_char)
+                .or_default() += 1;
             *self.totals.entry(context).or_default() += 1;
         }
         self.sample_count += text.len();
@@ -49,11 +56,11 @@ impl PerplexityModel {
         for i in 0..(chars.len() - self.n) {
             let context: String = chars[i..(i + self.n)].iter().collect();
             let next_char = chars[i + self.n];
-            
+
             let prob = if let Some(context_counts) = self.counts.get(&context) {
                 let char_count = *context_counts.get(&next_char).unwrap_or(&0);
                 let total = *self.totals.get(&context).unwrap_or(&1);
-                
+
                 // Simple Laplace smoothing
                 (char_count as f64 + 0.1) / (total as f64 + 0.1 * 256.0)
             } else {
@@ -65,8 +72,10 @@ impl PerplexityModel {
             count += 1;
         }
 
-        if count == 0 { return 1.0; }
-        
+        if count == 0 {
+            return 1.0;
+        }
+
         // Perplexity = exp(-1/N * sum(log P))
         (-log_prob_sum / count as f64).exp()
     }

@@ -14,11 +14,11 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use zeroize::Zeroize;
 #[cfg(target_os = "windows")]
 use tokio::net::windows::named_pipe;
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+use zeroize::Zeroize;
 
 /// IPC Message Protocol for high-performance communication between Brain and Face.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +111,6 @@ pub enum IpcMessage {
     },
 
     // P2: Crypto Operation Requests (for Windows IPC, macOS uses FFI)
-
     /// Verify an evidence file
     VerifyFile {
         path: PathBuf,
@@ -336,7 +335,9 @@ impl SecureSession {
         }
 
         let seq = u64::from_le_bytes(
-            data[..8].try_into().map_err(|_| anyhow!("Invalid sequence number bytes"))?
+            data[..8]
+                .try_into()
+                .map_err(|_| anyhow!("Invalid sequence number bytes"))?,
         );
         let expected_seq = self.rx_sequence.fetch_add(2, Ordering::SeqCst);
 
@@ -378,11 +379,11 @@ impl RateLimitConfig {
     /// Get the maximum operations per window for a given operation category.
     fn max_ops(category: &str) -> u32 {
         match category {
-            "heartbeat" | "status" => 120,     // Frequent, cheap operations
-            "witnessing" => 30,                 // Moderate — start/stop tracking
-            "verify" | "export" | "forensics" | "process_score" => 10,  // Expensive crypto ops
-            "checkpoint" => 20,                 // Moderately expensive
-            _ => 60,                            // General operations
+            "heartbeat" | "status" => 120, // Frequent, cheap operations
+            "witnessing" => 30,            // Moderate — start/stop tracking
+            "verify" | "export" | "forensics" | "process_score" => 10, // Expensive crypto ops
+            "checkpoint" => 20,            // Moderately expensive
+            _ => 60,                       // General operations
         }
     }
 }
@@ -497,11 +498,14 @@ async fn secure_handshake_server<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
         let mut client_confirm_buf = vec![0u8; client_confirm_len];
         stream.read_exact(&mut client_confirm_buf).await?;
 
-        let client_confirm_plaintext = session.decrypt(&client_confirm_buf)
+        let client_confirm_plaintext = session
+            .decrypt(&client_confirm_buf)
             .map_err(|_| anyhow!("Key confirmation failed: client derived different key"))?;
 
         if client_confirm_plaintext != KEY_CONFIRM_PLAINTEXT {
-            return Err(anyhow!("Key confirmation mismatch: client sent wrong token"));
+            return Err(anyhow!(
+                "Key confirmation mismatch: client sent wrong token"
+            ));
         }
 
         Ok(session)
@@ -544,10 +548,16 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
     let protocol = if peek_buf == SECURE_JSON_PROTOCOL_MAGIC {
         WireProtocol::SecureJson
     } else if peek_buf == JSON_PROTOCOL_MAGIC {
-        log::warn!("IPC: client connected with plain JSON protocol (unencrypted) on {}", transport_label);
+        log::warn!(
+            "IPC: client connected with plain JSON protocol (unencrypted) on {}",
+            transport_label
+        );
         WireProtocol::Json
     } else {
-        log::warn!("IPC: client connected with legacy bincode protocol (unencrypted) on {}", transport_label);
+        log::warn!(
+            "IPC: client connected with legacy bincode protocol (unencrypted) on {}",
+            transport_label
+        );
         WireProtocol::Bincode
     };
 
@@ -556,7 +566,10 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
         // Read protocol version byte (1 byte after magic)
         let mut version_buf = [0u8; 1];
         if stream.read_exact(&mut version_buf).await.is_err() {
-            log::error!("IPC: failed to read protocol version byte on {}", transport_label);
+            log::error!(
+                "IPC: failed to read protocol version byte on {}",
+                transport_label
+            );
             return;
         }
         let version = version_buf[0];
@@ -571,7 +584,11 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                 Some(session)
             }
             Err(e) => {
-                log::error!("IPC: secure handshake failed on {}: {} (rejecting)", transport_label, e);
+                log::error!(
+                    "IPC: secure handshake failed on {}: {} (rejecting)",
+                    transport_label,
+                    e
+                );
                 return;
             }
         }
@@ -590,7 +607,11 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
         let len_bytes = [peek_buf[0], peek_buf[1], remaining[0], remaining[1]];
         first_len = u32::from_le_bytes(len_bytes) as usize;
         if first_len > MAX_MESSAGE_SIZE {
-            log::warn!("IPC: message too large: {} bytes on {} (dropping)", first_len, transport_label);
+            log::warn!(
+                "IPC: message too large: {} bytes on {} (dropping)",
+                first_len,
+                transport_label
+            );
             return;
         }
         first_message_pending = true;
@@ -615,7 +636,11 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
             }
             let len = u32::from_le_bytes(len_buf) as usize;
             if len > MAX_MESSAGE_SIZE {
-                log::warn!("IPC: message too large: {} bytes on {} (dropping)", len, transport_label);
+                log::warn!(
+                    "IPC: message too large: {} bytes on {} (dropping)",
+                    len,
+                    transport_label
+                );
                 break;
             }
             len
@@ -631,7 +656,11 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
             match session.decrypt(&msg_buf) {
                 Ok(pt) => pt,
                 Err(e) => {
-                    log::error!("IPC: decrypt failed on {}: {} (closing — possible tampering)", transport_label, e);
+                    log::error!(
+                        "IPC: decrypt failed on {}: {} (closing — possible tampering)",
+                        transport_label,
+                        e
+                    );
                     break;
                 }
             }
@@ -650,7 +679,12 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                 // Per-category rate limit check
                 let key = rate_limit_key(&msg);
                 if !rate_limiter.check(key) {
-                    log::warn!("IPC: rate limit exceeded for '{}' on {} (limit: {}/60s)", key, transport_label, RateLimitConfig::max_ops(key));
+                    log::warn!(
+                        "IPC: rate limit exceeded for '{}' on {} (limit: {}/60s)",
+                        key,
+                        transport_label,
+                        RateLimitConfig::max_ops(key)
+                    );
                     let error_response = IpcMessage::Error {
                         code: IpcErrorCode::InternalError,
                         message: format!("Rate limit exceeded for operation: {}", key),
@@ -693,12 +727,20 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         }
                     }
                     Err(e) => {
-                        log::error!("IPC: failed to serialize response on {}: {}", transport_label, e);
+                        log::error!(
+                            "IPC: failed to serialize response on {}: {}",
+                            transport_label,
+                            e
+                        );
                     }
                 }
             }
             Err(e) => {
-                log::warn!("IPC: failed to deserialize message on {}: {}", transport_label, e);
+                log::warn!(
+                    "IPC: failed to deserialize message on {}: {}",
+                    transport_label,
+                    e
+                );
                 let error_response = IpcMessage::Error {
                     code: IpcErrorCode::InvalidMessage,
                     message: format!("Failed to deserialize message: {}", e),
@@ -954,9 +996,7 @@ async fn handle_connection<H: IpcMessageHandler>(mut stream: UnixStream, handler
 fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::Security::{
-        GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER,
-    };
+    use windows::Win32::Security::TOKEN_QUERY;
     use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
     use windows::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -967,7 +1007,9 @@ fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
     impl Drop for OwnedHandle {
         fn drop(&mut self) {
             if !self.0.is_invalid() {
-                unsafe { let _ = CloseHandle(self.0); }
+                unsafe {
+                    let _ = CloseHandle(self.0);
+                }
             }
         }
     }
@@ -1002,7 +1044,8 @@ fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
         if server_sid != client_sid {
             return Err(anyhow!(
                 "IPC peer SID mismatch: client SID {} != server SID {}",
-                client_sid, server_sid
+                client_sid,
+                server_sid
             ));
         }
 
@@ -1013,9 +1056,8 @@ fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
 /// Extract user SID string from a process token.
 #[cfg(target_os = "windows")]
 unsafe fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Result<String> {
-    use windows::Win32::Security::{
-        ConvertSidToStringSidW, GetTokenInformation, TokenUser, TOKEN_USER,
-    };
+    use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
     // First call to get buffer size
     let mut size: u32 = 0;
@@ -1034,26 +1076,21 @@ unsafe fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Resul
     let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
     let sid = token_user.User.Sid;
 
-    // Convert SID to string (Win32 allocates the string — must LocalFree)
+    // Convert SID to string
     let mut sid_string = windows::core::PWSTR::null();
     ConvertSidToStringSidW(sid, &mut sid_string)
         .map_err(|e| anyhow!("ConvertSidToStringSid failed: {}", e))?;
 
-    // RAII guard for LocalFree — ensures cleanup even if to_string() fails
-    struct LocalFreeGuard(windows::core::PWSTR);
-    impl Drop for LocalFreeGuard {
-        fn drop(&mut self) {
-            unsafe {
-                windows::Win32::System::Memory::LocalFree(
-                    windows::Win32::Foundation::HLOCAL(self.0.as_ptr() as *mut _),
-                );
-            }
-        }
-    }
-    let _guard = LocalFreeGuard(sid_string);
+    let result = sid_string
+        .to_string()
+        .map_err(|e| anyhow!("SID string conversion failed: {}", e));
 
-    sid_string.to_string()
-        .map_err(|e| anyhow!("SID string conversion failed: {}", e))
+    // Free the Win32-allocated string
+    windows::Win32::Foundation::LocalFree(Some(windows::Win32::Foundation::HLOCAL(
+        sid_string.as_ptr() as *mut _,
+    )));
+
+    result
 }
 
 #[cfg(target_os = "windows")]
@@ -1063,7 +1100,10 @@ async fn handle_windows_connection<H: IpcMessageHandler>(
 ) {
     // Verify the connecting client is running as the same user (Windows SID check)
     if let Err(e) = verify_windows_pipe_peer(&pipe) {
-        log::error!("IPC: peer SID verification failed: {} (rejecting connection)", e);
+        log::error!(
+            "IPC: peer SID verification failed: {} (rejecting connection)",
+            e
+        );
         return;
     }
 
@@ -1169,8 +1209,6 @@ impl IpcClient {
     /// For example, if `path` is `/tmp/witnessd_ipc` or `C:\...\witnessd_ipc`,
     /// the pipe name will be `\\.\pipe\witnessd-witnessd_ipc`.
     pub fn connect(path: PathBuf) -> Result<Self> {
-        use std::io::{Read, Write};
-
         let pipe_name = format!(
             r"\\.\pipe\witnessd-{}",
             path.file_name()

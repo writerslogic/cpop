@@ -42,7 +42,7 @@ pub fn generate_attestation_report(
 
     // 2. Request hardware quote (using the combined payload as the nonce for the TPM quote)
     // In TPM terms, we often hash this payload to fit in the nonce field (usually 32 bytes).
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(&quote_payload);
     let quote_nonce = hasher.finalize();

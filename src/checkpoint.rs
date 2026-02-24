@@ -747,8 +747,13 @@ mod tests {
     #[test]
     fn test_chain_creation_invalid_path() {
         let err = Chain::new("/nonexistent/path/to/file.txt", test_vdf_params()).unwrap_err();
-        // Error is an IO error for nonexistent path
-        assert!(err.to_string().contains("No such file"));
+        // Error is an IO error for nonexistent path (message varies by platform)
+        let msg = err.to_string();
+        assert!(
+            msg.contains("No such file") || msg.contains("cannot find the path"),
+            "Unexpected error: {}",
+            msg
+        );
     }
 
     #[test]

@@ -1129,7 +1129,8 @@ pub fn analyze_forensics(
     // Perplexity analysis
     if let (Some(model), Some(text)) = (perplexity_model, document_text) {
         metrics.perplexity_score = model.calculate_perplexity(text);
-        if metrics.perplexity_score > 15.0 { // Heuristic threshold for "too surprising"
+        if metrics.perplexity_score > 15.0 {
+            // Heuristic threshold for "too surprising"
             metrics.anomaly_count += 1;
         }
     } else {

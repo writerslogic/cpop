@@ -84,6 +84,46 @@ fn get_db_path() -> Option<PathBuf> {
     get_data_dir().map(|d| d.join("events.db"))
 }
 
+/// Load the HMAC key from the signing key file in the data directory.
+fn load_hmac_key() -> Option<Vec<u8>> {
+    let data_dir = get_data_dir()?;
+    let key_path = data_dir.join("signing_key");
+    let key_data = std::fs::read(&key_path).ok()?;
+    let seed = if key_data.len() >= 32 {
+        &key_data[..32]
+    } else {
+        return None;
+    };
+    Some(crate::crypto::derive_hmac_key(seed))
+}
+
+/// Open the SecureStore with the HMAC key from the data directory.
+fn open_store() -> Result<crate::store::SecureStore, String> {
+    let db_path = get_db_path()
+        .filter(|p| p.exists())
+        .ok_or_else(|| "Database not found".to_string())?;
+    let hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
+    crate::store::SecureStore::open(&db_path, hmac_key)
+        .map_err(|e| format!("Failed to open database: {}", e))
+}
+
+/// Convert SecureEvents to forensic EventData.
+fn events_to_forensic_data(
+    events: &[crate::store::SecureEvent],
+) -> Vec<crate::forensics::EventData> {
+    events
+        .iter()
+        .enumerate()
+        .map(|(i, e)| crate::forensics::EventData {
+            id: e.id.unwrap_or(i as i64),
+            timestamp_ns: e.timestamp_ns,
+            file_size: e.file_size,
+            size_delta: e.size_delta,
+            file_path: e.file_path.clone(),
+        })
+        .collect()
+}
+
 // MARK: - FFI Functions
 
 /// Verify an evidence packet file.
@@ -138,7 +178,7 @@ pub fn ffi_verify_evidence(path: String) -> FfiVerifyResult {
     let vdf_ips = packet.vdf_params.iterations_per_second;
 
     // Run verification
-    match packet.verify(packet.vdf_params.clone()) {
+    match packet.verify(packet.vdf_params) {
         Ok(()) => FfiVerifyResult {
             success: true,
             checkpoint_count,
@@ -175,31 +215,19 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         };
     }
 
-    let db_path = match get_db_path() {
-        Some(p) if p.exists() => p,
-        _ => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Database not found".to_string()),
-            };
-        }
-    };
-
-    // Open the database and load events for this file
-    let store = match crate::store::SecureStore::open(db_path.to_str().unwrap_or("")) {
+    let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
             return FfiResult {
                 success: false,
                 message: None,
-                error_message: Some(format!("Failed to open database: {}", e)),
+                error_message: Some(e),
             };
         }
     };
 
     // Determine strength from tier string
-    let strength = match tier.to_lowercase().as_str() {
+    let _strength = match tier.to_lowercase().as_str() {
         "basic" => crate::evidence::Strength::Basic,
         "standard" => crate::evidence::Strength::Standard,
         "enhanced" => crate::evidence::Strength::Enhanced,
@@ -207,7 +235,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         _ => crate::evidence::Strength::Standard,
     };
 
-    // Build the evidence packet
+    // Load events for this file
     let events = match store.get_events_for_file(file_path.to_str().unwrap_or("")) {
         Ok(e) => e,
         Err(e) => {
@@ -227,34 +255,54 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         };
     }
 
-    // Build and encode packet
-    match crate::evidence::PacketBuilder::new(file_path.clone(), strength)
-        .with_events(&events)
-        .build()
-    {
-        Ok(packet) => match packet.encode() {
-            Ok(encoded) => match std::fs::write(&output_path, &encoded) {
-                Ok(()) => FfiResult {
-                    success: true,
-                    message: Some(format!("Exported to {}", output_path.display())),
-                    error_message: None,
-                },
-                Err(e) => FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("Failed to write output: {}", e)),
-                },
+    // Build a JSON evidence packet from events
+    let latest = &events[events.len() - 1];
+    let checkpoints: Vec<serde_json::Value> = events
+        .iter()
+        .enumerate()
+        .map(|(i, ev)| {
+            serde_json::json!({
+                "ordinal": i as u64,
+                "content_hash": hex::encode(ev.content_hash),
+                "content_size": ev.file_size,
+                "message": ev.context_type,
+                "vdf_iterations": ev.vdf_iterations,
+                "previous_hash": hex::encode(ev.previous_hash),
+                "hash": hex::encode(ev.event_hash),
+            })
+        })
+        .collect();
+
+    let packet = serde_json::json!({
+        "version": 1,
+        "exported_at": chrono::Utc::now().to_rfc3339(),
+        "strength": tier,
+        "document": {
+            "title": file_path.file_name().and_then(|n| n.to_str()).unwrap_or("document"),
+            "path": file_path.to_str().unwrap_or(""),
+            "final_hash": hex::encode(latest.content_hash),
+            "final_size": latest.file_size,
+        },
+        "checkpoints": checkpoints,
+    });
+
+    match serde_json::to_vec_pretty(&packet) {
+        Ok(encoded) => match std::fs::write(&output_path, &encoded) {
+            Ok(()) => FfiResult {
+                success: true,
+                message: Some(format!("Exported to {}", output_path.display())),
+                error_message: None,
             },
             Err(e) => FfiResult {
                 success: false,
                 message: None,
-                error_message: Some(format!("Failed to encode packet: {}", e)),
+                error_message: Some(format!("Failed to write output: {}", e)),
             },
         },
         Err(e) => FfiResult {
             success: false,
             message: None,
-            error_message: Some(format!("Failed to build packet: {}", e)),
+            error_message: Some(format!("Failed to encode packet: {}", e)),
         },
     }
 }
@@ -266,23 +314,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
 pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
     let file_path = PathBuf::from(&path);
 
-    let db_path = match get_db_path() {
-        Some(p) if p.exists() => p,
-        _ => {
-            return FfiForensicResult {
-                success: false,
-                assessment_score: 0.0,
-                risk_level: "unknown".to_string(),
-                anomaly_count: 0,
-                monotonic_append_ratio: 0.0,
-                edit_entropy: 0.0,
-                median_interval: 0.0,
-                error_message: Some("Database not found".to_string()),
-            };
-        }
-    };
-
-    let store = match crate::store::SecureStore::open(db_path.to_str().unwrap_or("")) {
+    let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
             return FfiForensicResult {
@@ -293,7 +325,7 @@ pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
                 monotonic_append_ratio: 0.0,
                 edit_entropy: 0.0,
                 median_interval: 0.0,
-                error_message: Some(format!("Failed to open database: {}", e)),
+                error_message: Some(e),
             };
         }
     };
@@ -328,15 +360,7 @@ pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
     }
 
     // Convert SecureEvents to forensic EventData
-    let event_data: Vec<crate::forensics::EventData> = events
-        .iter()
-        .map(|e| crate::forensics::EventData {
-            timestamp_ns: e.timestamp_ns as u64,
-            size_delta: e.size_delta as i64,
-            file_size: e.file_size as u64,
-            is_paste: e.is_paste,
-        })
-        .collect();
+    let event_data = events_to_forensic_data(&events);
 
     let regions = std::collections::HashMap::new();
     let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);
@@ -353,7 +377,7 @@ pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
         success: true,
         assessment_score: metrics.assessment_score,
         risk_level: risk_level.to_string(),
-        anomaly_count: 0, // Calculated from forgery analysis if present
+        anomaly_count: 0,
         monotonic_append_ratio: metrics.primary.monotonic_append_ratio,
         edit_entropy: metrics.primary.edit_entropy,
         median_interval: metrics.primary.median_interval,
@@ -371,22 +395,7 @@ pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
 pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
     let file_path = PathBuf::from(&path);
 
-    let db_path = match get_db_path() {
-        Some(p) if p.exists() => p,
-        _ => {
-            return FfiProcessScore {
-                success: false,
-                residency: 0.0,
-                sequence: 0.0,
-                behavioral: 0.0,
-                composite: 0.0,
-                meets_threshold: false,
-                error_message: Some("Database not found".to_string()),
-            };
-        }
-    };
-
-    let store = match crate::store::SecureStore::open(db_path.to_str().unwrap_or("")) {
+    let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
             return FfiProcessScore {
@@ -396,7 +405,7 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
                 behavioral: 0.0,
                 composite: 0.0,
                 meets_threshold: false,
-                error_message: Some(format!("Failed to open database: {}", e)),
+                error_message: Some(e),
             };
         }
     };
@@ -429,22 +438,18 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
     }
 
     // Convert events to forensic data for analysis
-    let event_data: Vec<crate::forensics::EventData> = events
-        .iter()
-        .map(|e| crate::forensics::EventData {
-            timestamp_ns: e.timestamp_ns as u64,
-            size_delta: e.size_delta as i64,
-            file_size: e.file_size as u64,
-            is_paste: e.is_paste,
-        })
-        .collect();
+    let event_data = events_to_forensic_data(&events);
 
     let regions = std::collections::HashMap::new();
     let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);
 
     // Compute Process Score components from forensic metrics
     // R (Residency): Based on chain integrity and continuous coverage
-    let residency = if events.len() >= 5 { 1.0 } else { events.len() as f64 / 5.0 };
+    let residency = if events.len() >= 5 {
+        1.0
+    } else {
+        events.len() as f64 / 5.0
+    };
 
     // S (Sequence): Based on edit entropy and monotonic append ratio
     let sequence = (metrics.primary.edit_entropy.min(3.0) / 3.0 * 0.5)
@@ -496,12 +501,7 @@ pub fn ffi_calibrate_vdf() -> FfiCalibrationResult {
 pub fn ffi_get_compact_ref(path: String) -> String {
     let file_path = PathBuf::from(&path);
 
-    let db_path = match get_db_path() {
-        Some(p) if p.exists() => p,
-        _ => return String::new(),
-    };
-
-    let store = match crate::store::SecureStore::open(db_path.to_str().unwrap_or("")) {
+    let store = match open_store() {
         Ok(s) => s,
         Err(_) => return String::new(),
     };
@@ -517,10 +517,14 @@ pub fn ffi_get_compact_ref(path: String) -> String {
 
     // Build a compact reference from the most recent event hash
     let last_event = &events[events.len() - 1];
-    let hash_hex = hex::encode(&last_event.event_hash);
+    let hash_hex = hex::encode(last_event.event_hash);
 
     // Format: witnessd:<first 12 chars of hash>:<checkpoint count>
-    format!("witnessd:{}:{}", &hash_hex[..hash_hex.len().min(12)], events.len())
+    format!(
+        "witnessd:{}:{}",
+        &hash_hex[..hash_hex.len().min(12)],
+        events.len()
+    )
 }
 
 /// Create a manual checkpoint for a file with an optional message.
@@ -536,24 +540,13 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
         };
     }
 
-    let db_path = match get_db_path() {
-        Some(p) if p.exists() => p,
-        _ => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Database not found".to_string()),
-            };
-        }
-    };
-
-    let store = match crate::store::SecureStore::open(db_path.to_str().unwrap_or("")) {
+    let mut store = match open_store() {
         Ok(s) => s,
         Err(e) => {
             return FfiResult {
                 success: false,
                 message: None,
-                error_message: Some(format!("Failed to open database: {}", e)),
+                error_message: Some(e),
             };
         }
     };
@@ -571,24 +564,39 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
     };
 
     use sha2::{Digest, Sha256};
-    let content_hash = Sha256::digest(&content);
+    let content_hash: [u8; 32] = Sha256::digest(&content).into();
 
-    let msg = if message.is_empty() {
+    let context_note = if message.is_empty() {
         None
     } else {
         Some(message)
     };
 
-    // Store the checkpoint event
-    match store.insert_event(
-        file_path.to_str().unwrap_or(""),
-        &content_hash,
-        content.len() as i64,
-        0, // size_delta calculated by store
-        msg.as_deref(),
-        None, // context_type
-        false, // is_paste
-    ) {
+    // Build a SecureEvent for the checkpoint
+    let mut event = crate::store::SecureEvent {
+        id: None,
+        device_id: [0u8; 16],
+        machine_id: String::new(),
+        timestamp_ns: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0),
+        file_path: file_path.to_str().unwrap_or("").to_string(),
+        content_hash,
+        file_size: content.len() as i64,
+        size_delta: 0,
+        previous_hash: [0u8; 32],
+        event_hash: [0u8; 32],
+        context_type: None,
+        context_note,
+        vdf_input: None,
+        vdf_output: None,
+        vdf_iterations: 0,
+        forensic_score: 0.0,
+        is_paste: false,
+    };
+
+    match store.insert_secure_event(&mut event) {
         Ok(_) => FfiResult {
             success: true,
             message: Some(format!(

@@ -1,6 +1,9 @@
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
+#[cfg(feature = "ffi")]
+uniffi::setup_scaffolding!();
+
 pub mod analysis;
 pub mod anchors;
 pub mod api_types;

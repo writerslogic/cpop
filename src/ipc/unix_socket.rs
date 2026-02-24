@@ -149,7 +149,10 @@ impl VerifiedConnection {
             // add proc_pidpath via the libproc crate for full path-based
             // executable verification.
             if self.peer_pid <= 0 {
-                log::warn!("Invalid peer PID: {}, skipping executable verification", self.peer_pid);
+                log::warn!(
+                    "Invalid peer PID: {}, skipping executable verification",
+                    self.peer_pid
+                );
                 return Err(IpcError::InvalidPeerExecutable);
             }
             if self.peer_pid == 1 {

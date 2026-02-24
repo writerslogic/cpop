@@ -373,6 +373,7 @@ unsafe extern "system" fn keystroke_capture_hook(
                 char_value: None,
                 is_hardware: !is_injected,
                 device_id: None,
+                transport_type: None,
             };
 
             let _ = sender.send(event);
