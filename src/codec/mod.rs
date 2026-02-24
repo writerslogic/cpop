@@ -10,12 +10,14 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
 /// CBOR semantic tag for Proof-of-Process Packet (PPP).
-/// Tag value: 1347571284 (0x50505054 = "PPPT" in ASCII)
-pub const CBOR_TAG_PPP: u64 = 1347571284;
+/// Tag value: 1129336656 (0x434F5050 = "CPOP" in ASCII)
+/// Per draft-condrey-rats-pop CDDL: pop-evidence = #6.1129336656(evidence-packet)
+pub const CBOR_TAG_PPP: u64 = 1129336656;
 
 /// CBOR semantic tag for Writers Authenticity Report (WAR).
-/// Tag value: 1463894560 (0x57415220 = "WAR " in ASCII)
-pub const CBOR_TAG_WAR: u64 = 1463894560;
+/// Tag value: 1129791826 (0x43574152 = "CWAR" in ASCII)
+/// Per draft-condrey-rats-pop CDDL: pop-war = #6.1129791826(attestation-result)
+pub const CBOR_TAG_WAR: u64 = 1129791826;
 
 /// CBOR semantic tag for Compact Evidence Reference.
 /// Tag value: 1347571281 (0x50505021)
