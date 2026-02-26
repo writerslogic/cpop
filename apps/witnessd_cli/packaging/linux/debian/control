@@ -1,0 +1,37 @@
+Source: witnessd
+Section: utils
+Priority: optional
+Maintainer: David Condrey <david@condrey.dev>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.21), git
+Standards-Version: 4.6.2
+Homepage: https://github.com/writerslogic/witnessd
+Vcs-Browser: https://github.com/writerslogic/witnessd
+Vcs-Git: https://github.com/writerslogic/witnessd.git
+Rules-Requires-Root: no
+
+Package: witnessd
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: ibus (>= 1.5)
+Suggests: witnessd-ibus
+Description: Cryptographic authorship witnessing daemon
+ Witnessd provides cryptographic authorship witnessing through kinetic
+ proof of provenance. It captures keystroke dynamics and timing patterns
+ to create unforgeable evidence of human authorship.
+ .
+ Features:
+  - Merkle Mountain Range (MMR) append-only log
+  - Ed25519 digital signatures
+  - Privacy-preserving keystroke biometrics
+  - Multi-anchor timestamping (blockchain, Keybase, etc.)
+  - Forensic analysis toolkit
+
+Package: witnessd-ibus
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, witnessd (= ${binary:Version}), ibus (>= 1.5)
+Description: IBus integration for witnessd
+ IBus input method engine for witnessd that captures keystroke dynamics
+ through the Linux input method framework.
+ .
+ This package provides system-wide keystroke witnessing through IBus
+ without requiring elevated privileges.

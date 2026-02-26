@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#grad1)"/>
+
+  <!-- Inner circle for depth -->
+  <circle cx="64" cy="64" r="52" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.2"/>
+
+  <!-- Jitter waveform - irregular timing pattern -->
+  <path d="M 20 64
+           L 28 64 L 30 45 L 32 64
+           L 40 64 L 43 38 L 46 64
+           L 52 64 L 54 72 L 56 64
+           L 62 64 L 65 30 L 68 64
+           L 76 64 L 78 55 L 80 64
+           L 86 64 L 90 42 L 94 64
+           L 100 64 L 102 68 L 104 64
+           L 108 64"
+        fill="none"
+        stroke="#ffffff"
+        stroke-width="3.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Secondary jitter trace (offset, representing entropy) -->
+  <path d="M 20 74
+           L 30 74 L 32 82 L 34 74
+           L 44 74 L 46 68 L 48 74
+           L 56 74 L 59 88 L 62 74
+           L 70 74 L 72 78 L 74 74
+           L 82 74 L 86 70 L 90 74
+           L 98 74 L 100 80 L 102 74
+           L 108 74"
+        fill="none"
+        stroke="url(#grad2)"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity="0.8"/>
+
+  <!-- Small entropy dots scattered -->
+  <circle cx="25" cy="42" r="2" fill="#ffffff" opacity="0.6"/>
+  <circle cx="45" cy="90" r="1.5" fill="#22d3ee" opacity="0.7"/>
+  <circle cx="85" cy="35" r="2" fill="#ffffff" opacity="0.5"/>
+  <circle cx="100" cy="88" r="1.5" fill="#22d3ee" opacity="0.6"/>
+  <circle cx="38" cy="52" r="1" fill="#ffffff" opacity="0.4"/>
+  <circle cx="92" cy="50" r="1.5" fill="#ffffff" opacity="0.5"/>
+</svg>

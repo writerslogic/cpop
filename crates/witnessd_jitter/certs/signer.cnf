@@ -1,0 +1,29 @@
+# C2PA Claim Signer Certificate Configuration
+# Compliant with C2PA Technical Specification 2.2+
+
+[req]
+default_bits = 256
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[dn]
+CN = WritersLogic C2PA Signer
+O = WritersLogic
+C = US
+
+[v3_signer]
+# Basic Constraints: This is an end-entity certificate, not a CA
+basicConstraints = critical, CA:FALSE
+
+# Key Usage: Required for signing
+keyUsage = critical, digitalSignature
+
+# Extended Key Usage: C2PA accepts emailProtection (1.3.6.1.5.5.7.3.4)
+# or documentSigning (1.3.6.1.5.5.7.3.36)
+# Using emailProtection as it's the most widely accepted
+extendedKeyUsage = emailProtection
+
+# Subject/Authority Key Identifiers
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer

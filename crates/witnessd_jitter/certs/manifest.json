@@ -1,0 +1,45 @@
+{
+  "claim_generator": "physjitter/0.2.0",
+  "claim_generator_info": [
+    {
+      "name": "physjitter",
+      "version": "0.2.0"
+    }
+  ],
+  "private_key": "private_key.pem",
+  "sign_cert": "certificate.pem",
+  "tsa_url": "http://timestamp.digicert.com",
+  "title": "physjitter logo",
+  "assertions": [
+    {
+      "label": "stds.schema-org.CreativeWork",
+      "data": {
+        "@context": "https://schema.org",
+        "@type": "CreativeWork",
+        "author": [
+          {
+            "@type": "Organization",
+            "name": "WritersLogic"
+          }
+        ],
+        "copyrightNotice": "Copyright 2026 WritersLogic",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0"
+      }
+    },
+    {
+      "label": "c2pa.actions",
+      "data": {
+        "actions": [
+          {
+            "action": "c2pa.created",
+            "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+            "softwareAgent": {
+              "name": "physjitter",
+              "version": "0.2.0"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

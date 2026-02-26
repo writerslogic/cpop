@@ -1,0 +1,44 @@
+#!/bin/bash
+# postrm script for witnessd
+
+set -e
+
+case "$1" in
+    purge)
+        # Remove data directories on purge
+        rm -rf /var/lib/witnessd
+        rm -rf /var/log/witnessd
+        rm -rf /etc/witnessd
+
+        # Remove witnessd user
+        if getent passwd witnessd >/dev/null 2>&1; then
+            deluser --quiet --system witnessd || true
+        fi
+
+        # Remove witnessd group
+        if getent group witnessd >/dev/null 2>&1; then
+            delgroup --quiet --system witnessd || true
+        fi
+
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

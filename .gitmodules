@@ -1,0 +1,6 @@
+[submodule "apps/witnessd_macos"]
+	path = apps/witnessd_macos
+	url = https://github.com/writerslogic/witnessd-macos.git
+[submodule "apps/witnessd_windows"]
+	path = apps/witnessd_windows
+	url = https://github.com/writerslogic/witnessd-windows.git

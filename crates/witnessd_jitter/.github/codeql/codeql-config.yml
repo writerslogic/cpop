@@ -1,0 +1,15 @@
+name: "CodeQL Config"
+
+# Paths to ignore during analysis
+paths-ignore:
+  - '**/tests/**'
+  - '**/*_test.rs'
+
+# Only analyze production code patterns
+queries:
+  - uses: security-and-quality
+
+# Treat test secrets as acceptable
+query-filters:
+  - exclude:
+      tags: /test/

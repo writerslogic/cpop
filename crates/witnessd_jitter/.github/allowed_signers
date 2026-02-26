@@ -1,0 +1,8 @@
+# SSH Allowed Signers for physjitter
+# Format: <email> <key-type> <public-key>
+#
+# To verify commits signed with SSH keys:
+#   git config gpg.ssh.allowedSignersFile .github/allowed_signers
+#
+# Add maintainer public keys below:
+# example@email.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...

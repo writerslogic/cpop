@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+//! JSON encoding/decoding for backwards compatibility.
+//!
+//! Provides human-readable serialization format for debugging and legacy support.
+
+use serde::{de::DeserializeOwned, Serialize};
+use std::io::{Read, Write};
+
+use super::{CodecError, Result};
+
+/// Encode a value to JSON bytes (pretty-printed).
+pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    serde_json::to_vec_pretty(value).map_err(|e| CodecError::JsonEncode(e.to_string()))
+}
+
+/// Encode a value to compact JSON bytes (no whitespace).
+pub fn encode_compact<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    serde_json::to_vec(value).map_err(|e| CodecError::JsonEncode(e.to_string()))
+}
+
+/// Decode a value from JSON bytes.
+pub fn decode<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
+    serde_json::from_slice(data).map_err(|e| CodecError::JsonDecode(e.to_string()))
+}
+
+/// Encode a value to a JSON writer (pretty-printed).
+pub fn encode_to<T: Serialize, W: Write>(value: &T, mut writer: W) -> Result<()> {
+    let bytes = encode(value)?;
+    writer.write_all(&bytes)?;
+    Ok(())
+}
+
+/// Encode a value to a JSON writer (compact).
+pub fn encode_to_compact<T: Serialize, W: Write>(value: &T, mut writer: W) -> Result<()> {
+    let bytes = encode_compact(value)?;
+    writer.write_all(&bytes)?;
+    Ok(())
+}
+
+/// Decode a value from a JSON reader.
+pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R) -> Result<T> {
+    serde_json::from_reader(reader).map_err(|e| CodecError::JsonDecode(e.to_string()))
+}
+
+/// Encode a value to a JSON string.
+pub fn to_string<T: Serialize>(value: &T) -> Result<String> {
+    serde_json::to_string_pretty(value).map_err(|e| CodecError::JsonEncode(e.to_string()))
+}
+
+/// Encode a value to a compact JSON string.
+pub fn to_string_compact<T: Serialize>(value: &T) -> Result<String> {
+    serde_json::to_string(value).map_err(|e| CodecError::JsonEncode(e.to_string()))
+}
+
+/// Decode a value from a JSON string.
+pub fn from_string<T: DeserializeOwned>(s: &str) -> Result<T> {
+    serde_json::from_str(s).map_err(|e| CodecError::JsonDecode(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TestData {
+        name: String,
+        count: u32,
+        items: Vec<String>,
+    }
+
+    #[test]
+    fn test_json_roundtrip() {
+        let original = TestData {
+            name: "test".to_string(),
+            count: 42,
+            items: vec!["a".to_string(), "b".to_string()],
+        };
+
+        let encoded = encode(&original).unwrap();
+        let decoded: TestData = decode(&encoded).unwrap();
+
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_json_string_roundtrip() {
+        let original = TestData {
+            name: "string_test".to_string(),
+            count: 100,
+            items: vec!["x".to_string()],
+        };
+
+        let json_string = to_string(&original).unwrap();
+        let decoded: TestData = from_string(&json_string).unwrap();
+
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_compact_vs_pretty() {
+        let data = TestData {
+            name: "compact".to_string(),
+            count: 1,
+            items: vec![],
+        };
+
+        let pretty = encode(&data).unwrap();
+        let compact = encode_compact(&data).unwrap();
+
+        // Compact should be smaller
+        assert!(compact.len() < pretty.len());
+
+        // Both should decode to same value
+        let decoded_pretty: TestData = decode(&pretty).unwrap();
+        let decoded_compact: TestData = decode(&compact).unwrap();
+
+        assert_eq!(decoded_pretty, decoded_compact);
+    }
+}

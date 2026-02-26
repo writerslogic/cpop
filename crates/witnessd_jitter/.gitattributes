@@ -1,0 +1,44 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Rust sources
+*.rs text diff=rust
+
+# Documentation
+*.md text diff=markdown
+*.txt text
+
+# Configuration
+*.toml text
+*.yaml text
+*.yml text
+*.json text
+*.lock text -diff
+Cargo.lock linguist-generated
+
+# Shell scripts
+*.sh text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+
+# Archives
+*.tar binary
+*.gz binary
+*.zip binary
+
+# Exclude from exports
+.github export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+.editorconfig export-ignore

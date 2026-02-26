@@ -1,0 +1,9 @@
+{
+  "name": "com.writerslogic.witnessd",
+  "description": "Witnessd Native Messaging Host — Cryptographic proof-of-process evidence for browser-based writing",
+  "path": "/usr/local/bin/witnessd-native-messaging-host",
+  "type": "stdio",
+  "allowed_extensions": [
+    "witnessd@writerslogic.com"
+  ]
+}

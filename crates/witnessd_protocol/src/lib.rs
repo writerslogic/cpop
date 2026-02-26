@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+//! pop-crate: Core Rust implementation of the Proof-of-Process (PoP) Protocol.
+//!
+//! This crate provides the foundational types and cryptographic logic for the PoP protocol,
+//! ensuring compliance with IETF Rats working group specifications.
+
+pub mod codec;
+pub mod crypto;
+pub mod error;
+pub mod evidence;
+pub mod forensics;
+pub mod rfc;
+pub mod identity;
+pub mod c2pa;
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
+// Re-export common types for ease of use
+pub use crate::error::{Error, Result};
+
+/// Version of the PoP Protocol implemented by this crate.
+pub const PROTOCOL_VERSION: u32 = 1;

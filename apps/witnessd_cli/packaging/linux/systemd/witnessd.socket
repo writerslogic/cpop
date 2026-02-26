@@ -1,0 +1,27 @@
+[Unit]
+Description=Witnessd Socket Activation
+Documentation=man:witnessd(1)
+PartOf=witnessd.service
+
+[Socket]
+# Unix socket for local communication
+ListenStream=/run/witnessd/witnessd.sock
+SocketMode=0660
+SocketUser=witnessd
+SocketGroup=witnessd
+
+# Accept connections
+Accept=no
+
+# Buffer sizes
+ReceiveBuffer=1M
+SendBuffer=1M
+
+# Backlog
+Backlog=128
+
+# Permissions
+DirectoryMode=0750
+
+[Install]
+WantedBy=sockets.target
