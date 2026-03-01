@@ -1,0 +1,12 @@
+# Default owner for everything
+* @writerslogic
+
+# Cryptographic code requires security-experienced review
+/crates/witnessd_engine/src/crypto/ @writerslogic
+/crates/witnessd_engine/src/keyhierarchy/ @writerslogic
+/crates/witnessd_protocol/src/crypto.rs @writerslogic
+/crates/witnessd_jitter/ @writerslogic
+
+# CI/CD and security workflows
+/.github/ @writerslogic
+/SECURITY.md @writerslogic

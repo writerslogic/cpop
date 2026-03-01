@@ -11,8 +11,9 @@ trim_trailing_whitespace = true
 indent_style = tab
 indent_size = 4
 
-[*.go]
-indent_style = tab
+[*.rs]
+indent_style = space
+indent_size = 4
 
 [*.{yml,yaml}]
 indent_style = space
@@ -37,9 +38,3 @@ indent_size = 2
 [*.{proto,sql}]
 indent_style = space
 indent_size = 2
-
-[go.mod]
-indent_style = tab
-
-[go.sum]
-indent_style = tab
