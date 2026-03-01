@@ -5,14 +5,15 @@
 //! This crate provides the foundational types and cryptographic logic for the PoP protocol,
 //! ensuring compliance with IETF Rats working group specifications.
 
+pub mod baseline;
+pub mod c2pa;
 pub mod codec;
 pub mod crypto;
 pub mod error;
 pub mod evidence;
 pub mod forensics;
-pub mod rfc;
 pub mod identity;
-pub mod c2pa;
+pub mod rfc;
 #[cfg(feature = "wasm")]
 pub mod wasm;
 

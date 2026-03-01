@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use crate::rfc::EvidencePacket;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// C2PA-compliant assertion structure for Proof-of-Process (PoP).
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,16 +29,18 @@ pub struct JitterSeal {
 impl PoPAssertion {
     /// Maps an EvidencePacket to a C2PA PoPAssertion.
     pub fn from_evidence(packet: &EvidencePacket, original_bytes: &[u8]) -> Self {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let hash = Sha256::digest(original_bytes);
-        
-        let jitter_seals = packet.checkpoints.iter().map(|cp| {
-            JitterSeal {
+
+        let jitter_seals = packet
+            .checkpoints
+            .iter()
+            .map(|cp| JitterSeal {
                 sequence: cp.sequence,
                 timestamp: cp.timestamp,
                 seal_hash: hex::encode(&cp.checkpoint_hash.digest),
-            }
-        }).collect();
+            })
+            .collect();
 
         Self {
             label: "org.pop.evidence".to_string(),

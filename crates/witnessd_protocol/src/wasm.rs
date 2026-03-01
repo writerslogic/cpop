@@ -26,8 +26,8 @@ pub struct VerificationResult {
     checkpoint_count: u32,
     chain_duration_secs: u64,
     coefficient_of_variation: f64,
-    hurst_exponent: f64,    // -1.0 if not computed
-    linearity_score: f64,   // -1.0 if not computed
+    hurst_exponent: f64,  // -1.0 if not computed
+    linearity_score: f64, // -1.0 if not computed
     error_message: String,
     explanation: String,
 }
@@ -152,7 +152,7 @@ pub fn verify_pop_evidence(evidence_bytes: &[u8], public_key_bytes: &[u8]) -> Ve
             VerificationResult {
                 is_valid: analysis.verdict.is_verified(),
                 forensic_verdict: analysis.verdict.as_str().to_string(),
-                checkpoint_count: analysis.checkpoint_count as u32,
+                checkpoint_count: u32::try_from(analysis.checkpoint_count).unwrap_or(u32::MAX),
                 chain_duration_secs: analysis.chain_duration_secs,
                 coefficient_of_variation: analysis.coefficient_of_variation,
                 hurst_exponent: analysis.hurst_exponent.unwrap_or(-1.0),

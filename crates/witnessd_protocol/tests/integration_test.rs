@@ -1,5 +1,5 @@
-use witnessd_protocol::rfc::{EvidencePacket, DocumentRef, HashValue, HashAlgorithm};
-use witnessd_protocol::codec::{encode_evidence, decode_evidence};
+use witnessd_protocol::codec::{decode_evidence, encode_evidence};
+use witnessd_protocol::rfc::{DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
 
 #[test]
 fn test_evidence_packet_roundtrip() {

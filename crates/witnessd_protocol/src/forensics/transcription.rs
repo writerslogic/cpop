@@ -154,8 +154,8 @@ mod tests {
     fn test_genuine_composition() {
         let data = TranscriptionData {
             total_keystrokes: 5000,
-            deletions: 600,    // 12% revision rate — typical composition
-            insertions: 150,   // Cursor-based insertions
+            deletions: 600,  // 12% revision rate — typical composition
+            insertions: 150, // Cursor-based insertions
             avg_burst_length: 8.5,
             cursor_repositions: 85,
             final_char_count: 4200,
@@ -169,7 +169,7 @@ mod tests {
     fn test_transcription_detected() {
         let data = TranscriptionData {
             total_keystrokes: 5000,
-            deletions: 50,     // Only 1% revision — transcription
+            deletions: 50, // Only 1% revision — transcription
             insertions: 10,
             avg_burst_length: 22.0, // Long unbroken bursts
             cursor_repositions: 3,
@@ -185,7 +185,7 @@ mod tests {
         // Fast but genuine typist: high burst length but normal revisions
         let data = TranscriptionData {
             total_keystrokes: 5000,
-            deletions: 400,    // 8% — lower end but still human
+            deletions: 400, // 8% — lower end but still human
             insertions: 100,
             avg_burst_length: 18.0, // Fast typist
             cursor_repositions: 45,

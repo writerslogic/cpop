@@ -1,5 +1,4 @@
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
 use rand::RngCore;
 use witnessd_protocol::crypto::hash_sha256;
 use witnessd_protocol::evidence::{PoPBuilder, PoPVerifier};
@@ -7,9 +6,8 @@ use witnessd_protocol::rfc::DocumentRef;
 
 #[test]
 fn test_pop_full_roundtrip() {
-    let mut csprng = OsRng;
     let mut key_bytes = [0u8; 32];
-    csprng.fill_bytes(&mut key_bytes);
+    rand::thread_rng().fill_bytes(&mut key_bytes);
     let signing_key = SigningKey::from_bytes(&key_bytes);
     let verifying_key = signing_key.verifying_key();
 
@@ -43,9 +41,8 @@ fn test_pop_full_roundtrip() {
 
 #[test]
 fn test_pop_tamper_detection() {
-    let mut csprng = OsRng;
     let mut key_bytes = [0u8; 32];
-    csprng.fill_bytes(&mut key_bytes);
+    rand::thread_rng().fill_bytes(&mut key_bytes);
     let signing_key = SigningKey::from_bytes(&key_bytes);
     let verifying_key = signing_key.verifying_key();
 
@@ -77,9 +74,8 @@ fn test_pop_playback_attack_detection() {
     use witnessd_protocol::crypto::sign_evidence_cose;
     use witnessd_protocol::rfc::{AttestationTier, Checkpoint, EvidencePacket};
 
-    let mut csprng = OsRng;
     let mut key_bytes = [0u8; 32];
-    csprng.fill_bytes(&mut key_bytes);
+    rand::thread_rng().fill_bytes(&mut key_bytes);
     let signing_key = SigningKey::from_bytes(&key_bytes);
     let verifying_key = signing_key.verifying_key();
 

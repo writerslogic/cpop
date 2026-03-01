@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use crate::error::{Error, Result};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
-use x509_cert::builder::{Builder, RequestBuilder};
-use x509_cert::name::Name;
-use x509_cert::ext::pkix::SubjectKeyIdentifier;
-use x509_cert::der::asn1::{OctetString, BitString};
-use x509_cert::der::{Encode, Tag, FixedTag};
-use spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned, EncodePublicKey, SignatureBitStringEncoding, DynSignatureAlgorithmIdentifier};
 use const_oid::AssociatedOid;
-use signature::Keypair;
-use x509_cert::ext::{AsExtension, Extension};
-use std::str::FromStr;
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use rand::RngCore;
-use sha2::{Sha256, Digest};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use signature::Keypair;
+use spki::{
+    AlgorithmIdentifierOwned, DynSignatureAlgorithmIdentifier, EncodePublicKey, ObjectIdentifier,
+    SignatureBitStringEncoding, SubjectPublicKeyInfoOwned,
+};
+use std::str::FromStr;
+use x509_cert::builder::{Builder, RequestBuilder};
+use x509_cert::der::asn1::{BitString, OctetString};
+use x509_cert::der::{Encode, FixedTag, Tag};
+use x509_cert::ext::pkix::SubjectKeyIdentifier;
+use x509_cert::ext::{AsExtension, Extension};
+use x509_cert::name::Name;
+use zeroize::Zeroizing;
 
 /// Wrapper for VerifyingKey to implement required traits for x509-cert builder.
 #[derive(Clone, Debug)]
@@ -30,8 +34,7 @@ impl EncodePublicKey for PoPVerifyingKey {
             subject_public_key: BitString::from_bytes(self.0.as_bytes())?,
         };
         let der = spki.to_der().map_err(|_| spki::Error::KeyMalformed)?;
-        spki::der::Document::try_from(der.as_slice())
-            .map_err(|_| spki::Error::KeyMalformed)
+        spki::der::Document::try_from(der.as_slice()).map_err(|_| spki::Error::KeyMalformed)
     }
 }
 
@@ -135,8 +138,8 @@ pub struct IdentityManager {
 impl IdentityManager {
     /// Generates a new identity with a random Ed25519 key pair.
     pub fn generate() -> Self {
-        let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        let mut bytes = Zeroizing::new([0u8; 32]);
+        rand::thread_rng().fill_bytes(bytes.as_mut());
         Self {
             signer: PoPSigner(SigningKey::from_bytes(&bytes)),
         }
@@ -164,39 +167,46 @@ impl IdentityManager {
 
         // Add Subject Key Identifier extension
         let public_key_bytes = self.signer.0.verifying_key().to_bytes();
-        let hash = Sha256::digest(&public_key_bytes);
+        let hash = Sha256::digest(public_key_bytes);
         let ski = SubjectKeyIdentifier(
             OctetString::new(hash.to_vec())
-                .map_err(|e| Error::Crypto(format!("Failed to create OctetString: {}", e)))?
+                .map_err(|e| Error::Crypto(format!("Failed to create OctetString: {}", e)))?,
         );
-        builder.add_extension(&ski)
+        builder
+            .add_extension(&ski)
             .map_err(|e| Error::Crypto(format!("Failed to add SKI extension: {}", e)))?;
 
         // PoP Capability Extension
-        let pop_cap = PoPCapability(
-            OctetString::new(vec![0x01])
-                .map_err(|e| Error::Crypto(e.to_string()))?
-        );
-        builder.add_extension(&pop_cap)
+        let pop_cap =
+            PoPCapability(OctetString::new(vec![0x01]).map_err(|e| Error::Crypto(e.to_string()))?);
+        builder
+            .add_extension(&pop_cap)
             .map_err(|e| Error::Crypto(format!("Failed to add PoP extension: {}", e)))?;
 
-        let csr = builder.build::<PoPSignature>().map_err(|e| Error::Crypto(format!("CSR signing error: {}", e)))?;
+        let csr = builder
+            .build::<PoPSignature>()
+            .map_err(|e| Error::Crypto(format!("CSR signing error: {}", e)))?;
 
-        csr.to_der().map_err(|e| Error::Crypto(format!("DER encoding error: {}", e)))
+        csr.to_der()
+            .map_err(|e| Error::Crypto(format!("DER encoding error: {}", e)))
     }
 
     /// Constructs an EnrollmentRequest for the WritersLogic platform.
-    pub fn create_enrollment_request(&self, user_id: &str) -> Result<EnrollmentRequest> {
-        // In a real implementation, public_key_cose would be a COSE_Key structure.
+    ///
+    /// `hardware_attestation` should be a TPM quote or Secure Enclave attestation
+    /// blob when hardware-backed keys are available. Pass an empty slice for
+    /// software-only mode.
+    pub fn create_enrollment_request(
+        &self,
+        user_id: &str,
+        hardware_attestation: &[u8],
+    ) -> Result<EnrollmentRequest> {
         let public_key_cose = self.signer.0.verifying_key().to_bytes().to_vec();
-        
-        // hardware_attestation would be a blob from TPM or Apple Secure Enclave.
-        let hardware_attestation = b"STUB_HARDWARE_ATTESTATION".to_vec();
 
         Ok(EnrollmentRequest {
             user_id: user_id.to_string(),
             public_key_cose,
-            hardware_attestation,
+            hardware_attestation: hardware_attestation.to_vec(),
         })
     }
 }
