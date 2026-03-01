@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/writerslogic/physjitter/main/assets/logo.svg" alt="physjitter" width="200">
+  <img src="assets/logo.png" alt="witnessd_jitter" width="200">
 </p>
 
-<h1 align="center">physjitter</h1>
+<h1 align="center">witnessd_jitter</h1>
 
 <p align="center">
   <strong>Proof-of-process primitive using timing jitter for human authorship verification</strong>
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/physjitter"><img src="https://img.shields.io/crates/v/physjitter.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/physjitter"><img src="https://docs.rs/physjitter/badge.svg" alt="Documentation"></a>
-  <a href="https://github.com/writerslogic/physjitter/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
+  <a href="https://crates.io/crates/witnessd_jitter"><img src="https://img.shields.io/crates/v/witnessd_jitter.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/witnessd_jitter"><img src="https://docs.rs/witnessd_jitter/badge.svg" alt="Documentation"></a>
+  <a href="https://github.com/writerslogic/witnessd/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/MSRV-1.70.0-blue" alt="MSRV">
 </p>
 
@@ -43,11 +43,11 @@
 
 ## Overview
 
-`physjitter` provides cryptographic proof-of-process through timing jitter, enabling verification that content was created through a human typing process rather than generated or pasted. It creates tamper-evident records that serve as evidence of authorship process.
+`witnessd_jitter` (formerly `physjitter`) provides cryptographic proof-of-process through timing jitter, enabling verification that content was created through a human typing process rather than generated or pasted. It creates tamper-evident records that serve as evidence of authorship process. It is a core component of the [witnessd](https://github.com/writerslogic/witnessd) monorepo.
 
 ### What Problem Does This Solve?
 
-In an era of AI-generated content, proving that text was actually *typed* by a human—keystroke by keystroke—has become valuable. `physjitter` addresses this by:
+In an era of AI-generated content, proving that text was actually *typed* by a human—keystroke by keystroke—has become valuable. `witnessd_jitter` addresses this by:
 
 1. **Recording timing evidence** for each input event (keystroke, edit, etc.)
 2. **Binding evidence to hardware** when available (physics-based security)
@@ -88,13 +88,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-physjitter = "0.2"
+witnessd_jitter = "0.2"
 ```
 
 Or install with cargo:
 
 ```bash
-cargo add physjitter
+cargo add witnessd_jitter
 ```
 
 ### Feature Flags
@@ -107,10 +107,10 @@ cargo add physjitter
 
 ```toml
 # Enable all features
-physjitter = { version = "0.2", features = ["hardware", "rand"] }
+witnessd_jitter = { version = "0.2", features = ["hardware", "rand"] }
 
 # no_std (embedded/WASM compatible)
-physjitter = { version = "0.2", default-features = false }
+witnessd_jitter = { version = "0.2", default-features = false }
 ```
 
 ### Platform Support
@@ -133,7 +133,7 @@ physjitter = { version = "0.2", default-features = false }
 ### Basic Usage
 
 ```rust
-use physjitter::{Session, Error};
+use witnessd_jitter::{Session, Error};
 
 fn main() -> Result<(), Error> {
     // Create a session with your secret key
@@ -168,7 +168,7 @@ fn main() -> Result<(), Error> {
 ### Using the Hybrid Engine Directly
 
 ```rust
-use physjitter::{HybridEngine, Evidence, Error};
+use witnessd_jitter::{HybridEngine, Evidence, Error};
 
 fn main() -> Result<(), Error> {
     // Create hybrid engine (auto-selects best entropy source)
@@ -196,7 +196,7 @@ fn main() -> Result<(), Error> {
 ### With Random Secret Generation
 
 ```rust
-use physjitter::Session;
+use witnessd_jitter::Session;
 
 fn main() {
     // Requires "rand" feature
@@ -282,7 +282,7 @@ pub trait JitterEngine {
 Security relies on the **economic cost** of reproducing the exact input sequence. An attacker would need to retype content character-by-character with identical timing to reproduce the jitter chain.
 
 ```rust
-use physjitter::{PureJitter, JitterEngine};
+use witnessd_jitter::{PureJitter, JitterEngine};
 
 let engine = PureJitter::new(500, 2500); // jmin=500μs, range=2500μs
 let secret = [0u8; 32];
@@ -312,7 +312,7 @@ assert!(jitter >= 500 && jitter < 3000);
 Security relies on **hardware entropy** that cannot be perfectly simulated. Uses TSC (Time Stamp Counter) and timing variations unique to the physical device.
 
 ```rust
-use physjitter::{PhysJitter, EntropySource, JitterEngine, Error};
+use witnessd_jitter::{PhysJitter, EntropySource, JitterEngine, Error};
 
 fn main() -> Result<(), Error> {
     let phys = PhysJitter::new(8); // Require 8 bits minimum entropy
@@ -351,7 +351,7 @@ fn main() -> Result<(), Error> {
 Combines both models: uses physics when available, falls back to pure jitter in virtualized environments. **Evidence records which mode was used.**
 
 ```rust
-use physjitter::{HybridEngine, Evidence, Error};
+use witnessd_jitter::{HybridEngine, Evidence, Error};
 
 fn main() -> Result<(), Error> {
     let engine = HybridEngine::default()
@@ -390,7 +390,7 @@ The `HumanModel` validates jitter sequences against statistical patterns derived
 ### Basic Validation
 
 ```rust
-use physjitter::{Session, HumanModel, Jitter};
+use witnessd_jitter::{Session, HumanModel, Jitter};
 
 fn main() {
     let secret = [0u8; 32];
@@ -419,7 +419,7 @@ fn main() {
 ### Custom Model Configuration
 
 ```rust
-use physjitter::HumanModel;
+use witnessd_jitter::HumanModel;
 
 // Load default model (based on Aalto dataset)
 let model = HumanModel::default();
@@ -453,7 +453,7 @@ let custom = HumanModel {
 ### Interpreting Results
 
 ```rust
-use physjitter::{Session, ValidationResult, AnomalyKind};
+use witnessd_jitter::{Session, ValidationResult, AnomalyKind};
 
 fn interpret_validation(result: &ValidationResult) {
     match (result.is_human, result.confidence) {
@@ -490,7 +490,7 @@ Evidence is accumulated in an append-only chain with cryptographic integrity. Ea
 ### Creating and Managing Evidence
 
 ```rust
-use physjitter::{EvidenceChain, Evidence};
+use witnessd_jitter::{EvidenceChain, Evidence};
 
 fn main() {
     let mut chain = EvidenceChain::new();
@@ -514,7 +514,7 @@ fn main() {
 ### Serialization
 
 ```rust
-use physjitter::{EvidenceChain, Evidence};
+use witnessd_jitter::{EvidenceChain, Evidence};
 
 fn main() -> Result<(), serde_json::Error> {
     let mut chain = EvidenceChain::new();
@@ -558,7 +558,7 @@ fn main() -> Result<(), serde_json::Error> {
 ### Verification
 
 ```rust
-use physjitter::{EvidenceChain, Evidence, PureJitter, JitterEngine};
+use witnessd_jitter::{EvidenceChain, Evidence, PureJitter, JitterEngine};
 
 fn main() {
     let engine = PureJitter::default();
@@ -620,7 +620,7 @@ pub enum Error {
 | `HumanModel` | Statistical model for validation |
 | `ValidationResult` | Result of human validation |
 
-For complete API documentation, see [docs.rs/physjitter](https://docs.rs/physjitter).
+For complete API documentation, see [docs.rs/witnessd_jitter](https://docs.rs/witnessd_jitter).
 
 ---
 
@@ -652,7 +652,7 @@ Benchmarked on Apple M1 Pro:
 ### Session Configuration
 
 ```rust
-use physjitter::{Session, HybridEngine, PhysJitter, PureJitter};
+use witnessd_jitter::{Session, HybridEngine, PhysJitter, PureJitter};
 
 // Default configuration
 let session = Session::new([0u8; 32]);
@@ -670,7 +670,7 @@ let engine = HybridEngine::new(phys, pure)
 ### Pure Jitter Configuration
 
 ```rust
-use physjitter::PureJitter;
+use witnessd_jitter::PureJitter;
 
 // Default: 500-3000μs range
 let default = PureJitter::default();
@@ -682,7 +682,7 @@ let custom = PureJitter::new(1000, 4000);
 ### Physics Jitter Configuration
 
 ```rust
-use physjitter::PhysJitter;
+use witnessd_jitter::PhysJitter;
 
 // Default: 0 bits minimum (accept all)
 let default = PhysJitter::default();
@@ -771,13 +771,13 @@ done
 
 **Q: What makes this different from just recording timestamps?**
 
-A: `physjitter` combines:
+A: `witnessd_jitter` combines:
 1. Cryptographic binding (HMAC) to a session secret
 2. Hardware entropy when available (non-reproducible)
 3. Statistical validation against real human typing data
 4. Tamper-evident chain hashing
 
-Plain timestamps can be easily forged. `physjitter` creates evidence that's cryptographically bound to both the secret and the hardware.
+Plain timestamps can be easily forged. `witnessd_jitter` creates evidence that's cryptographically bound to both the secret and the hardware.
 
 **Q: Can this be fooled by typing very slowly?**
 
@@ -870,7 +870,7 @@ Evidence chains grow linearly. For long sessions:
 
 ## Comparison with Alternatives
 
-| Feature | physjitter | Timestamp logging | Behavioral biometrics |
+| Feature | witnessd_jitter | Timestamp logging | Behavioral biometrics |
 |---------|------------|-------------------|----------------------|
 | Hardware binding | Yes | No | Varies |
 | Cryptographic proof | Yes | No | No |
@@ -891,13 +891,15 @@ Evidence chains grow linearly. For long sessions:
 - [ ] Hardware attestation integration
 - [ ] Language-specific typing patterns
 
-See [GitHub Issues](https://github.com/writerslogic/physjitter/issues) for detailed roadmap.
+See [GitHub Issues](https://github.com/writerslogic/witnessd/issues) for detailed roadmap.
 
 ---
 
 ## Related Projects
 
-- [witnessd](https://github.com/writerslogic/witnessd) — Cryptographic authorship witnessing daemon (uses physjitter)
+- [witnessd](https://github.com/writerslogic/witnessd) — Cryptographic authorship witnessing monorepo (parent project)
+- [witnessd_engine](../witnessd_engine/) — Core cryptographic engine
+- [witnessd_protocol](../witnessd_protocol/) — Wire protocol and CBOR encoding
 
 ---
 
@@ -919,10 +921,10 @@ All releases include SLSA Level 3 provenance attestations:
 go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
 
 # Download and verify
-curl -LO https://github.com/writerslogic/physjitter/releases/download/v0.1.0/...
+curl -LO https://github.com/writerslogic/witnessd/releases/download/v0.2.0/...
 slsa-verifier verify-artifact artifact.tar.gz \
   --provenance-path multiple.intoto.jsonl \
-  --source-uri github.com/writerslogic/physjitter
+  --source-uri github.com/writerslogic/witnessd
 ```
 
 ---

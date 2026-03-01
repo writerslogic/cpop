@@ -85,7 +85,7 @@ jobs:
       - name: Create source archive
         run: |
           VERSION="${{ github.ref_name }}"
-          ARCHIVE="physjitter-${VERSION}-source.tar.gz"
+          ARCHIVE="witnessd_jitter-${VERSION}-source.tar.gz"
           tar -czvf "$ARCHIVE" \
             --exclude='.git' \
             --exclude='target' \
@@ -142,19 +142,19 @@ jobs:
 
       - name: Generate SPDX SBOM
         run: |
-          syft dir:. -o spdx-json=physjitter-sbom.spdx.json
+          syft dir:. -o spdx-json=witnessd_jitter-sbom.spdx.json
 
       - name: Generate CycloneDX SBOM
         run: |
-          syft dir:. -o cyclonedx-json=physjitter-sbom.cdx.json
+          syft dir:. -o cyclonedx-json=witnessd_jitter-sbom.cdx.json
 
       - name: Upload SBOMs
         uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: |
-            physjitter-sbom.spdx.json
-            physjitter-sbom.cdx.json
+            witnessd_jitter-sbom.spdx.json
+            witnessd_jitter-sbom.cdx.json
 
   # ============================================================================
   # Create GitHub Release
@@ -201,16 +201,16 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: physjitter ${{ github.ref_name }}
+          name: witnessd_jitter ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/*.tar.gz
             artifacts/checksums.txt
-            artifacts/physjitter-sbom.spdx.json
-            artifacts/physjitter-sbom.cdx.json
+            artifacts/witnessd_jitter-sbom.spdx.json
+            artifacts/witnessd_jitter-sbom.cdx.json
           body: |
-            ## physjitter ${{ github.ref_name }}
+            ## witnessd_jitter ${{ github.ref_name }}
 
             Proof-of-process primitive using timing jitter for human authorship verification.
 
@@ -218,12 +218,12 @@ jobs:
 
             ```toml
             [dependencies]
-            physjitter = "${{ github.ref_name }}"
+            witnessd_jitter = "${{ github.ref_name }}"
             ```
 
             Or via cargo:
             ```bash
-            cargo add physjitter@${{ github.ref_name }}
+            cargo add witnessd_jitter@${{ github.ref_name }}
             ```
 
             ### Verification
@@ -235,16 +235,16 @@ jobs:
 
             ```bash
             # Verify SLSA provenance
-            slsa-verifier verify-artifact physjitter-${{ github.ref_name }}-source.tar.gz \
+            slsa-verifier verify-artifact witnessd_jitter-${{ github.ref_name }}-source.tar.gz \
               --provenance-path multiple.intoto.jsonl \
-              --source-uri github.com/writerslogic/physjitter
+              --source-uri github.com/writerslogic/witnessd_jitter
             ```
 
             ### Changelog
             ${{ steps.changelog.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/writerslogic/physjitter/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ github.ref_name }}
+            **Full Changelog**: https://github.com/writerslogic/witnessd_jitter/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ github.ref_name }}
 
   # ============================================================================
   # Publish to crates.io

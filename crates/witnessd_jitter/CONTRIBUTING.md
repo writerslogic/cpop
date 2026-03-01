@@ -1,6 +1,6 @@
-# Contributing to physjitter
+# Contributing to witnessd_jitter
 
-Thank you for your interest in contributing to physjitter! This document provides guidelines and instructions for contributing to this cryptographic library.
+Thank you for your interest in contributing to witnessd_jitter! This document provides guidelines and instructions for contributing to this cryptographic library.
 
 ---
 
@@ -42,8 +42,8 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ```bash
 # Clone the repository
-git clone https://github.com/writerslogic/physjitter.git
-cd physjitter
+git clone https://github.com/writerslogic/witnessd.git
+cd witnessd/crates/witnessd_jitter
 
 # Verify the build
 cargo build --all-features
@@ -409,7 +409,7 @@ mod tests {
 /// # Examples
 ///
 /// ```rust
-/// use physjitter::{PureJitter, JitterEngine};
+/// use witnessd_jitter::{PureJitter, JitterEngine};
 ///
 /// let engine = PureJitter::default();
 /// let secret = [0u8; 32];
@@ -645,10 +645,10 @@ We follow [Semantic Versioning](https://semver.org/):
 
 ## Getting Help
 
-- **Questions**: Open a [discussion](https://github.com/writerslogic/physjitter/discussions)
-- **Bugs**: Open an [issue](https://github.com/writerslogic/physjitter/issues)
+- **Questions**: Open a [discussion](https://github.com/writerslogic/witnessd/discussions)
+- **Bugs**: Open an [issue](https://github.com/writerslogic/witnessd/issues)
 - **Security**: See [SECURITY.md](SECURITY.md)
 
 ---
 
-Thank you for contributing to physjitter!
+Thank you for contributing to witnessd_jitter!

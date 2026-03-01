@@ -1,0 +1,20 @@
+# witnessd_engine Test Signer Configuration
+# Used for examples and internal benchmarks
+
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[dn]
+CN = witnessd Engine Test Signer
+O = WritersLogic
+C = US
+
+[v3_signer]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = codeSigning, emailProtection
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer

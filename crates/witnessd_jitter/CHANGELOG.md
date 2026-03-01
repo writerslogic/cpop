@@ -275,9 +275,9 @@ When upgrading between major versions, check this section for migration guides.
 All releases include SLSA Level 3 provenance attestations. Verify with:
 
 ```bash
-slsa-verifier verify-artifact physjitter-<version>.crate \
+slsa-verifier verify-artifact witnessd_jitter-<version>.crate \
   --provenance-path multiple.intoto.jsonl \
-  --source-uri github.com/writerslogic/physjitter \
+  --source-uri github.com/writerslogic/witnessd \
   --source-tag v<version>
 ```
 
@@ -285,10 +285,10 @@ slsa-verifier verify-artifact physjitter-<version>.crate \
 
 ## Links
 
-- [GitHub Releases](https://github.com/writerslogic/physjitter/releases)
-- [crates.io](https://crates.io/crates/physjitter)
-- [Documentation](https://docs.rs/physjitter)
+- [GitHub Releases](https://github.com/writerslogic/witnessd/releases)
+- [crates.io](https://crates.io/crates/witnessd_jitter)
+- [Documentation](https://docs.rs/witnessd_jitter)
 
-[Unreleased]: https://github.com/writerslogic/physjitter/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/writerslogic/physjitter/releases/tag/v0.2.0
-[0.1.0]: https://github.com/writerslogic/physjitter/releases/tag/v0.1.0
+[Unreleased]: https://github.com/writerslogic/witnessd/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/writerslogic/witnessd/releases/tag/v0.2.0
+[0.1.0]: https://github.com/writerslogic/witnessd/releases/tag/v0.1.0

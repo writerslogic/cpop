@@ -1,4 +1,4 @@
-# SSH Allowed Signers for physjitter
+# SSH Allowed Signers for witnessd_jitter
 # Format: <email> <key-type> <public-key>
 #
 # To verify commits signed with SSH keys:

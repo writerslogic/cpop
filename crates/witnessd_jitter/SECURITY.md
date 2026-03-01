@@ -1,9 +1,9 @@
 # Security Policy
 
-[![Security](https://github.com/writerslogic/physjitter/actions/workflows/security.yml/badge.svg)](https://github.com/writerslogic/physjitter/actions/workflows/security.yml)
+[![Security](https://github.com/writerslogic/witnessd/actions/workflows/security.yml/badge.svg)](https://github.com/writerslogic/witnessd/actions/workflows/security.yml)
 [![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
-This document outlines the security policy for the `physjitter` crate, including vulnerability reporting, threat model, security considerations, and secure usage guidelines.
+This document outlines the security policy for the `witnessd_jitter` crate, including vulnerability reporting, threat model, security considerations, and secure usage guidelines.
 
 ---
 
@@ -47,7 +47,7 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 Report vulnerabilities via one of the following methods (in order of preference):
 
 1. **GitHub Security Advisories** (Preferred)
-   - Navigate to the [Security tab](https://github.com/writerslogic/physjitter/security/advisories)
+   - Navigate to the [Security tab](https://github.com/writerslogic/witnessd/security/advisories)
    - Click "Report a vulnerability"
    - This enables private discussion and coordinated disclosure
 
@@ -111,7 +111,7 @@ For confirmed vulnerabilities:
 
 ### Scope
 
-`physjitter` is designed to provide proof-of-process through timing jitter. It is **NOT**:
+`witnessd_jitter` is designed to provide proof-of-process through timing jitter. It is **NOT**:
 
 - A replacement for traditional authentication
 - A source of cryptographically secure random numbers
@@ -259,7 +259,7 @@ let secret: [u8; 32] = hasher.finalize().into();
 ### Session Configuration
 
 ```rust
-use physjitter::{HybridEngine, Session};
+use witnessd_jitter::{HybridEngine, Session};
 
 // Production configuration
 let engine = HybridEngine::builder()
@@ -306,7 +306,7 @@ if !session.evidence().verify_integrity(&secret) {
 Session secrets are automatically zeroized when the session is dropped:
 
 ```rust
-use physjitter::Session;
+use witnessd_jitter::Session;
 
 {
     let session = Session::new(secret);
@@ -379,7 +379,7 @@ Evidence is not cryptographically bound to a specific device beyond hardware ent
 ### Dependency Tree
 
 ```
-physjitter
+witnessd_jitter
 ├── hmac 0.12 (RustCrypto)
 ├── sha2 0.10 (RustCrypto)
 ├── subtle 2.5 (RustCrypto) - constant-time operations
@@ -478,14 +478,14 @@ This project follows [SLSA](https://slsa.dev) (Supply-chain Levels for Software 
 go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
 
 # Download release artifact and provenance
-curl -LO https://github.com/writerslogic/physjitter/releases/download/v0.1.0/physjitter-0.1.0.crate
-curl -LO https://github.com/writerslogic/physjitter/releases/download/v0.1.0/multiple.intoto.jsonl
+curl -LO https://github.com/writerslogic/witnessd/releases/download/v0.2.0/witnessd_jitter-0.2.0.crate
+curl -LO https://github.com/writerslogic/witnessd/releases/download/v0.2.0/multiple.intoto.jsonl
 
 # Verify
-slsa-verifier verify-artifact physjitter-0.1.0.crate \
+slsa-verifier verify-artifact witnessd_jitter-0.2.0.crate \
   --provenance-path multiple.intoto.jsonl \
-  --source-uri github.com/writerslogic/physjitter \
-  --source-tag v0.1.0
+  --source-uri github.com/writerslogic/witnessd \
+  --source-tag v0.2.0
 ```
 
 ---
@@ -543,8 +543,8 @@ We gratefully acknowledge security researchers who have responsibly disclosed vu
 ## Contact
 
 - **Security issues**: security@writerslogic.com
-- **GitHub Security Advisories**: [Report here](https://github.com/writerslogic/physjitter/security/advisories)
-- **General questions**: [GitHub Discussions](https://github.com/writerslogic/physjitter/discussions)
+- **GitHub Security Advisories**: [Report here](https://github.com/writerslogic/witnessd/security/advisories)
+- **General questions**: [GitHub Discussions](https://github.com/writerslogic/witnessd/discussions)
 
 ---
 

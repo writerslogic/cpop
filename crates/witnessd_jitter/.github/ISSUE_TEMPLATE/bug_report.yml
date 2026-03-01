@@ -51,7 +51,7 @@ body:
       description: If applicable, provide minimal code that reproduces the issue
       render: rust
       placeholder: |
-        use physjitter::{Session, Evidence};
+        use witnessd_jitter::{Session, Evidence};
 
         fn main() {
             // Your reproduction code here
@@ -60,8 +60,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: physjitter Version
-      description: Output of `cargo pkgid physjitter` or version in Cargo.toml
+      label: witnessd_jitter Version
+      description: Output of `cargo pkgid witnessd_jitter` or version in Cargo.toml
       placeholder: "0.1.0"
     validations:
       required: true

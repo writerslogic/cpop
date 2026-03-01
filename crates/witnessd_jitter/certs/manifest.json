@@ -1,15 +1,15 @@
 {
-  "claim_generator": "physjitter/0.2.0",
+  "claim_generator": "witnessd_jitter/0.2.0",
   "claim_generator_info": [
     {
-      "name": "physjitter",
+      "name": "witnessd_jitter",
       "version": "0.2.0"
     }
   ],
   "private_key": "private_key.pem",
   "sign_cert": "certificate.pem",
   "tsa_url": "http://timestamp.digicert.com",
-  "title": "physjitter logo",
+  "title": "witnessd_jitter logo",
   "assertions": [
     {
       "label": "stds.schema-org.CreativeWork",
@@ -34,7 +34,7 @@
             "action": "c2pa.created",
             "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
             "softwareAgent": {
-              "name": "physjitter",
+              "name": "witnessd_jitter",
               "version": "0.2.0"
             }
           }
