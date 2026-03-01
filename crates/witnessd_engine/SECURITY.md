@@ -73,8 +73,8 @@ model assumes:
 | Key Derivation | SHA-256 HKDF-style | SP 800-56C |
 | TPM Attestation | TPM 2.0 Quote | TCG TPM 2.0 Library |
 
-All primitives use Go's standard library (`crypto/*`) or `golang.org/x/crypto`,
-which are FIPS-validated implementations.
+All primitives use well-audited Rust crates from the [RustCrypto](https://github.com/RustCrypto)
+project (`sha2`, `ed25519-dalek`, `aes-gcm`, `hkdf`, `hmac`), which follow FIPS standards.
 
 ### Domain Separation
 

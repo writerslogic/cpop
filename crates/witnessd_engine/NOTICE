@@ -31,15 +31,17 @@ For licensing inquiries, contact: admin@writerslogic.com
 
 This software incorporates or depends on the following third-party components:
 
-Go Standard Library
-  License: BSD-3-Clause
-  Copyright: The Go Authors
+RustCrypto (sha2, ed25519-dalek, aes-gcm, hmac, hkdf, chacha20poly1305)
+  License: MIT OR Apache-2.0
+  Copyright: RustCrypto Contributors
+  https://github.com/RustCrypto
 
-golang.org/x/crypto
-  License: BSD-3-Clause
-  Copyright: The Go Authors
+tokio (async runtime)
+  License: MIT
+  Copyright: Tokio Contributors
+  https://github.com/tokio-rs/tokio
 
-SQLite
+SQLite (via rusqlite)
   License: Public Domain
   https://sqlite.org/copyright.html
 

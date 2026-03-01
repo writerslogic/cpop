@@ -28,13 +28,16 @@
 
 **witnessd-core** is the cryptographic core library that produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
 
-This repository contains only the core Rust library. For the full witnessd ecosystem:
+This monorepo contains the full witnessd ecosystem:
 
-| Repository | Description |
-|:-----------|:------------|
-| **[witnessd](https://github.com/writerslogic/witnessd)** | Core cryptographic library (this repo) |
-| **[witnessd-cli](https://github.com/writerslogic/witnessd-cli)** | Command-line interface + Linux packaging (GPL-3.0) |
-| **[witnessd-docs](https://github.com/writerslogic/witnessd-docs)** | Documentation, schemas, and specifications |
+| Component | Path | Description | License |
+|:----------|:-----|:------------|:--------|
+| **witnessd_engine** | [`crates/witnessd_engine`](crates/witnessd_engine) | Cryptographic engine | AGPL-3.0-only |
+| **witnessd_protocol** | [`crates/witnessd_protocol`](crates/witnessd_protocol) | PoP wire format & forensic models | AGPL-3.0-only |
+| **witnessd_jitter** | [`crates/witnessd_jitter`](crates/witnessd_jitter) | Hardware timing entropy | AGPL-3.0-only |
+| **witnessd_cli** | [`apps/witnessd_cli`](apps/witnessd_cli) | CLI & Linux packaging | AGPL-3.0-only |
+| **witnessd_macos** | [`apps/witnessd_macos`](apps/witnessd_macos) | macOS desktop app | Proprietary |
+| **witnessd_windows** | [`apps/witnessd_windows`](apps/witnessd_windows) | Windows desktop app | Proprietary |
 
 ## Usage
 
@@ -50,7 +53,7 @@ witnessd-core = { git = "https://github.com/writerslogic/witnessd", branch = "ma
 | Feature | Description |
 |:--------|:------------|
 | `default` | Core library without optional features |
-| `physjitter` | Hardware entropy via PhysJitter |
+| `witnessd_jitter` | Hardware entropy via PhysJitter |
 | `secure-enclave` | macOS Secure Enclave support |
 | `x11` | X11 focus detection on Linux |
 | `ffi` | UniFFI bindings for Swift/Kotlin |
@@ -58,28 +61,30 @@ witnessd-core = { git = "https://github.com/writerslogic/witnessd", branch = "ma
 ## Architecture
 
 ```
-src/
-├── analysis/       Signal analysis and behavioral metrics
-├── anchors/        Blockchain and timestamp anchoring
-├── calibration/    VDF calibration
-├── codec/          CBOR/encoding
-├── crypto/         Cryptographic primitives
-├── fingerprint/    Device fingerprinting
-├── identity/       Identity and key management
-├── ipc/            Inter-process communication
-├── mmr/            Merkle Mountain Range
-├── physics/        Physical measurements (PUF)
-├── platform/       OS-specific code (macOS, Linux, Windows)
-├── rfc/            RFC implementations
-├── tpm/            TPM 2.0 integration
-├── vdf/            Verifiable Delay Functions
-├── checkpoint.rs   Document checkpointing
-├── evidence.rs     Evidence export/verify
-├── forensics.rs    Authorship analysis
-├── sentinel.rs     Real-time monitoring
-├── store.rs        Persistent storage
-├── wal.rs          Write-Ahead Log
-└── war.rs          Write-Ahead Recovery
+witnessd/
+├── crates/
+│   ├── witnessd_engine/    High-performance cryptographic engine
+│   │   └── src/
+│   │       ├── analysis/   Signal analysis and behavioral metrics
+│   │       ├── anchors/    Blockchain and timestamp anchoring
+│   │       ├── crypto/     Cryptographic primitives
+│   │       ├── evidence/   Evidence export/verify
+│   │       ├── forensics/  Authorship analysis
+│   │       ├── ipc/        Inter-process communication
+│   │       ├── keyhierarchy/ Key derivation and ratcheting
+│   │       ├── platform/   OS-specific code (macOS, Linux, Windows)
+│   │       ├── sentinel/   Real-time monitoring
+│   │       ├── rfc/        RFC implementations
+│   │       ├── tpm/        TPM 2.0 integration
+│   │       └── vdf/        Verifiable Delay Functions
+│   ├── witnessd_protocol/  PoP wire format (CBOR/COSE)
+│   └── witnessd_jitter/    Hardware timing entropy
+├── apps/
+│   ├── witnessd_cli/       Command-line interface
+│   ├── witnessd_macos/     Native macOS app (submodule)
+│   └── witnessd_windows/   Native Windows app (submodule)
+├── docs/                   Schemas, specs, and user guides
+└── wiki/                   GitHub Wiki pages
 ```
 
 ## Development
@@ -91,10 +96,22 @@ cargo fmt --all                # Format
 cargo audit && cargo deny check # Security audit
 ```
 
-## Security
+## Security & Privacy
 
 > [!IMPORTANT]
 > witnessd provides **independently verifiable, tamper-evident process evidence**, not absolute proof. The value lies in converting unsubstantiated doubt into testable claims across independent trust boundaries.
+
+### Privacy & External Interactions
+
+Witnessd is designed with a strictly **offline-first and privacy-preserving** architecture. Core witnessing, keystroke capture, and evidence generation occur entirely on your local machine.
+
+However, the applications interact with the following external domains for specific enhanced features:
+
+*   **Verification Portal (`writersproof.com/verify`):** Provides a browser-based tool for verifying `.wpkt` evidence packets. This process runs client-side in your browser; evidence data is never uploaded to our servers.
+*   **Attestation API (`api.writersproof.com`):** Used for "Tier 3" and "Tier 4" evidence to request anti-replay nonces and receive cloud-signed attestation certificates.
+*   **Schema Registry (`protocol.writersproof.com`):** Hosts the JSON schemas and DID (Decentralized Identifier) resolution data used for protocol compliance.
+
+For a detailed breakdown of our privacy model, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/witnessd/wiki/Privacy-&-External-Interactions)**.
 
 See [SECURITY.md](SECURITY.md) for the security policy.
 

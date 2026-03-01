@@ -8,7 +8,7 @@ authors:
     orcid: "https://orcid.org/0009-0003-1849-2963"
 repository-code: "https://github.com/writerslogic/witnessd"
 license: Apache-2.0
-version: 0.1.0
+version: 0.2.0
 date-released: "2026-02-20"
 keywords:
   - authorship

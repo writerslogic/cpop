@@ -25,7 +25,7 @@
 
 ### Testing
 - [ ] New tests added for changes
-- [ ] All existing tests pass (`make test`)
+- [ ] All existing tests pass (`cargo test --all-features`)
 - [ ] Integration tests pass (if applicable)
 - [ ] Manual testing performed
 
@@ -45,7 +45,7 @@
 <!-- Paste test output or screenshots -->
 
 ```
-$ make test
+$ cargo test --all-features
 ...
 ```
 
