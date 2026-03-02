@@ -51,11 +51,7 @@ pub mod war;
 pub mod witnessd_jitter_bridge;
 pub mod writersproof;
 
-/// Extension trait for safe nanosecond timestamps.
-///
-/// `DateTime::timestamp_nanos_opt()` returns `None` for dates past ~2262 (i64 overflow).
-/// This trait provides a safe fallback that preserves nanosecond precision when possible
-/// and falls back to millisecond-derived nanoseconds otherwise.
+/// Safe nanosecond timestamps, falling back to millis-derived nanos on i64 overflow (~2262+).
 pub(crate) trait DateTimeNanosExt {
     fn timestamp_nanos_safe(&self) -> i64;
 }
@@ -67,7 +63,6 @@ impl DateTimeNanosExt for chrono::DateTime<chrono::Utc> {
     }
 }
 
-// Re-export common types
 pub use crate::config::{FingerprintConfig, PrivacyConfig, ResearchConfig, SentinelConfig};
 pub use crate::crypto::{compute_event_hash, compute_event_hmac, derive_hmac_key};
 pub use crate::identity::MnemonicHandler;
@@ -76,66 +71,57 @@ pub use crate::research::{
     AnonymizedSession, ResearchCollector, ResearchDataExport, ResearchUploader, UploadResult,
 };
 pub use crate::sentinel::{
-    ChangeEvent, ChangeEventType, DaemonManager, DaemonState, DaemonStatus, DocumentSession,
-    FocusEvent, FocusEventType, Sentinel, SentinelError, SessionEvent, SessionEventType,
-    ShadowManager, WindowInfo,
+    ChangeEvent, ChangeEventType, DaemonHandle, DaemonManager, DaemonState, DaemonStatus,
+    DocumentSession, FocusEvent, FocusEventType, Sentinel, SentinelError, SessionEvent,
+    SessionEventType, ShadowManager, WindowInfo,
 };
 pub use crate::store::{SecureEvent, SecureStore};
 pub use crate::vdf::{RoughtimeClient, TimeAnchor, TimeKeeper, VdfProof};
 
-// Re-export collaboration types
 pub use crate::collaboration::{
     CollaborationMode, CollaborationPolicy, CollaborationSection, Collaborator, CollaboratorRole,
     ContributionClaim, ContributionSummary, ContributionType, MergeEvent, MergeRecord,
     MergeStrategy, TimeInterval,
 };
 
-// Re-export compact reference types
 pub use crate::compact_ref::{
-    CompactEvidenceRef, CompactMetadata, CompactRefBuilder, CompactRefError, CompactSummary,
+    CompactEvidenceRef, CompactMetadata, CompactRefError, CompactSummary,
 };
 
-// Re-export continuation types
 pub use crate::continuation::{ContinuationSection, ContinuationSummary};
 
-// Re-export provenance types
 pub use crate::provenance::{
     DerivationClaim, DerivationType, ProvenanceLink, ProvenanceMetadata, ProvenanceSection,
 };
 
-// Re-export trust policy types
 pub use crate::trust_policy::{
     AppraisalPolicy, FactorEvidence, FactorType, PolicyMetadata, ThresholdType, TrustComputation,
     TrustFactor, TrustThreshold,
 };
 
-// Re-export VDF aggregation types
 pub use crate::vdf::{
     AggregateError, AggregateMetadata, AggregationMethod, MerkleSample, MerkleVdfBuilder,
     MerkleVdfProof, SnarkScheme, SnarkVdfProof, VdfAggregateProof, VerificationMode,
 };
 
-// Re-export fingerprint types
 pub use crate::fingerprint::{
     ActivityFingerprint, AuthorFingerprint, ConsentManager, ConsentStatus, FingerprintComparison,
     FingerprintManager, FingerprintStatus, ProfileId, VoiceFingerprint,
 };
 
-// Re-export RFC-compliant types
 pub use crate::rfc::{
     BiologyInvariantClaim, BiologyScoringParameters, BlockchainAnchor, CalibrationAttestation,
     JitterBinding, RoughtimeSample, TimeBindingTier, TimeEvidence, TsaResponse, ValidationStatus,
     VdfProofRfc,
 };
 
-// Re-export wire format types (CDDL-conformant)
+// CDDL-conformant wire format types (RFC 8949)
 pub use crate::rfc::wire_types::{
     AttestationResultWire, CheckpointWire, DocumentRef as WireDocumentRef, EvidencePacketWire,
     HashAlgorithm, HashValue as WireHashValue, ProcessProof as WireProcessProof, Verdict,
     CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET as CBOR_TAG_EVIDENCE_PACKET_WIRE,
 };
 
-// Re-export unified error types
 pub use crate::error::{Error, Result};
 
 #[cfg(feature = "witnessd_jitter")]
@@ -143,7 +129,7 @@ pub use crate::witnessd_jitter_bridge::{
     EntropyQuality, HybridEvidence, HybridJitterSession, HybridSample, ZoneTrackingEngine,
 };
 
-/// Re-export pop-crate for protocol integration.
+/// Re-export for protocol integration.
 pub use witnessd_protocol;
 
 #[cfg(target_os = "macos")]

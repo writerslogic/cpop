@@ -7,6 +7,7 @@ pub mod hurst;
 pub mod labyrinth;
 pub mod perplexity;
 pub mod pink_noise;
+pub(crate) mod stats;
 
 pub use active_probes::{
     analyze_galton_invariant, analyze_reflex_gate, ActiveProbeResults, GaltonInvariantResult,

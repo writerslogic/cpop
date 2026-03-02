@@ -21,6 +21,7 @@ pub mod checkpoint;
 pub mod fixed_point;
 pub mod jitter_binding;
 pub mod packet;
+pub(crate) mod serde_helpers;
 pub mod time_evidence;
 pub mod vdf;
 pub mod wire_types;
