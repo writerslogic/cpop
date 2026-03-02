@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["cli", "authorship", "witnessing", "attestation", "proof-of-process"]
 categories = ["command-line-utilities"]
 rust-version = "1.75.0"
+homepage = "https://github.com/writerslogic/witnessd"
+documentation = "https://docs.rs/witnessd_cli"
+exclude = ["tests/", "browser-extension/"]
 
 [[bin]]
 name = "witnessd"
@@ -41,3 +44,5 @@ notify = "6.1"
 glob = "0.3"
 tempfile = "3.10"
 url = "2.5"
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.6"

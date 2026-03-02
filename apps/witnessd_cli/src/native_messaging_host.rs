@@ -14,30 +14,24 @@ use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 use std::sync::{Mutex, OnceLock};
 
-// ── Protocol Types ──────────────────────────────────────────────────────────
-
 /// Incoming message from the browser extension.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Request {
-    /// Begin witnessing a browser document.
     StartSession {
         document_url: String,
         document_title: String,
     },
-    /// Create a checkpoint with browser-captured content data.
     Checkpoint {
         content_hash: String,
         char_count: u64,
         delta: i64,
     },
-    /// End the current witnessing session.
     StopSession,
-    /// Query current witnessing status.
     GetStatus,
-    /// Forward keystroke timing intervals from the browser.
-    InjectJitter { intervals: Vec<u64> },
-    /// Ping for connection testing.
+    InjectJitter {
+        intervals: Vec<u64>,
+    },
     Ping,
 }
 
@@ -78,27 +72,21 @@ enum Response {
     },
 }
 
-// ── Session State ───────────────────────────────────────────────────────────
-
 /// Tracks the active browser witnessing session.
 struct Session {
     id: String,
     document_url: String,
     document_title: String,
     checkpoint_count: u64,
-    /// Temporary file path used for evidence storage.
     evidence_path: std::path::PathBuf,
+    jitter_intervals: Vec<u64>,
 }
 
-/// Global session state protected by a mutex.
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 
-/// Returns the global session mutex, initializing on first access.
 fn session() -> &'static Mutex<Option<Session>> {
     SESSION.get_or_init(|| Mutex::new(None))
 }
-
-// ── Native Messaging I/O ────────────────────────────────────────────────────
 
 /// Read a single native messaging message from stdin.
 /// Format: 4 bytes (LE u32 length) + JSON payload.
@@ -138,11 +126,8 @@ fn write_message(response: &Response) -> io::Result<()> {
     stdout.flush()
 }
 
-// ── Message Handlers ────────────────────────────────────────────────────────
-
 fn handle_start_session(document_url: String, document_title: String) -> Response {
-    // Validate domain to prevent unauthorized witnessing
-    // This adds a second layer of defense on top of the browser manifest
+    // Second layer of domain validation on top of the browser manifest
     let allowed_domains = [
         "docs.google.com",
         "www.overleaf.com",
@@ -153,13 +138,14 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
 
     let is_allowed = if let Ok(url) = url::Url::parse(&document_url) {
         if let Some(host) = url.host_str() {
-            allowed_domains.iter().any(|d| host.ends_with(d))
+            allowed_domains
+                .iter()
+                .any(|d| host == *d || host.ends_with(&format!(".{d}")))
         } else {
             false
         }
     } else {
-        // Fallback simple check if URL parsing fails
-        allowed_domains.iter().any(|d| document_url.contains(d))
+        false
     };
 
     if !is_allowed {
@@ -169,7 +155,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Initialize witnessd if not already done
     let init_result = witnessd_engine::ffi::ffi_init();
     if !init_result.success {
         return Response::Error {
@@ -180,7 +165,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Create a temporary evidence file for this browser session
     let data_dir = dirs::data_local_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -193,7 +177,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Generate a session ID from URL hash
     let mut hasher = Sha256::new();
     hasher.update(document_url.as_bytes());
     hasher.update(
@@ -206,7 +189,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
     let hash = hasher.finalize();
     let session_id = hex::encode(&hash[..8]);
 
-    // Sanitize title for filename
     let safe_title: String = document_title
         .chars()
         .map(|c| {
@@ -220,7 +202,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         .collect();
     let evidence_path = session_dir.join(format!("{safe_title}_{session_id}.wsd"));
 
-    // Create the evidence file so the core can track it
     if let Err(e) = std::fs::write(&evidence_path, format!("<!-- {document_title} -->\n")) {
         return Response::Error {
             message: format!("Failed to create evidence file: {e}"),
@@ -228,7 +209,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Create initial checkpoint
     let checkpoint_result = witnessd_engine::ffi::ffi_create_checkpoint(
         evidence_path.display().to_string(),
         format!("Browser session started: {document_title}"),
@@ -243,14 +223,14 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Store session state
-    let mut session_lock = session().lock().unwrap();
+    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
     *session_lock = Some(Session {
         id: session_id.clone(),
         document_url: document_url.clone(),
         document_title: document_title.clone(),
         checkpoint_count: 1,
         evidence_path,
+        jitter_intervals: Vec::new(),
     });
 
     Response::SessionStarted {
@@ -260,7 +240,7 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
 }
 
 fn handle_checkpoint(content_hash: String, char_count: u64, delta: i64) -> Response {
-    let mut session_lock = session().lock().unwrap();
+    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
     let session = match session_lock.as_mut() {
         Some(s) => s,
         None => {
@@ -271,7 +251,6 @@ fn handle_checkpoint(content_hash: String, char_count: u64, delta: i64) -> Respo
         }
     };
 
-    // Update the evidence file with the new content snapshot
     let content = format!(
         "<!-- {} -->\n<!-- hash: {} chars: {} delta: {} -->\n",
         session.document_title, content_hash, char_count, delta
@@ -283,7 +262,6 @@ fn handle_checkpoint(content_hash: String, char_count: u64, delta: i64) -> Respo
         };
     }
 
-    // Create checkpoint via FFI
     let result = witnessd_engine::ffi::ffi_create_checkpoint(
         session.evidence_path.display().to_string(),
         format!(
@@ -315,7 +293,7 @@ fn handle_checkpoint(content_hash: String, char_count: u64, delta: i64) -> Respo
 }
 
 fn handle_stop_session() -> Response {
-    let mut session_lock = session().lock().unwrap();
+    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
     let session = match session_lock.take() {
         Some(s) => s,
         None => {
@@ -326,7 +304,6 @@ fn handle_stop_session() -> Response {
         }
     };
 
-    // Create a final checkpoint
     let final_result = witnessd_engine::ffi::ffi_create_checkpoint(
         session.evidence_path.display().to_string(),
         format!(
@@ -352,7 +329,7 @@ fn handle_stop_session() -> Response {
 
 fn handle_get_status() -> Response {
     let status = witnessd_engine::ffi::ffi_get_status();
-    let session_lock = session().lock().unwrap();
+    let session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
 
     Response::Status {
         initialized: status.initialized,
@@ -370,32 +347,96 @@ fn handle_get_status() -> Response {
 
 fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
     let count = intervals.len();
-    // Store jitter data for forensic analysis
-    // The intervals represent keystroke timing in microseconds
-    // These get incorporated into the next checkpoint's process proof
-    //
-    // For now, we log the jitter data. Full integration with the SWF
-    // proof system will use these intervals to compute behavioral entropy.
-    if let Ok(mut session_lock) = session().lock() {
-        if let Some(_session) = session_lock.as_mut() {
-            // Jitter data is available for the session
-            // It will be consumed on the next checkpoint creation
+
+    if count == 0 {
+        return Response::JitterReceived { count: 0 };
+    }
+
+    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    let session = match session_lock.as_mut() {
+        Some(s) => s,
+        None => {
+            return Response::Error {
+                message: "No active session. Call start_session first.".into(),
+                code: "NO_SESSION".into(),
+            }
+        }
+    };
+
+    let valid: Vec<u64> = intervals
+        .into_iter()
+        .filter(|i| (10_000..=10_000_000).contains(i))
+        .collect();
+
+    const MAX_JITTER_INTERVALS: usize = 100_000;
+    let accepted = valid.len();
+    let remaining_cap = MAX_JITTER_INTERVALS.saturating_sub(session.jitter_intervals.len());
+    session
+        .jitter_intervals
+        .extend_from_slice(&valid[..accepted.min(remaining_cap)]);
+
+    if !session.jitter_intervals.is_empty() {
+        let stats = compute_jitter_stats(&session.jitter_intervals);
+        let jitter_line = format!(
+            "<!-- jitter: samples={} mean={:.0}us stddev={:.0}us min={}us max={}us -->\n",
+            stats.count, stats.mean, stats.std_dev, stats.min, stats.max,
+        );
+        if let Err(e) = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&session.evidence_path)
+            .and_then(|mut f| f.write_all(jitter_line.as_bytes()))
+        {
+            eprintln!("Failed to write jitter evidence: {e}");
         }
     }
 
-    Response::JitterReceived { count }
+    eprintln!(
+        "Jitter: received {count}, accepted {accepted}, total {}",
+        session.jitter_intervals.len()
+    );
+
+    Response::JitterReceived { count: accepted }
 }
 
-// ── Main Loop ───────────────────────────────────────────────────────────────
+/// Basic statistical summary of keystroke timing intervals.
+struct JitterStats {
+    count: usize,
+    mean: f64,
+    std_dev: f64,
+    min: u64,
+    max: u64,
+}
+
+/// Compute mean, standard deviation, min, and max of timing intervals.
+fn compute_jitter_stats(intervals: &[u64]) -> JitterStats {
+    let count = intervals.len();
+    let sum: u64 = intervals.iter().sum();
+    let mean = sum as f64 / count as f64;
+
+    let variance = intervals
+        .iter()
+        .map(|&v| {
+            let diff = v as f64 - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / count as f64;
+
+    JitterStats {
+        count,
+        mean,
+        std_dev: variance.sqrt(),
+        min: intervals.iter().copied().min().unwrap_or(0),
+        max: intervals.iter().copied().max().unwrap_or(0),
+    }
+}
 
 fn main() {
-    // Log to stderr (invisible to native messaging protocol, visible for debugging)
     eprintln!(
         "witnessd-native-messaging-host v{}",
         env!("CARGO_PKG_VERSION")
     );
 
-    // Initialize witnessd_engine
     let init_result = witnessd_engine::ffi::ffi_init();
     if !init_result.success {
         eprintln!(
@@ -404,7 +445,6 @@ fn main() {
         );
     }
 
-    // Main message loop: read from stdin, process, write to stdout
     loop {
         let request = match read_message() {
             Ok(Some(req)) => req,
