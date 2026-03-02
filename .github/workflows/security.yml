@@ -30,7 +30,6 @@ jobs:
   cargo-audit:
     name: Cargo Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +41,7 @@ jobs:
 
       - name: Run audit
         run: |
-          cargo audit --json > audit-results.json 2>&1 || true
+          cargo audit --json > audit-results.json 2>&1
           echo "Audit completed"
 
       - name: Upload audit results
@@ -66,15 +65,12 @@ jobs:
 
       - name: Check advisories
         run: cargo deny check advisories
-        continue-on-error: true
 
       - name: Check licenses
         run: cargo deny check licenses
-        continue-on-error: true
 
       - name: Check bans
         run: cargo deny check bans
-        continue-on-error: true
 
   # ============================================================================
   # Dependency Review (PRs only)
@@ -131,7 +127,6 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           extra_args: --only-verified
-        continue-on-error: true
 
       # Note: Gitleaks removed - requires paid license as of 2025
       # See: https://github.com/gitleaks/gitleaks-action#-announcement
@@ -163,3 +158,25 @@ jobs:
           sarif_file: semgrep-results.sarif
         if: always()
         continue-on-error: true
+
+  # ============================================================================
+  # Quality Gate — fails if any critical security check failed
+  # ============================================================================
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [cargo-audit, cargo-deny, secrets, trivy]
+    steps:
+      - name: Check results
+        run: |
+          echo "cargo-audit: ${{ needs.cargo-audit.result }}"
+          echo "cargo-deny:  ${{ needs.cargo-deny.result }}"
+          echo "secrets:     ${{ needs.secrets.result }}"
+          echo "trivy:       ${{ needs.trivy.result }}"
+          if [[ "${{ needs.cargo-audit.result }}" == "failure" ]] || \
+             [[ "${{ needs.cargo-deny.result }}" == "failure" ]] || \
+             [[ "${{ needs.secrets.result }}" == "failure" ]]; then
+            echo "::error::Security gate failed — critical check(s) did not pass"
+            exit 1
+          fi

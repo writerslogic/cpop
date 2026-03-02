@@ -4,14 +4,15 @@
 # 1. Copies the native messaging host binary to %LOCALAPPDATA%\Witnessd\
 # 2. Registers the native messaging manifest via Registry for Chrome, Firefox, and/or Edge
 #
-# Usage: .\install-native-host.ps1 [-Chrome] [-Firefox] [-Edge] [-All]
+# Usage: .\install-native-host.ps1 [-Chrome] [-Firefox] [-Edge] [-All] [-ExtensionId ID]
 
 param(
     [switch]$Chrome,
     [switch]$Firefox,
     [switch]$Edge,
     [switch]$All,
-    [switch]$Both  # Legacy alias for -All
+    [switch]$Both,  # Legacy alias for -All
+    [string]$ExtensionId = "EXTENSION_ID_HERE"
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,7 +72,7 @@ function Install-ChromeHost {
         description = "Witnessd Native Messaging Host"
         path = $InstalledBinary
         type = "stdio"
-        allowed_origins = @("chrome-extension://EXTENSION_ID_HERE/")
+        allowed_origins = @("chrome-extension://$ExtensionId/")
     }
 
     $manifestPath = Join-Path $ManifestDir "chrome-$HostName.json"
@@ -84,7 +85,9 @@ function Install-ChromeHost {
 
     Write-Host "  Chrome manifest: $manifestPath" -ForegroundColor Green
     Write-Host "  Chrome registry: $regPath" -ForegroundColor Green
-    Write-Host "  NOTE: Replace EXTENSION_ID_HERE in $manifestPath with your extension ID" -ForegroundColor Yellow
+    if ($ExtensionId -eq "EXTENSION_ID_HERE") {
+        Write-Host "  NOTE: Replace EXTENSION_ID_HERE in $manifestPath with your extension ID" -ForegroundColor Yellow
+    }
 }
 
 function Install-FirefoxHost {
@@ -114,7 +117,7 @@ function Install-EdgeHost {
         description = "Witnessd Native Messaging Host"
         path = $InstalledBinary
         type = "stdio"
-        allowed_origins = @("chrome-extension://EXTENSION_ID_HERE/")
+        allowed_origins = @("chrome-extension://$ExtensionId/")
     }
 
     $manifestPath = Join-Path $ManifestDir "edge-$HostName.json"
@@ -127,7 +130,9 @@ function Install-EdgeHost {
 
     Write-Host "  Edge manifest: $manifestPath" -ForegroundColor Green
     Write-Host "  Edge registry: $regPath" -ForegroundColor Green
-    Write-Host "  NOTE: Replace EXTENSION_ID_HERE in $manifestPath with your extension ID" -ForegroundColor Yellow
+    if ($ExtensionId -eq "EXTENSION_ID_HERE") {
+        Write-Host "  NOTE: Replace EXTENSION_ID_HERE in $manifestPath with your extension ID" -ForegroundColor Yellow
+    }
 }
 
 if ($Chrome) {
@@ -151,7 +156,11 @@ if ($Edge) {
 Write-Host ""
 Write-Host "Installation complete!" -ForegroundColor Green
 Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  1. Load the browser extension in developer mode"
-Write-Host "  2. Copy the extension ID from chrome://extensions or edge://extensions"
-Write-Host "  3. Update the Chrome/Edge manifests with your extension ID"
+if ($ExtensionId -eq "EXTENSION_ID_HERE") {
+    Write-Host "Next steps:"
+    Write-Host "  1. Load the browser extension in developer mode"
+    Write-Host "  2. Copy the extension ID from chrome://extensions or edge://extensions"
+    Write-Host "  3. Re-run with -ExtensionId YOUR_ID to update manifests"
+} else {
+    Write-Host "Extension ID configured: $ExtensionId"
+}

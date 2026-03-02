@@ -5,14 +5,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+PACKAGING_DIR="${PROJECT_ROOT}/apps/witnessd_cli/packaging/linux"
 BUILD_DIR="${PROJECT_ROOT}/build/rpm"
 VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "1.0.0")}"
 
 echo "=== Building RPM package for witnessd v${VERSION} ==="
 
 # Check dependencies
-for cmd in rpmbuild go git; do
+for cmd in rpmbuild cargo git; do
     if ! command -v "${cmd}" &>/dev/null; then
         echo "Error: ${cmd} is required but not installed."
         exit 1
@@ -37,7 +38,7 @@ tar czf "SOURCES/witnessd-${VERSION}.tar.gz" "witnessd-${VERSION}"
 rm -rf "${SOURCE_DIR}"
 
 # Copy spec file
-cp "${PROJECT_ROOT}/platforms/linux/rpm/witnessd.spec" "${BUILD_DIR}/SPECS/"
+cp "${PACKAGING_DIR}/rpm/witnessd.spec" "${BUILD_DIR}/SPECS/"
 
 # Update version in spec file
 sed -i "s/^Version:.*/Version:        ${VERSION}/" "${BUILD_DIR}/SPECS/witnessd.spec"

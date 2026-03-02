@@ -5,7 +5,7 @@
 # 1. Copies the native messaging host binary to /usr/local/bin/
 # 2. Registers the native messaging manifest for Chrome, Firefox, and/or Edge
 #
-# Usage: ./install-native-host.sh [--chrome] [--firefox] [--edge] [--all]
+# Usage: ./install-native-host.sh [--chrome] [--firefox] [--edge] [--all] [--extension-id ID]
 
 set -euo pipefail
 
@@ -60,13 +60,15 @@ install_chrome() {
   "path": "${INSTALLED_BINARY}",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://EXTENSION_ID_HERE/"
+    "chrome-extension://${EXTENSION_ID}/"
   ]
 }
 EOF
 
   echo "  Chrome manifest: ${MANIFEST_DIR}/${HOST_NAME}.json"
-  echo "  NOTE: Replace EXTENSION_ID_HERE with your actual extension ID after loading it"
+  if [ "${EXTENSION_ID}" = "EXTENSION_ID_HERE" ]; then
+    echo "  NOTE: Replace EXTENSION_ID_HERE with your actual extension ID after loading it"
+  fi
 }
 
 install_firefox() {
@@ -110,26 +112,37 @@ install_edge() {
   "path": "${INSTALLED_BINARY}",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://EXTENSION_ID_HERE/"
+    "chrome-extension://${EXTENSION_ID}/"
   ]
 }
 EOF
 
   echo "  Edge manifest: ${MANIFEST_DIR}/${HOST_NAME}.json"
-  echo "  NOTE: Replace EXTENSION_ID_HERE with your actual extension ID after loading it"
+  if [ "${EXTENSION_ID}" = "EXTENSION_ID_HERE" ]; then
+    echo "  NOTE: Replace EXTENSION_ID_HERE with your actual extension ID after loading it"
+  fi
 }
 
 # Parse arguments
 INSTALL_CHROME=false
 INSTALL_FIREFOX=false
 INSTALL_EDGE=false
+EXTENSION_ID="EXTENSION_ID_HERE"
 
-case "${1:-all}" in
-  --chrome) INSTALL_CHROME=true ;;
-  --firefox) INSTALL_FIREFOX=true ;;
-  --edge) INSTALL_EDGE=true ;;
-  --all|--both|*) INSTALL_CHROME=true; INSTALL_FIREFOX=true; INSTALL_EDGE=true ;;
-esac
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --chrome) INSTALL_CHROME=true; shift ;;
+    --firefox) INSTALL_FIREFOX=true; shift ;;
+    --edge) INSTALL_EDGE=true; shift ;;
+    --all|--both) INSTALL_CHROME=true; INSTALL_FIREFOX=true; INSTALL_EDGE=true; shift ;;
+    --extension-id) EXTENSION_ID="$2"; shift 2 ;;
+    *) INSTALL_CHROME=true; INSTALL_FIREFOX=true; INSTALL_EDGE=true; shift ;;
+  esac
+done
+
+if ! $INSTALL_CHROME && ! $INSTALL_FIREFOX && ! $INSTALL_EDGE; then
+  INSTALL_CHROME=true; INSTALL_FIREFOX=true; INSTALL_EDGE=true
+fi
 
 echo "=== Witnessd Native Messaging Host Installer ==="
 echo ""
@@ -157,7 +170,11 @@ fi
 echo ""
 echo "Installation complete!"
 echo ""
-echo "Next steps:"
-echo "  1. Load the browser extension in developer mode"
-echo "  2. Copy the extension ID from chrome://extensions or edge://extensions"
-echo "  3. Update the Chrome/Edge manifests with your extension ID"
+if [ "${EXTENSION_ID}" = "EXTENSION_ID_HERE" ]; then
+  echo "Next steps:"
+  echo "  1. Load the browser extension in developer mode"
+  echo "  2. Copy the extension ID from chrome://extensions or edge://extensions"
+  echo "  3. Re-run with --extension-id YOUR_ID to update manifests"
+else
+  echo "Extension ID configured: ${EXTENSION_ID}"
+fi

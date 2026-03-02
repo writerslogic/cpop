@@ -13,12 +13,12 @@ License:        Proprietary
 URL:            https://github.com/writerslogic/witnessd
 Source0:        %{name}-%{version}.tar.gz
 
-BuildRequires:  golang >= 1.21
+BuildRequires:  rust >= 1.75
+BuildRequires:  cargo >= 1.75
 BuildRequires:  git
 BuildRequires:  systemd-rpm-macros
 
 Requires:       systemd
-Recommends:     ibus >= 1.5
 
 %description
 Witnessd provides cryptographic authorship witnessing through kinetic
@@ -48,24 +48,7 @@ without requiring elevated privileges.
 %autosetup
 
 %build
-export GOFLAGS="-mod=readonly"
-export CGO_ENABLED=0
-
-VERSION=%{version}
-COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
-
-# Build main daemon
-go build -trimpath -ldflags="${LDFLAGS}" -o witnessd ./cmd/witnessd
-
-# Build control utility
-go build -trimpath -ldflags="${LDFLAGS}" -o witnessctl ./cmd/witnessctl
-
-# Build IBus engine (needs CGO for some features)
-export CGO_ENABLED=1
-go build -trimpath -ldflags="${LDFLAGS}" -o witnessd-ibus ./cmd/witnessd-ibus || \
-    CGO_ENABLED=0 go build -trimpath -ldflags="${LDFLAGS}" -o witnessd-ibus ./cmd/witnessd-ibus
+cargo build --release --package witnessd_cli
 
 %install
 # Create directories
@@ -80,19 +63,17 @@ install -d %{buildroot}%{_datadir}/doc/%{name}
 install -d %{buildroot}%{_datadir}/ibus/component
 
 # Install binaries
-install -p -m 755 witnessd %{buildroot}%{_bindir}/witnessd
-install -p -m 755 witnessctl %{buildroot}%{_bindir}/witnessctl
-install -p -m 755 witnessd-ibus %{buildroot}%{_bindir}/witnessd-ibus
+install -p -m 755 target/release/witnessd %{buildroot}%{_bindir}/witnessd
+install -p -m 755 target/release/witnessd-native-messaging-host %{buildroot}%{_bindir}/witnessd-native-messaging-host
 
 # Install man pages
 install -p -m 644 docs/man/witnessd.1 %{buildroot}%{_mandir}/man1/witnessd.1
-install -p -m 644 docs/man/witnessctl.1 %{buildroot}%{_mandir}/man1/witnessctl.1
 
 # Install systemd units
-install -p -m 644 platforms/linux/systemd/witnessd.service %{buildroot}%{_unitdir}/witnessd.service
-install -p -m 644 platforms/linux/systemd/witnessd.socket %{buildroot}%{_unitdir}/witnessd.socket
-install -p -m 644 platforms/linux/systemd/witnessd-user.service %{buildroot}%{_userunitdir}/witnessd.service
-install -p -m 644 platforms/linux/systemd/witnessd-ibus.service %{buildroot}%{_userunitdir}/witnessd-ibus.service
+install -p -m 644 apps/witnessd_cli/packaging/linux/systemd/witnessd.service %{buildroot}%{_unitdir}/witnessd.service
+install -p -m 644 apps/witnessd_cli/packaging/linux/systemd/witnessd.socket %{buildroot}%{_unitdir}/witnessd.socket
+install -p -m 644 apps/witnessd_cli/packaging/linux/systemd/witnessd-user.service %{buildroot}%{_userunitdir}/witnessd.service
+install -p -m 644 apps/witnessd_cli/packaging/linux/systemd/witnessd-ibus.service %{buildroot}%{_userunitdir}/witnessd-ibus.service
 
 # Install config
 install -p -m 640 configs/config.example.toml %{buildroot}%{_sysconfdir}/witnessd/config.toml.default
@@ -109,9 +90,11 @@ EOF
 install -p -m 644 LICENSE %{buildroot}%{_datadir}/doc/%{name}/LICENSE
 install -p -m 644 README.md %{buildroot}%{_datadir}/doc/%{name}/README.md
 
-# Install IBus component (with updated binary path)
-sed 's|/usr/local/bin|/usr/bin|g' cmd/witnessd-ibus/components/witnessd.xml > %{buildroot}%{_datadir}/ibus/component/witnessd.xml
-chmod 644 %{buildroot}%{_datadir}/ibus/component/witnessd.xml
+# Install IBus component (if available)
+if [ -f apps/witnessd_cli/packaging/linux/systemd/witnessd-ibus.xml ]; then
+    sed 's|/usr/local/bin|/usr/bin|g' apps/witnessd_cli/packaging/linux/systemd/witnessd-ibus.xml > %{buildroot}%{_datadir}/ibus/component/witnessd.xml
+    chmod 644 %{buildroot}%{_datadir}/ibus/component/witnessd.xml
+fi
 
 %pre
 # Create witnessd user and group
@@ -157,9 +140,8 @@ fi
 %license LICENSE
 %doc README.md
 %{_bindir}/witnessd
-%{_bindir}/witnessctl
+%{_bindir}/witnessd-native-messaging-host
 %{_mandir}/man1/witnessd.1*
-%{_mandir}/man1/witnessctl.1*
 %{_unitdir}/witnessd.service
 %{_unitdir}/witnessd.socket
 %{_userunitdir}/witnessd.service

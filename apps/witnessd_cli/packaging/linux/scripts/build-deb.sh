@@ -5,14 +5,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+PACKAGING_DIR="${PROJECT_ROOT}/apps/witnessd_cli/packaging/linux"
 BUILD_DIR="${PROJECT_ROOT}/build/deb"
 VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "1.0.0")}"
 
 echo "=== Building Debian package for witnessd v${VERSION} ==="
 
 # Check dependencies
-for cmd in dpkg-buildpackage debhelper go git; do
+for cmd in dpkg-buildpackage debhelper cargo git; do
     if ! command -v "${cmd%% *}" &>/dev/null; then
         echo "Error: ${cmd} is required but not installed."
         exit 1
@@ -34,7 +35,7 @@ rsync -a --exclude='build' --exclude='.git' --exclude='*.AppImage' \
     "${PROJECT_ROOT}/" "${SOURCE_DIR}/"
 
 # Copy debian directory
-cp -r "${PROJECT_ROOT}/platforms/linux/debian" "${SOURCE_DIR}/"
+cp -r "${PACKAGING_DIR}/debian" "${SOURCE_DIR}/"
 
 # Update changelog with current version
 sed -i "s/^witnessd (.*)/witnessd (${VERSION}-1)/" "${SOURCE_DIR}/debian/changelog"

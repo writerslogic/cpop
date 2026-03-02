@@ -1,11 +1,11 @@
 #!/bin/bash
 # witnessd installer
-# Usage: curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd-cli/main/install.sh | sh
+# Usage: curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd/main/apps/witnessd_cli/install.sh | sh
 
 set -e
 
-REPO="writerslogic/witnessd-cli"
-BINARY_NAME="witnessd-cli"
+REPO="writerslogic/witnessd"
+BINARY_NAME="witnessd"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Colors
@@ -86,7 +86,7 @@ install_witnessd() {
     fi
     info "Latest version: $version"
 
-    archive_name="witnessd_${version}_${platform}.tar.gz"
+    archive_name="witnessd-${version}-${platform}.tar.gz"
     url="https://github.com/${REPO}/releases/download/${version}/${archive_name}"
 
     info "Downloading $archive_name..."
@@ -105,10 +105,18 @@ install_witnessd() {
         info "Installing to $INSTALL_DIR..."
         mv "${tmp_dir}/${BINARY_NAME}" "${INSTALL_DIR}/witnessd"
         chmod +x "${INSTALL_DIR}/witnessd"
+        if [ -f "${tmp_dir}/witnessd-native-messaging-host" ]; then
+            mv "${tmp_dir}/witnessd-native-messaging-host" "${INSTALL_DIR}/witnessd-native-messaging-host"
+            chmod +x "${INSTALL_DIR}/witnessd-native-messaging-host"
+        fi
     else
         info "Installing to $INSTALL_DIR (requires sudo)..."
         sudo mv "${tmp_dir}/${BINARY_NAME}" "${INSTALL_DIR}/witnessd"
         sudo chmod +x "${INSTALL_DIR}/witnessd"
+        if [ -f "${tmp_dir}/witnessd-native-messaging-host" ]; then
+            sudo mv "${tmp_dir}/witnessd-native-messaging-host" "${INSTALL_DIR}/witnessd-native-messaging-host"
+            sudo chmod +x "${INSTALL_DIR}/witnessd-native-messaging-host"
+        fi
     fi
 
     info "witnessd installed successfully!"

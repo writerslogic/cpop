@@ -1,12 +1,18 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Witnessd",
   "version": "1.0.0",
   "description": "Cryptographic proof-of-process evidence for browser-based writing. Witness your creative process in Google Docs, Overleaf, Medium, and more.",
   "permissions": [
     "nativeMessaging",
-    "activeTab",
     "storage"
+  ],
+  "host_permissions": [
+    "https://docs.google.com/*",
+    "https://www.overleaf.com/*",
+    "https://medium.com/*",
+    "https://notion.so/*",
+    "https://www.notion.so/*"
   ],
   "browser_specific_settings": {
     "gecko": {
@@ -15,7 +21,7 @@
     }
   },
   "background": {
-    "scripts": ["background.js"]
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
@@ -31,7 +37,7 @@
       "run_at": "document_idle"
     }
   ],
-  "browser_action": {
+  "action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",

@@ -5,7 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+PACKAGING_DIR="${PROJECT_ROOT}/apps/witnessd_cli/packaging/linux"
 BUILD_DIR="${PROJECT_ROOT}/build/appimage"
 VERSION="${1:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "1.0.0")}"
 ARCH="${2:-x86_64}"
@@ -13,7 +14,7 @@ ARCH="${2:-x86_64}"
 echo "=== Building AppImage for witnessd v${VERSION} (${ARCH}) ==="
 
 # Check dependencies
-for cmd in go git; do
+for cmd in cargo git; do
     if ! command -v "${cmd}" &>/dev/null; then
         echo "Error: ${cmd} is required but not installed."
         exit 1
@@ -47,17 +48,13 @@ mkdir -p "${APPDIR}/usr/share/doc/witnessd"
 echo "Building binaries..."
 cd "${PROJECT_ROOT}"
 
-COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
-
-# Set GOARCH based on target
+# Set Rust target based on architecture
 case "${ARCH}" in
     x86_64)
-        GOARCH="amd64"
+        RUST_TARGET="x86_64-unknown-linux-gnu"
         ;;
     aarch64|arm64)
-        GOARCH="arm64"
+        RUST_TARGET="aarch64-unknown-linux-gnu"
         ;;
     *)
         echo "Unsupported architecture: ${ARCH}"
@@ -65,38 +62,36 @@ case "${ARCH}" in
         ;;
 esac
 
-export CGO_ENABLED=0
-export GOOS=linux
-export GOARCH="${GOARCH}"
+cargo build --release --package witnessd_cli --target "${RUST_TARGET}"
 
-go build -trimpath -ldflags="${LDFLAGS}" -o "${APPDIR}/usr/bin/witnessd" ./cmd/witnessd
-go build -trimpath -ldflags="${LDFLAGS}" -o "${APPDIR}/usr/bin/witnessctl" ./cmd/witnessctl
-go build -trimpath -ldflags="${LDFLAGS}" -o "${APPDIR}/usr/bin/witnessd-ibus" ./cmd/witnessd-ibus
+# Install binaries into AppDir
+cp "${PROJECT_ROOT}/target/${RUST_TARGET}/release/witnessd" "${APPDIR}/usr/bin/witnessd"
+cp "${PROJECT_ROOT}/target/${RUST_TARGET}/release/witnessd-native-messaging-host" "${APPDIR}/usr/bin/witnessd-native-messaging-host"
 
 # Copy resources
 echo "Copying resources..."
 
 # Desktop file
-cp "${PROJECT_ROOT}/platforms/linux/appimage/witnessd.desktop" "${APPDIR}/usr/share/applications/"
-cp "${PROJECT_ROOT}/platforms/linux/appimage/witnessd.desktop" "${APPDIR}/"
+cp "${PACKAGING_DIR}/appimage/witnessd.desktop" "${APPDIR}/usr/share/applications/"
+cp "${PACKAGING_DIR}/appimage/witnessd.desktop" "${APPDIR}/"
 
 # AppData/MetaInfo
-cp "${PROJECT_ROOT}/platforms/linux/appimage/witnessd.appdata.xml" "${APPDIR}/usr/share/metainfo/"
+cp "${PACKAGING_DIR}/appimage/witnessd.appdata.xml" "${APPDIR}/usr/share/metainfo/"
 
 # Icons
-cp "${PROJECT_ROOT}/platforms/linux/appimage/icons/witnessd.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/"
+cp "${PACKAGING_DIR}/appimage/icons/witnessd.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/"
 
 # Convert SVG to PNG for icon (if ImageMagick is available)
 if command -v convert &>/dev/null; then
     convert -background none -resize 256x256 \
-        "${PROJECT_ROOT}/platforms/linux/appimage/icons/witnessd.svg" \
+        "${PACKAGING_DIR}/appimage/icons/witnessd.svg" \
         "${APPDIR}/usr/share/icons/hicolor/256x256/apps/witnessd.png"
 else
     echo "Warning: ImageMagick not found, skipping PNG icon generation"
 fi
 
 # Copy main icon for AppImage
-cp "${PROJECT_ROOT}/platforms/linux/appimage/icons/witnessd.svg" "${APPDIR}/witnessd.svg"
+cp "${PACKAGING_DIR}/appimage/icons/witnessd.svg" "${APPDIR}/witnessd.svg"
 
 # Man pages
 if [[ -d "${PROJECT_ROOT}/docs/man" ]]; then
@@ -108,7 +103,7 @@ cp "${PROJECT_ROOT}/LICENSE" "${APPDIR}/usr/share/doc/witnessd/"
 cp "${PROJECT_ROOT}/README.md" "${APPDIR}/usr/share/doc/witnessd/"
 
 # AppRun script
-cp "${PROJECT_ROOT}/platforms/linux/appimage/AppRun" "${APPDIR}/"
+cp "${PACKAGING_DIR}/appimage/AppRun" "${APPDIR}/"
 chmod +x "${APPDIR}/AppRun"
 
 # Create the AppImage

@@ -15,8 +15,6 @@ let checkpointTimer = null;
 let pendingCallbacks = new Map();
 let callbackId = 0;
 
-// ── Native Messaging Connection ─────────────────────────────────────────────
-
 function connectToNativeHost() {
   if (nativePort) {
     return;
@@ -40,7 +38,6 @@ function connectToNativeHost() {
     isConnected = true;
     updateBadge("", "#2ecc71");
 
-    // Send ping to verify connection
     sendNativeMessage({ type: "ping" });
   } catch (err) {
     console.error("Failed to connect to native host:", err);
@@ -71,8 +68,6 @@ function sendNativeMessage(message) {
   nativePort.postMessage(message);
 }
 
-// ── Message Handlers ────────────────────────────────────────────────────────
-
 function handleNativeMessage(message) {
   switch (message.type) {
     case "pong":
@@ -84,7 +79,6 @@ function handleNativeMessage(message) {
     case "session_started":
       console.log(`Session started: ${message.session_id}`);
       updateBadge("\u2713", "#2ecc71");
-      // Notify popup if open
       broadcastToPopup({ type: "session_update", ...message });
       break;
 
@@ -92,7 +86,6 @@ function handleNativeMessage(message) {
       console.log(
         `Checkpoint #${message.checkpoint_count}: ${message.hash?.slice(0, 12)}...`
       );
-      // Brief flash on badge
       updateBadge(String(message.checkpoint_count), "#2ecc71");
       broadcastToPopup({ type: "checkpoint_update", ...message });
       break;
@@ -109,7 +102,6 @@ function handleNativeMessage(message) {
       break;
 
     case "jitter_received":
-      // Acknowledged
       break;
 
     case "error":
@@ -125,8 +117,6 @@ function handleNativeMessage(message) {
       console.warn("Unknown native message type:", message.type);
   }
 }
-
-// ── Content Script Communication ────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
@@ -174,7 +164,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case "popup_connect":
-      // Popup opened — send current state
       sendNativeMessage({ type: "get_status" });
       sendResponse({ ok: true, connected: isConnected });
       break;
@@ -183,18 +172,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: "Unknown action" });
   }
 
-  return true; // Keep channel open for async response
+  return true;
 });
-
-// ── Checkpoint Timer ────────────────────────────────────────────────────────
 
 function startCheckpointTimer() {
   stopCheckpointTimer();
   checkpointTimer = setInterval(() => {
     if (activeTabId) {
-      // Ask content script to capture current state
       chrome.tabs.sendMessage(activeTabId, { action: "capture_state" }).catch(() => {
-        // Tab may have been closed
         stopCheckpointTimer();
       });
     }
@@ -208,28 +193,20 @@ function stopCheckpointTimer() {
   }
 }
 
-// ── Badge Updates ───────────────────────────────────────────────────────────
-
 function updateBadge(text, color) {
   chrome.action.setBadgeText({ text });
   chrome.action.setBadgeBackgroundColor({ color });
 }
 
 function broadcastToPopup(message) {
-  chrome.runtime.sendMessage(message).catch(() => {
-    // Popup not open, ignore
-  });
+  chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-// ── Lifecycle ───────────────────────────────────────────────────────────────
-
-// Auto-connect on install
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Witnessd extension installed");
   updateBadge("", "#95a5a6");
 });
 
-// Clean up on tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === activeTabId) {
     sendNativeMessage({ type: "stop_session" });

@@ -24,7 +24,6 @@ const elements = {
   saveStatus: document.getElementById("save-status"),
 };
 
-// Load saved settings
 async function loadSettings() {
   const result = await chrome.storage.local.get(Object.keys(DEFAULTS));
   const settings = { ...DEFAULTS, ...result };
@@ -34,14 +33,12 @@ async function loadSettings() {
   elements.contentTier.value = settings.contentTier;
   elements.captureJitter.checked = settings.captureJitter;
 
-  // Site toggles
   document.querySelectorAll(".site-toggle input[data-site]").forEach((input) => {
     const site = input.dataset.site;
     input.checked = settings.enabledSites?.[site] ?? true;
   });
 }
 
-// Save settings
 async function saveSettings() {
   const enabledSites = {};
   document.querySelectorAll(".site-toggle input[data-site]").forEach((input) => {

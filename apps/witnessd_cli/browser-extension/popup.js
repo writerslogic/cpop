@@ -19,10 +19,7 @@ const elements = {
   openOptions: document.getElementById("open-options"),
 };
 
-// ── State Management ──────────────────────────────────────────────────────
-
 function updateUI(state) {
-  // Connection badge
   if (state.connected) {
     elements.connectionBadge.textContent = "Connected";
     elements.connectionBadge.className = "badge connected";
@@ -31,7 +28,6 @@ function updateUI(state) {
     elements.connectionBadge.className = "badge disconnected";
   }
 
-  // Session state
   if (state.activeSession) {
     elements.noSession.hidden = true;
     elements.activeSession.hidden = false;
@@ -48,7 +44,6 @@ function updateUI(state) {
     elements.btnStop.hidden = true;
   }
 
-  // System stats
   if (state.trackedFiles !== undefined) {
     elements.totalFiles.textContent = state.trackedFiles;
   }
@@ -74,8 +69,6 @@ function formatNumber(n) {
   return String(n);
 }
 
-// ── Event Handlers ──────────────────────────────────────────────────────
-
 elements.btnStart.addEventListener("click", async () => {
   try {
     const [tab] = await chrome.tabs.query({
@@ -84,7 +77,6 @@ elements.btnStart.addEventListener("click", async () => {
     });
     if (!tab?.id) return;
 
-    // Ask content script to start
     const response = await chrome.tabs.sendMessage(tab.id, { action: "start" });
     if (response?.ok) {
       updateUI({ connected: true, activeSession: true, documentTitle: tab.title });
@@ -121,8 +113,6 @@ elements.openOptions.addEventListener("click", (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
-
-// ── Background Messages ─────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message) => {
   switch (message.type) {
@@ -161,10 +151,7 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-// ── Initialize ──────────────────────────────────────────────────────────
-
 async function init() {
-  // Ask background for current status
   const response = await chrome.runtime.sendMessage({ action: "popup_connect" });
 
   updateUI({
@@ -172,7 +159,6 @@ async function init() {
     activeSession: false,
   });
 
-  // Also ask the active tab for page info
   try {
     const [tab] = await chrome.tabs.query({
       active: true,
@@ -191,17 +177,20 @@ async function init() {
         });
       }
 
-      // Disable start button if not on a supported site
       if (!pageInfo?.ok || !pageInfo.site) {
         elements.btnStart.disabled = true;
         elements.btnStart.title = "Navigate to a supported document editor";
       }
     }
   } catch {
-    // Content script not loaded on this page
     elements.btnStart.disabled = true;
     elements.btnStart.title = "Navigate to a supported document editor";
   }
+}
+
+const versionEl = document.getElementById("ext-version");
+if (versionEl) {
+  versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
 }
 
 init();

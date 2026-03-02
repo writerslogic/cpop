@@ -15,17 +15,19 @@
 (() => {
   "use strict";
 
-  // ── State ───────────────────────────────────────────────────────────────
-
   let isWitnessing = false;
   let lastCharCount = 0;
   let lastContentHash = "";
   let keystrokeTimestamps = [];
   let timerResolution = 0;
+  let observerRetries = 0;
   const JITTER_BATCH_SIZE = 50;
-  const MIN_CHANGE_THRESHOLD = 5; // chars before sending checkpoint
+  const MIN_CHANGE_THRESHOLD = 5;
+  const MAX_OBSERVER_RETRIES = 20;
 
-  // ── Site Detection ──────────────────────────────────────────────────────
+  function storageKey() {
+    return `witnessing_${window.location.origin}${window.location.pathname}`;
+  }
 
   function detectSite() {
     const hostname = window.location.hostname;
@@ -47,8 +49,6 @@
     return null;
   }
 
-  // ── Environment Calibration ──────────────────────────────────────────
-
   /**
    * Measures the resolution of performance.now().
    * Browsers often jitter/clamp this (e.g. to 5ms) to prevent side-channels.
@@ -57,7 +57,6 @@
   function calibrateTimer() {
     const samples = [];
     let last = performance.now();
-    // Take 10 samples of the smallest detectable increment
     for (let i = 0; i < 10; i++) {
       let current = performance.now();
       while (current === last) {
@@ -66,42 +65,33 @@
       samples.push(current - last);
       last = current;
     }
-    // Median/min resolution
     timerResolution = Math.min(...samples);
     console.log(`[Witnessd] Timer resolution detected: ${timerResolution.toFixed(4)}ms`);
   }
-
-  // ── Content Extraction ────────────────────────────────────────────────
 
   function getEditorElement() {
     const site = detectSite();
 
     switch (site) {
       case "google-docs": {
-        // Google Docs uses an iframe with class "docs-texteventtarget-iframe"
-        // and contenteditable divs with class "kix-page"
         const pages = document.querySelectorAll(".kix-page");
         if (pages.length > 0) return pages;
-        // Fallback: try the editor content wrapper
         return document.querySelectorAll(
           '.kix-appview-editor [contenteditable="true"]'
         );
       }
 
       case "overleaf": {
-        // Overleaf uses CodeMirror — look for .cm-content
         return document.querySelectorAll(".cm-content");
       }
 
       case "medium": {
-        // Medium uses contenteditable sections
         return document.querySelectorAll(
           'article [contenteditable="true"], .postArticle [contenteditable="true"], [role="textbox"]'
         );
       }
 
       case "notion": {
-        // Notion uses contenteditable blocks
         return document.querySelectorAll(
           '.notion-page-content [contenteditable="true"]'
         );
@@ -148,15 +138,12 @@
     }
   }
 
-  // ── SHA-256 Hash ──────────────────────────────────────────────────────
-
   async function sha256(text) {
     const encoder = new TextEncoder();
     const data = encoder.encode(text);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = new Uint8Array(hashBuffer);
     
-    // Fast hex conversion for large documents
     let hashHex = "";
     for (let i = 0; i < hashArray.length; i++) {
       hashHex += hashArray[i].toString(16).padStart(2, "0");
@@ -164,21 +151,17 @@
     return hashHex;
   }
 
-  // ── Content Change Detection ──────────────────────────────────────────
-
   let changeDebounceTimer = null;
 
   async function handleContentChange() {
     if (!isWitnessing) return;
 
-    // Debounce rapid changes (e.g. typing)
     clearTimeout(changeDebounceTimer);
     changeDebounceTimer = setTimeout(async () => {
       const text = getDocumentText();
       const charCount = text.length;
       const delta = charCount - lastCharCount;
 
-      // Only send checkpoint if meaningful change occurred
       if (Math.abs(delta) < MIN_CHANGE_THRESHOLD) return;
 
       const contentHash = await sha256(text);
@@ -194,10 +177,8 @@
         charCount,
         delta: charCount - previousCount,
       });
-    }, 2000); // 2 second debounce
+    }, 2000);
   }
-
-  // ── Mutation Observer ─────────────────────────────────────────────────
 
   let observer = null;
 
@@ -206,10 +187,12 @@
 
     const elements = getEditorElement();
     if (!elements || elements.length === 0) {
-      // Editor not loaded yet, retry
-      setTimeout(startObserving, 1000);
+      if (++observerRetries < MAX_OBSERVER_RETRIES) {
+        setTimeout(startObserving, 1000);
+      }
       return;
     }
+    observerRetries = 0;
 
     observer = new MutationObserver(() => {
       handleContentChange();
@@ -223,7 +206,6 @@
       });
     });
 
-    // Capture initial state
     const text = getDocumentText();
     lastCharCount = text.length;
     sha256(text).then((hash) => {
@@ -238,19 +220,15 @@
     }
   }
 
-  // ── Keystroke Timing ──────────────────────────────────────────────────
-
   function handleKeyDown(event) {
     if (!isWitnessing) return;
 
     const now = performance.now();
     keystrokeTimestamps.push(now);
 
-    // When we have enough samples, compute intervals and send
     if (keystrokeTimestamps.length >= JITTER_BATCH_SIZE) {
       const intervals = [];
       for (let i = 1; i < keystrokeTimestamps.length; i++) {
-        // Convert to microseconds (browser gives millisecond precision ~5ms)
         intervals.push(
           Math.round((keystrokeTimestamps[i] - keystrokeTimestamps[i - 1]) * 1000)
         );
@@ -264,16 +242,13 @@
     }
   }
 
-  // ── Witnessing Control ────────────────────────────────────────────────
-
   function startWitnessing() {
     if (isWitnessing) return;
     
     calibrateTimer();
     isWitnessing = true;
 
-    // Persist state for this URL
-    chrome.storage.local.set({ [`witnessing_${window.location.href}`]: true });
+    chrome.storage.local.set({ [`${storageKey()}`]: true });
 
     startObserving();
     document.addEventListener("keydown", handleKeyDown, { passive: true });
@@ -290,8 +265,7 @@
     if (!isWitnessing) return;
     isWitnessing = false;
 
-    // Remove persisted state for this URL
-    chrome.storage.local.remove([`witnessing_${window.location.href}`]);
+    chrome.storage.local.remove([`${storageKey()}`]);
 
     stopObserving();
     document.removeEventListener("keydown", handleKeyDown);
@@ -300,12 +274,9 @@
     chrome.runtime.sendMessage({ action: "stop_witnessing" });
   }
 
-  // ── Message Handling ──────────────────────────────────────────────────
-
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     switch (message.action) {
       case "capture_state":
-        // Triggered by background.js checkpoint timer
         handleContentChange();
         sendResponse({ ok: true });
         break;
@@ -337,12 +308,8 @@
     return true;
   });
 
-  // ── Initialization ────────────────────────────────────────────────────
-
-  // Restore witnessing state if it was active before reload
-  chrome.storage.local.get([`witnessing_${window.location.href}`, "autoWitness"], (result) => {
-    if (result[`witnessing_${window.location.href}`] || (result.autoWitness && detectSite())) {
-      // Wait for editor to load
+  chrome.storage.local.get([`${storageKey()}`, "autoWitness"], (result) => {
+    if (result[`${storageKey()}`] || (result.autoWitness && detectSite())) {
       setTimeout(() => {
         startWitnessing();
       }, 3000);
