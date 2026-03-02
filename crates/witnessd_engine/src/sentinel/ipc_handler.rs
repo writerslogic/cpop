@@ -538,23 +538,35 @@ impl IpcMessageHandler for SentinelIpcHandler {
                 }
 
                 // Add baseline verification data
-                let summary = self.sentinel.activity_accumulator.read().unwrap().to_session_summary();
+                let summary = self
+                    .sentinel
+                    .activity_accumulator
+                    .read()
+                    .unwrap()
+                    .to_session_summary();
                 let mut bv = witnessd_protocol::baseline::BaselineVerification {
                     digest: None,
                     session_summary: summary,
                     digest_signature: None,
                 };
 
-                let signing_key = self.sentinel.signing_key.read().unwrap();
-                let mut hasher = sha2::Sha256::new();
-                hasher.update(signing_key.verifying_key().to_bytes());
-                let identity_fingerprint = hasher.finalize().to_vec();
+                let (identity_fingerprint, hmac_key) = {
+                    let signing_key = self.sentinel.signing_key.read().unwrap();
+                    let mut hasher = sha2::Sha256::new();
+                    hasher.update(signing_key.verifying_key().to_bytes());
+                    let fingerprint = hasher.finalize().to_vec();
+                    let hmac = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
+                    (fingerprint, hmac)
+                };
 
                 let db_path = self.sentinel.config.witnessd_dir.join("events.db");
-                let hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
                 if let Ok(store) = crate::store::SecureStore::open(&db_path, hmac_key) {
-                    if let Ok(Some((cbor, sig))) = store.get_baseline_digest(&identity_fingerprint) {
-                        if let Ok(digest) = serde_json::from_slice::<witnessd_protocol::baseline::BaselineDigest>(&cbor) {
+                    if let Ok(Some((cbor, sig))) = store.get_baseline_digest(&identity_fingerprint)
+                    {
+                        if let Ok(digest) = serde_json::from_slice::<
+                            witnessd_protocol::baseline::BaselineDigest,
+                        >(&cbor)
+                        {
                             bv.digest = Some(digest);
                             bv.digest_signature = Some(sig);
                         }

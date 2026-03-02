@@ -19,6 +19,7 @@ fn test_evidence_packet_roundtrip() {
         },
         checkpoints: vec![],
         attestation_tier: None,
+        baseline_verification: None,
     };
 
     let encoded = encode_evidence(&packet).expect("Encoding failed");

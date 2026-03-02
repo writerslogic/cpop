@@ -146,7 +146,9 @@ impl BatchVerifier {
                 // Acquire a worker slot, blocking until one is available
                 {
                     let (lock, cvar) = &*semaphore;
-                    let mut count = cvar.wait_while(lock.lock().unwrap(), |c| *c == 0).unwrap();
+                    let mut count = cvar
+                        .wait_while(lock.lock().unwrap_or_else(|p| p.into_inner()), |c| *c == 0)
+                        .unwrap_or_else(|p| p.into_inner());
                     *count -= 1;
                 }
 
@@ -164,11 +166,11 @@ impl BatchVerifier {
                     }
                 };
 
-                let mut res = results.lock().unwrap();
+                let mut res = results.lock().unwrap_or_else(|p| p.into_inner());
                 res[index] = outcome;
                 // Release the worker slot and notify a waiting thread
                 let (lock, cvar) = &*semaphore;
-                let mut count = lock.lock().unwrap();
+                let mut count = lock.lock().unwrap_or_else(|p| p.into_inner());
                 *count += 1;
                 cvar.notify_one();
             });
@@ -180,7 +182,10 @@ impl BatchVerifier {
             let _ = handle.join();
         }
 
-        Arc::try_unwrap(results).unwrap().into_inner().unwrap()
+        match Arc::try_unwrap(results) {
+            Ok(mutex) => mutex.into_inner().unwrap_or_else(|p| p.into_inner()),
+            Err(arc) => arc.lock().unwrap_or_else(|p| p.into_inner()).clone(),
+        }
     }
 }
 

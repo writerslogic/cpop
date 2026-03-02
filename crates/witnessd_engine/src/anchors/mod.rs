@@ -66,7 +66,9 @@ impl AnchorManager {
     pub fn with_default_providers() -> Self {
         let mut manager = Self::new(AnchorManagerConfig::default());
         manager.add_provider(Arc::new(ots::OpenTimestampsProvider::new()));
-        manager.add_provider(Arc::new(rfc3161::Rfc3161Provider::default()));
+        if let Ok(provider) = rfc3161::Rfc3161Provider::with_defaults() {
+            manager.add_provider(Arc::new(provider));
+        }
         if let Ok(btc) = bitcoin::BitcoinProvider::from_env() {
             manager.add_provider(Arc::new(btc));
         }

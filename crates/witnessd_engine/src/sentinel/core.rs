@@ -29,7 +29,8 @@ pub struct Sentinel {
     pub(crate) running: Arc<AtomicBool>,
     pub(crate) signing_key: Arc<RwLock<SigningKey>>,
     /// Activity fingerprint accumulator for authorship verification
-    pub(crate) activity_accumulator: Arc<RwLock<crate::fingerprint::ActivityFingerprintAccumulator>>,
+    pub(crate) activity_accumulator:
+        Arc<RwLock<crate::fingerprint::ActivityFingerprintAccumulator>>,
     session_events_tx: broadcast::Sender<SessionEvent>,
     pub(crate) shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
     /// Voice collector for writing style (if consent given)
@@ -149,8 +150,9 @@ impl Sentinel {
     fn update_mouse_stego_seed(&self) {
         let key = self.signing_key.read().unwrap();
         let seed = key.to_bytes();
-        self.mouse_stego_engine.write().unwrap().reset();
-        *self.mouse_stego_engine.write().unwrap() = crate::platform::MouseStegoEngine::new(seed);
+        let mut engine = self.mouse_stego_engine.write().unwrap();
+        engine.reset();
+        *engine = crate::platform::MouseStegoEngine::new(seed);
     }
 
     /// Set the signing key for WAL integrity
@@ -183,7 +185,10 @@ impl Sentinel {
         }
 
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
-        *self.shutdown_tx.lock().unwrap_or_else(|p: std::sync::PoisonError<_>| p.into_inner()) = Some(shutdown_tx);
+        *self
+            .shutdown_tx
+            .lock()
+            .unwrap_or_else(|p: std::sync::PoisonError<_>| p.into_inner()) = Some(shutdown_tx);
 
         // Create platform-specific focus monitor
         #[cfg(target_os = "macos")]
@@ -504,19 +509,14 @@ impl Sentinel {
 
         let path_str = file_path.to_string_lossy().to_string();
 
-        // Check if already tracking
-        {
-            let sessions = self.sessions.read().unwrap();
-            if sessions.contains_key(&path_str) {
-                return Err((
-                    IpcErrorCode::AlreadyTracking,
-                    format!("Already tracking: {}", file_path.display()),
-                ));
-            }
-        }
-
-        // Create a new session for this file
+        // Single write lock for both check and insert (avoids TOCTOU race)
         let mut sessions = self.sessions.write().unwrap();
+        if sessions.contains_key(&path_str) {
+            return Err((
+                IpcErrorCode::AlreadyTracking,
+                format!("Already tracking: {}", file_path.display()),
+            ));
+        }
         let mut session = DocumentSession::new(
             path_str.clone(),
             "cli".to_string(),      // app_bundle_id for CLI-initiated tracking
@@ -615,7 +615,11 @@ impl Sentinel {
 
     /// Update the behavioral baseline for the author.
     pub fn update_baseline(&self) -> anyhow::Result<()> {
-        let summary = self.activity_accumulator.read().unwrap().to_session_summary();
+        let summary = self
+            .activity_accumulator
+            .read()
+            .unwrap()
+            .to_session_summary();
         if summary.keystroke_count < 10 {
             return Ok(()); // Insufficient data to update baseline
         }
@@ -630,21 +634,25 @@ impl Sentinel {
         let hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
         let store = crate::store::SecureStore::open(&db_path, hmac_key)?;
 
-        let current_digest = if let Some((cbor, _)) = store.get_baseline_digest(&identity_fingerprint)? {
-            serde_json::from_slice::<witnessd_protocol::baseline::BaselineDigest>(&cbor)?
-        } else {
-            crate::baseline::compute_initial_digest(identity_fingerprint.clone())
-        };
+        let current_digest =
+            if let Some((cbor, _)) = store.get_baseline_digest(&identity_fingerprint)? {
+                serde_json::from_slice::<witnessd_protocol::baseline::BaselineDigest>(&cbor)?
+            } else {
+                crate::baseline::compute_initial_digest(identity_fingerprint.clone())
+            };
 
         let updated_digest = crate::baseline::update_digest(current_digest, &summary);
-        
+
         // Sign the updated digest
         let digest_cbor = serde_json::to_vec(&updated_digest)?;
         let signature = signing_key.sign(&digest_cbor);
 
         store.save_baseline_digest(&identity_fingerprint, &digest_cbor, &signature.to_bytes())?;
-        
-        log::info!("Authorship baseline updated. Tier: {:?}", updated_digest.confidence_tier);
+
+        log::info!(
+            "Authorship baseline updated. Tier: {:?}",
+            updated_digest.confidence_tier
+        );
         Ok(())
     }
 }

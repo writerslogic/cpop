@@ -127,6 +127,7 @@ fn test_pop_playback_attack_detection() {
         },
         checkpoints,
         attestation_tier: Some(AttestationTier::HardwareBound),
+        baseline_verification: None,
     };
 
     let encoded = encode_evidence(&packet).unwrap();

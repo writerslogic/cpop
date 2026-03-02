@@ -163,8 +163,21 @@ impl OfflineQueue {
         Ok(results)
     }
 
+    /// Validate a queue entry ID contains only safe characters.
+    fn validate_id(id: &str) -> Result<()> {
+        if id.is_empty()
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(Error::validation(format!("invalid queue entry ID: {id:?}")));
+        }
+        Ok(())
+    }
+
     /// Remove a queue entry by ID.
     pub fn remove_entry(&self, id: &str) -> Result<()> {
+        Self::validate_id(id)?;
         let path = self.queue_dir.join(format!("{id}.json"));
         if path.exists() {
             fs::remove_file(&path)?;
@@ -174,6 +187,7 @@ impl OfflineQueue {
 
     /// Update an entry with an error and increment retry count.
     fn update_entry_error(&self, entry: &mut QueuedAttestation, error: &str) -> Result<()> {
+        Self::validate_id(&entry.id)?;
         entry.retry_count += 1;
         entry.last_error = Some(error.to_string());
 

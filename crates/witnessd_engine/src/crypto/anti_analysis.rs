@@ -33,7 +33,13 @@ fn disable_debugging_macos() {
     unsafe {
         // PT_DENY_ATTACH = 31
         // pid 0 means current process
-        ptrace(PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
+        let ret = ptrace(PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
+        if ret != 0 {
+            log::warn!(
+                "PT_DENY_ATTACH failed (ret={}), debugger hardening unavailable",
+                ret
+            );
+        }
     }
 }
 

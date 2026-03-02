@@ -16,14 +16,12 @@ pub struct Rfc3161Provider {
 }
 
 impl Rfc3161Provider {
-    pub fn new(tsa_urls: Vec<String>) -> Self {
-        Self {
-            tsa_urls,
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
-        }
+    pub fn new(tsa_urls: Vec<String>) -> Result<Self, AnchorError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| AnchorError::Network(format!("HTTP client init failed: {e}")))?;
+        Ok(Self { tsa_urls, client })
     }
 
     async fn request_timestamp(&self, url: &str, hash: &[u8; 32]) -> Result<Vec<u8>, AnchorError> {
@@ -494,8 +492,8 @@ impl AnchorProvider for Rfc3161Provider {
     }
 }
 
-impl Default for Rfc3161Provider {
-    fn default() -> Self {
+impl Rfc3161Provider {
+    pub fn with_defaults() -> Result<Self, AnchorError> {
         Self::new(DEFAULT_TSA_URLS.iter().map(|s| s.to_string()).collect())
     }
 }
@@ -507,14 +505,14 @@ mod tests {
 
     #[test]
     fn test_default_provider_init() {
-        let provider = Rfc3161Provider::default();
+        let provider = Rfc3161Provider::with_defaults().unwrap();
         assert!(!provider.tsa_urls.is_empty());
         assert!(provider.tsa_urls[0].contains("http"));
     }
 
     #[test]
     fn test_verify_token_too_short() {
-        let provider = Rfc3161Provider::default();
+        let provider = Rfc3161Provider::with_defaults().unwrap();
         let hash = [0u8; 32];
         let token = vec![0u8; 50]; // < 100 bytes
         let result = provider.verify_timestamp_token(&token, &hash);
@@ -527,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_verify_token_invalid_asn1() {
-        let provider = Rfc3161Provider::default();
+        let provider = Rfc3161Provider::with_defaults().unwrap();
         let hash = [0u8; 32];
         let mut token = vec![0u8; 150];
         token[0] = 0xFF; // Not 0x30
@@ -541,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_verify_token_unparseable_tst_info_returns_err() {
-        let provider = Rfc3161Provider::default();
+        let provider = Rfc3161Provider::with_defaults().unwrap();
         let hash = [0u8; 32];
         let mut token = vec![0u8; 150];
         token[0] = 0x30; // ASN.1 SEQUENCE but invalid TSTInfo
