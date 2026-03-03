@@ -1,0 +1,44 @@
+#!/bin/bash
+# postrm script for wld
+
+set -e
+
+case "$1" in
+    purge)
+        # Remove data directories on purge
+        rm -rf /var/lib/wld
+        rm -rf /var/log/wld
+        rm -rf /etc/wld
+
+        # Remove wld user
+        if getent passwd wld >/dev/null 2>&1; then
+            deluser --quiet --system wld || true
+        fi
+
+        # Remove wld group
+        if getent group wld >/dev/null 2>&1; then
+            delgroup --quiet --system wld || true
+        fi
+
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Reload systemd daemon
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

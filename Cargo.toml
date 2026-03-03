@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/witnessd_engine",
-    "crates/witnessd_jitter",
-    "crates/witnessd_protocol",
-    "apps/witnessd_cli",
+    "crates/wld_engine",
+    "crates/wld_jitter",
+    "crates/wld_protocol",
+    "apps/wld_cli",
 ]
 
 [workspace.package]
@@ -12,7 +12,7 @@ version = "0.2.0"
 authors = ["David Condrey <david@writerslogic.com>"]
 edition = "2021"
 license = "AGPL-3.0-only"
-repository = "https://github.com/writerslogic/witnessd"
+repository = "https://github.com/writerslogic/writerslogic"
 
 [workspace.dependencies]
 serde = { version = "1.0.217", features = ["derive"] }

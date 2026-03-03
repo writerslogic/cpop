@@ -1,6 +1,6 @@
 # Technical Specifications Index
 
-Witnessd is built on several core cryptographic and architectural protocols. These documents detail the low-level implementation of the Proof-of-Process (PoP) system.
+WritersLogic is built on several core cryptographic and architectural protocols. These documents detail the low-level implementation of the Proof-of-Process (PoP) system.
 
 ## Data Formats
 
@@ -13,13 +13,13 @@ Witnessd is built on several core cryptographic and architectural protocols. The
 - **[[Ratchet Key Hierarchy]]**: Our forward-secure key management system using Ed25519 and HKDF.
 - **[[Architectural Hardening]]**: Tier 4 protection mechanisms including memory locking, anti-debugging, and machine-state entanglement.
 - **[[Behavioral Metrics]]**: Implementation of keystroke dynamics, nanosecond jitter capture, and behavioral attestation.
-- **[[Persistence & Fault Tolerance]]**: How witnessd manages its local event database and recovery mechanisms.
+- **[[Persistence & Fault Tolerance]]**: How WritersLogic manages its local event database and recovery mechanisms.
 
 ## Schemas (JSON)
 
-- [evidence-v1.json](https://github.com/writerslogic/witnessd/blob/main/docs/schemas/evidence-v1.json)
-- [declaration-v1.json](https://github.com/writerslogic/witnessd/blob/main/docs/schemas/declaration-v1.json)
-- [war-block-v1.json](https://github.com/writerslogic/witnessd/blob/main/docs/schemas/war-block-v1.json)
+- [evidence-v1.json](https://github.com/writerslogic/writerslogic/blob/main/docs/schemas/evidence-v1.json)
+- [declaration-v1.json](https://github.com/writerslogic/writerslogic/blob/main/docs/schemas/declaration-v1.json)
+- [war-block-v1.json](https://github.com/writerslogic/writerslogic/blob/main/docs/schemas/war-block-v1.json)
 
 ---
 

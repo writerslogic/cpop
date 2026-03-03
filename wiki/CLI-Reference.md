@@ -1,12 +1,12 @@
 # CLI Reference
 
-The `witnessd` command-line tool is the primary interface for managing authorship evidence.
+The `wld` command-line tool is the primary interface for managing authorship evidence.
 
 ## Global Options
 
 | Option | Description |
 |--------|-------------|
-| `--config <path>` | Use custom configuration directory (default: `~/.witnessd`) |
+| `--config <path>` | Use custom configuration directory (default: `~/.writerslogic`) |
 | `-h`, `--help` | Show help for a command |
 | `-v`, `--version` | Show version information |
 
@@ -15,33 +15,33 @@ The `witnessd` command-line tool is the primary interface for managing authorshi
 ## Core Commands
 
 ### `init`
-Initialize witnessd and generate your cryptographic identity.
+Initialize WritersLogic and generate your cryptographic identity.
 ```bash
-witnessd init
+wld init
 ```
 
 ### `calibrate`
 Measure your CPU performance for VDF timing proofs. Run this once after installation.
 ```bash
-witnessd calibrate
+wld calibrate
 ```
 
 ### `commit`
 Create a checkpoint for a file.
 ```bash
-witnessd commit <file> [-m "message"]
+wld commit <file> [-m "message"]
 ```
 
 ### `log`
 Show the checkpoint history for a file.
 ```bash
-witnessd log <file>
+wld log <file>
 ```
 
 ### `status`
-Show the current status of witnessd, including your identity and configuration.
+Show the current status of WritersLogic, including your identity and configuration.
 ```bash
-witnessd status
+wld status
 ```
 
 ---
@@ -51,13 +51,13 @@ witnessd status
 ### `export`
 Export a `.wpkt` evidence packet containing the full chain of authorship proof.
 ```bash
-witnessd export <file> [-o output.wpkt]
+wld export <file> [-o output.wpkt]
 ```
 
 ### `verify`
 Verify an evidence packet or a local file's checkpoint chain.
 ```bash
-witnessd verify <file_or_packet>
+wld verify <file_or_packet>
 ```
 
 ---
@@ -67,17 +67,17 @@ witnessd verify <file_or_packet>
 ### `track`
 Manage real-time activity tracking for a document.
 ```bash
-witnessd track start <file>
-witnessd track status
-witnessd track stop
+wld track start <file>
+wld track status
+wld track stop
 ```
 
 ### `sentinel`
 Manage the background daemon that handles automatic tracking and checkpoints.
 ```bash
-witnessd sentinel start
-witnessd sentinel status
-witnessd sentinel stop
+WritersLogic sentinel start
+WritersLogic sentinel status
+WritersLogic sentinel stop
 ```
 
 ---
@@ -93,7 +93,7 @@ witnessd sentinel stop
 
 ## Interactive Menu
 
-If you run `witnessd` without any arguments, it will launch an interactive TUI menu for easy navigation.
+If you run `wld` without any arguments, it will launch an interactive TUI menu for easy navigation.
 
 ---
 

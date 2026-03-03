@@ -6,7 +6,7 @@
 
 ## Overview
 
-This guide provides vendors and verifiers with criteria for interpreting Witnessd evidence packets (`.wpkt`), identifying tampering, and differentiating legitimate creative actions from adversarial forgery.
+This guide provides vendors and verifiers with criteria for interpreting WritersLogic evidence packets (`.wpkt`), identifying tampering, and differentiating legitimate creative actions from adversarial forgery.
 
 ## 1. Online Verification Portal (`writersproof.com/verify`)
 
@@ -51,7 +51,7 @@ Even without a verifier tool, certain patterns in the JSON evidence packet sugge
 
 ### 3.2 Key Replay (The "Pre-computation" Attack)
 - **Red Flag:** Identical `checkpoint_hash` across different documents or sessions.
-- **Detection:** Witnessd entangles the document hash into the session certificate. A mismatch indicates the user attempted to "replay" valid evidence from an old document onto a new one.
+- **Detection:** WritersLogic entangles the document hash into the session certificate. A mismatch indicates the user attempted to "replay" valid evidence from an old document onto a new one.
 
 ### 3.3 History Pruning
 - **Red Flag:** Gaps in the `sequence` numbers or a broken `prev_hash` chain.

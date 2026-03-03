@@ -1,13 +1,13 @@
 <p align="center">
-  <strong>witnessd</strong><br>
-  Documentation, schemas, and specifications for witnessd
+  <strong>WritersLogic</strong><br>
+  Documentation, schemas, and specifications for WritersLogic
 </p>
 
 <p align="center">
   <a href="https://doi.org/10.5281/zenodo.18480372"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18480372.svg" alt="DOI"></a>
   <a href="https://arxiv.org/abs/2602.01663"><img src="https://img.shields.io/badge/arXiv-2602.01663-b31b1b.svg" alt="arXiv"></a>
   <a href="https://orcid.org/0009-0003-1849-2963"><img src="https://img.shields.io/badge/ORCID-0009--0003--1849--2963-green.svg" alt="ORCID"></a>
-  <a href="https://github.com/writerslogic/witnessd/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
+  <a href="https://github.com/writerslogic/writerslogic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/Patent-US%2019%2F460%2C364%20Pending-blue" alt="Patent Pending">
 </p>
 
@@ -20,20 +20,20 @@
 
 ## Overview
 
-**witnessd** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. This repository contains the core implementation, reference applications, and technical documentation.
+**WritersLogic** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. This repository contains the core implementation, reference applications, and technical documentation.
 
 | Component | Path | Description | License |
 |:----------|:-----|:------------|:--------|
-| **witnessd_engine** | [`crates/witnessd_engine`](../crates/witnessd_engine) | High-performance cryptographic engine | AGPL-3.0-only |
-| **witnessd_protocol** | [`crates/witnessd_protocol`](../crates/witnessd_protocol) | PoP protocol wire format & forensic models | AGPL-3.0-only |
-| **witnessd_jitter** | [`crates/witnessd_jitter`](../crates/witnessd_jitter) | Hardware timing entropy foundation | AGPL-3.0-only |
-| **witnessd_cli** | [`apps/witnessd_cli`](../apps/witnessd_cli) | Command-line interface & Linux packaging | AGPL-3.0-only |
-| **witnessd_macos** | [`apps/witnessd_macos`](../apps/witnessd_macos) | Native macOS desktop application | Proprietary |
-| **witnessd_windows** | [`apps/witnessd_windows`](../apps/witnessd_windows) | Native Windows desktop application | Proprietary |
+| **wld_engine** | [`crates/wld_engine`](../crates/wld_engine) | High-performance cryptographic engine | AGPL-3.0-only |
+| **wld_protocol** | [`crates/wld_protocol`](../crates/wld_protocol) | PoP protocol wire format & forensic models | AGPL-3.0-only |
+| **wld_jitter** | [`crates/wld_jitter`](../crates/wld_jitter) | Hardware timing entropy foundation | AGPL-3.0-only |
+| **wld_cli** | [`apps/wld_cli`](../apps/wld_cli) | Command-line interface & Linux packaging | AGPL-3.0-only |
+| **wld_macos** | [`apps/wld_macos`](../apps/wld_macos) | Native macOS desktop application | Proprietary |
+| **wld_windows** | [`apps/wld_windows`](../apps/wld_windows) | Native Windows desktop application | Proprietary |
 
 ## Technical Implementation
 
-Witnessd is built on a high-integrity cryptographic stack:
+WritersLogic is built on a high-integrity cryptographic stack:
 
 - **Streaming Evidence Engine:** Optimized for massive files via chunked SHA-256 hashing.
 - **Adversarial Hardening:** Tier 4 protections including RAM-locking (`mlock`) and anti-debugging.
@@ -66,8 +66,8 @@ Witnessd is built on a high-integrity cryptographic stack:
 ## Citations
 
 ```bibtex
-@article{condrey2026witnessd,
-  title={Witnessd: Proof-of-process via Adversarial Collapse},
+@article{condrey2026writerslogic,
+  title={WritersLogic: Proof-of-process via Adversarial Collapse},
   author={Condrey, David},
   journal={arXiv preprint arXiv:2602.01663},
   year={2026},

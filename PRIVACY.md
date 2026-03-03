@@ -5,14 +5,14 @@
 
 ## Overview
 
-witnessd is a local-first file witnessing daemon that creates cryptographic
+WritersLogic is a local-first file witnessing daemon that creates cryptographic
 evidence of file authorship and modification history. This privacy policy
-explains what data witnessd collects, how it is processed, and your rights
+explains what data WritersLogic collects, how it is processed, and your rights
 regarding that data.
 
 **Key Principle:** All data processing occurs exclusively on your local device.
 No data is transmitted to external servers, cloud services, or third parties
-by the witnessd software itself.
+by the WritersLogic software itself.
 
 ## Data Collection and Processing
 
@@ -28,7 +28,7 @@ by the witnessd software itself.
 
 **Purpose:** To create tamper-evident records proving file state at specific times.
 
-**Storage:** Local SQLite database at `~/.witnessd/events.db`
+**Storage:** Local SQLite database at `~/.writerslogic/events.db`
 
 ### 2. Keystroke Timing Metrics (Behavioral Biometrics)
 
@@ -87,11 +87,11 @@ admissibility depends on jurisdiction and context; consult legal counsel.
 
 ### Local Storage Only
 
-All witnessd data is stored locally in:
-- `~/.witnessd/` - Configuration and databases
-- `~/.witnessd/events.db` - Event store (SQLite, encrypted at rest optional)
-- `~/.witnessd/mmr.bin` - Merkle Mountain Range (append-only)
-- `~/.witnessd/shadows/` - Encrypted content cache (AES-256-GCM)
+All WritersLogic data is stored locally in:
+- `~/.writerslogic/` - Configuration and databases
+- `~/.writerslogic/events.db` - Event store (SQLite, encrypted at rest optional)
+- `~/.writerslogic/mmr.bin` - Merkle Mountain Range (append-only)
+- `~/.writerslogic/shadows/` - Encrypted content cache (AES-256-GCM)
 
 ### Encryption
 
@@ -101,7 +101,7 @@ All witnessd data is stored locally in:
 
 ### No Network Transmission
 
-witnessd does not:
+WritersLogic does not:
 - Connect to any remote servers
 - Transmit telemetry or analytics
 - Phone home for license verification
@@ -116,7 +116,7 @@ contents, keystroke data, or behavioral metrics.
 **Default:** Data is retained indefinitely to maintain complete audit trails.
 
 **User Control:** You may:
-- Delete the entire `~/.witnessd/` directory to remove all data
+- Delete the entire `~/.writerslogic/` directory to remove all data
 - Use `witnessctl prune` to remove events older than a specified date
 - Disable specific collection features via configuration
 
@@ -125,7 +125,7 @@ contents, keystroke data, or behavioral metrics.
 ### Under GDPR (EU/EEA residents)
 
 - **Right of Access:** All data is stored locally and accessible to you
-- **Right to Erasure:** Delete `~/.witnessd/` to erase all data
+- **Right to Erasure:** Delete `~/.writerslogic/` to erase all data
 - **Right to Restrict Processing:** Disable features via configuration
 - **Right to Data Portability:** Export data via `witnessctl export`
 - **Right to Object:** Stop the daemon to cease all processing
@@ -140,14 +140,14 @@ contents, keystroke data, or behavioral metrics.
 ### Under BIPA (Illinois residents)
 
 - **Written Policy:** This document serves as the required written policy
-- **Consent:** By running witnessd, you consent to local biometric collection
+- **Consent:** By running WritersLogic, you consent to local biometric collection
 - **Retention Schedule:** Data retained until manually deleted
-- **Destruction Guidelines:** Delete `~/.witnessd/` directory
+- **Destruction Guidelines:** Delete `~/.writerslogic/` directory
 - **No Disclosure:** Biometric data is never disclosed to third parties
 
 ## Children's Privacy
 
-witnessd does not knowingly collect data from children under 13. The software
+WritersLogic does not knowingly collect data from children under 13. The software
 is intended for use by adults in professional and legal contexts.
 
 ## Changes to This Policy
@@ -158,12 +158,12 @@ CHANGELOG and git history. Continued use after changes constitutes acceptance.
 ## Contact
 
 For privacy inquiries:
-- GitHub Issues: https://github.com/writerslogic/witnessd/issues
-- Email: privacy@witnessd.dev
+- GitHub Issues: https://github.com/writerslogic/writerslogic/issues
+- Email: privacy@writerslogic.com
 
 ## Technical Appendix: Data Minimization
 
-witnessd implements privacy-by-design principles:
+WritersLogic implements privacy-by-design principles:
 
 1. **Hash-Only Content Tracking:** File contents are never stored unless
    explicitly enabled. Only cryptographic hashes are retained.

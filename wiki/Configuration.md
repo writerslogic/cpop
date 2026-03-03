@@ -1,8 +1,8 @@
 # Configuration
 
-Witnessd can be customized via a JSON configuration file. By default, this file is located at:
-- **Linux/macOS (CLI)**: `~/.witnessd/config.json`
-- **macOS App**: `~/Library/Application Support/Witnessd/config.json`
+WritersLogic can be customized via a JSON configuration file. By default, this file is located at:
+- **Linux/macOS (CLI)**: `~/.writerslogic/config.json`
+- **macOS App**: `~/Library/Application Support/WritersLogic/config.json`
 
 ## Configuration Structure
 
@@ -45,7 +45,7 @@ Witnessd can be customized via a JSON configuration file. By default, this file 
 - `iterations_per_second`: Calibrated speed of your CPU.
 - `min_iterations`: Minimum delay for any single checkpoint.
 - `max_iterations`: Maximum allowable delay (safety limit).
-- `calibrated`: Whether `witnessd calibrate` has been run.
+- `calibrated`: Whether `wld calibrate` has been run.
 
 ### [[Glossary#Sentinel|Sentinel (Background Daemon)]]
 
@@ -61,9 +61,9 @@ You can override certain settings using environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WITNESSD_DIR` | Base directory for witnessd data | `~/.witnessd` |
-| `WITNESSD_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
-| `WITNESSD_CONFIG` | Path to a specific config file | `$WITNESSD_DIR/config.json` |
+| `WLD_DIR` | Base directory for WritersLogic data | `~/.writerslogic` |
+| `WLD_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
+| `WLD_CONFIG` | Path to a specific config file | `$WLD_DIR/config.json` |
 
 ---
 
@@ -72,7 +72,7 @@ You can override certain settings using environment variables:
 Most CLI commands accept a `--config` flag to use an alternative configuration directory:
 
 ```bash
-witnessd --config /path/to/alt/dir commit myfile.txt
+WritersLogic --config /path/to/alt/dir commit myfile.txt
 ```
 
 ---

@@ -1,6 +1,6 @@
 # Ratchet Key Hierarchy Specification
 
-Witnessd uses a three-tier key hierarchy to provide **persistent identity**, **session isolation**, and **forward secrecy**.
+WritersLogic uses a three-tier key hierarchy to provide **persistent identity**, **session isolation**, and **forward secrecy**.
 
 ---
 

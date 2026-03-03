@@ -1,6 +1,6 @@
 # macOS App User Guide
 
-The Witnessd macOS app provides a graphical interface for cryptographic authorship witnessing. This guide covers all features of the menu bar application.
+The WritersLogic macOS app provides a graphical interface for cryptographic authorship witnessing. This guide covers all features of the menu bar application.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ The Witnessd macOS app provides a graphical interface for cryptographic authorsh
 
 ### Install from DMG
 
-1. Download `Witnessd.dmg` from the [releases page](https://github.com/writerslogic/witnessd/releases)
+1. Download `WritersLogic.dmg` from the [releases page](https://github.com/writerslogic/writerslogic/releases)
 2. Open the DMG file
-3. Drag **Witnessd** to your **Applications** folder
+3. Drag **WritersLogic** to your **Applications** folder
 4. Eject the DMG
 
 ### Launch
 
 - Open from **Applications** folder, or
-- Search "Witnessd" in **Spotlight** (Cmd+Space)
+- Search "WritersLogic" in **Spotlight** (Cmd+Space)
 
 The app runs as a menu bar application - look for the eye icon in your menu bar.
 
@@ -43,21 +43,21 @@ The app runs as a menu bar application - look for the eye icon in your menu bar.
 
 On first launch, you'll see the onboarding screen:
 
-1. **Welcome**: Overview of witnessd features
+1. **Welcome**: Overview of WritersLogic features
 2. **Permissions**: Grant accessibility permissions (required for keystroke counting)
 3. **Initialize**: Creates your cryptographic identity
 4. **Calibrate**: Measures VDF performance for your Mac
 
 ### Accessibility Permissions
 
-Witnessd requires accessibility permissions to count keystrokes (not capture content):
+WritersLogic requires accessibility permissions to count keystrokes (not capture content):
 
 1. Click **Open System Settings** when prompted
 2. Navigate to **Privacy & Security > Accessibility**
-3. Enable the toggle next to **Witnessd**
+3. Enable the toggle next to **WritersLogic**
 4. Return to the app
 
-**Privacy Note:** Witnessd only counts keystroke events - it does NOT record which keys you press.
+**Privacy Note:** WritersLogic only counts keystroke events - it does NOT record which keys you press.
 
 ### Initialization
 
@@ -93,7 +93,7 @@ Click the menu bar icon to open the quick menu:
   View Details…
   Settings…                ⌘,
 ──────────────────
-  Quit Witnessd           ⌘Q
+  Quit WritersLogic           ⌘Q
 ```
 
 **When tracking:**
@@ -106,7 +106,7 @@ Click the menu bar icon to open the quick menu:
   View Details…
   Settings…                ⌘,
 ──────────────────
-  Quit Witnessd           ⌘Q
+  Quit WritersLogic           ⌘Q
 ```
 
 ## Tracking Documents
@@ -118,7 +118,7 @@ Start tracking all keystrokes without specifying a document:
 1. Click the menu bar icon
 2. Select **Start Global Tracking**
 
-This creates a session file in `~/Library/Application Support/Witnessd/sessions/` named with the current date.
+This creates a session file in `~/Library/Application Support/WritersLogic/sessions/` named with the current date.
 
 ### Document-Specific Tracking
 
@@ -237,7 +237,7 @@ Access settings via menu bar > **Settings...** or **Cmd+,**
 
 | Setting | Description |
 |---------|-------------|
-| Open at Login | Auto-start Witnessd on login |
+| Open at Login | Auto-start WritersLogic on login |
 | Auto-create checkpoints | Enable automatic checkpoints |
 | Checkpoint Interval | Time between auto-checkpoints |
 | Debounce Interval | Wait after last keystroke (100-2000ms) |
@@ -250,7 +250,7 @@ Configure directories for automatic tracking:
 2. Select a folder to watch
 3. Toggle paths on/off as needed
 
-When you edit files in watched directories, Witnessd can automatically start tracking.
+When you edit files in watched directories, WritersLogic can automatically start tracking.
 
 ### Patterns Tab
 
@@ -295,7 +295,7 @@ Notification types:
 
 **Reveal**: Opens the data folder in Finder
 
-**Reset Witnessd**: Deletes all data and keys (irreversible!)
+**Reset WritersLogic**: Deletes all data and keys (irreversible!)
 
 ## Keyboard Shortcuts
 
@@ -303,7 +303,7 @@ Notification types:
 |----------|--------|
 | ⌘G | Start global tracking |
 | ⌘, | Open Settings |
-| ⌘Q | Quit Witnessd |
+| ⌘Q | Quit WritersLogic |
 
 ## Permissions
 
@@ -318,11 +318,11 @@ Notification types:
 
 **Accessibility:**
 1. System Settings > Privacy & Security > Accessibility
-2. Enable Witnessd
+2. Enable WritersLogic
 
 **Notifications:**
 1. System Settings > Notifications
-2. Find Witnessd
+2. Find WritersLogic
 3. Enable notifications
 
 ### Revoking Permissions
@@ -336,12 +336,12 @@ If you revoke accessibility permissions:
 
 All data is stored in:
 ```
-~/Library/Application Support/Witnessd/
+~/Library/Application Support/WritersLogic/
 ```
 
 Contents:
 ```
-Witnessd/
+WritersLogic/
 ├── config.json        # Configuration
 ├── events.db          # Checkpoint database
 ├── identity.json      # Public identity info
@@ -356,8 +356,8 @@ Witnessd/
 ### Backup
 
 To backup your evidence:
-1. Quit Witnessd
-2. Copy the entire `Witnessd` folder
+1. Quit WritersLogic
+2. Copy the entire `WritersLogic` folder
 3. Store backup securely
 
 **Important:** The `signing_key` file is your cryptographic identity. Keep backups secure!

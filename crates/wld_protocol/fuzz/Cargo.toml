@@ -1,0 +1,19 @@
+[package]
+name = "wld_protocol-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.wld_protocol]
+path = ".."
+
+# Prevent lets optimization of the system under test from hindering the fuzzer
+[profile.release]
+debug = true

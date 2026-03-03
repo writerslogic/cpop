@@ -12,9 +12,9 @@
 
 ## General Questions
 
-### What is witnessd?
+### What is WritersLogic?
 
-Witnessd is a cryptographic authorship witnessing system that creates tamper-evident records proving you created a document over time. It captures:
+WritersLogic is a cryptographic authorship witnessing system that creates tamper-evident records proving you created a document over time. It captures:
 - **What**: Content hashes at each checkpoint
 - **When**: VDF-based timing proofs that cannot be backdated
 - **How**: Optional keystroke metrics showing real writing activity
@@ -31,7 +31,7 @@ Common use cases include:
 
 ### How is this different from version control?
 
-| Feature | witnessd | Git |
+| Feature | WritersLogic | Git |
 |---------|----------|-----|
 | Time proofs | VDF - cannot be backdated | Timestamps can be faked |
 | Author binding | Hardware-tied identity | Email-based (spoofable) |
@@ -39,18 +39,18 @@ Common use cases include:
 | Forward secrecy | Ratcheting keys | No |
 | Evidence packets | Self-contained, portable | Requires full repo |
 
-### Is witnessd open source?
+### Is WritersLogic open source?
 
-Yes! Witnessd is released under the Apache License 2.0. The source code is available at:
-https://github.com/writerslogic/witnessd
+Yes! WritersLogic is released under the Apache License 2.0. The source code is available at:
+https://github.com/writerslogic/writerslogic
 
 ---
 
 ## Privacy and Security
 
-### Does witnessd record what I type?
+### Does WritersLogic record what I type?
 
-**No.** Witnessd explicitly does NOT capture:
+**No.** WritersLogic explicitly does NOT capture:
 - Which keys you press
 - Keyboard content or characters
 - Screen content
@@ -65,8 +65,8 @@ It only records:
 ### Where is my data stored?
 
 All data is stored locally on your machine:
-- **CLI**: `~/.witnessd/`
-- **macOS App**: `~/Library/Application Support/Witnessd/`
+- **CLI**: `~/.writerslogic/`
+- **macOS App**: `~/Library/Application Support/WritersLogic/`
 
 No data is sent to any server unless you explicitly export and share it.
 
@@ -99,7 +99,7 @@ Your private signing key is stored with 0600 permissions (owner read/write only)
 - Uses Ed25519 (state-of-the-art security)
 
 Best practices:
-- Keep a secure backup of `~/.witnessd/signing_key`
+- Keep a secure backup of `~/.writerslogic/signing_key`
 - Never share your private key
 - Use full disk encryption
 
@@ -114,11 +114,11 @@ A Verifiable Delay Function (VDF) is a cryptographic function that:
 - Cannot be parallelized or sped up
 - Produces a proof that can be quickly verified
 
-Witnessd uses VDFs to prove that real time elapsed between checkpoints. You cannot backdate a checkpoint because you cannot compute the VDF faster than real time.
+WritersLogic uses VDFs to prove that real time elapsed between checkpoints. You cannot backdate a checkpoint because you cannot compute the VDF faster than real time.
 
 ### What is the key hierarchy?
 
-Witnessd uses a three-tier key hierarchy:
+WritersLogic uses a three-tier key hierarchy:
 
 1. **Tier 0 (Identity)**: Master key derived from your device's PUF
    - Persistent author identity
@@ -151,7 +151,7 @@ This binds your identity to your specific device.
 
 Higher tiers provide stronger evidence but require more hardware support. Tier names follow the draft-condrey-rats-pop CDDL schema: `content-tier = core(1) / enhanced(2) / maximum(3)`.
 
-### How much storage does witnessd use?
+### How much storage does WritersLogic use?
 
 Typical usage:
 - **Per checkpoint**: ~500 bytes in database
@@ -160,9 +160,9 @@ Typical usage:
 
 Database grows slowly - thousands of checkpoints fit in a few megabytes.
 
-### Can I use witnessd offline?
+### Can I use WritersLogic offline?
 
-Yes! Witnessd works entirely offline. The only network-optional features are:
+Yes! WritersLogic works entirely offline. The only network-optional features are:
 - External anchoring (e.g., Bitcoin timestamping)
 - Fetching drand beacon values (for additional time proof)
 
@@ -174,7 +174,7 @@ All core functionality works without internet.
 
 ### Does this provide legal proof of authorship?
 
-Witnessd creates strong cryptographic evidence of authorship, but legal acceptance depends on:
+WritersLogic creates strong cryptographic evidence of authorship, but legal acceptance depends on:
 - Jurisdiction
 - Type of proceeding
 - Expert testimony to explain the evidence
@@ -184,21 +184,21 @@ The evidence is designed to be admissible under FRE 902(13) for self-authenticat
 
 ### What is FRE 902(13)?
 
-Federal Rules of Evidence 902(13) allows electronic records to be self-authenticating if certified by a qualified person. Witnessd evidence packets include:
+Federal Rules of Evidence 902(13) allows electronic records to be self-authenticating if certified by a qualified person. WritersLogic evidence packets include:
 - Cryptographic verification of integrity
 - Chain of custody through signatures
 - Declarations of authenticity
 
-### Should I use witnessd for legal disputes?
+### Should I use WritersLogic for legal disputes?
 
-Witnessd provides technical evidence. For legal matters:
+WritersLogic provides technical evidence. For legal matters:
 - Consult an attorney
 - Expert testimony may be needed to explain evidence
 - Combine with other documentation (emails, drafts, etc.)
 
-### Does witnessd guarantee I created the content?
+### Does WritersLogic guarantee I created the content?
 
-Witnessd proves:
+WritersLogic proves:
 - Content existed at specific times
 - Real typing activity occurred
 - The same device/identity signed all checkpoints
@@ -258,7 +258,7 @@ The new checkpoint will:
 
 This is transparent and doesn't corrupt the chain.
 
-### Can I use witnessd with cloud documents?
+### Can I use WritersLogic with cloud documents?
 
 Yes, with caveats:
 - Checkpoint local copies of the file
@@ -271,19 +271,19 @@ For best results, work on local files and sync to cloud as backup.
 
 1. Export the evidence packet:
    ```bash
-   witnessd export document.md -o evidence.wpkt
+   wld export document.md -o evidence.wpkt
    ```
 
 2. Share the `.wpkt` file
 
 3. Recipient verifies:
    ```bash
-   witnessd verify evidence.wpkt
+   wld verify evidence.wpkt
    ```
 
 No account or registration needed - verification is self-contained.
 
-### Can I verify evidence without witnessd installed?
+### Can I verify evidence without WritersLogic installed?
 
 The evidence packet includes verification instructions. Third-party verification requires:
 - Understanding the cryptographic primitives (Ed25519, SHA-256, VDF)
@@ -295,8 +295,8 @@ You can also verify online at https://writersproof.com/verify
 
 ## More Questions?
 
-- **Documentation**: https://docs.writersproof.com/witnessd
-- **GitHub Issues**: https://github.com/writerslogic/witnessd/issues
+- **Documentation**: https://docs.writersproof.com/writerslogic
+- **GitHub Issues**: https://github.com/writerslogic/writerslogic/issues
 - **Website**: https://writersproof.com
 
 ---

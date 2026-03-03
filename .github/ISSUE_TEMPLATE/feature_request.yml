@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a new feature for witnessd
+description: Suggest a new feature for WritersLogic
 title: "[Feature]: "
 labels: ["enhancement", "triage"]
 body:
@@ -36,7 +36,7 @@ body:
     attributes:
       label: Component
       options:
-        - witnessd daemon
+        - WritersLogic daemon
         - witnessctl CLI
         - MMR/cryptography
         - Forensics analysis

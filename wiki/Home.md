@@ -1,6 +1,6 @@
-# Welcome to the witnessd Wiki
+# Welcome to the WritersLogic Wiki
 
-**witnessd** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. It creates tamper-evident cryptographic records of your creative process, proving that you created a document over time through real effort.
+**WritersLogic** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. It creates tamper-evident cryptographic records of your creative process, proving that you created a document over time through real effort.
 
 ---
 
@@ -13,21 +13,21 @@
 
 | Engine | Protocol | Jitter |
 |:---:|:---:|:---:|
-| <img src="https://raw.githubusercontent.com/writerslogic/witnessd/main/crates/witnessd_engine/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/witnessd/main/crates/witnessd_protocol/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/witnessd/main/crates/witnessd_jitter/assets/logo.png" width="200"> |
-| **[[witnessd_engine]]** | **[[witnessd_protocol]]** | **[[witnessd_jitter]]** |
+| <img src="https://raw.githubusercontent.com/writerslogic/writerslogic/main/crates/wld_engine/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/writerslogic/main/crates/wld_protocol/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/writerslogic/main/crates/wld_jitter/assets/logo.png" width="200"> |
+| **[[wld_engine]]** | **[[wld_protocol]]** | **[[wld_jitter]]** |
 
 ## 🚀 Getting Started
 
-If you're new to witnessd, start here:
+If you're new to WritersLogic, start here:
 
 - **[[Getting Started]]**: Installation and your first cryptographic checkpoint.
 - **[[GUI Guide]]**: Using the native macOS and Windows applications.
-- **[[CLI Reference]]**: A complete guide to the `witnessd` command-line tool.
-- **[[Vendor Integration Guide]]**: How to build witnessd into your own app.
+- **[[CLI Reference]]**: A complete guide to the `wld` command-line tool.
+- **[[Vendor Integration Guide]]**: How to build WritersLogic into your own app.
 - **[[Evidence Interpretation Guide]]**: How to identify tampering and verify reports.
 - **[[Philosophy of Authorship]]**: Why we prove human creativity.
 - **[[Adversarial AI]]**: How we defeat synthetic history forgery.
-- **[[Configuration]]**: Customizing witnessd to fit your workflow.
+- **[[Configuration]]**: Customizing WritersLogic to fit your workflow.
 
 ## 📘 Documentation
 
@@ -49,10 +49,10 @@ For developers and researchers interested in the underlying protocol:
 
 ## 🤝 Community & Support
 
-- **[GitHub Issues](https://github.com/writerslogic/witnessd/issues)**: Report bugs or request features.
-- **[Discussions](https://github.com/writerslogic/witnessd/discussions)**: Ask questions and share your experiences.
+- **[GitHub Issues](https://github.com/writerslogic/writerslogic/issues)**: Report bugs or request features.
+- **[Discussions](https://github.com/writerslogic/writerslogic/discussions)**: Ask questions and share your experiences.
 - **[Official Website](https://writersproof.com)**: Learn more about the project mission.
 
 ---
 
-*Licensed under the [Apache License, Version 2.0](https://github.com/writerslogic/witnessd/blob/main/LICENSE).*
+*Licensed under the [Apache License, Version 2.0](https://github.com/writerslogic/writerslogic/blob/main/LICENSE).*

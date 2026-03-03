@@ -1,6 +1,6 @@
 # JSON Schemas
 
-Formal data models for Witnessd objects.
+Formal data models for WritersLogic objects.
 
 ## Schemas
 
@@ -12,5 +12,5 @@ Formal data models for Witnessd objects.
 
 These schemas can be used for:
 1. Automated verification of exported packets.
-2. Cross-platform implementation of Witnessd clients.
+2. Cross-platform implementation of WritersLogic clients.
 3. Documentation of the data model.

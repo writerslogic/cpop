@@ -98,16 +98,16 @@ jobs:
           sudo apt-get install -y libtss2-dev libsqlite3-dev libxcb1-dev
 
       - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p witnessd_cli
+        run: cargo build --release --target ${{ matrix.target }} -p wld_cli
 
       - name: Package (Unix)
         if: matrix.archive == 'tar.gz'
         run: |
           TAG=${{ needs.validate.outputs.tag }}
-          ARCHIVE="witnessd-${TAG}-${{ matrix.target }}.tar.gz"
+          ARCHIVE="writerslogic-${TAG}-${{ matrix.target }}.tar.gz"
           mkdir -p staging
-          cp target/${{ matrix.target }}/release/witnessd staging/
-          cp target/${{ matrix.target }}/release/witnessd-native-messaging-host staging/
+          cp target/${{ matrix.target }}/release/WritersLogic staging/
+          cp target/${{ matrix.target }}/release/writerslogic-native-messaging-host staging/
           tar -czf "$ARCHIVE" -C staging .
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
 
@@ -116,10 +116,10 @@ jobs:
         shell: pwsh
         run: |
           $TAG = "${{ needs.validate.outputs.tag }}"
-          $ARCHIVE = "witnessd-${TAG}-${{ matrix.target }}.zip"
+          $ARCHIVE = "writerslogic-${TAG}-${{ matrix.target }}.zip"
           New-Item -ItemType Directory -Force -Path staging
-          Copy-Item "target/${{ matrix.target }}/release/witnessd.exe" staging/
-          Copy-Item "target/${{ matrix.target }}/release/witnessd-native-messaging-host.exe" staging/
+          Copy-Item "target/${{ matrix.target }}/release/writerslogic.exe" staging/
+          Copy-Item "target/${{ matrix.target }}/release/writerslogic-native-messaging-host.exe" staging/
           Compress-Archive -Path staging/* -DestinationPath $ARCHIVE
           echo "ARCHIVE=$ARCHIVE" >> $env:GITHUB_ENV
 
@@ -132,13 +132,13 @@ jobs:
         with:
           name: build-${{ matrix.target }}
           path: |
-            witnessd-*.${{ matrix.archive }}
-            witnessd-*.${{ matrix.archive }}.sha256
+            writerslogic-*.${{ matrix.archive }}
+            writerslogic-*.${{ matrix.archive }}.sha256
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: witnessd-*.${{ matrix.archive }}
+          subject-path: writerslogic-*.${{ matrix.archive }}
 
   sbom:
     name: Generate SBOM
@@ -152,18 +152,18 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Generate SPDX SBOM
-        run: syft dir:. -o spdx-json=witnessd-core-sbom.spdx.json
+        run: syft dir:. -o spdx-json=writerslogic-core-sbom.spdx.json
 
       - name: Generate CycloneDX SBOM
-        run: syft dir:. -o cyclonedx-json=witnessd-core-sbom.cdx.json
+        run: syft dir:. -o cyclonedx-json=writerslogic-core-sbom.cdx.json
 
       - name: Upload SBOMs
         uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: |
-            witnessd-core-sbom.spdx.json
-            witnessd-core-sbom.cdx.json
+            writerslogic-core-sbom.spdx.json
+            writerslogic-core-sbom.cdx.json
 
   release:
     name: Create Release
@@ -201,17 +201,17 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: witnessd-core ${{ needs.validate.outputs.tag }}
+          name: writerslogic-core ${{ needs.validate.outputs.tag }}
           draft: false
           prerelease: ${{ contains(needs.validate.outputs.tag, '-') }}
           files: |
-            artifacts/witnessd-*.tar.gz
-            artifacts/witnessd-*.zip
-            artifacts/witnessd-*.sha256
-            artifacts/witnessd-core-sbom.spdx.json
-            artifacts/witnessd-core-sbom.cdx.json
+            artifacts/writerslogic-*.tar.gz
+            artifacts/writerslogic-*.zip
+            artifacts/writerslogic-*.sha256
+            artifacts/writerslogic-core-sbom.spdx.json
+            artifacts/writerslogic-core-sbom.cdx.json
           body: |
-            ## witnessd-core ${{ needs.validate.outputs.tag }}
+            ## writerslogic-core ${{ needs.validate.outputs.tag }}
 
             Cryptographic core library for authorship witnessing.
 
@@ -219,11 +219,11 @@ jobs:
 
             Add to your `Cargo.toml`:
             ```toml
-            witnessd-core = { git = "https://github.com/writerslogic/witnessd", tag = "${{ needs.validate.outputs.tag }}" }
+            writerslogic-core = { git = "https://github.com/writerslogic/writerslogic", tag = "${{ needs.validate.outputs.tag }}" }
             ```
 
             ### Changelog
             ${{ steps.changelog.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/writerslogic/witnessd/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ needs.validate.outputs.tag }}
+            **Full Changelog**: https://github.com/writerslogic/writerslogic/compare/${{ steps.prev_tag.outputs.prev_tag }}...${{ needs.validate.outputs.tag }}

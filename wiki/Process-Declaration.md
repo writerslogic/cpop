@@ -26,7 +26,7 @@ A declaration is a signed JSON object containing:
 | Field | Description |
 |:------|:------------|
 | `document_hash` | SHA-256 hash of the final document. |
-| `chain_hash` | Hash of the associated witnessd checkpoint chain. |
+| `chain_hash` | Hash of the associated WritersLogic checkpoint chain. |
 | `input_modalities` | How the content was created (keyboard, dictation, paste, etc.). |
 | `ai_tools` | List of AI tools used, their purpose, and extent (none, minimal, moderate, substantial). |
 | `collaborators` | Human co-authors or editors involved. |

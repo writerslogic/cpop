@@ -7,7 +7,7 @@
 
 ## Overview
 
-This specification defines a three-tier key hierarchy for `witnessd` that provides:
+This specification defines a three-tier key hierarchy for `wld` that provides:
 - **Persistent identity** through a hardware-bound master key
 - **Session isolation** through per-session derived keys
 - **Forward secrecy** through checkpoint-level key ratcheting
@@ -38,7 +38,7 @@ This specification defines a three-tier key hierarchy for `witnessd` that provid
 │                         TIER 0: IDENTITY ROOT                               │
 │                                                                             │
 │  master_seed = PUF_Response(device_challenge)                               │
-│  master_key = HKDF-SHA256(master_seed, "witnessd-identity-v1", 32)          │
+│  master_key = HKDF-SHA256(master_seed, "wld-identity-v1", 32)          │
 │  master_pubkey = Ed25519_PublicKey(master_key)                              │
 │                                                                             │
 │  Properties:                                                                │
@@ -112,7 +112,7 @@ This specification defines a three-tier key hierarchy for `witnessd` that provid
 
 ## Adversarial Hardening (Tier 4)
 
-To protect the key material against a sophisticated local adversary, Witnessd implements Tier 4 process-level hardening.
+To protect the key material against a sophisticated local adversary, WritersLogic implements Tier 4 process-level hardening.
 
 ### 1. In-Memory Sealing (mlock)
 
@@ -122,7 +122,7 @@ This ensures that the OS kernel cannot move the sensitive key bytes to the disk,
 
 ### 2. Anti-Debugging (Deny Attach)
 
-On macOS, the engine utilizes `ptrace(PT_DENY_ATTACH)` to prevent unauthorized process inspection. If a debugger attempts to attach to the witnessd daemon while keys are in memory, the daemon will immediately self-terminate, protecting the integrity of the key hierarchy.
+On macOS, the engine utilizes `ptrace(PT_DENY_ATTACH)` to prevent unauthorized process inspection. If a debugger attempts to attach to the wld daemon while keys are in memory, the daemon will immediately self-terminate, protecting the integrity of the key hierarchy.
 
 ## Data Structures
 
@@ -214,14 +214,14 @@ type CheckpointSignature struct {
 ```go
 func InitializeIdentity(puf *hardware.PUF) (*MasterIdentity, error) {
     // 1. Get PUF response for device binding
-    challenge := sha256.Sum256([]byte("witnessd-identity-challenge-v1"))
+    challenge := sha256.Sum256([]byte("wld-identity-challenge-v1"))
     pufResponse, err := puf.GetResponse(challenge[:])
     if err != nil {
         return nil, fmt.Errorf("PUF response failed: %w", err)
     }
 
     // 2. Derive master seed via HKDF
-    masterSeed := hkdf.Extract(sha256.New, pufResponse, []byte("witnessd-identity-v1"))
+    masterSeed := hkdf.Extract(sha256.New, pufResponse, []byte("wld-identity-v1"))
 
     // 3. Generate Ed25519 key from seed
     // Note: Ed25519 seeds are 32 bytes

@@ -14,7 +14,7 @@ As generative AI models become more sophisticated, they are increasingly used to
 
 ## Our Cryptographic Defenses
 
-Witnessd moves authorship proof from "statistical heuristics" to **"computational physics."**
+WritersLogic moves authorship proof from "statistical heuristics" to **"computational physics."**
 
 ### 1. Breaking Scripted Replay (Jitter Seals)
 Scripted event injection is often perfectly quantized or lacks the subtle physical signatures of a real human hand. Our **Clock Skew Attestation** binds timing to the physical drift of the CPU, making software-only simulation detectable.

@@ -1,4 +1,4 @@
-# Witnessd Audit — Completed & Resolved Items
+# WritersLogic Audit — Completed & Resolved Items
 
 > Items completed during audit sessions 1-9 (2026-02-23 to 2026-02-26).
 > Moved from todo.md to keep the active TODO lean.
@@ -9,7 +9,7 @@
 ## CRITICAL / BLOCKERS
 
 ### B1. HTTP client has no timeout (writersproof)
-- **File**: `crates/witnessd_engine/src/writersproof/client.rs:24`
+- **File**: `crates/wld_engine/src/writersproof/client.rs:24`
 - **Impact**: `Client::new()` with no default timeout; all requests (nonce, enroll, attest, get_certificate) hang indefinitely on slow/dead network
 - **Fix**: `Client::builder().timeout(Duration::from_secs(30)).build()?`
 - **Effort**: small
@@ -19,12 +19,12 @@
 ### B2. deny.toml license exception syntax error
 - **File**: `deny.toml`
 - **Impact**: Missing `name` field in GPL-3.0-only exception prevents cargo-deny from validating licenses
-- **Fix**: Add `name = "witnessd_cli"` to the exception block
+- **Fix**: Add `name = "wld_cli"` to the exception block
 - **Effort**: small
 - [x] Fix applied
 
-### B3. witnessd_protocol missing rust-version
-- **File**: `crates/witnessd_protocol/Cargo.toml`
+### B3. wld_protocol missing rust-version
+- **File**: `crates/wld_protocol/Cargo.toml`
 - **Impact**: No MSRV declared; consumers can't verify minimum Rust version compatibility
 - **Fix**: Add `rust-version = "1.75.0"`
 - **Effort**: small
@@ -118,7 +118,7 @@
 ## HIGH SEVERITY
 
 ### H1. EDITOR env var command injection
-- **File**: `apps/witnessd_cli/src/cmd_config.rs` (was main.rs:3115 pre-split)
+- **File**: `apps/wld_cli/src/cmd_config.rs` (was main.rs:3115 pre-split)
 - **Impact**: Malicious EDITOR value executes arbitrary commands with user privileges
 - **Fix**: Validate/parse EDITOR with `shlex::split()` or whitespace splitting; validate first element is executable
 - **Effort**: small
@@ -126,21 +126,21 @@
 - [x] Test added
 
 ### H2. Attestation report serialization silently returns empty string
-- **File**: `crates/witnessd_engine/src/sentinel/ipc_handler.rs:162`
+- **File**: `crates/wld_engine/src/sentinel/ipc_handler.rs:162`
 - **Impact**: `serde_json::to_string(&report).unwrap_or_default()` — security-critical attestation report silently dropped; client receives empty string
 - **Fix**: Return `IpcMessage::Error` on serialization failure
 - **Effort**: small
 - [x] Fix applied — now uses `match` with proper `Err(e)` → error response
 
-### H3. witnessd_dir().unwrap_or_default() silent fallback
-- **File**: `apps/witnessd_cli/src/cmd_verify.rs` (was main.rs:1841)
+### H3. writerslogic_dir().unwrap_or_default() silent fallback
+- **File**: `apps/wld_cli/src/cmd_verify.rs` (was main.rs:1841)
 - **Impact**: On home directory resolution failure, creates empty PathBuf for key file lookup; subsequent error messages reference empty path
 - **Fix**: Propagate error with `?` instead of `unwrap_or_default()`
 - **Effort**: small
 - [x] Fix applied — already uses ? operator in CLI split
 
 ### H4. Timestamp-seeded RNG for test TPM key generation
-- **File**: `crates/witnessd_engine/src/tpm/software.rs:28`
+- **File**: `crates/wld_engine/src/tpm/software.rs:28`
 - **Impact**: `Utc::now().to_rfc3339()` used to seed key generation. Weak for security purposes even in test/software fallback mode.
 - **Fix**: Use `StdRng::from_os_rng()` per project convention
 - **Effort**: small
@@ -156,7 +156,7 @@
 - [x] checkpoint_mmr.rs
 
 ### H6. events.last().unwrap() without empty check
-- **File**: `apps/witnessd_cli/src/cmd_export.rs:98` (was main.rs:1263)
+- **File**: `apps/wld_cli/src/cmd_export.rs:98` (was main.rs:1263)
 - **Impact**: Panics with no message if events vector is empty
 - **Fix**: `.ok_or_else(|| anyhow!("No events found for this file"))?`
 - **Effort**: small
@@ -171,35 +171,35 @@
 - [x] tpm/windows.rs (3 sites)
 
 ### H8. Non-constant-time hash comparisons in MMR proof verification — 7 locations
-- **Files**: `crates/witnessd_engine/src/mmr/proof.rs:30,44,48,57` (InclusionProof::verify), `mmr/proof.rs:316,320,329` (RangeProof::verify)
+- **Files**: `crates/wld_engine/src/mmr/proof.rs:30,44,48,57` (InclusionProof::verify), `mmr/proof.rs:316,320,329` (RangeProof::verify)
 - **Impact**: All Merkle proof hash comparisons use `!=`/`==` on `[u8; 32]` arrays. Variable-time comparison leaks which part of the proof is invalid, enabling targeted forgery attempts against the Merkle Mountain Range integrity structure.
 - **Fix**: Use `subtle::ConstantTimeEq` at all 7 sites (already a dependency)
 - **Effort**: small
 - [x] Fix applied — all 7+1 sites converted to ct_eq/ct_ne
 
 ### H9. Non-constant-time attestation proof comparison in Secure Enclave
-- **File**: `crates/witnessd_engine/src/tpm/secure_enclave.rs:735`
+- **File**: `crates/wld_engine/src/tpm/secure_enclave.rs:735`
 - **Impact**: `attestation.attestation_proof != expected_proof` uses short-circuit `!=` on SHA-256 digests. Timing side-channel enables incremental reconstruction of the expected attestation proof.
 - **Fix**: Use `subtle::ConstantTimeEq`
 - **Effort**: small
 - [x] Fix applied
 
 ### H10. `expect()` on bincode ser/deser in production code (crypto/obfuscated.rs)
-- **File**: `crates/witnessd_engine/src/crypto/obfuscated.rs:33,49`
+- **File**: `crates/wld_engine/src/crypto/obfuscated.rs:33,49`
 - **Impact**: `Obfuscated<T>::new()` and `reveal()` call `.expect()` on bincode serialization/deserialization. If XOR round-trip corruption or bincode version mismatch occurs, this panics the process. Used for sensitive in-memory data protection.
 - **Fix**: Return `Result` from both methods, or use `.unwrap_or_default()` with logging
 - **Effort**: small
 - [x] Fix applied — new() and reveal() return Result, rotate() returns Result<()>
 
 ### H11. `unwrap()` on `Mnemonic::from_entropy()` in identity generation
-- **File**: `crates/witnessd_engine/src/identity/mnemonic.rs:25`
+- **File**: `crates/wld_engine/src/identity/mnemonic.rs:25`
 - **Impact**: `MnemonicHandler::generate()` calls `.unwrap()` on `Mnemonic::from_entropy()`. If entropy source returns unexpected data or bip39 library changes validation, this panics the process during identity creation — a critical user-facing operation.
 - **Fix**: Return `Result` and propagate the error
 - **Effort**: small
 - [x] Fix applied — returns Result<String>, uses StdRng::from_os_rng()
 
 ### H12. Non-constant-time hash comparison in CLI watch loop
-- **File**: `apps/witnessd_cli/src/cmd_watch.rs:362`
+- **File**: `apps/wld_cli/src/cmd_watch.rs:362`
 - **Impact**: `last.content_hash == content_hash` compares `[u8; 32]` content hashes with standard `==`. Timing side-channel could reveal information about document edit patterns.
 - **Fix**: Use `subtle::ConstantTimeEq`
 - **Effort**: small
@@ -247,21 +247,21 @@
 - [x] Fix applied — uses `unwrap_or_else(|| timestamp_millis().saturating_mul(1_000_000))`
 
 ### M3. fs::canonicalize().unwrap_or(path.clone()) in watch remove
-- **File**: `apps/witnessd_cli/src/cmd_watch.rs` (was main.rs:3783)
+- **File**: `apps/wld_cli/src/cmd_watch.rs` (was main.rs:3783)
 - **Impact**: Canonicalization error silently swallowed; path matching may fail
 - **Fix**: Log warning on canonicalization failure
 - **Effort**: small
 - [x] Fix applied — warns via eprintln before fallback
 
 ### M4. ShadowManager unbounded HashMap
-- **File**: `crates/witnessd_engine/src/sentinel/shadow.rs:39`
+- **File**: `crates/wld_engine/src/sentinel/shadow.rs:39`
 - **Impact**: No size limit on shadow buffers; DoS by creating unlimited sessions
 - **Fix**: Add `MAX_SHADOW_BUFFERS` constant and evict oldest on overflow
 - **Effort**: small
 - [x] Fix applied — added MAX_SHADOW_BUFFERS=256 cap with oldest-eviction in create()
 
 ### M5. Engine file_sizes HashMap unbounded
-- **File**: `crates/witnessd_engine/src/engine.rs:49`
+- **File**: `crates/wld_engine/src/engine.rs:49`
 - **Impact**: `HashMap<PathBuf, i64>` grows unbounded in long-running engine watching many files
 - **Fix**: Add size limit with LRU eviction or periodic cleanup
 - **Effort**: medium
@@ -275,14 +275,14 @@
 - [-] Skipped — Linux-specific; cannot test/verify on macOS
 
 ### M7. File watcher thread no join handle
-- **File**: `crates/witnessd_engine/src/engine.rs:212-235`
+- **File**: `crates/wld_engine/src/engine.rs:212-235`
 - **Impact**: Thread spawned without stored JoinHandle; cannot be joined on Engine drop
 - **Fix**: Store JoinHandle and join in Drop impl
 - **Effort**: medium
 - [x] Fix applied — watcher_thread field in EngineInner, joined in pause() and Drop impl
 
 ### M8. Sentinel event loop no explicit task await
-- **File**: `crates/witnessd_engine/src/sentinel/core.rs:304-407`
+- **File**: `crates/wld_engine/src/sentinel/core.rs:304-407`
 - **Impact**: `tokio::spawn` without stored handle; `stop()` sends signal but doesn't verify completion
 - **Fix**: Store JoinHandle, await in stop()
 - **Effort**: medium
@@ -303,7 +303,7 @@
 - [-] False positive — lock scope is already minimal (two field assignments only)
 
 ### M11. Checkpoint clone before push
-- **File**: `crates/witnessd_engine/src/checkpoint.rs:272`
+- **File**: `crates/wld_engine/src/checkpoint.rs:272`
 - **Impact**: Per-commit clones entire Checkpoint struct (~400+ bytes) before storing
 - **Fix**: Push checkpoint, clone only the return value
 - **Effort**: small
@@ -324,7 +324,7 @@
 - [x] Fix applied — reordered code to pass owned ikis to Data::new() after last borrow
 
 ### M14. getrandom partial initialization risk
-- **File**: `crates/witnessd_engine/src/ffi/system.rs:34`
+- **File**: `crates/wld_engine/src/ffi/system.rs:34`
 - **Impact**: Seed could be partially initialized on getrandom error
 - **Fix**: Validate seed is fully randomized or reject operation entirely
 - **Effort**: small
@@ -345,56 +345,56 @@
 - [-] False positive — CFRelease works on any CFTypeRef; CFGetTypeID validation is for type-specific casting, not releasing. Existing code already validates at cast points (lines 504, 530).
 
 ### M17. native_messaging_host module declared but unreachable
-- **File**: `apps/witnessd_cli/src/native_messaging_host.rs` (457 lines)
+- **File**: `apps/wld_cli/src/native_messaging_host.rs` (457 lines)
 - **Impact**: Module compiles but is never called from any CLI command
 - **Fix**: Either integrate into `cmd_daemon` or move to separate binary, or feature-gate
 - **Effort**: medium
-- [-] False positive — separate binary target `witnessd-native-messaging-host` in Cargo.toml with its own `fn main()`, not an unreachable module
+- [-] False positive — separate binary target `writerslogic-native-messaging-host` in Cargo.toml with its own `fn main()`, not an unreachable module
 
 ### M18. crypto/obfuscation.rs reveal() uses lossy UTF-8 conversion
-- **File**: `crates/witnessd_engine/src/crypto/obfuscation.rs:34`
+- **File**: `crates/wld_engine/src/crypto/obfuscation.rs:34`
 - **Impact**: `String::from_utf8_lossy` silently replaces invalid bytes with U+FFFD on XOR round-trip. If nonce mismatch or data corruption occurs, `reveal()` returns corrupted data without error instead of failing.
 - **Fix**: Use `String::from_utf8()` and propagate the error
 - **Effort**: small
 - [x] Fix applied — uses String::from_utf8() with error logging fallback
 
 ### M19. analysis/labyrinth.rs f64-to-usize cast without .clamp()
-- **File**: `crates/witnessd_engine/src/analysis/labyrinth.rs:208-209`
+- **File**: `crates/wld_engine/src/analysis/labyrinth.rs:208-209`
 - **Impact**: `(data[i] * num_bins as f64) as usize` — NaN or negative values produce implementation-defined results per Rust spec. Violates project convention of `.clamp()` before f64→integer casts.
 - **Fix**: Add `.clamp(0.0, (num_bins - 1) as f64)` before `as usize`
 - **Effort**: small
 - [x] Fix applied
 
 ### M20. writersproof HTTP client has no connect timeout
-- **File**: `crates/witnessd_engine/src/writersproof/client.rs`
+- **File**: `crates/wld_engine/src/writersproof/client.rs`
 - **Impact**: While B1 covers the overall request timeout, there's no separate connect timeout. DNS resolution or TCP handshake to an unreachable host could block for the OS default (often 60-120s).
 - **Fix**: Add `.connect_timeout(Duration::from_secs(10))` in addition to the overall timeout
 - **Effort**: small
 - [x] Fix applied
 
 ### M21. WAL payload_len overflow on 32-bit targets
-- **File**: `crates/witnessd_engine/src/wal.rs:599-606`
+- **File**: `crates/wld_engine/src/wal.rs:599-606`
 - **Impact**: `payload_len` is `u32` cast to `usize`. On 32-bit, `offset + payload_len` can overflow `usize`, bypassing the bounds check at line 606 and causing out-of-bounds reads.
 - **Fix**: Use `usize::checked_add(offset, payload_len).ok_or(...)?` before the bounds check
 - **Effort**: small
 - [x] Fix applied
 
 ### M22. Config migration truncates u64 to u32 without validation
-- **File**: `crates/witnessd_engine/src/config.rs:530-534`
+- **File**: `crates/wld_engine/src/config.rs:530-534`
 - **Impact**: `retention_days` read as `u64` then cast `as u32`, silently truncating values > 4B. VDF `iterations_per_second` read from JSON without range validation — a config value of 0 would cause division by zero in VDF calibration.
 - **Fix**: Clamp values to valid ranges after reading (e.g., `retention_days` to `[1, 36500]`, `iterations_per_second` to `[1, u64::MAX]`)
 - **Effort**: small
 - [x] Fix applied
 
 ### M23. identity/mnemonic.rs uses rand::rng() instead of OsRng
-- **File**: `crates/witnessd_engine/src/identity/mnemonic.rs:24`
+- **File**: `crates/wld_engine/src/identity/mnemonic.rs:24`
 - **Impact**: `rand::rng().fill(&mut entropy)` for BIP-39 mnemonic generation. While `ThreadRng` is cryptographically secure on mainstream platforms, project convention is to use `StdRng::from_os_rng()` for explicit OS entropy sourcing in key material generation.
 - **Fix**: Replace with `OsRng.fill(&mut entropy)` or `StdRng::from_os_rng()`
 - **Effort**: small
 - [x] Fix applied — uses StdRng::from_os_rng().fill_bytes()
 
 ### M24. sealed_identity.rs uses Debug format for provider_type serialization
-- **File**: `crates/witnessd_engine/src/sealed_identity.rs:155,309`
+- **File**: `crates/wld_engine/src/sealed_identity.rs:155,309`
 - **Impact**: `format!("{:?}", caps)` produces Debug output as `provider_type` string stored in sealed identity files. Debug formatting is unstable — field ordering or representation can change across Rust versions, breaking deserialization of existing sealed identities.
 - **Fix**: Use explicit enum-to-string serialization (e.g., `serde_json::to_string` or a match expression)
 - **Effort**: small
@@ -410,48 +410,48 @@
 - [x] sentinel/core.rs:585
 
 ### M26. WAL unchecked `entry_len` used for Vec allocation (DoS)
-- **File**: `crates/witnessd_engine/src/wal.rs:250,338,482`
+- **File**: `crates/wld_engine/src/wal.rs:250,338,482`
 - **Impact**: `entry_len` read as `u32` from WAL file is used directly in `vec![0u8; entry_len as usize]` without upper bound. A corrupted or malicious WAL with `entry_len = u32::MAX` (~4 GB) causes OOM. Affects `verify()`, `compact()`, and `replay()`.
 - **Fix**: Add `if entry_len > MAX_ENTRY_SIZE { return Err(...) }` before allocation (reasonable max: 16 MB)
 - **Effort**: small
 - [x] Fix applied — MAX_ENTRY_SIZE=16MB constant + 3 allocation sites guarded
 
 ### M27. WAL `now_nanos()` lacks overflow protection (inconsistent with engine.rs)
-- **File**: `crates/witnessd_engine/src/wal.rs:637`
+- **File**: `crates/wld_engine/src/wal.rs:637`
 - **Impact**: `dur.as_nanos() as i64` wraps to negative past year ~2262. The engine's `now_ns()` (engine.rs:426-439) correctly handles this with an `i64::MAX` check and millisecond fallback. WAL lacks this protection.
 - **Fix**: Use the same safe pattern as engine.rs, or call `DateTimeNanosExt::timestamp_nanos_safe()`
 - **Effort**: small
 - [x] Fix applied — i64::MAX check with millis fallback
 
 ### M28. VDF division-by-zero risks
-- **Files**: `crates/witnessd_engine/src/vdf/proof.rs:90`, `vdf/params.rs:45`
+- **Files**: `crates/wld_engine/src/vdf/proof.rs:90`, `vdf/params.rs:45`
 - **Impact**: `iterations as f64 / params.iterations_per_second as f64` produces `+Infinity` when `iterations_per_second == 0`, creating infinite `Duration`. `vdf/params.rs:45` divides by `elapsed` which could be near-zero on fast hardware.
 - **Fix**: Guard denominators: `if iterations_per_second == 0 { return Err(...) }` or `.max(1)`. For elapsed: `.max(0.001)`.
 - **Effort**: small
 - [x] Fix applied — .max(1) on iterations_per_second, .max(0.001) on elapsed
 
 ### M29. MMR proof serialization usize→u16 truncation + unsigned subtraction underflow
-- **Files**: `crates/witnessd_engine/src/mmr/proof.rs:77,85,91,365,375,383,389` (u16 truncation), `mmr/proof.rs:210` (subtraction underflow)
+- **Files**: `crates/wld_engine/src/mmr/proof.rs:77,85,91,365,375,383,389` (u16 truncation), `mmr/proof.rs:210` (subtraction underflow)
 - **Impact**: `merkle_path.len() as u16` silently truncates paths > 65535, corrupting serialized proofs. `end_leaf - start_leaf` underflows on malformed untrusted input.
 - **Fix**: Use `u16::try_from().map_err(...)` for lengths. Use `end_leaf.checked_sub(start_leaf).ok_or(...)` for range.
 - **Effort**: small
 - [x] Fix applied — checked_sub + checked_add for range
 
 ### M30. `unwrap()` on `chrono::Duration::from_std()` — 3 locations
-- **Files**: `crates/witnessd_engine/src/presence.rs:193,282`, `vdf/timekeeper.rs:70`
+- **Files**: `crates/wld_engine/src/presence.rs:193,282`, `vdf/timekeeper.rs:70`
 - **Impact**: Panics if `std::time::Duration` exceeds chrono's range. `Duration::MAX` or very large configured values would panic the daemon.
 - **Fix**: Use `.unwrap_or(chrono::Duration::seconds(30))` or propagate error
 - **Effort**: small
 - [x] Fix applied
 
 ### M31. CLI `(-ev.size_delta) as u64` panics at `i32::MIN`
-- **File**: `apps/witnessd_cli/src/cmd_export.rs:259`
+- **File**: `apps/wld_cli/src/cmd_export.rs:259`
 - **Impact**: Negating `i32::MIN` overflows (panic in debug). Project convention: widen to i64 first: `(-(ev.size_delta as i64)) as u64`.
 - **Effort**: small
 - [x] Fix applied
 
 ### M32. Key material not zeroized in keyhierarchy
-- **Files**: `crates/witnessd_engine/src/keyhierarchy/migration.rs:86-94`, `keyhierarchy/puf.rs:18-22`
+- **Files**: `crates/wld_engine/src/keyhierarchy/migration.rs:86-94`, `keyhierarchy/puf.rs:18-22`
 - **Impact**: `migration.rs`: raw private key bytes in `Vec<u8>` and `[u8; 32]` seed not wrapped in `Zeroizing`. `puf.rs`: `SoftwarePUF.seed` (`Vec<u8>`) has no `Zeroize`/`Drop`, derives `Clone`, and `seed()` returns unprotected clone.
 - **Fix**: Wrap in `Zeroizing`. Remove `Clone` from `SoftwarePUF` or impl `Zeroize + Drop`.
 - **Effort**: small
@@ -468,14 +468,14 @@
 - [x] cmd_watch.rs — current_dir propagates error; invalid glob patterns reported
 
 ### M34. native_messaging_host.rs `json.len() as u32` truncation
-- **File**: `apps/witnessd_cli/src/native_messaging_host.rs:135`
+- **File**: `apps/wld_cli/src/native_messaging_host.rs:135`
 - **Impact**: Native messaging protocol requires 4-byte length prefix. `json.len() as u32` silently truncates if serialized output exceeds `u32::MAX`, causing protocol corruption.
 - **Fix**: Use `u32::try_from(json.len()).map_err(...)` with error on overflow
 - **Effort**: small
 - [x] Fix applied
 
 ### M35. VDF proof `unwrap()` on `try_into()` for untrusted data
-- **File**: `crates/witnessd_engine/src/vdf/proof.rs:112-113`
+- **File**: `crates/wld_engine/src/vdf/proof.rs:112-113`
 - **Impact**: `u64::from_be_bytes(data[64..72].try_into().unwrap())` — fragile deserialization of untrusted data. If bounds check at line 104 is ever changed, these become panics on malformed input.
 - **Fix**: Use `.map_err()` to return proper error
 - **Effort**: small
@@ -489,21 +489,21 @@
 - [x] Fix applied
 
 ### M37. Silent keystroke/mouse capture initialization failure
-- **File**: `crates/witnessd_engine/src/sentinel/core.rs:272-318`
+- **File**: `crates/wld_engine/src/sentinel/core.rs:272-318`
 - **Impact**: Both keystroke and mouse capture initialization use `if let Ok(...)` with no else branch. If platform capture fails (permissions, OS API error), no log message is emitted. The daemon appears to be running normally but is silently not capturing any keystroke or mouse evidence.
 - **Fix**: Add `else { log::warn!("Keystroke capture failed to initialize: {:?}", e) }` and same for mouse capture
 - **Effort**: small
 - [x] Fix applied
 
 ### M38. daemon.rs `parent().unwrap()` potential panic
-- **File**: `crates/witnessd_engine/src/sentinel/daemon.rs:78`
+- **File**: `crates/wld_engine/src/sentinel/daemon.rs:78`
 - **Impact**: `self.pid_file.parent().unwrap()` — `parent()` returns `None` for root paths or paths without a parent component. While unlikely in practice (pid_file is always constructed with a parent), this violates defensive coding and could panic in edge cases.
 - **Fix**: Use `.ok_or_else(|| SentinelError::Io(...))?` or `if let Some(parent) = ... { create_dir_all }`
 - **Effort**: small
 - [x] Fix applied
 
 ### M39. WAL scan_to_end/truncate silently treat I/O errors as EOF
-- **Files**: `crates/witnessd_engine/src/wal.rs:334`, `wal.rs:473`, `wal.rs:483`, `wal.rs:489`
+- **Files**: `crates/wld_engine/src/wal.rs:334`, `wal.rs:473`, `wal.rs:483`, `wal.rs:489`
 - **Impact**: `read_exact().is_err()` breaks out of the loop on ANY error, not just EOF. A real I/O error (disk failure, permission change) is silently treated as end-of-file. In `scan_to_end()` (called during `open()`), this means a corrupted WAL is silently truncated. In `truncate()`, valid entries after the I/O error are silently discarded.
 - **Fix**: Distinguish `ErrorKind::UnexpectedEof` (normal end) from other errors (propagate). E.g., `match file.read_exact(&mut buf) { Ok(()) => {}, Err(e) if e.kind() == ErrorKind::UnexpectedEof => break, Err(e) => return Err(e.into()) }`
 - **Effort**: small
@@ -511,14 +511,14 @@
 - [x] wal.rs:473,483,489 (scan_to_end) — same pattern applied
 
 ### M40. WAL file missing secure permissions
-- **File**: `crates/witnessd_engine/src/wal.rs:142-147`
+- **File**: `crates/wld_engine/src/wal.rs:142-147`
 - **Impact**: WAL files are created with default permissions (typically 0o644). WAL entries contain signed evidence, session IDs, document hashes, and Ed25519 signatures. Other users on the system can read this data.
 - **Fix**: Add `#[cfg(unix)] { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?; }` after file creation, consistent with sealed_identity.rs pattern
 - **Effort**: small
 - [x] Fix applied
 
 ### M41. TPM quote serialization silently drops data
-- **Files**: `crates/witnessd_engine/src/keyhierarchy/session.rs:280`, `keyhierarchy/session.rs:309`
+- **Files**: `crates/wld_engine/src/keyhierarchy/session.rs:280`, `keyhierarchy/session.rs:309`
 - **Impact**: `serde_json::to_vec(&quote).unwrap_or_default()` — if JSON serialization of a TPM quote fails, an empty Vec is stored as the quote data. The session certificate then contains a meaningless empty blob instead of the hardware attestation, silently weakening the evidence chain.
 - **Fix**: Log error and store `None` instead: `match serde_json::to_vec(&quote) { Ok(v) => Some(v), Err(e) => { log::error!("TPM quote serialization failed: {}", e); None } }`
 - **Effort**: small
@@ -526,21 +526,21 @@
 - [x] session.rs:309 (start_quote) — same pattern
 
 ### M42. Engine hmac_key not zeroized after use
-- **File**: `crates/witnessd_engine/src/engine.rs:82-84`
+- **File**: `crates/wld_engine/src/engine.rs:82-84`
 - **Impact**: `load_or_create_hmac_key()` returns `Vec<u8>` containing HMAC key material. The key is moved into `SecureStore::open()` but the `Vec<u8>` memory is not explicitly zeroized. While ownership transfers, the allocator may reuse the memory without clearing it.
 - **Fix**: Wrap in `zeroize::Zeroizing<Vec<u8>>` from the creation site, or ensure `SecureStore` zeroizes its copy on drop
 - **Effort**: small
 - [-] Already handled — SecureStore::Drop zeroizes hmac_key; Vec ownership transferred (no copy)
 
 ### M43. Secure Enclave counter file persistence failures silently ignored
-- **Files**: `crates/witnessd_engine/src/tpm/secure_enclave.rs:465,469`
+- **Files**: `crates/wld_engine/src/tpm/secure_enclave.rs:465,469`
 - **Impact**: `save_counter()` uses `let _ = fs::create_dir_all(parent)` and `let _ = fs::write(&state.counter_file, buf)`. If the counter file fails to persist (disk full, permissions), the monotonic counter resets to 0 on next load, allowing replay of previously-used counter values. This weakens TPM anti-replay protection.
 - **Fix**: Log errors on both create_dir_all and write failures
 - **Effort**: small
 - [x] Fix applied — log::error! on mkdir and write failures
 
 ### M44. NaN f64 in checkpoint hash computation
-- **File**: `crates/witnessd_engine/src/checkpoint.rs:887-889`
+- **File**: `crates/wld_engine/src/checkpoint.rs:887-889`
 - **Impact**: `hasher.update(hurst.to_be_bytes())` includes the Hurst exponent (`Option<f64>`) in `compute_hash()`. If `hurst_exponent` is NaN (from degenerate jitter data), different NaN payloads produce different byte representations, potentially breaking hash determinism across platforms or Rust versions. The hash is used for chain integrity verification at line 518.
 - **Fix**: Validate f64 before hashing: `if hurst.is_nan() { hasher.update(0f64.to_be_bytes()); } else { hasher.update(hurst.to_be_bytes()); }` or clamp to 0.0 on NaN
 - **Effort**: small
@@ -556,7 +556,7 @@
 - [x] rfc_conversion.rs:63 (content hash root) — logs warning on invalid hex
 
 ### M46. sealed_identity.rs permission TOCTOU + error silencing
-- **File**: `crates/witnessd_engine/src/sealed_identity.rs:367-374`
+- **File**: `crates/wld_engine/src/sealed_identity.rs:367-374`
 - **Impact**: `persist_blob()` sets file permissions AFTER `fs::rename()`. Between the rename and `set_permissions()`, the sealed identity file has default permissions (0o644), briefly exposing sealed key material to other users on the system. Additionally, `let _ = fs::set_permissions(...)` silently discards permission errors — the file may remain world-readable without any log.
 - **Fix**: Set permissions on `tmp_path` BEFORE `fs::rename()`, propagate the error with `?`
 - **Effort**: small
@@ -571,7 +571,7 @@
 - [x] secure_storage.rs:321 (load_hmac_key) — returns Zeroizing<Vec<u8>>
 
 ### M48. CLI signing key not zeroized in 32-byte load path
-- **File**: `apps/witnessd_cli/src/util.rs:77-80`
+- **File**: `apps/wld_cli/src/util.rs:77-80`
 - **Impact**: `load_signing_key()` reads key material from file into `Vec<u8>`. In the 32-byte path, `key_data.try_into()` consumes the Vec without zeroizing its heap buffer first. The Vec's `Drop` frees the allocation but does NOT zeroize — key bytes persist in freed memory until the allocator reuses that page. The 64-byte and error paths correctly call `key_data.zeroize()` before the Vec is dropped.
 - **Fix**: Copy bytes to array then zeroize original Vec
 - **Effort**: small
@@ -599,7 +599,7 @@
 ### L3. RSA timing sidechannel
 - `rsa 0.9.10` — RUSTSEC-2023-0071 (Marvin Attack, medium severity)
 - **Fix**: No fix available; evaluate if RSA is needed or can be replaced
-- [-] Accepted risk — RSA is a transitive dependency via TPM crates (tss-esapi); no direct RSA usage in witnessd. Marvin Attack requires chosen-ciphertext access to RSA decryption oracle, which doesn't apply to our signing-only TPM usage.
+- [-] Accepted risk — RSA is a transitive dependency via TPM crates (tss-esapi); no direct RSA usage in WritersLogic. Marvin Attack requires chosen-ciphertext access to RSA decryption oracle, which doesn't apply to our signing-only TPM usage.
 
 ### L4. Unbounded mpsc channels in platform code
 - **Files**: `platform/broadcaster.rs:187`, `platform/macos.rs:1059`
@@ -628,8 +628,8 @@
 - [x] Fix applied — `.max(0.0)` before `.sqrt()`
 
 ### L8. CLI mnemonic output lacks TTY check
-- **File**: `apps/witnessd_cli/src/cmd_identity.rs:145-153`
-- **Impact**: `witnessd identity show --json --mnemonic` outputs the BIP-39 recovery phrase to stdout without checking if stdout is a TTY. If stdout is piped to a file or network command, the recovery phrase is logged in plaintext. The code has a warning comment acknowledging this. Requires explicit double opt-in (`--json` + `--mnemonic`) so this is low risk.
+- **File**: `apps/wld_cli/src/cmd_identity.rs:145-153`
+- **Impact**: `wld identity show --json --mnemonic` outputs the BIP-39 recovery phrase to stdout without checking if stdout is a TTY. If stdout is piped to a file or network command, the recovery phrase is logged in plaintext. The code has a warning comment acknowledging this. Requires explicit double opt-in (`--json` + `--mnemonic`) so this is low risk.
 - **Fix**: Add `atty::is(atty::Stream::Stdout)` check or print a warning to stderr when stdout is piped
 - **Effort**: small
 - [x] Fix applied — std::io::IsTerminal check with stderr warning when piped
@@ -638,18 +638,18 @@
 
 ---
 
-## witnessd_jitter
+## wld_jitter
 
 ### J-H1. `getrandom` dependency breaks no_std compilation
-- **File**: `crates/witnessd_jitter/Cargo.toml:20`
+- **File**: `crates/wld_jitter/Cargo.toml:20`
 - **Impact**: `getrandom = "0.3"` listed as unconditional dependency with default features (which include `std`). On true no_std targets, this pulls in std and fails compilation. The code only uses getrandom in `phys.rs` which is already gated behind `#[cfg(feature = "std")]`, so the dependency itself should be gated too.
 - **Fix**: Either make `getrandom` optional and gate behind `std` feature, or add `default-features = false` and activate `std` only when the `std` feature is enabled: `getrandom = { version = "0.3", default-features = false }` + add `"getrandom/std"` to the `std` feature list
 - **Effort**: small
 - [x] Fix applied — getrandom made optional, gated behind std feature
-- [x] Verified no_std compilation with `cargo build -p witnessd_jitter --no-default-features`
+- [x] Verified no_std compilation with `cargo build -p wld_jitter --no-default-features`
 
 ### J-M1. `compute_jitter` can overflow u32 with adversarial jmin+range
-- **Files**: `crates/witnessd_jitter/src/phys.rs:225`, `crates/witnessd_jitter/src/pure.rs:65`
+- **Files**: `crates/wld_jitter/src/phys.rs:225`, `crates/wld_jitter/src/pure.rs:65`
 - **Impact**: `self.jmin + (hash_val % self.range)` overflows u32 if `jmin + range - 1 > u32::MAX`. Both `PhysJitter` and `PureJitter` have public `jmin`/`range` fields. Constructors (`with_jitter_range`, `new`) only validate `range > 0`, not overflow safety. Debug builds panic; release builds wrap to incorrect jitter value.
 - **Fix**: Add validation in constructors: `jmin.checked_add(range.saturating_sub(1)).is_some()`. Use `self.jmin.saturating_add(hash_val % self.range)` in `compute_jitter` as belt-and-suspenders. Consider making `jmin`/`range` private with validated setters.
 - **Effort**: small
@@ -657,7 +657,7 @@
 - [x] Test added
 
 ### J-M2. Empty EvidenceChain verifies with any secret
-- **File**: `crates/witnessd_jitter/src/evidence.rs:317-336`
+- **File**: `crates/wld_jitter/src/evidence.rs:317-336`
 - **Impact**: `verify_integrity()` returns `true` for an empty chain with any secret, because both the computed MAC and stored `chain_mac` are `[0u8; 32]`. Documented in comments (line 314-316) but callers may not check `!chain.records.is_empty()`. Could allow a forged empty chain to pass verification.
 - **Fix**: Return `false` for empty chains in `verify_integrity()`, or at minimum add a `verify_integrity_non_empty()` that enforces non-empty. Update test at line 637-638 accordingly.
 - **Effort**: small
@@ -665,28 +665,28 @@
 - [x] Fix applied — verify_integrity() returns false for empty chains, test updated
 
 ### J-M3. `estimate_entropy` unclamped f64-to-u8 cast
-- **File**: `crates/witnessd_jitter/src/phys.rs:168`
+- **File**: `crates/wld_jitter/src/phys.rs:168`
 - **Impact**: `(std_dev.log2().ceil() as u8).min(64)` — violates project convention (`f64-to-integer: always .clamp(min, max) before as uN/iN`). Currently works correctly due to Rust 2021 saturating cast semantics, but convention exists to prevent subtle bugs if code is refactored.
 - **Fix**: Change to `std_dev.log2().ceil().clamp(0.0, 64.0) as u8`
 - **Effort**: trivial
 - [x] Fix applied — `.clamp(0.0, 64.0) as u8`
 
 ### J-M4. Hardware entropy fallback produces near-zero samples on non-x86/non-aarch64
-- **File**: `crates/witnessd_jitter/src/phys.rs:101-106`
+- **File**: `crates/wld_jitter/src/phys.rs:101-106`
 - **Impact**: On platforms other than x86_64/aarch64 with the `hardware` feature, `capture_timing_samples` creates `Instant::now()` and immediately calls `.elapsed()`, producing near-zero values for every sample. This yields zero entropy bits, causing `PhysJitter::sample()` to fail with `InsufficientEntropy` if `min_entropy_bits > 0`. The non-hardware fallback (lines 114-135) is much better since it mixes kernel entropy.
 - **Fix**: Use the same kernel entropy mixing approach from the non-hardware fallback, or use `start.elapsed()` with a shared `Instant` instead of per-sample `Instant::now()`
 - **Effort**: small
 - [x] Fix applied — shared Instant outside loop, use start.elapsed() inside
 
 ### J-L1. MSRV mismatch between crate and workspace
-- **File**: `crates/witnessd_jitter/Cargo.toml:5`
+- **File**: `crates/wld_jitter/Cargo.toml:5`
 - **Impact**: Crate declares `rust-version = "1.70.0"` but project MSRV is 1.75.0. Inconsistency could confuse consumers about actual minimum Rust version.
 - **Fix**: Either verify the crate genuinely compiles on 1.70.0 and document the intentional difference, or align to 1.75.0
 - **Effort**: trivial
 - [x] Fix applied — aligned rust-version to "1.75.0" to match project MSRV
 
 ### J-L2. `derive_session_secret` returns raw `[u8; 32]` instead of `Zeroizing`
-- **File**: `crates/witnessd_jitter/src/lib.rs:123-132`
+- **File**: `crates/wld_jitter/src/lib.rs:123-132`
 - **Impact**: Public API returns unprotected secret material. Internal caller (`Session::new()` at line 307) correctly wraps in `Zeroizing`, but external callers must remember to do the same.
 - **Fix**: Return `Zeroizing<[u8; 32]>` (breaking change) or document zeroization responsibility in doc comment
 - **Effort**: small
@@ -696,38 +696,38 @@
 
 ---
 
-## witnessd_macos (Swift GUI App)
+## wld_macos (Swift GUI App)
 
 ### MAC-H1. SecRandomCopyBytes result discarded in nonce generation
-- **File**: `apps/witnessd_macos/witnessd/WitnessdBridge.swift:914`
+- **File**: `apps/wld_macos/wld/WritersLogicBridge.swift:914`
 - **Impact**: `_ = SecRandomCopyBytes(...)` — if SecRandom fails, nonce is all zeros, defeating anti-replay protection for CLI invocations
 - **Fix**: Check return status; log error and fail the operation on `!= errSecSuccess`
 - **Effort**: small
 - [x] Fix applied — generateNonce() returns Optional; checks errSecSuccess; caller aborts command on failure
 
 ### MAC-H2. Safari Extension missing input bounds validation
-- **File**: `apps/witnessd_macos/WitnessdSafariExtension/SafariWebExtensionHandler.swift`
+- **File**: `apps/wld_macos/WLDSafariExtension/SafariWebExtensionHandler.swift`
 - **Impact**: `char_count` and `delta` in `handleCheckpoint()` accepted without bounds. `intervals` array in `handleInjectJitter()` has no size limit — accumulated via UserDefaults `append(contentsOf:)` without cap. Repeated inject_jitter calls cause unbounded memory growth.
 - **Fix**: Validate `char_count > 0 && < 1_000_000_000`, `delta` within plausible range, `intervals.count <= 10_000`, cap total accumulated jitter to ~50_000 entries
 - **Effort**: small
 - [x] Fix applied — handleCheckpoint validates char_count/delta bounds; handleInjectJitter caps batch to 10K, total to 50K
 
 ### MAC-M1. Safari Extension silent file I/O failures
-- **File**: `apps/witnessd_macos/WitnessdSafariExtension/SafariWebExtensionHandler.swift:99,111,172-173`
+- **File**: `apps/wld_macos/WLDSafariExtension/SafariWebExtensionHandler.swift:99,111,172-173`
 - **Impact**: `try?` silently swallows `createDirectory` and `data.write` failures. Session data and checkpoints silently lost — user believes witnessing is active but no evidence is stored.
 - **Fix**: Replace `try?` with `do/try/catch`, log errors, return `IO_ERROR` response
 - **Effort**: small
 - [x] Fix applied — all try? replaced with do/try/catch; errors logged and returned as IO_ERROR responses
 
 ### MAC-M2. Placeholder browser extension IDs
-- **File**: `apps/witnessd_macos/witnessd/BrowserExtensionService.swift:18-19`
+- **File**: `apps/wld_macos/wld/BrowserExtensionService.swift:18-19`
 - **Impact**: Chrome/Edge extension IDs are identical placeholders (`nmfklgdnhfkkhmndhjfdlnfkkljgfdfj`). Native messaging host registration will silently fail to connect to the real extensions.
 - **Fix**: Update with actual Chrome Web Store / Edge Add-ons IDs before distribution, or add `#warning` to flag during builds
 - **Effort**: small (config)
 - [x] #warning compile-time directives added for both Chrome and Edge extension IDs
 
 ### MAC-L1. Misleading doc comment on stableKey function
-- **File**: `apps/witnessd_macos/witnessd/SecurityScopedBookmark.swift:78`
+- **File**: `apps/wld_macos/wld/SecurityScopedBookmark.swift:78`
 - **Impact**: Comment says "SHA-256" but code does base64 encoding. Not a bug but misleading for reviewers.
 - **Fix**: Update comment to say "base64 encoding" instead of "SHA-256"
 - **Effort**: trivial
@@ -737,60 +737,60 @@
 
 ---
 
-## witnessd_windows (C#/WinUI App)
+## wld_windows (C#/WinUI App)
 
 ### WIN-C1. Lock screen bypass when no password set
-- **File**: `winui/Witnessd/Dialogs/LockScreenDialog.xaml.cs:141-147`
+- **File**: `winui/WritersLogic/Dialogs/LockScreenDialog.xaml.cs:141-147`
 - **Impact**: When auto-lock is enabled but no password is configured, `ValidatePasswordAsync()` returns `true` — lock screen can be dismissed without credentials. Comment in code acknowledges this is wrong.
 - **Fix**: Return `false` when no password hash exists; force password setup before enabling auto-lock
 - **Effort**: small
 - [x] Fix applied
 
 ### WIN-C2. Mnemonic phrase clipboard exposure (30 seconds)
-- **File**: `winui/Witnessd/Pages/OnboardingPage.xaml.cs:246-263`
+- **File**: `winui/WritersLogic/Pages/OnboardingPage.xaml.cs:246-263`
 - **Impact**: BIP-39 recovery phrase copied to clipboard with 30-second clear timeout. Visible to Windows clipboard history, cloud clipboard sync, and clipboard managers. Clear operation silently swallowed on failure.
 - **Fix**: Reduce timeout to 10s, warn user before copying, disable clipboard history for this operation via `SetHistoryItemAsContent`, propagate clear failure
 - **Effort**: medium
 - [x] Fix applied
 
 ### WIN-H1. Non-constant-time key confirmation in IPC handshake
-- **File**: `winui/Witnessd/Services/IpcClient.cs:632`
+- **File**: `winui/WritersLogic/Services/IpcClient.cs:632`
 - **Impact**: `SequenceEqual()` used for ECDH key confirmation — leaks timing information about shared secret
 - **Fix**: Use `CryptographicOperations.FixedTimeEquals()` per .NET crypto best practices
 - **Effort**: small
 - [x] Fix applied
 
 ### WIN-H2. IPC nonce not validated against expected sequence
-- **File**: `winui/Witnessd/Services/IpcClient.cs:105`
+- **File**: `winui/WritersLogic/Services/IpcClient.cs:105`
 - **Impact**: Received nonce is read from encrypted message but never validated against `NonceFromSequence(receivedSeq)`. An attacker who can modify the ciphertext could substitute nonces.
 - **Fix**: Validate received nonce matches `NonceFromSequence(receivedSeq)` before accepting message
 - **Effort**: small
 - [x] Fix applied
 
 ### WIN-H3. IPC pipe resource leak on partial connect failure
-- **File**: `winui/Witnessd/Services/IpcClient.cs:192-214`
+- **File**: `winui/WritersLogic/Services/IpcClient.cs:192-214`
 - **Impact**: `ConnectAsync` disposes pipe only in catch block, not in a `finally` block. If exception is caught higher up the stack, pipe handle leaks.
 - **Fix**: Move `_pipe?.Dispose()` into `finally` block or restructure with nested `using`
 - **Effort**: small
 - [x] Fix applied
 
 ### WIN-H4. PBKDF2 iteration count below OWASP recommendation
-- **File**: `winui/Witnessd/Dialogs/LockScreenDialog.xaml.cs:186`
+- **File**: `winui/WritersLogic/Dialogs/LockScreenDialog.xaml.cs:186`
 - **Impact**: Uses 100,000 iterations for PBKDF2-SHA256; OWASP 2023 recommends 600,000+
 - **Fix**: Increase to 600,000 iterations (will require re-hashing existing passwords on next unlock)
 - **Effort**: small (migration logic = medium)
 - [x] Fix applied
 
 ### WIN-H5. Mnemonic words not securely cleared from memory
-- **File**: `winui/Witnessd/Dialogs/MnemonicRecoveryDialog.xaml.cs:84`
+- **File**: `winui/WritersLogic/Dialogs/MnemonicRecoveryDialog.xaml.cs:84`
 - **Impact**: `Array.Clear(words, 0, words.Length)` clears string references but .NET strings are immutable — actual mnemonic characters remain in managed heap until GC
 - **Fix**: Use `byte[]` or `SecureString` for sensitive data instead of `string[]`; call `SecurityService.ClearSensitiveString()` on each word
 - **Effort**: medium
 - [x] Fix applied
 
-### WIN-H6. Installer runs witnessd.exe as SYSTEM with unchecked exit codes
+### WIN-H6. Installer runs writerslogic.exe as SYSTEM with unchecked exit codes
 - **File**: `installer/Product.wxs:163-176`
-- **Impact**: `witnessd.exe init` and `witnessd.exe calibrate` run as SYSTEM (`Impersonate="no"`) with `Return="ignore"`. Supply chain compromise of binary gives full system privileges; failures silently ignored.
+- **Impact**: `writerslogic.exe init` and `writerslogic.exe calibrate` run as SYSTEM (`Impersonate="no"`) with `Return="ignore"`. Supply chain compromise of binary gives full system privileges; failures silently ignored.
 - **Fix**: Set `Impersonate="yes"` to run as installing user; change `Return="check"` to catch failures
 - **Effort**: small
 - [x] Fix applied
@@ -807,10 +807,10 @@
 - **Impact**: TSF COM server uses placeholder GUID `A1B2C3D4-E5F6-7890-ABCD-EF1234567890` — will conflict with any other placeholder-GUID registration on the system
 - **Fix**: Generate a proper GUID via `[guid]::NewGuid()` and update all references
 - **Effort**: small
-- [x] Fix applied — UUID v5 from NAMESPACE_DNS + "witnessd-tsf.writerslogic.com" for deterministic reproducibility
+- [x] Fix applied — UUID v5 from NAMESPACE_DNS + "writerslogic-tsf.writerslogic.com" for deterministic reproducibility
 
 ### WIN-M1. Unbounded in-memory cache
-- **File**: `winui/Witnessd/Services/WitnessdBridge.cs:34`
+- **File**: `winui/WritersLogic/Services/WritersLogicBridge.cs:34`
 - **Impact**: `ConcurrentDictionary` cache has TTL expiry (30s) but no size limit; entries only expire on access, never proactively evicted
 - **Fix**: Add `MAX_CACHE_SIZE` constant with LRU or oldest-timestamp eviction
 - **Effort**: small
@@ -824,7 +824,7 @@
 - [x] Fix applied — Interlocked.CompareExchange guard with try/finally
 
 ### WIN-M3. Security log rotation TOCTOU
-- **File**: `winui/Witnessd/Services/SecurityService.cs:183-194`
+- **File**: `winui/WritersLogic/Services/SecurityService.cs:183-194`
 - **Impact**: `File.Exists` → `SecureDeleteFile` → `File.Move` sequence has race window; another process could create backup path between delete and move
 - **Fix**: Use exception handling on `File.Move` instead of pre-checking existence
 - **Effort**: small
@@ -838,14 +838,14 @@
 - [x] Fix applied — both scripts use [System.IO.Path]::GetRandomFileName() with try/finally cleanup
 
 ### WIN-M5. Event listener CancellationTokenSource not tracked
-- **File**: `winui/Witnessd/Services/IpcClient.cs:387-426`
+- **File**: `winui/WritersLogic/Services/IpcClient.cs:387-426`
 - **Impact**: `StartEventListener()` returns CTS to caller but class doesn't track it; if caller drops it, background task runs indefinitely
 - **Fix**: Track CTS internally and dispose in `Dispose()`; document caller contract
 - **Effort**: small
 - [x] Fix applied — _eventListenerCts field tracked internally, disposed on restart and in Dispose()
 
 ### WIN-M6. Missing certificate chain and expiry validation
-- **File**: `winui/Witnessd/Services/SecurityService.cs:100-128`
+- **File**: `winui/WritersLogic/Services/SecurityService.cs:100-128`
 - **Impact**: `WinVerifyTrust` validates signature but subsequent publisher check only compares subject DN string — doesn't verify chain to trusted root or check certificate expiry
 - **Fix**: Add `X509Chain.Build()` and `NotAfter` date check
 - **Effort**: small
@@ -866,14 +866,14 @@
 - [x] Reviewed and documented — XML comments added for each capability; inputInjectionBrokered removed (TSF doesn't require it)
 
 ### WIN-L2. AppLogger silently swallows all exceptions
-- **File**: `winui/Witnessd/Services/AppLogger.cs:146-149`
+- **File**: `winui/WritersLogic/Services/AppLogger.cs:146-149`
 - **Impact**: Empty catch block — if logging fails, all diagnostic information is lost
 - **Fix**: Add fallback to `Debug.WriteLine` or Windows Event Log in catch block
 - **Effort**: small
 - [x] Fix applied — fallback to System.Diagnostics.Debug.WriteLine
 
 ### WIN-L3. DPAPI protection without additional entropy
-- **File**: `winui/Witnessd/Services/SettingsService.cs:62-65,105-108`
+- **File**: `winui/WritersLogic/Services/SettingsService.cs:62-65,105-108`
 - **Impact**: `ProtectedData.Unprotect()` called with `null` entropy parameter; any process running as the same user can decrypt
 - **Fix**: Derive entropy from machine ID or app-specific constant; document tradeoff
 - **Effort**: small
@@ -883,10 +883,10 @@
 
 ---
 
-## witnessd_protocol
+## wld_protocol
 
 ### P-H1. PoPBuilder uses hardcoded profile URI instead of CDDL constants
-- **File**: `crates/witnessd_protocol/src/evidence.rs:45`
+- **File**: `crates/wld_protocol/src/evidence.rs:45`
 - **Impact**: Builder emits `"https://pop.ietf.org/profiles/default"` but `rfc.rs` defines `PROFILE_URI_CORE = "urn:ietf:params:rats:pop:profile:core"`. Wire packets will not match the IETF spec; verifiers checking against the defined constants will reject.
 - **Fix**: Use `crate::rfc::PROFILE_URI_CORE` (or accept profile URI as builder parameter)
 - **Effort**: small
@@ -917,11 +917,11 @@
 
 ### P-M1. `rand 0.8` version mismatch with workspace `rand 0.9`
 - **Files**: protocol `Cargo.toml:21` (`rand = "0.8"`), jitter `Cargo.toml:23` (`rand = "0.8"`), engine `Cargo.toml:26` (`rand = "0.9.0"`), workspace root `Cargo.toml:28` (`rand = "0.9.0"`)
-- **Impact**: Two versions of `rand` in the dependency tree. Protocol and jitter crates use `thread_rng()` instead of project-convention `StdRng::from_os_rng()` (a 0.9 API). 4 production sites: `identity.rs:142`, `evidence.rs:33,79`, `witnessd_jitter/src/lib.rs:329`.
+- **Impact**: Two versions of `rand` in the dependency tree. Protocol and jitter crates use `thread_rng()` instead of project-convention `StdRng::from_os_rng()` (a 0.9 API). 4 production sites: `identity.rs:142`, `evidence.rs:33,79`, `wld_jitter/src/lib.rs:329`.
 - **Fix**: Upgrade both crates to `rand = "0.9"`, replace `thread_rng().fill_bytes()` with `StdRng::from_os_rng()` at all 4 sites
 - **Effort**: small
-- [x] witnessd_protocol upgraded — rand 0.9, thread_rng() → StdRng::from_os_rng()
-- [x] witnessd_jitter upgraded — rand 0.9, thread_rng() → StdRng::from_os_rng()
+- [x] wld_protocol upgraded — rand 0.9, thread_rng() → StdRng::from_os_rng()
+- [x] wld_jitter upgraded — rand 0.9, thread_rng() → StdRng::from_os_rng()
 
 ### P-M2. `hmac_update_field` length prefix truncates to u32
 - **File**: `crypto.rs:24`
@@ -938,11 +938,11 @@
 - [x] Fix applied — removed [profile.release], simplified crate-type to ["rlib"]
 
 ### P-M4. Duplicate integration test files
-- **Files**: `tests/pop_tests.rs` (167 lines), `tests/witnessd_tests.rs` (163 lines)
+- **Files**: `tests/pop_tests.rs` (167 lines), `tests/writerslogic_tests.rs` (163 lines)
 - **Impact**: 90%+ identical — same 4 tests; only difference is `OsRng` vs `thread_rng()` for key gen. Duplicates run time and maintenance burden.
-- **Fix**: Remove `witnessd_tests.rs` (the duplicate); keep `pop_tests.rs` (uses `OsRng`)
+- **Fix**: Remove `writerslogic_tests.rs` (the duplicate); keep `pop_tests.rs` (uses `OsRng`)
 - **Effort**: trivial
-- [x] Fix applied — deleted duplicate witnessd_tests.rs
+- [x] Fix applied — deleted duplicate writerslogic_tests.rs
 
 ### P-M5. `SystemTime::now().unwrap_or_default()` produces timestamp=0 silently
 - **Files**: `evidence.rs:35-38`, `evidence.rs:72-75`
@@ -1111,7 +1111,7 @@
 ## LINUX PACKAGING — Session 5-8
 
 ### LPK-H1. D-Bus policy blocks IBus (HIGH)
-- [-] N/A (witnessd-ibus.xml file does not exist)
+- [-] N/A (writerslogic-ibus.xml file does not exist)
 
 ### LPK-H2. RPM spec uses Go build system (HIGH)
 - [x] Fix (spec already uses cargo build --release)
@@ -1129,7 +1129,7 @@
 - [x] Fix (correct paths)
 
 ### LPK-M3. IBus hard dependency may not exist (MEDIUM)
-- [-] N/A (witnessd-ibus.service does not exist)
+- [-] N/A (writerslogic-ibus.service does not exist)
 
 ### LPK-M4. AppImage license mismatch (MEDIUM)
 - [x] Fix (Apache-2.0 AND GPL-3.0-only)
@@ -1405,7 +1405,7 @@
 - [x] Fix (printf with proper quoting)
 
 ### INS-L4. Version verification may execute wrong binary (LOW)
-- [x] Fix (uses $INSTALL_DIR/witnessd --version)
+- [x] Fix (uses $INSTALL_DIR/writerslogic --version)
 
 ---
 
@@ -1421,13 +1421,13 @@
 - [x] Fix (cargo build --release)
 
 ### PKG-H1. Debian .install references witnessctl (HIGH)
-- [x] Fix (witnessd + NMH only)
+- [x] Fix (writerslogic + NMH only)
 
 ### PKG-H2. RPM spec references non-existent binaries/paths (HIGH)
 - [x] Fix (correct paths)
 
 ### PKG-M1. AppImage desktop action references witnessctl (MEDIUM)
-- [x] Fix (witnessd verify)
+- [x] Fix (wld verify)
 
 ### PKG-M2. SELinux file contexts reference witnessctl (MEDIUM)
 - [x] Fix (no witnessctl references)
@@ -1539,14 +1539,14 @@
 
 ## Production Readiness Quick Wins (Session 9 — 2026-02-26)
 
-### REL-C2. witnessd_protocol version 0.1.0 diverges from workspace 0.2.0 (CRITICAL)
-- **File**: `crates/witnessd_protocol/Cargo.toml:3`
+### REL-C2. wld_protocol version 0.1.0 diverges from workspace 0.2.0 (CRITICAL)
+- **File**: `crates/wld_protocol/Cargo.toml:3`
 - **Fix**: Changed to `version.workspace = true` (plus `edition.workspace = true`, `authors.workspace = true`, `license.workspace = true`). Also removed stray `[profile.release]` section causing cargo warnings.
 - [x] Fix applied — protocol crate now resolves to workspace v0.2.0
 
 ### REL-H2. install.sh references wrong repository name (HIGH)
-- **File**: `apps/witnessd_cli/install.sh:7-8`
-- **Fix**: Changed `REPO="writerslogic/witnessd-cli"` → `REPO="writerslogic/witnessd"`, `BINARY_NAME="witnessd-cli"` → `BINARY_NAME="witnessd"`, updated usage URL
+- **File**: `apps/wld_cli/install.sh:7-8`
+- **Fix**: Changed `REPO="writerslogic/writerslogic"` → `REPO="writerslogic/writerslogic"`, `BINARY_NAME="writerslogic"` → `BINARY_NAME="writerslogic"`, updated usage URL
 - [x] Fix applied
 
 ### SYS-R1. println!/eprintln! regression in engine library code — ~29 instances (HIGH)
@@ -1561,21 +1561,21 @@
 
 ### REL-M1. Makefile env var inconsistency (MEDIUM)
 - **File**: `Makefile:13`
-- **Fix**: Changed `WITNESSD_MOCK_KEYCHAIN=1` → `WITNESSD_NO_KEYCHAIN=1`
+- **Fix**: Changed `WLD_MOCK_KEYCHAIN=1` → `WLD_NO_KEYCHAIN=1`
 - [x] Fix applied
 
 ### BE-L1. activeTab permission still present in manifest (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/manifest.json:8`
+- **File**: `apps/wld_cli/browser-extension/manifest.json:8`
 - **Fix**: Removed `"activeTab"`, replaced with `"alarms"` in permissions array
 - [x] Fix applied
 
 ### BE-M7. No CSP in manifest (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/manifest.json`
+- **File**: `apps/wld_cli/browser-extension/manifest.json`
 - **Fix**: Added `"content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'"}`
 - [x] Fix applied
 
 ### ENG-C1. Bare .unwrap() on store mutex in hot path (HIGH — missed in S1 sweep)
-- **File**: `crates/witnessd_engine/src/engine.rs:352`
+- **File**: `crates/wld_engine/src/engine.rs:352`
 - **Fix**: Changed `.lock().unwrap()` → `.lock().unwrap_or_else(|p| p.into_inner())` to match all other mutex locks in the file
 - [x] Fix applied
 
@@ -1591,7 +1591,7 @@
 - [x] Verified: matrix strategy with `runs-on` and `target` pairs confirmed
 
 ### REL-H3. install.sh archive naming mismatch (HIGH)
-- **File**: `apps/witnessd_cli/install.sh`
+- **File**: `apps/wld_cli/install.sh`
 - **Fix**: Correct REPO, BINARY_NAME, archive naming convention
 - [x] Verified: script references correct repo and binary names
 
@@ -1601,12 +1601,12 @@
 - [x] Verified: workflow file exists with all 3 jobs
 
 ### BE-H6. Jitter integration not wired in NMH (HIGH)
-- **File**: `apps/witnessd_cli/src/native_messaging_host.rs:362-411`
+- **File**: `apps/wld_cli/src/native_messaging_host.rs:362-411`
 - **Fix**: `handle_inject_jitter()` fully implemented with validation, stats, and evidence writing
 - [x] Verified: function reads intervals, filters plausible range, computes stats, appends to evidence file
 
 ### PROTO-H2. Protocol crate missing rust-version (HIGH)
-- **File**: `crates/witnessd_protocol/Cargo.toml`
+- **File**: `crates/wld_protocol/Cargo.toml`
 - **Fix**: Added `rust-version = "1.75.0"`
 - [x] Verified: line 12 contains `rust-version = "1.75.0"`
 
@@ -1616,12 +1616,12 @@
 - [x] Verified: fields present in all workspace Cargo.toml files
 
 ### BE-M2. storageKey() helper missing in options.js (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/options.js`
+- **File**: `apps/wld_cli/browser-extension/options.js`
 - **Fix**: Added `storageKey()` helper for consistent key generation
 - [x] Verified: function present
 
 ### BE-M4. observerRetries unbounded in content.js (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/content.js`
+- **File**: `apps/wld_cli/browser-extension/content.js`
 - **Fix**: Added bounded retry with max retries constant
 - [x] Verified: retry limit implemented
 
@@ -1631,27 +1631,27 @@
 - [x] Verified: parameterized in both scripts
 
 ### BE-M6. type:module in manifest.json (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/manifest.json`
+- **File**: `apps/wld_cli/browser-extension/manifest.json`
 - **Fix**: Removed `"type": "module"` from background service worker
 - [x] Verified: field removed
 
 ### BE-M8. Firefox manifest still MV2 (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/manifest-firefox.json`
+- **File**: `apps/wld_cli/browser-extension/manifest-firefox.json`
 - **Fix**: Upgraded to MV3 format
 - [x] Verified: manifest_version is 3
 
 ### BE-L2. Static version string in popup.html (MEDIUM)
-- **File**: `apps/witnessd_cli/browser-extension/popup.html`
+- **File**: `apps/wld_cli/browser-extension/popup.html`
 - **Fix**: Dynamic version display from manifest
 - [x] Verified: version pulled from runtime API
 
 ### JIT-M1. "Zero Unsafe Code" claim incorrect (MEDIUM)
-- **File**: `crates/witnessd_jitter/README.md`
+- **File**: `crates/wld_jitter/README.md`
 - **Fix**: Added qualifier noting unsafe only in optional deps
 - [x] Verified: README updated with accurate claim
 
 ### JIT-M2. chain_hash → chain_mac rename incomplete (MEDIUM)
-- **File**: `crates/witnessd_jitter/src/model.rs`
+- **File**: `crates/wld_jitter/src/model.rs`
 - **Fix**: Renamed `chain_hash` to `chain_mac` for consistency
 - [x] Verified: field correctly named `chain_mac`
 

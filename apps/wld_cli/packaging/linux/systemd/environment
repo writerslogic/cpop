@@ -1,0 +1,39 @@
+# /etc/wld/environment
+# Environment variables for wld daemon
+
+# Log level: debug, info, warn, error
+# WLD_LOG_LEVEL=info
+
+# Data directory for MMR database and witness logs
+# WLD_DATA_DIR=/var/lib/wld
+
+# Configuration file path
+# WLD_CONFIG=/etc/wld/config.toml
+
+# Socket path for IPC
+# WLD_SOCKET=/run/wld/wld.sock
+
+# Enable verbose logging
+# WLD_VERBOSE=false
+
+# Anchor configuration
+# WLD_ANCHOR_INTERVAL=3600
+
+# Privacy settings
+# WLD_PRIVACY_MODE=strict
+
+# Performance tuning
+# WLD_BUFFER_SIZE=4096
+# WLD_FLUSH_INTERVAL=60
+
+# TLS settings (for remote anchoring)
+# WLD_TLS_CERT=/etc/wld/tls/cert.pem
+# WLD_TLS_KEY=/etc/wld/tls/key.pem
+
+# Keybase integration
+# WLD_KEYBASE_USERNAME=
+# WLD_KEYBASE_ENABLE=false
+
+# Blockchain anchoring
+# WLD_BLOCKCHAIN_ENABLE=false
+# WLD_BLOCKCHAIN_NETWORK=mainnet

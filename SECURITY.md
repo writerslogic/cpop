@@ -43,12 +43,12 @@ We follow coordinated disclosure:
 
 ### Threat Model
 
-witnessd provides cryptographic evidence of file authorship. The security
+WritersLogic provides cryptographic evidence of file authorship. The security
 model assumes:
 
 **Trusted Components:**
 - Local kernel and hardware (including TPM when used)
-- The user account running witnessd
+- The user account running WritersLogic
 - The filesystem's access control enforcement
 
 **Protected Against:**
@@ -93,18 +93,18 @@ Root:     0x02 || peak_bag_hash
 
 ```bash
 # Create dedicated system user
-sudo useradd -r -s /sbin/nologin -d /var/lib/witnessd witnessd
+sudo useradd -r -s /sbin/nologin -d /var/lib/writerslogic writerslogic
 
 # Restrictive permissions
-chmod 700 /var/lib/witnessd
-chmod 600 /var/lib/witnessd/config.toml
-chmod 400 /var/lib/witnessd/signing.key
+chmod 700 /var/lib/writerslogic
+chmod 600 /var/lib/writerslogic/config.toml
+chmod 400 /var/lib/writerslogic/signing.key
 
 # Use TPM-sealed keys (recommended)
-witnessd init --tpm-sealed
+wld init --tpm-sealed
 
 # Enable audit logging
-witnessd --log-level=info --audit-log=/var/log/witnessd/audit.log
+WritersLogic --log-level=info --audit-log=/var/log/writerslogic/audit.log
 ```
 
 ### Linux Capabilities
@@ -113,16 +113,16 @@ Instead of running as root, grant specific capabilities:
 
 ```bash
 # Required for TPM access
-sudo setcap cap_sys_admin+ep /usr/local/bin/witnessd
+sudo setcap cap_sys_admin+ep /usr/local/bin/writerslogic
 
 # Or use the provided udev rules for non-root TPM access
-sudo cp rules.d/99-witnessd-tpm.rules /etc/udev/rules.d/
+sudo cp rules.d/99-writerslogic-tpm.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
 ### Systemd Hardening
 
-See `contrib/witnessd.service` for a hardened systemd unit with:
+See `contrib/writerslogic.service` for a hardened systemd unit with:
 - `ProtectSystem=strict`
 - `PrivateTmp=true`
 - `NoNewPrivileges=true`

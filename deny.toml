@@ -1,4 +1,4 @@
-# cargo-deny configuration for witnessd workspace
+# cargo-deny configuration for WritersLogic workspace
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
@@ -28,7 +28,7 @@ confidence-threshold = 0.8
 # The CLI is GPL-3.0 but that's an internal workspace member
 [[licenses.exceptions]]
 allow = ["GPL-3.0-only"]
-crates = ["witnessd_cli"]
+crates = ["wld_cli"]
 
 [bans]
 multiple-versions = "warn"

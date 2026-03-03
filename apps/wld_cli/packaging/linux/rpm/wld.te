@@ -1,0 +1,97 @@
+# SELinux Type Enforcement Policy for wld
+#
+# This policy module provides SELinux confinement for the wld daemon.
+# It allows the daemon to perform its cryptographic authorship witnessing
+# functions while maintaining security isolation.
+#
+# To compile and install:
+#   checkmodule -M -m -o wld.mod wld.te
+#   semodule_package -o wld.pp -m wld.mod
+#   semodule -i wld.pp
+#
+# Or use the provided Makefile target:
+#   make selinux
+
+policy_module(wld, 1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+type wld_t;
+type wld_exec_t;
+init_daemon_domain(wld_t, wld_exec_t)
+
+type wld_var_lib_t;
+files_type(wld_var_lib_t)
+
+type wld_var_log_t;
+logging_log_file(wld_var_log_t)
+
+type wld_etc_t;
+files_config_file(wld_etc_t)
+
+type wld_var_run_t;
+files_pid_file(wld_var_run_t)
+
+type wld_tmp_t;
+files_tmp_file(wld_tmp_t)
+
+########################################
+#
+# wld local policy
+#
+
+# Allow reading its own config
+allow wld_t wld_etc_t:dir list_dir_perms;
+allow wld_t wld_etc_t:file read_file_perms;
+
+# Allow managing its own data
+allow wld_t wld_var_lib_t:dir create_dir_perms;
+allow wld_t wld_var_lib_t:file create_file_perms;
+allow wld_t wld_var_lib_t:lnk_file { create read unlink };
+
+# Allow logging
+allow wld_t wld_var_log_t:dir create_dir_perms;
+allow wld_t wld_var_log_t:file create_file_perms;
+logging_log_filetrans(wld_t, wld_var_log_t, file)
+
+# Allow runtime files (socket, pid)
+allow wld_t wld_var_run_t:dir create_dir_perms;
+allow wld_t wld_var_run_t:file create_file_perms;
+allow wld_t wld_var_run_t:sock_file create_file_perms;
+files_pid_filetrans(wld_t, wld_var_run_t, { file sock_file dir })
+
+# Allow temporary files
+allow wld_t wld_tmp_t:dir create_dir_perms;
+allow wld_t wld_tmp_t:file create_file_perms;
+files_tmp_filetrans(wld_t, wld_tmp_t, { file dir })
+
+# Network access (for timestamping anchors)
+allow wld_t self:tcp_socket create_stream_socket_perms;
+allow wld_t self:udp_socket create_socket_perms;
+corenet_tcp_connect_http_port(wld_t)
+corenet_tcp_connect_https_port(wld_t)
+
+# Allow reading passwd for user info
+auth_use_nsswitch(wld_t)
+
+# Allow signaling self
+allow wld_t self:process { signal signull };
+
+# Allow using its own unix sockets
+allow wld_t self:unix_stream_socket create_stream_socket_perms;
+allow wld_t self:unix_dgram_socket create_socket_perms;
+
+# Misc
+kernel_read_system_state(wld_t)
+files_read_etc_files(wld_t)
+miscfiles_read_localization(wld_t)
+
+########################################
+#
+# File context definitions (to be used with wld.fc)
+#
+
+# See wld.fc for file context definitions

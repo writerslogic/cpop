@@ -1,0 +1,250 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+/// Result of an evidence verification operation.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiVerifyResult {
+    pub success: bool,
+    pub checkpoint_count: u32,
+    pub signature_valid: bool,
+    pub chain_integrity: bool,
+    pub swf_iterations_per_second: u64,
+    pub attestation_tier: u8,
+    pub attestation_tier_label: String,
+    pub error_message: Option<String>,
+}
+
+/// Generic FFI result for operations that return success/error.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiResult {
+    pub success: bool,
+    pub message: Option<String>,
+    pub error_message: Option<String>,
+}
+
+/// Result of forensic analysis.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiForensicResult {
+    pub success: bool,
+    pub assessment_score: f64,
+    pub risk_level: String,
+    pub anomaly_count: u32,
+    pub monotonic_append_ratio: f64,
+    pub edit_entropy: f64,
+    pub median_interval: f64,
+    pub error_message: Option<String>,
+}
+
+/// Result of process score computation.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiProcessScore {
+    pub success: bool,
+    pub residency: f64,
+    pub sequence: f64,
+    pub behavioral: f64,
+    pub composite: f64,
+    pub meets_threshold: bool,
+    pub error_message: Option<String>,
+}
+
+/// Result of SWF (Sequential Work Function) calibration.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiCalibrationResult {
+    pub success: bool,
+    pub iterations_per_second: u64,
+    pub error_message: Option<String>,
+}
+
+/// Tracked file information returned by ffi_list_tracked_files.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiTrackedFile {
+    pub path: String,
+    pub last_checkpoint_ns: i64,
+    pub checkpoint_count: i64,
+    pub forensic_score: f64,
+    pub risk_level: String,
+}
+
+/// Checkpoint log entry returned by ffi_get_log.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiLogEntry {
+    pub ordinal: u64,
+    pub timestamp_ns: i64,
+    pub content_hash: String,
+    pub file_size: i64,
+    pub size_delta: i32,
+    pub message: Option<String>,
+}
+
+/// Status information returned by ffi_get_status.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiStatus {
+    pub initialized: bool,
+    pub data_dir: String,
+    pub tracked_file_count: u32,
+    pub total_checkpoints: u64,
+    pub swf_iterations_per_second: u64,
+    pub error_message: Option<String>,
+}
+
+/// Dashboard metrics returned by ffi_get_dashboard_metrics.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiDashboardMetrics {
+    pub success: bool,
+    pub total_files: u32,
+    pub total_checkpoints: u64,
+    pub total_words_witnessed: u64,
+    pub current_streak_days: u32,
+    pub longest_streak_days: u32,
+    pub active_days_30d: u32,
+    pub error_message: Option<String>,
+}
+
+/// Activity data point for heatmap display.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiActivityPoint {
+    pub day_timestamp: i64,
+    pub checkpoint_count: u32,
+}
+
+/// Hardware attestation information.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiAttestationInfo {
+    pub tier: u8,
+    pub tier_label: String,
+    pub provider_type: String,
+    pub hardware_bound: bool,
+    pub supports_sealing: bool,
+    pub has_monotonic_counter: bool,
+    pub has_secure_clock: bool,
+    pub device_id: String,
+}
+
+/// Challenge-response attestation result.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiAttestationResponse {
+    pub success: bool,
+    pub signature_b64: String,
+    pub public_key_b64: String,
+    pub device_id: String,
+    pub model: String,
+    pub os_version: String,
+    pub error_message: Option<String>,
+}
+
+/// Device public key information for attestation.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiDeviceKey {
+    pub public_key_b64: String,
+    pub device_id: String,
+    pub hardware_bound: bool,
+}
+
+/// Ephemeral session start result.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiEphemeralSessionResult {
+    pub success: bool,
+    pub session_id: String,
+    pub error_message: Option<String>,
+}
+
+/// Ephemeral session finalize result.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiEphemeralFinalizeResult {
+    pub success: bool,
+    pub war_block: String,
+    pub compact_ref: String,
+    pub error_message: Option<String>,
+}
+
+/// Ephemeral session status result.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiEphemeralStatusResult {
+    pub success: bool,
+    pub checkpoint_count: u64,
+    pub keystroke_count: u64,
+    pub elapsed_secs: f64,
+    pub error_message: Option<String>,
+}
+
+/// Sentinel daemon status.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiSentinelStatus {
+    pub running: bool,
+    pub tracked_file_count: u32,
+    pub tracked_files: Vec<String>,
+    pub uptime_secs: u64,
+    pub keystroke_count: u64,
+    pub focus_duration: String,
+}
+
+/// Live witnessing status for the active session.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiWitnessingStatus {
+    pub is_tracking: bool,
+    pub document_path: Option<String>,
+    pub keystroke_count: u64,
+    pub elapsed_secs: f64,
+    pub change_count: u64,
+    pub save_count: u64,
+    pub checkpoint_count: u64,
+    pub forensic_score: f64,
+    pub error_message: Option<String>,
+}
+
+/// Fingerprint status information.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiFingerprintStatus {
+    pub voice_enabled: bool,
+    pub voice_samples: u64,
+    pub voice_consent: bool,
+    pub activity_enabled: bool,
+    pub activity_samples: u64,
+}
+
+/// Fingerprint consent result.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiConsentResult {
+    pub success: bool,
+    pub consent_given: bool,
+    pub error_message: Option<String>,
+}
+
+/// Fingerprint summary for display.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiFingerprintSummary {
+    pub success: bool,
+    pub dimensions: Vec<FfiFingerprintDimension>,
+    pub quality_score: f64,
+    pub total_samples: u64,
+    pub error_message: Option<String>,
+}
+
+/// Single fingerprint dimension for display.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiFingerprintDimension {
+    pub name: String,
+    pub value: f64,
+    pub confidence: f64,
+}

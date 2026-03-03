@@ -1,0 +1,36 @@
+# linuxdeploy configuration for WritersLogic AppImage
+# https://github.com/linuxdeploy/linuxdeploy
+
+appimage:
+  name: writerslogic
+  version: "1.0.0"
+  arch: x86_64
+  update-information: gh-releases-zsync|writerslogic|writerslogic|latest|writerslogic-*x86_64.AppImage.zsync
+
+# Files to include
+files:
+  - source: usr/bin/wld
+    destination: usr/bin/wld
+  - source: usr/bin/witnessctl
+    destination: usr/bin/witnessctl
+  - source: usr/bin/wld-ibus
+    destination: usr/bin/wld-ibus
+  - source: usr/share/applications/wld.desktop
+    destination: usr/share/applications/wld.desktop
+  - source: usr/share/icons/hicolor/256x256/apps/wld.png
+    destination: usr/share/icons/hicolor/256x256/apps/wld.png
+  - source: usr/share/metainfo/wld.appdata.xml
+    destination: usr/share/metainfo/wld.appdata.xml
+
+# Runtime configuration
+runtime:
+  # Embed update information for AppImageUpdate
+  update-information: true
+
+# Desktop integration
+desktop-integration:
+  enable: true
+
+# Environment variables
+environment:
+  WRITERSLOGIC_APPIMAGE: "1"

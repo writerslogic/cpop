@@ -1,5 +1,5 @@
 <p align="center">
-  <strong>witnessd-core</strong><br>
+  <strong>writerslogic-core</strong><br>
   Cryptographic authorship witnessing for writers and creators
 </p>
 
@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/writerslogic/witnessd/actions"><img src="https://github.com/writerslogic/witnessd/workflows/CI/badge.svg" alt="Build Status"></a>
+  <a href="https://github.com/writerslogic/writerslogic/actions"><img src="https://github.com/writerslogic/writerslogic/workflows/CI/badge.svg" alt="Build Status"></a>
   <a href="https://slsa.dev/spec/v1.0/levels#build-l3"><img src="https://slsa.dev/images/gh-badge-level3.svg" alt="SLSA Level 3"></a>
   <img src="https://img.shields.io/badge/rust-1.75%2B-orange" alt="Rust">
-  <a href="https://github.com/writerslogic/witnessd/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
+  <a href="https://github.com/writerslogic/writerslogic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/Patent-US%2019%2F460%2C364%20Pending-blue" alt="Patent Pending">
 </p>
 
@@ -26,18 +26,18 @@
 
 ## Overview
 
-**witnessd-core** is the cryptographic core library that produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
+**writerslogic-core** is the cryptographic core library that produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
 
-This monorepo contains the full witnessd ecosystem:
+This monorepo contains the full WritersLogic ecosystem:
 
 | Component | Path | Description | License |
 |:----------|:-----|:------------|:--------|
-| **witnessd_engine** | [`crates/witnessd_engine`](crates/witnessd_engine) | Cryptographic engine | AGPL-3.0-only |
-| **witnessd_protocol** | [`crates/witnessd_protocol`](crates/witnessd_protocol) | PoP wire format & forensic models | AGPL-3.0-only |
-| **witnessd_jitter** | [`crates/witnessd_jitter`](crates/witnessd_jitter) | Hardware timing entropy | AGPL-3.0-only |
-| **witnessd_cli** | [`apps/witnessd_cli`](apps/witnessd_cli) | CLI & Linux packaging | AGPL-3.0-only |
-| **witnessd_macos** | [`apps/witnessd_macos`](apps/witnessd_macos) | macOS desktop app | Proprietary |
-| **witnessd_windows** | [`apps/witnessd_windows`](apps/witnessd_windows) | Windows desktop app | Proprietary |
+| **wld_engine** | [`crates/wld_engine`](crates/wld_engine) | Cryptographic engine | AGPL-3.0-only |
+| **wld_protocol** | [`crates/wld_protocol`](crates/wld_protocol) | PoP wire format & forensic models | AGPL-3.0-only |
+| **wld_jitter** | [`crates/wld_jitter`](crates/wld_jitter) | Hardware timing entropy | AGPL-3.0-only |
+| **wld_cli** | [`apps/wld_cli`](apps/wld_cli) | CLI & Linux packaging | AGPL-3.0-only |
+| **wld_macos** | [`apps/wld_macos`](apps/wld_macos) | macOS desktop app | Proprietary |
+| **wld_windows** | [`apps/wld_windows`](apps/wld_windows) | Windows desktop app | Proprietary |
 
 ## Usage
 
@@ -45,7 +45,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-witnessd-core = { git = "https://github.com/writerslogic/witnessd", branch = "main" }
+writerslogic-core = { git = "https://github.com/writerslogic/writerslogic", branch = "main" }
 ```
 
 ## Features
@@ -53,7 +53,7 @@ witnessd-core = { git = "https://github.com/writerslogic/witnessd", branch = "ma
 | Feature | Description |
 |:--------|:------------|
 | `default` | Core library without optional features |
-| `witnessd_jitter` | Hardware entropy via PhysJitter |
+| `wld_jitter` | Hardware entropy via PhysJitter |
 | `secure-enclave` | macOS Secure Enclave support |
 | `x11` | X11 focus detection on Linux |
 | `ffi` | UniFFI bindings for Swift/Kotlin |
@@ -61,9 +61,9 @@ witnessd-core = { git = "https://github.com/writerslogic/witnessd", branch = "ma
 ## Architecture
 
 ```
-witnessd/
+writerslogic/
 ├── crates/
-│   ├── witnessd_engine/    High-performance cryptographic engine
+│   ├── wld_engine/    High-performance cryptographic engine
 │   │   └── src/
 │   │       ├── analysis/   Signal analysis and behavioral metrics
 │   │       ├── anchors/    Blockchain and timestamp anchoring
@@ -77,12 +77,12 @@ witnessd/
 │   │       ├── rfc/        RFC implementations
 │   │       ├── tpm/        TPM 2.0 integration
 │   │       └── vdf/        Verifiable Delay Functions
-│   ├── witnessd_protocol/  PoP wire format (CBOR/COSE)
-│   └── witnessd_jitter/    Hardware timing entropy
+│   ├── wld_protocol/  PoP wire format (CBOR/COSE)
+│   └── wld_jitter/    Hardware timing entropy
 ├── apps/
-│   ├── witnessd_cli/       Command-line interface
-│   ├── witnessd_macos/     Native macOS app (submodule)
-│   └── witnessd_windows/   Native Windows app (submodule)
+│   ├── wld_cli/       Command-line interface
+│   ├── wld_macos/     Native macOS app (submodule)
+│   └── wld_windows/   Native Windows app (submodule)
 ├── docs/                   Schemas, specs, and user guides
 └── wiki/                   GitHub Wiki pages
 ```
@@ -99,27 +99,27 @@ cargo audit && cargo deny check # Security audit
 ## Security & Privacy
 
 > [!IMPORTANT]
-> witnessd provides **independently verifiable, tamper-evident process evidence**, not absolute proof. The value lies in converting unsubstantiated doubt into testable claims across independent trust boundaries.
+> WritersLogic provides **independently verifiable, tamper-evident process evidence**, not absolute proof. The value lies in converting unsubstantiated doubt into testable claims across independent trust boundaries.
 
 ### Privacy & External Interactions
 
-Witnessd is designed with a strictly **offline-first and privacy-preserving** architecture. Core witnessing, keystroke capture, and evidence generation occur entirely on your local machine.
+WritersLogic is designed with a strictly **offline-first and privacy-preserving** architecture. Core witnessing, keystroke capture, and evidence generation occur entirely on your local machine.
 
 However, the applications interact with the following external domains for specific enhanced features:
 
 *   **Verification Portal (`writersproof.com/verify`):** Provides a browser-based tool for verifying `.wpkt` evidence packets. This process runs client-side in your browser; evidence data is never uploaded to our servers.
-*   **Attestation API (`api.writersproof.com`):** Used for "Tier 3" and "Tier 4" evidence to request anti-replay nonces and receive cloud-signed attestation certificates.
+*   **Attestation API (`writerslogic.com/api`):** Used for "Tier 3" and "Tier 4" evidence to request anti-replay nonces and receive cloud-signed attestation certificates.
 *   **Schema Registry (`protocol.writersproof.com`):** Hosts the JSON schemas and DID (Decentralized Identifier) resolution data used for protocol compliance.
 
-For a detailed breakdown of our privacy model, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/witnessd/wiki/Privacy-&-External-Interactions)**.
+For a detailed breakdown of our privacy model, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/writerslogic/wiki/Privacy-&-External-Interactions)**.
 
 See [SECURITY.md](SECURITY.md) for the security policy.
 
 ## Citation
 
 ```bibtex
-@article{condrey2026witnessd,
-  title={Witnessd: Proof-of-process via Adversarial Collapse},
+@article{condrey2026writerslogic,
+  title={WritersLogic: Proof-of-process via Adversarial Collapse},
   author={Condrey, David},
   journal={arXiv preprint arXiv:2602.01663},
   year={2026},

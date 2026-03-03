@@ -6,21 +6,21 @@
 
 ## Overview
 
-Witnessd is designed to be integrated into third-party applications (editors, IDEs, LMS platforms) to provide native authorship witnessing. This guide outlines the two primary integration paths: **Direct FFI** (preferred for native apps) and **IPC/CLI** (preferred for web or sandbox-constrained environments).
+WritersLogic is designed to be integrated into third-party applications (editors, IDEs, LMS platforms) to provide native authorship witnessing. This guide outlines the two primary integration paths: **Direct FFI** (preferred for native apps) and **IPC/CLI** (preferred for web or sandbox-constrained environments).
 
 ## 1. Direct FFI Integration (UniFFI)
 
-The `witnessd_engine` crate exports a C-compatible FFI layer using **UniFFI**. This allows native apps (macOS/Swift, Windows/C#, Linux/Kotlin) to call the engine directly without the overhead of subprocesses.
+The `wld_engine` crate exports a C-compatible FFI layer using **UniFFI**. This allows native apps (macOS/Swift, Windows/C#, Linux/Kotlin) to call the engine directly without the overhead of subprocesses.
 
 ### Available Bindings
-- **Swift:** Bundled in `witnessd_macos` as `WitnessdEngineFFI.xcframework`.
-- **C# / WinUI:** Integrated via the `WitnessdCoreFFI.dll`.
+- **Swift:** Bundled in `wld_macos` as `WritersLogicEngineFFI.xcframework`.
+- **C# / WinUI:** Integrated via the `WritersLogicCoreFFI.dll`.
 - **Kotlin:** Generated bindings available for Linux desktop integrations.
 
 ### Key API Pattern
 ```swift
 // Example: Creating a checkpoint from a native app
-import WitnessdEngineFFI
+import WritersLogicEngineFFI
 
 func performCheckpoint(path: String) {
     let result = ffiCreateCheckpoint(path: path, message: "Manual save")
@@ -34,9 +34,9 @@ func performCheckpoint(path: String) {
 
 ## 2. IPC Integration (Daemon-Mode)
 
-For web applications or sandboxed apps that cannot link native libraries, the `witnessd` daemon provides a local Unix Socket (or Named Pipe on Windows) for asynchronous communication.
+For web applications or sandboxed apps that cannot link native libraries, the `wld` daemon provides a local Unix Socket (or Named Pipe on Windows) for asynchronous communication.
 
-- **Address:** `~/.witnessd/witnessd.sock` (Unix) or `\.\pipe\witnessd` (Windows).
+- **Address:** `~/.writerslogic/writerslogic.sock` (Unix) or `\.\pipe\writerslogic` (Windows).
 - **Format:** JSON-RPC over the socket.
 
 ### Lifecycle Management
@@ -47,8 +47,8 @@ Vendors should generally use the **Sentinel** to handle background capture:
 ## 3. Web-App Integration (Browser Extension)
 
 If you are a vendor building a web-based editor (e.g., Google Docs, Notion):
-1. **Native Messaging:** Utilize the `witnessd-native-messaging-host` to bridge your web app to the local daemon.
-2. **PostMessage API:** The Witnessd browser extension exposes a `window.postMessage` interface that web apps can use to signal "Save" or "Checkpoint" events without direct daemon access.
+1. **Native Messaging:** Utilize the `writerslogic-native-messaging-host` to bridge your web app to the local daemon.
+2. **PostMessage API:** The WritersLogic browser extension exposes a `window.postMessage` interface that web apps can use to signal "Save" or "Checkpoint" events without direct daemon access.
 
 ## 4. Best Practices for Vendors
 
@@ -58,16 +58,16 @@ If you are a vendor building a web-based editor (e.g., Google Docs, Notion):
 - **Use the Forensic Score:** Display the real-time Authorship Score in your UI to give users immediate feedback on their evidence integrity.
 
 ### Don't:
-- **Don't store keys yourself:** Let the Witnessd engine handle the Tier 0-2 key hierarchy and hardware binding.
-- **Don't modify the data directory:** All integrity checks rely on the engine's ownership of `~/.witnessd`.
+- **Don't store keys yourself:** Let the WritersLogic engine handle the Tier 0-2 key hierarchy and hardware binding.
+- **Don't modify the data directory:** All integrity checks rely on the engine's ownership of `~/.writerslogic`.
 
 ## 5. Security & Privacy Disclosure
 
-When integrating Witnessd, vendors should be aware of the following external domain interactions:
+When integrating WritersLogic, vendors should be aware of the following external domain interactions:
 
 - **Local-First:** Core witnessing and authorship capture are strictly local and offline-first. Content never leaves the user's device.
 - **Verification:** Verification of evidence packets typically occurs at `writersproof.com/verify`, which uses a client-side (WASM) engine to maintain privacy.
-- **Attestation:** Enhanced evidence (Tiers 3/4) periodically interacts with `api.writersproof.com` for nonces and attestation certificates.
+- **Attestation:** Enhanced evidence (Tiers 3/4) periodically interacts with `writerslogic.com/api` for nonces and attestation certificates.
 
 Vendors are encouraged to link to the **[[Privacy & External Interactions]]** page in their own documentation to provide transparency to users.
 

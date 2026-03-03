@@ -1,0 +1,37 @@
+Source: wld
+Section: utils
+Priority: optional
+Maintainer: David Condrey <david@condrey.dev>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.21), git
+Standards-Version: 4.6.2
+Homepage: https://github.com/writerslogic/wld
+Vcs-Browser: https://github.com/writerslogic/wld
+Vcs-Git: https://github.com/writerslogic/wld.git
+Rules-Requires-Root: no
+
+Package: wld
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: ibus (>= 1.5)
+Suggests: wld-ibus
+Description: Cryptographic authorship witnessing daemon
+ WritersLogic provides cryptographic authorship witnessing through kinetic
+ proof of provenance. It captures keystroke dynamics and timing patterns
+ to create unforgeable evidence of human authorship.
+ .
+ Features:
+  - Merkle Mountain Range (MMR) append-only log
+  - Ed25519 digital signatures
+  - Privacy-preserving keystroke biometrics
+  - Multi-anchor timestamping (blockchain, Keybase, etc.)
+  - Forensic analysis toolkit
+
+Package: wld-ibus
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, wld (= ${binary:Version}), ibus (>= 1.5)
+Description: IBus integration for wld
+ IBus input method engine for wld that captures keystroke dynamics
+ through the Linux input method framework.
+ .
+ This package provides system-wide keystroke witnessing through IBus
+ without requiring elevated privileges.
