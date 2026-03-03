@@ -1,36 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 //! Pure HMAC-based jitter engine (economic security model).
-//!
-//! Provides deterministic jitter computation using only cryptographic primitives.
-//! Security relies on economic cost of retyping content identically.
 
 use crate::{Jitter, JitterEngine, PhysHash};
 
-/// Pure jitter engine using HMAC for deterministic delay computation.
-///
-/// Security model: Economic - attacker would need to retype content
-/// character-by-character to reproduce the jitter sequence.
 #[derive(Debug, Clone)]
 pub struct PureJitter {
-    /// Minimum jitter delay in microseconds.
     pub jmin: u32,
-    /// Range for jitter variation in microseconds.
     pub range: u32,
 }
 
 impl Default for PureJitter {
     fn default() -> Self {
         Self {
-            jmin: 500,   // 500μs minimum
-            range: 2500, // Up to 3000μs total
+            jmin: 500,
+            range: 2500,
         }
     }
 }
 
 impl PureJitter {
-    /// Create with custom parameters.
-    ///
     /// # Panics
     /// Panics if `range` is 0.
     pub fn new(jmin: u32, range: u32) -> Self {
@@ -38,7 +27,6 @@ impl PureJitter {
         Self { jmin, range }
     }
 
-    /// Create with custom parameters, returning None if invalid.
     pub fn try_new(jmin: u32, range: u32) -> Option<Self> {
         if range == 0 {
             None
