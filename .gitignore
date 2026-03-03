@@ -51,3 +51,6 @@ vendor/
 
 # Scratchpad
 .scratchpad/
+
+# Supabase (deployment config — keep private)
+supabase/
