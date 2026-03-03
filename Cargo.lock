@@ -5031,7 +5031,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
 
 [[package]]
-name = "witnessd_cli"
+name = "wld_cli"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -5051,12 +5051,12 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
- "witnessd_engine",
+ "wld_engine",
  "zeroize",
 ]
 
 [[package]]
-name = "witnessd_engine"
+name = "wld_engine"
 version = "0.2.0"
 dependencies = [
  "accessibility",
@@ -5126,14 +5126,14 @@ dependencies = [
  "urlencoding",
  "uuid",
  "windows 0.59.0",
- "witnessd_jitter",
- "witnessd_protocol",
+ "wld_jitter",
+ "wld_protocol",
  "x11rb",
  "zeroize",
 ]
 
 [[package]]
-name = "witnessd_jitter"
+name = "wld_jitter"
 version = "0.2.0"
 dependencies = [
  "criterion",
@@ -5151,7 +5151,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "witnessd_protocol"
+name = "wld_protocol"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -5178,7 +5178,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "wasm-bindgen",
- "witnessd_jitter",
+ "wld_jitter",
  "x509-cert",
  "zeroize",
 ]

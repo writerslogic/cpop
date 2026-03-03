@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Witnessd can be configured through configuration files, environment variables, and command-line flags. This guide covers all available options.
+WritersLogic can be configured through configuration files, environment variables, and command-line flags. This guide covers all available options.
 
 ## Table of Contents
 
@@ -22,20 +22,20 @@ Witnessd can be configured through configuration files, environment variables, a
 
 | Platform | Path |
 |----------|------|
-| macOS/Linux | `~/.witnessd/config.json` |
-| macOS App | `~/Library/Application Support/Witnessd/config.json` |
+| macOS/Linux | `~/.writerslogic/config.json` |
+| macOS App | `~/Library/Application Support/WritersLogic/config.json` |
 
 ### Custom Location
 
-Use the `--config` flag or `WITNESSD_CONFIG` environment variable:
+Use the `--config` flag or `WLD_CONFIG` environment variable:
 
 ```bash
-witnessd --config /path/to/config.json status
+WritersLogic --config /path/to/config.json status
 ```
 
 ## Configuration File Format
 
-Witnessd uses JSON configuration with the following structure:
+WritersLogic uses JSON configuration with the following structure:
 
 ```json
 {
@@ -50,16 +50,16 @@ Witnessd uses JSON configuration with the following structure:
 
 ### TOML Alternative
 
-For the legacy daemon mode, TOML configuration is also supported at `~/.witnessd/config.toml`:
+For the legacy daemon mode, TOML configuration is also supported at `~/.writerslogic/config.toml`:
 
 ```toml
 watch_paths = ["~/Documents"]
 interval = 5
-database_path = "~/.witnessd/mmr.db"
-log_path = "~/.witnessd/witnessd.log"
-signing_key_path = "~/.witnessd/signing_key"
-signatures_path = "~/.witnessd/signatures.sigs"
-event_store_path = "~/.witnessd/events.db"
+database_path = "~/.writerslogic/mmr.db"
+log_path = "~/.writerslogic/writerslogic.log"
+signing_key_path = "~/.writerslogic/signing_key"
+signatures_path = "~/.writerslogic/signatures.sigs"
+event_store_path = "~/.writerslogic/events.db"
 ```
 
 ## Core Settings
@@ -72,7 +72,7 @@ event_store_path = "~/.witnessd/events.db"
 
 ## Storage Settings
 
-Configure how witnessd stores evidence data.
+Configure how WritersLogic stores evidence data.
 
 ```json
 {
@@ -128,7 +128,7 @@ Configure the Verifiable Delay Function for timing proofs.
 Run calibration to measure your CPU's VDF performance:
 
 ```bash
-witnessd calibrate
+wld calibrate
 ```
 
 This updates `iterations_per_second` to reflect actual performance, ensuring accurate timing proofs.
@@ -196,13 +196,13 @@ Presence sessions create additional proof that the author was actively present:
 
 ```bash
 # Start a presence session
-witnessd presence start
+wld presence start
 
 # Respond to challenges when prompted
 # ...
 
 # End session
-witnessd presence stop
+wld presence stop
 ```
 
 ## Sentinel Settings
@@ -233,13 +233,13 @@ Configure the background sentinel daemon for automatic document tracking.
 
 ```bash
 # Start sentinel daemon
-witnessd sentinel start
+WritersLogic sentinel start
 
 # Check status
-witnessd sentinel status
+WritersLogic sentinel status
 
 # Stop sentinel
-witnessd sentinel stop
+WritersLogic sentinel stop
 ```
 
 ## Environment Variables
@@ -248,17 +248,17 @@ Override configuration with environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `WITNESSD_DATA_DIR` | Override data directory path |
-| `WITNESSD_CONFIG` | Path to configuration file |
-| `WITNESSD_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
-| `WITNESSD_NO_COLOR` | Disable colored output |
+| `WLD_DATA_DIR` | Override data directory path |
+| `WLD_CONFIG` | Path to configuration file |
+| `WLD_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
+| `WLD_NO_COLOR` | Disable colored output |
 
 ### Example
 
 ```bash
-export WITNESSD_DATA_DIR=/custom/path
-export WITNESSD_LOG_LEVEL=debug
-witnessd status
+export WLD_DATA_DIR=/custom/path
+export WLD_LOG_LEVEL=debug
+wld status
 ```
 
 ## macOS App Settings
@@ -269,7 +269,7 @@ The macOS app provides a graphical settings interface with additional options:
 
 | Setting | Description |
 |---------|-------------|
-| Open at Login | Launch Witnessd when you log in |
+| Open at Login | Launch WritersLogic when you log in |
 | Auto-create checkpoints | Automatically save checkpoints at intervals |
 | Checkpoint Interval | Time between auto-checkpoints (5min to 2hr) |
 | Debounce Interval | Wait time after last keystroke (100-2000ms) |

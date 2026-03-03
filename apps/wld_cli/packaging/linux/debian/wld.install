@@ -1,0 +1,3 @@
+# Files to install for wld package
+bin/wld usr/bin
+bin/witnessctl usr/bin

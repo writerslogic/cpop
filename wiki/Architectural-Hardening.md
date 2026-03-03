@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document details the high-integrity hardening measures implemented in **witnessd** to protect cryptographic material and evidence capture logic against a **white-box adversary** (a local user with root privileges and debugging tools). These measures constitute the **Tier 4** security profile of the system.
+This document details the high-integrity hardening measures implemented in **WritersLogic** to protect cryptographic material and evidence capture logic against a **white-box adversary** (a local user with root privileges and debugging tools). These measures constitute the **Tier 4** security profile of the system.
 
 ---
 
@@ -16,9 +16,9 @@ The core engine utilizes tiered memory protection to ensure that sensitive crypt
 
 ### 1.1 Physical RAM Locking (`mlock`)
 
-To prevent the operating system from swapping sensitive keys to disk (where they could be recovered via forensic analysis of the swap file), witnessd utilizes the `mlock` system call.
+To prevent the operating system from swapping sensitive keys to disk (where they could be recovered via forensic analysis of the swap file), WritersLogic utilizes the `mlock` system call.
 
-- **Mechanism:** The `ProtectedKey<N>` wrapper (see `crates/witnessd_engine/src/crypto/mem.rs`) calls `libc::mlock` on its internal buffer during initialization.
+- **Mechanism:** The `ProtectedKey<N>` wrapper (see `crates/wld_engine/src/crypto/mem.rs`) calls `libc::mlock` on its internal buffer during initialization.
 - **Scope:** Applied to all **RatchetState** keys, HMAC keys, and master seeds.
 - **Cleanup:** Memory is unlocked using `libc::munlock` and immediately overwritten with zeros via the `Zeroize` trait upon `Drop`.
 
@@ -30,7 +30,7 @@ All sensitive data structures implement the `Zeroize` and `ZeroizeOnDrop` traits
 
 ## 2. Anti-Analysis & Anti-Debugging
 
-To prevent real-time manipulation of the forensic capture loop or the VDF computation, witnessd implements platform-specific anti-analysis measures.
+To prevent real-time manipulation of the forensic capture loop or the VDF computation, WritersLogic implements platform-specific anti-analysis measures.
 
 ### 2.1 macOS: `PT_DENY_ATTACH`
 

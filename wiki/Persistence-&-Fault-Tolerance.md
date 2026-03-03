@@ -1,6 +1,6 @@
 # Persistence & Fault Tolerance Specification
 
-Witnessd is designed to ensure that no evidence is lost, even in the event of a system crash or power failure. This is achieved through a three-layer persistence stack.
+WritersLogic is designed to ensure that no evidence is lost, even in the event of a system crash or power failure. This is achieved through a three-layer persistence stack.
 
 ---
 
@@ -14,7 +14,7 @@ Witnessd is designed to ensure that no evidence is lost, even in the event of a 
 ### Layer 2: [[Glossary#WAL|Write-Ahead Log (WAL)]] (Durable)
 - **Frequency**: Every 100ms or when the buffer is full.
 - **Purpose**: Provides a persistent record of activity that hasn't been "committed" to a checkpoint yet.
-- **Recovery**: If witnessd crashes, it replays the WAL on the next start to recover any uncommitted evidence.
+- **Recovery**: If WritersLogic crashes, it replays the WAL on the next start to recover any uncommitted evidence.
 
 ### Layer 3: Permanent Record ([[Glossary#MMR|MMR]]/Database)
 - **Frequency**: Every 60 seconds (Heartbeat) or on manual Save (Cmd+S).
@@ -23,7 +23,7 @@ Witnessd is designed to ensure that no evidence is lost, even in the event of a 
 
 ## The [[Glossary#The Labyrinth|Labyrinth]]: Machine-State Entanglement
 
-To prevent an adversary from "cherry-picking" which evidence to keep, Witnessd implements **The Labyrinth**—a machine-wide Merkle Mountain Range (MMR).
+To prevent an adversary from "cherry-picking" which evidence to keep, WritersLogic implements **The Labyrinth**—a machine-wide Merkle Mountain Range (MMR).
 
 ### Global Hash Chain
 
@@ -37,7 +37,7 @@ Instead of isolated per-document histories, every witnessed event on a device is
 
 ## Commit Triggers
 
-Witnessd "commits" data from the WAL to the permanent database based on several triggers:
+WritersLogic "commits" data from the WAL to the permanent database based on several triggers:
 
 1. **Temporal Heartbeat**: Every 60 seconds of active writing.
 2. **Semantic Milestones**: When you save your file (`Cmd+S`), close the document, or switch applications.
@@ -47,7 +47,7 @@ Witnessd "commits" data from the WAL to the permanent database based on several 
 
 ## Crash Recovery Protocol
 
-Upon startup, witnessd follows these steps:
+Upon startup, WritersLogic follows these steps:
 1. **Detect WAL**: Checks for any non-empty Write-Ahead Logs.
 2. **Integrity Check**: Validates the HMAC signatures on the WAL entries.
 3. **Replay**: Reconstructs the missing activity data.

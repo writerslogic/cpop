@@ -1,6 +1,6 @@
-# Getting Started with Witnessd
+# Getting Started with WritersLogic
 
-Witnessd is a cryptographic authorship witnessing system that creates tamper-evident records of your creative process. This guide will help you install and configure witnessd for first use.
+WritersLogic is a cryptographic authorship witnessing system that creates tamper-evident records of your creative process. This guide will help you install and configure WritersLogic for first use.
 
 ## Table of Contents
 
@@ -39,15 +39,15 @@ Witnessd is a cryptographic authorship witnessing system that creates tamper-evi
 #### Using Homebrew
 
 ```bash
-brew tap writerslogic/witnessd
-brew install witnessd
+brew tap writerslogic/writerslogic
+brew install writerslogic
 ```
 
 #### Using the macOS App
 
-1. Download `Witnessd.dmg` from the [releases page](https://github.com/writerslogic/witnessd/releases)
+1. Download `WritersLogic.dmg` from the [releases page](https://github.com/writerslogic/writerslogic/releases)
 2. Open the DMG file
-3. Drag **Witnessd** to your Applications folder
+3. Drag **WritersLogic** to your Applications folder
 4. Launch the app and follow the **Onboarding Guide** to initialize your identity and calibrate your machine.
 
 The macOS app includes:
@@ -61,14 +61,14 @@ The macOS app includes:
 #### Using the Install Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/writerslogic/witnessd/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/writerslogic/writerslogic/main/install.sh | bash
 ```
 
 #### Building from Source
 
 ```bash
-git clone https://github.com/writerslogic/witnessd.git
-cd witnessd
+git clone https://github.com/writerslogic/writerslogic.git
+cd writerslogic
 make build
 sudo make install
 ```
@@ -76,19 +76,19 @@ sudo make install
 ### Verifying Installation
 
 ```bash
-witnessd version
+WritersLogic version
 ```
 
 ---
 
 ## Initial Setup
 
-### 1. Initialize Witnessd
+### 1. Initialize WritersLogic
 
-Before creating checkpoints, you must initialize witnessd:
+Before creating checkpoints, you must initialize WritersLogic:
 
 ```bash
-witnessd init
+wld init
 ```
 
 This creates your unique cryptographic identity bound to your device hardware via [[Glossary#PUF|Physically Unclonable Functions (PUF)]].
@@ -98,7 +98,7 @@ This creates your unique cryptographic identity bound to your device hardware vi
 Calibrate the [[Glossary#VDF|Verifiable Delay Function (VDF)]] to ensure accurate timing proofs for your specific CPU:
 
 ```bash
-witnessd calibrate
+wld calibrate
 ```
 
 ### 3. Register Browser Extension (Optional)
@@ -106,10 +106,10 @@ witnessd calibrate
 If you want to witness your process in Google Docs, Overleaf, or Notion:
 
 ```bash
-witnessd register-native-host
+WritersLogic register-native-host
 ```
 
-Then install the Witnessd extension from your browser's extension store.
+Then install the WritersLogic extension from your browser's extension store.
 
 ### Configuration (Optional)
 
@@ -128,7 +128,7 @@ Create a checkpoint for any file:
 echo "My first witnessed document" > mydoc.txt
 
 # Create a checkpoint
-witnessd commit mydoc.txt -m "Initial version"
+wld commit mydoc.txt -m "Initial version"
 ```
 
 ### Enhanced Workflow with Keystroke Tracking
@@ -137,15 +137,15 @@ For stronger evidence, track keystrokes during writing:
 
 ```bash
 # Start tracking
-witnessd track start mydoc.txt
+wld track start mydoc.txt
 
 # ... write your document ...
 
 # Create checkpoint with keystroke evidence
-witnessd commit mydoc.txt -m "Draft with tracked keystrokes"
+wld commit mydoc.txt -m "Draft with tracked keystrokes"
 
 # Stop tracking
-witnessd track stop
+wld track stop
 ```
 
 ---
@@ -157,7 +157,7 @@ witnessd track stop
 When you need to prove authorship:
 
 ```bash
-witnessd export mydoc.txt
+wld export mydoc.txt
 ```
 
 This creates `mydoc.wpkt` containing your evidence.
@@ -167,7 +167,7 @@ This creates `mydoc.wpkt` containing your evidence.
 Anyone can verify the evidence:
 
 ```bash
-witnessd verify mydoc.wpkt
+wld verify mydoc.wpkt
 ```
 
 ---

@@ -1,0 +1,27 @@
+[Unit]
+Description=WritersLogic Socket Activation
+Documentation=man:wld(1)
+PartOf=wld.service
+
+[Socket]
+# Unix socket for local communication
+ListenStream=/run/wld/wld.sock
+SocketMode=0660
+SocketUser=wld
+SocketGroup=wld
+
+# Accept connections
+Accept=no
+
+# Buffer sizes
+ReceiveBuffer=1M
+SendBuffer=1M
+
+# Backlog
+Backlog=128
+
+# Permissions
+DirectoryMode=0750
+
+[Install]
+WantedBy=sockets.target

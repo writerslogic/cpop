@@ -1,6 +1,6 @@
-# Contributing to witnessd
+# Contributing to WritersLogic
 
-Thank you for your interest in contributing to witnessd! This document provides
+Thank you for your interest in contributing to WritersLogic! This document provides
 guidelines and instructions for contributing.
 
 ## Code of Conduct
@@ -27,8 +27,8 @@ you are expected to uphold this code.
 
 2. **Clone and Setup**
    ```bash
-   git clone https://github.com/writerslogic/witnessd.git
-   cd witnessd
+   git clone https://github.com/writerslogic/writerslogic.git
+   cd writerslogic
    ```
 
 3. **Install Pre-commit Hooks**
@@ -95,7 +95,7 @@ Extra care is required for cryptographic code:
 - Update README.md for user-facing changes
 - Update inline docs for API changes
 - Add examples for new features
-- Keep [specs](https://github.com/writerslogic/witnessd-docs) in sync with implementation
+- Keep [specs](https://github.com/writerslogic/writerslogic-docs) in sync with implementation
 
 ## Pull Request Process
 
@@ -114,13 +114,13 @@ Releases are managed by maintainers:
 
 ## Getting Help
 
-- [GitHub Discussions](https://github.com/writerslogic/witnessd/discussions)
-- Documentation in [witnessd-docs](https://github.com/writerslogic/witnessd-docs)
+- [GitHub Discussions](https://github.com/writerslogic/writerslogic/discussions)
+- Documentation in [writerslogic-docs](https://github.com/writerslogic/writerslogic-docs)
 - Test files for usage examples
 
 ## License and Contributor Agreement
 
-By contributing to witnessd, you agree that:
+By contributing to WritersLogic, you agree that:
 
 1. **License Grant:** Your contributions will be licensed under the Apache
    License 2.0, the same license as the project.

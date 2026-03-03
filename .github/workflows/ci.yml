@@ -132,13 +132,13 @@ jobs:
       - name: Build #1
         run: |
           cargo build --release
-          sha256sum target/release/libwitnessd_core.* > /tmp/build1.sha256 || true
+          sha256sum target/release/libwriterslogic_core.* > /tmp/build1.sha256 || true
 
       - name: Clean and rebuild
         run: |
           cargo clean
           cargo build --release
-          sha256sum target/release/libwitnessd_core.* > /tmp/build2.sha256 || true
+          sha256sum target/release/libwriterslogic_core.* > /tmp/build2.sha256 || true
 
       - name: Compare builds
         run: |

@@ -45,10 +45,10 @@
 
 ### Components
 
-- [[witnessd_engine]]
-- [[witnessd_protocol]]
-- [[witnessd_jitter]]
+- [[wld_engine]]
+- [[wld_protocol]]
+- [[wld_jitter]]
 
 ---
 
-*[[Home|witnessd wiki]]*
+*[[Home|WritersLogic wiki]]*

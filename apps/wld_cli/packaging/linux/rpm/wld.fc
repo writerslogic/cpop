@@ -1,0 +1,25 @@
+# SELinux File Contexts for wld
+#
+# This file defines the SELinux file contexts for wld files and directories.
+# Install with: semanage fcontext -i wld.fc && restorecon -R /
+
+# Executables
+/usr/bin/wld             -- gen_context(system_u:object_r:wld_exec_t,s0)
+/usr/bin/witnessctl           -- gen_context(system_u:object_r:wld_exec_t,s0)
+/usr/bin/wld-ibus        -- gen_context(system_u:object_r:wld_exec_t,s0)
+
+# Configuration
+/etc/wld(/.*)?           gen_context(system_u:object_r:wld_etc_t,s0)
+
+# Data directory
+/var/lib/wld(/.*)?       gen_context(system_u:object_r:wld_var_lib_t,s0)
+
+# Log directory
+/var/log/wld(/.*)?       gen_context(system_u:object_r:wld_var_log_t,s0)
+
+# Runtime directory (socket, pid)
+/run/wld(/.*)?           gen_context(system_u:object_r:wld_var_run_t,s0)
+
+# User data directories (for user-mode operation)
+HOME_DIR/\.wld(/.*)?     gen_context(system_u:object_r:wld_var_lib_t,s0)
+HOME_DIR/\.config/wld(/.*)? gen_context(system_u:object_r:wld_etc_t,s0)

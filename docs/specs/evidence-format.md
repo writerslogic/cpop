@@ -7,7 +7,7 @@
 
 ## Overview
 
-A Witnessd **Evidence Packet** (`.wpkt`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
+A WritersLogic **Evidence Packet** (`.wpkt`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
 
 This specification aligns with the CDDL schema defined in `draft-condrey-rats-pop`.
 
@@ -29,7 +29,7 @@ The format supports tiered evidence per the `content-tier` specification:
 | JSON Key | CDDL Key | Type | Description |
 |:---------|:---------|:-----|:------------|
 | `version` | 1 | uint | Protocol version (MUST be 1) |
-| `profile_uri` | 2 | uri | Verification profile (e.g., `urn:ietf:params:rats:witnessd:profile:core`) |
+| `profile_uri` | 2 | uri | EAT profile URI (`urn:ietf:params:rats:eat:profile:pop:1.0`) |
 | `packet_id` | 3 | uuid | Unique identifier for this evidence packet |
 | `created_at` | 4 | timestamp | Packet generation time (UTC) |
 | `document` | 5 | object | Reference to the witnessed document ([DocumentRef](#documentref)) |

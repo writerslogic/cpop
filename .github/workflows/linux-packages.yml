@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/witnessd_cli/packaging/linux/**'
-      - 'apps/witnessd_cli/src/**'
+      - 'apps/wld_cli/packaging/linux/**'
+      - 'apps/wld_cli/src/**'
       - 'crates/**'
   pull_request:
     paths:
-      - 'apps/witnessd_cli/packaging/linux/**'
+      - 'apps/wld_cli/packaging/linux/**'
   schedule:
     - cron: '0 6 * * 1' # Weekly on Monday 06:00 UTC
   workflow_dispatch:
@@ -37,12 +37,12 @@ jobs:
             libfuse2 desktop-file-utils
 
       - name: Build release binary
-        run: cargo build --release -p witnessd_cli
+        run: cargo build --release -p wld_cli
 
       - name: Build AppImage
         run: |
-          chmod +x apps/witnessd_cli/packaging/linux/scripts/build-appimage.sh
-          apps/witnessd_cli/packaging/linux/scripts/build-appimage.sh
+          chmod +x apps/wld_cli/packaging/linux/scripts/build-appimage.sh
+          apps/wld_cli/packaging/linux/scripts/build-appimage.sh
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
@@ -67,12 +67,12 @@ jobs:
             dpkg-dev debhelper devscripts
 
       - name: Build release binary
-        run: cargo build --release -p witnessd_cli
+        run: cargo build --release -p wld_cli
 
       - name: Build Debian package
         run: |
-          chmod +x apps/witnessd_cli/packaging/linux/scripts/build-deb.sh
-          apps/witnessd_cli/packaging/linux/scripts/build-deb.sh
+          chmod +x apps/wld_cli/packaging/linux/scripts/build-deb.sh
+          apps/wld_cli/packaging/linux/scripts/build-deb.sh
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
@@ -97,12 +97,12 @@ jobs:
             rpm rpmbuild
 
       - name: Build release binary
-        run: cargo build --release -p witnessd_cli
+        run: cargo build --release -p wld_cli
 
       - name: Build RPM package
         run: |
-          chmod +x apps/witnessd_cli/packaging/linux/scripts/build-rpm.sh
-          apps/witnessd_cli/packaging/linux/scripts/build-rpm.sh
+          chmod +x apps/wld_cli/packaging/linux/scripts/build-rpm.sh
+          apps/wld_cli/packaging/linux/scripts/build-rpm.sh
 
       - name: Upload RPM package
         uses: actions/upload-artifact@v4

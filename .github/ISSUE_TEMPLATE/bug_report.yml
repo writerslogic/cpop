@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in witnessd
+description: Report a bug in WritersLogic
 title: "[Bug]: "
 labels: ["bug", "triage"]
 body:
@@ -23,7 +23,7 @@ body:
       label: Steps to Reproduce
       description: Steps to reproduce the behavior
       placeholder: |
-        1. Configure witnessd with...
+        1. Configure WritersLogic with...
         2. Run command...
         3. See error
     validations:
@@ -49,7 +49,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: witnessd version (run `witnessd --version`)
+      description: WritersLogic version (run `WritersLogic --version`)
       placeholder: v0.1.0
     validations:
       required: true

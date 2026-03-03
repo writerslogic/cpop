@@ -205,7 +205,7 @@
         },
         "public_key": {
           "type": "string",
-          "description": "Their witnessd Ed25519 public key (if they have one)"
+          "description": "Their writerslogic Ed25519 public key (if they have one)"
         }
       }
     },
@@ -253,7 +253,7 @@
         },
         "hardware_sealed": {
           "type": "boolean",
-          "description": "Whether jitter was captured via hardware entropy source (witnessd_jitter)"
+          "description": "Whether jitter was captured via hardware entropy source (wld_jitter)"
         }
       }
     }

@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for the witnessd command-line interface.
+Complete reference for the WritersLogic command-line interface.
 
 ## Table of Contents
 
@@ -41,14 +41,14 @@ These options can be used with any command:
 
 ### init
 
-Initialize witnessd in the current directory.
+Initialize WritersLogic in the current directory.
 
 ```bash
-witnessd init
+wld init
 ```
 
 **What it does:**
-1. Creates `~/.witnessd/` directory structure
+1. Creates `~/.writerslogic/` directory structure
 2. Generates Ed25519 signing key pair
 3. Initializes master identity from device PUF
 4. Creates secure SQLite database
@@ -56,7 +56,7 @@ witnessd init
 
 **Example:**
 ```bash
-$ witnessd init
+$ wld init
 
 Generating Ed25519 signing key...
   Public key: a1b2c3d4...
@@ -66,13 +66,13 @@ Initializing master identity from PUF...
 Creating secure event database...
   Database: events.db (tamper-evident)
 
-witnessd initialized!
+wld initialized!
 ```
 
 **Notes:**
 - Safe to run multiple times (idempotent)
 - Preserves existing keys and identity
-- Run `witnessd calibrate` after initialization
+- Run `wld calibrate` after initialization
 
 ---
 
@@ -81,7 +81,7 @@ witnessd initialized!
 Create a checkpoint for a file.
 
 ```bash
-witnessd commit <file> [-m <message>]
+wld commit <file> [-m <message>]
 ```
 
 **Options:**
@@ -92,7 +92,7 @@ witnessd commit <file> [-m <message>]
 
 **Example:**
 ```bash
-$ witnessd commit manuscript.md -m "Completed chapter 3"
+$ wld commit manuscript.md -m "Completed chapter 3"
 
 Computing checkpoint... done (1.2s)
 
@@ -112,7 +112,7 @@ Checkpoint #5 created
 
 **With tracking active:**
 ```bash
-$ witnessd commit manuscript.md -m "Draft with tracking"
+$ wld commit manuscript.md -m "Draft with tracking"
 
 Computing checkpoint... done (1.2s)
 
@@ -128,7 +128,7 @@ Checkpoint #6 created (tracking: 1523 keystrokes, 45 samples)
 Show checkpoint history for a file.
 
 ```bash
-witnessd log <file> [options]
+wld log <file> [options]
 ```
 
 **Options:**
@@ -141,7 +141,7 @@ witnessd log <file> [options]
 
 **Example:**
 ```bash
-$ witnessd log manuscript.md
+$ wld log manuscript.md
 
 Checkpoint History for manuscript.md
 
@@ -157,7 +157,7 @@ Total: 5 checkpoints over 7h 30m
 
 **JSON output:**
 ```bash
-$ witnessd log manuscript.md --json --limit 1
+$ wld log manuscript.md --json --limit 1
 ```
 ```json
 {
@@ -183,7 +183,7 @@ $ witnessd log manuscript.md --json --limit 1
 Export evidence packet for a file.
 
 ```bash
-witnessd export <file> [options]
+wld export <file> [options]
 ```
 
 **Options:**
@@ -197,7 +197,7 @@ witnessd export <file> [options]
 
 **Example:**
 ```bash
-$ witnessd export manuscript.md
+$ wld export manuscript.md
 
 Exporting evidence packet...
 
@@ -212,7 +212,7 @@ Packet ready for verification.
 
 **Custom output:**
 ```bash
-$ witnessd export manuscript.md -o evidence.json --format json --tier 3
+$ wld export manuscript.md -o evidence.json --format json --tier 3
 ```
 
 **Evidence packet contents:**
@@ -230,7 +230,7 @@ $ witnessd export manuscript.md -o evidence.json --format json --tier 3
 Verify a checkpoint chain or evidence packet.
 
 ```bash
-witnessd verify <file|packet> [options]
+wld verify <file|packet> [options]
 ```
 
 **Options:**
@@ -242,7 +242,7 @@ witnessd verify <file|packet> [options]
 
 **Verify evidence packet:**
 ```bash
-$ witnessd verify manuscript.wpkt
+$ wld verify manuscript.wpkt
 
 Evidence Packet Verification
 
@@ -264,7 +264,7 @@ Overall: VERIFIED
 
 **Verify file against local checkpoints:**
 ```bash
-$ witnessd verify manuscript.md
+$ wld verify manuscript.md
 
 Verifying manuscript.md against local checkpoints...
 
@@ -282,7 +282,7 @@ Chain integrity: VALID (15 checkpoints)
 Track keyboard activity for a document.
 
 ```bash
-witnessd track <action> [options]
+wld track <action> [options]
 ```
 
 **Actions:**
@@ -297,18 +297,18 @@ witnessd track <action> [options]
 
 **Start tracking:**
 ```bash
-$ witnessd track start manuscript.md
+$ wld track start manuscript.md
 
 Tracking started for manuscript.md
   Session ID: sess_abc123
-  WAL: ~/.witnessd/tracking/manuscript.md.wal
+  WAL: ~/.writerslogic/tracking/manuscript.md.wal
 
-Press Ctrl+C or run 'witnessd track stop' to end.
+Press Ctrl+C or run 'wld track stop' to end.
 ```
 
 **Check status:**
 ```bash
-$ witnessd track status
+$ wld track status
 
 Tracking Status
   Document: manuscript.md
@@ -320,7 +320,7 @@ Tracking Status
 
 **Stop tracking:**
 ```bash
-$ witnessd track stop
+$ wld track stop
 
 Tracking stopped
   Total keystrokes: 4,523
@@ -335,7 +335,7 @@ Tracking stopped
 Manage the background sentinel daemon for automatic tracking.
 
 ```bash
-witnessd sentinel <action>
+WritersLogic sentinel <action>
 ```
 
 **Actions:**
@@ -348,7 +348,7 @@ witnessd sentinel <action>
 
 **Start sentinel:**
 ```bash
-$ witnessd sentinel start
+$ WritersLogic sentinel start
 
 Sentinel daemon started
   PID: 12345
@@ -359,7 +359,7 @@ Sentinel daemon started
 
 **Check status:**
 ```bash
-$ witnessd sentinel status
+$ WritersLogic sentinel status
 
 Sentinel Status: Running (PID 12345)
   Uptime: 4h 23m
@@ -374,7 +374,7 @@ Auto-checkpoints: 47 created
 
 **Stop sentinel:**
 ```bash
-$ witnessd sentinel stop
+$ WritersLogic sentinel stop
 
 Sentinel stopped
   Final checkpoint created for all tracked documents
@@ -387,7 +387,7 @@ Sentinel stopped
 Manage presence verification sessions.
 
 ```bash
-witnessd presence <action>
+wld presence <action>
 ```
 
 **Actions:**
@@ -400,7 +400,7 @@ witnessd presence <action>
 
 **Start presence session:**
 ```bash
-$ witnessd presence start
+$ wld presence start
 
 Presence verification session started
   Challenge interval: 10m
@@ -424,12 +424,12 @@ Challenge accepted! Next challenge in 10 minutes.
 Calibrate VDF performance for this machine.
 
 ```bash
-witnessd calibrate
+wld calibrate
 ```
 
 **Example:**
 ```bash
-$ witnessd calibrate
+$ wld calibrate
 
 Calibrating VDF performance...
 
@@ -454,19 +454,19 @@ Configuration updated.
 
 ### status
 
-Show witnessd status and configuration.
+Show wld status and configuration.
 
 ```bash
-witnessd status
+wld status
 ```
 
 **Example:**
 ```bash
-$ witnessd status
+$ wld status
 
-Witnessd Status
+WritersLogic Status
   Version: 1.0.0
-  Data directory: ~/.witnessd
+  Data directory: ~/.writerslogic
   Initialized: Yes
 
 Identity:
@@ -494,7 +494,7 @@ Tracking: Not active
 List all tracked documents in the database.
 
 ```bash
-witnessd list
+WritersLogic list
 ```
 
 ---
@@ -504,29 +504,29 @@ witnessd list
 Watch folders for automatic checkpointing.
 
 ```bash
-witnessd watch add <folder>
-witnessd watch remove <folder>
-witnessd watch list
+wld watch add <folder>
+wld watch remove <folder>
+wld watch list
 ```
 
 ---
 
 ### start
 
-Start the witnessd daemon in the background.
+Start the wld daemon in the background.
 
 ```bash
-witnessd start
+wld start
 ```
 
 ---
 
 ### stop
 
-Stop the witnessd daemon.
+Stop the wld daemon.
 
 ```bash
-witnessd stop
+wld stop
 ```
 
 ---
@@ -536,8 +536,8 @@ witnessd stop
 Manage author fingerprints.
 
 ```bash
-witnessd fingerprint activity status
-witnessd fingerprint voice enable
+wld fingerprint activity status
+wld fingerprint voice enable
 ```
 
 ---
@@ -547,7 +547,7 @@ witnessd fingerprint voice enable
 (Legacy) Run background monitoring daemon in the foreground.
 
 ```bash
-witnessd daemon [options]
+wld daemon [options]
 ```
 
 **Options:**
@@ -565,14 +565,14 @@ witnessd daemon [options]
 Show help information.
 
 ```bash
-witnessd help [command]
+WritersLogic help [command]
 ```
 
 **Examples:**
 ```bash
-witnessd help          # Show all commands
-witnessd help commit   # Show help for commit command
-witnessd commit --help # Same as above
+WritersLogic help          # Show all commands
+WritersLogic help commit   # Show help for commit command
+wld commit --help # Same as above
 ```
 
 ---
@@ -582,14 +582,14 @@ witnessd commit --help # Same as above
 Show version information.
 
 ```bash
-witnessd version
+WritersLogic version
 ```
 
 **Example:**
 ```bash
-$ witnessd version
+$ WritersLogic version
 
-witnessd v1.0.0
+WritersLogic v1.0.0
   Build:    2026-01-15T10:00:00Z
   Commit:   abc12345
   Platform: darwin/arm64
@@ -599,16 +599,16 @@ witnessd v1.0.0
 
 ## Interactive Menu
 
-Running `witnessd` without arguments launches the interactive menu:
+Running `wld` without arguments launches the interactive menu:
 
 ```bash
-$ witnessd
+$ wld
 
 ░█░░░█░░▀░░▀█▀░█▀▀▄░█▀▀░█▀▀░█▀▀░░░░█▀▄
 ░▀▄█▄▀░░█▀░░█░░█░▒█░█▀▀░▀▀▄░▀▀▄░▀▀░█░█
 ░░▀░▀░░▀▀▀░░▀░░▀░░▀░▀▀▀░▀▀▀░▀▀▀░░░░▀▀░
 
-witnessd v1.0.0
+WritersLogic v1.0.0
 
 ? Select an action:
   > Initialize
