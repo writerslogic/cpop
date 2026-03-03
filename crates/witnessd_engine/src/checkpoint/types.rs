@@ -75,6 +75,10 @@ pub struct JitterBinding {
     pub jitter_hash: [u8; 32],
     pub session_id: String,
     pub keystroke_count: u64,
+    /// Physics-bound seed mixed into the VDF input for stronger non-repudiation.
+    /// Present when a `PhysicalContext` was available at checkpoint creation time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physics_seed: Option<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +216,9 @@ impl Checkpoint {
             hasher.update(jitter.jitter_hash);
             hasher.update(jitter.session_id.as_bytes());
             hasher.update(jitter.keystroke_count.to_be_bytes());
+            if let Some(physics_seed) = &jitter.physics_seed {
+                hasher.update(physics_seed);
+            }
         }
 
         if let Some(rfc_vdf) = &self.rfc_vdf {

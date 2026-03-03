@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use statrs::statistics::Statistics;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// 50ms buckets covering 0-2500ms
 const IKI_HISTOGRAM_BUCKETS: usize = 50;
@@ -631,8 +632,7 @@ impl SessionSignature {
 pub struct ActivityFingerprintAccumulator {
     samples: VecDeque<SimpleJitterSample>,
     max_samples: usize,
-    cached_fingerprint: ActivityFingerprint,
-    /// Thread-safe dirty flag so `current_fingerprint(&self)` can update the cache.
+    cached_fingerprint: Mutex<ActivityFingerprint>,
     dirty: AtomicBool,
 }
 
@@ -703,7 +703,7 @@ impl ActivityFingerprintAccumulator {
         Self {
             samples: VecDeque::with_capacity(max_samples),
             max_samples,
-            cached_fingerprint: ActivityFingerprint::default(),
+            cached_fingerprint: Mutex::new(ActivityFingerprint::default()),
             dirty: AtomicBool::new(false),
         }
     }
@@ -719,14 +719,24 @@ impl ActivityFingerprintAccumulator {
 
     /// Recompute fingerprint from buffered samples if dirty, caching the result.
     pub fn current_fingerprint(&self) -> ActivityFingerprint {
-        if self.dirty.load(Ordering::Relaxed) || self.cached_fingerprint.sample_count == 0 {
+        let mut cached = self
+            .cached_fingerprint
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if self.dirty.load(Ordering::Relaxed) || cached.sample_count == 0 {
             let samples: Vec<_> = self.samples.iter().cloned().collect();
             let fp = ActivityFingerprint::from_samples(&samples);
             self.dirty.store(false, Ordering::Relaxed);
+            *cached = fp.clone();
             fp
         } else {
-            self.cached_fingerprint.clone()
+            cached.clone()
         }
+    }
+
+    /// Snapshot of the current sample buffer for forensic analysis.
+    pub fn samples(&self) -> Vec<SimpleJitterSample> {
+        self.samples.iter().cloned().collect()
     }
 
     pub fn sample_count(&self) -> usize {
@@ -735,7 +745,10 @@ impl ActivityFingerprintAccumulator {
 
     pub fn reset(&mut self) {
         self.samples.clear();
-        self.cached_fingerprint = ActivityFingerprint::default();
+        *self
+            .cached_fingerprint
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = ActivityFingerprint::default();
         self.dirty.store(false, Ordering::Relaxed);
     }
 }

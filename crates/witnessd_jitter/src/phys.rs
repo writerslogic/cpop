@@ -44,10 +44,6 @@ impl PhysJitter {
 
     /// Configure jitter delay range.
     ///
-    /// # Arguments
-    /// * `jmin` - Minimum jitter delay in microseconds
-    /// * `range` - Range for jitter variation in microseconds (must be > 0)
-    ///
     /// # Panics
     /// Panics if `range` is 0.
     pub fn with_jitter_range(mut self, jmin: u32, range: u32) -> Self {
@@ -209,20 +205,7 @@ impl EntropySource for PhysJitter {
 
 impl JitterEngine for PhysJitter {
     fn compute_jitter(&self, secret: &[u8; 32], inputs: &[u8], entropy: PhysHash) -> Jitter {
-        use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-
-        type HmacSha256 = Hmac<Sha256>;
-
-        let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key size");
-        mac.update(b"witnessd_jitter/v1/jitter"); // Domain separation
-        mac.update(inputs);
-        mac.update(&entropy.hash);
-        let result = mac.finalize().into_bytes();
-
-        // Extract jitter value using configured range
-        let hash_val = u32::from_be_bytes([result[0], result[1], result[2], result[3]]);
-        self.jmin + (hash_val % self.range)
+        crate::traits::hmac_jitter(secret, inputs, &entropy.hash, self.jmin, self.range)
     }
 }
 

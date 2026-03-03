@@ -79,6 +79,7 @@ impl Builder {
             packet_signature: None,
             signing_public_key: None,
             biology_claim: None,
+            physical_context: None,
             trust_tier: None,
             mmr_root: None,
             mmr_proof: None,
@@ -492,6 +493,31 @@ impl Builder {
         self
     }
 
+    /// Attach physical context evidence for machine binding and non-repudiation.
+    ///
+    /// Captures clock skew, thermal proxy, silicon PUF fingerprint, and I/O latency
+    /// to bind the evidence session to specific physical hardware.
+    pub fn with_physical_context(mut self, ctx: &crate::physics::PhysicalContext) -> Self {
+        self.packet.physical_context = Some(PhysicalContextEvidence {
+            clock_skew: ctx.clock_skew,
+            thermal_proxy: ctx.thermal_proxy,
+            silicon_puf_hash: hex::encode(ctx.silicon_puf),
+            io_latency_ns: ctx.io_latency_ns,
+            combined_hash: hex::encode(ctx.combined_hash),
+        });
+        if ctx.is_virtualized {
+            self.packet.limitations.push(
+                "Virtualized environment detected — physical hardware measurements may be \
+                 unreliable"
+                    .to_string(),
+            );
+        }
+        if self.packet.strength < Strength::Enhanced {
+            self.packet.strength = Strength::Enhanced;
+        }
+        self
+    }
+
     /// Build jitter binding from keystroke evidence.
     ///
     /// Computes entropy commitment, statistical summary, Hurst exponent,
@@ -763,6 +789,16 @@ impl Builder {
                 claim_type: ClaimType::HardwareAttested,
                 description: "TPM attests chain was not rolled back or modified".to_string(),
                 confidence: "cryptographic".to_string(),
+            });
+        }
+
+        if self.packet.physical_context.is_some() {
+            self.packet.claims.push(Claim {
+                claim_type: ClaimType::HardwareAttested,
+                description: "Physical context captured: clock skew, thermal proxy, \
+                              silicon PUF, I/O latency"
+                    .to_string(),
+                confidence: "high".to_string(),
             });
         }
 

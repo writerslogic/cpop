@@ -417,6 +417,7 @@ fn test_entangled_commit_requires_entangled_mode() {
             "session-1".to_string(),
             100,
             Duration::from_millis(10),
+            None,
         )
         .unwrap_err();
     assert!(err.to_string().contains("EntanglementMode::Entangled"));
@@ -436,6 +437,7 @@ fn test_entangled_single_commit() {
             "session-1".to_string(),
             50,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit entangled");
 
@@ -463,6 +465,7 @@ fn test_entangled_multiple_commits() {
             "session-1".to_string(),
             10,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 0");
 
@@ -474,6 +477,7 @@ fn test_entangled_multiple_commits() {
             "session-1".to_string(),
             25,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 1");
 
@@ -485,6 +489,7 @@ fn test_entangled_multiple_commits() {
             "session-1".to_string(),
             50,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 2");
 
@@ -514,6 +519,7 @@ fn test_entangled_verify_detects_vdf_tampering() {
             "session-1".to_string(),
             10,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 0");
 
@@ -525,6 +531,7 @@ fn test_entangled_verify_detects_vdf_tampering() {
             "session-1".to_string(),
             20,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 1");
 
@@ -556,6 +563,7 @@ fn test_entangled_verify_detects_jitter_tampering() {
             "session-1".to_string(),
             10,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 0");
 
@@ -588,6 +596,7 @@ fn test_entangled_verify_requires_jitter_binding() {
             "session-1".to_string(),
             10,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit 0");
 
@@ -619,6 +628,7 @@ fn test_entangled_chain_save_load() {
             "session-test".to_string(),
             42,
             Duration::from_millis(10),
+            None,
         )
         .expect("commit");
 
@@ -669,6 +679,7 @@ fn test_commit_rfc_basic() {
             None, // No jitter binding
             None, // No time evidence
             calibration,
+            None,
         )
         .expect("commit_rfc");
 
@@ -734,6 +745,7 @@ fn test_commit_rfc_with_jitter_binding() {
             None,
             None,
             calibration.clone(),
+            None,
         )
         .expect("commit 0");
 
@@ -746,6 +758,7 @@ fn test_commit_rfc_with_jitter_binding() {
             Some(rfc_jitter),
             None,
             calibration,
+            None,
         )
         .expect("commit 1");
 
@@ -783,6 +796,7 @@ fn test_commit_rfc_v3_domain_separator() {
             None,
             None,
             calibration.clone(),
+            None,
         )
         .expect("commit 0");
 
@@ -822,6 +836,7 @@ fn test_commit_rfc_v3_domain_separator() {
             Some(rfc_jitter),
             None,
             calibration,
+            None,
         )
         .expect("commit 1");
 

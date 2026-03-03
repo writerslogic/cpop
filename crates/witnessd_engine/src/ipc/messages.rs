@@ -121,6 +121,8 @@ pub enum IpcMessage {
         monotonic_append_ratio: f64,
         edit_entropy: f64,
         median_interval: f64,
+        /// Biological cadence steadiness (0.0-1.0, higher = steadier typing rhythm)
+        biological_cadence_score: f64,
         error: Option<String>,
     },
 

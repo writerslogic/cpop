@@ -47,6 +47,36 @@ pub struct ForensicAnalysis {
     pub explanation: String,
 }
 
+impl ForensicAnalysis {
+    fn new(
+        verdict: ForensicVerdict,
+        cv: f64,
+        checkpoint_count: usize,
+        chain_duration_secs: u64,
+        explanation: impl Into<String>,
+    ) -> Self {
+        Self {
+            verdict,
+            coefficient_of_variation: cv,
+            linearity_score: None,
+            hurst_exponent: None,
+            checkpoint_count,
+            chain_duration_secs,
+            explanation: explanation.into(),
+        }
+    }
+
+    fn with_hurst(mut self, h: Option<f64>) -> Self {
+        self.hurst_exponent = h;
+        self
+    }
+
+    fn with_linearity(mut self, l: Option<f64>) -> Self {
+        self.linearity_score = l;
+        self
+    }
+}
+
 pub struct ForensicsEngine {
     pub inter_checkpoint_intervals: Vec<f64>,
     pub causality_chain_valid: bool,
@@ -73,79 +103,56 @@ impl ForensicsEngine {
     }
 
     pub fn analyze(&self) -> ForensicAnalysis {
-        let checkpoint_count = self.inter_checkpoint_intervals.len() + 1;
-
-        let chain_duration_secs =
-            self.inter_checkpoint_intervals.iter().sum::<f64>().max(0.0) as u64;
+        let n = self.inter_checkpoint_intervals.len() + 1;
+        let dur = self.inter_checkpoint_intervals.iter().sum::<f64>().max(0.0) as u64;
+        let fa = |v, cv, msg: String| ForensicAnalysis::new(v, cv, n, dur, msg);
 
         if !self.causality_chain_valid {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V5ConfirmedForgery,
-                coefficient_of_variation: 0.0,
-                linearity_score: None,
-                hurst_exponent: None,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: "HMAC causality lock broken — evidence has been tampered with"
-                    .to_string(),
-            };
+            return fa(
+                ForensicVerdict::V5ConfirmedForgery,
+                0.0,
+                "HMAC causality lock broken — evidence has been tampered with".into(),
+            );
         }
 
         if self.inter_checkpoint_intervals.len() < 3 {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V2LikelyHuman,
-                coefficient_of_variation: 0.0,
-                linearity_score: None,
-                hurst_exponent: None,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: "Insufficient checkpoints for full forensic analysis".to_string(),
-            };
+            return fa(
+                ForensicVerdict::V2LikelyHuman,
+                0.0,
+                "Insufficient checkpoints for full forensic analysis".into(),
+            );
         }
 
         let delta = self.calculate_coefficient_of_variation();
 
         if self.detect_adversarial_collapse() {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V4LikelySynthetic,
-                coefficient_of_variation: delta,
-                linearity_score: None,
-                hurst_exponent: None,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: "Adversarial collapse: timing intervals are uniform (non-human)"
-                    .to_string(),
-            };
+            return fa(
+                ForensicVerdict::V4LikelySynthetic,
+                delta,
+                "Adversarial collapse: timing intervals are uniform (non-human)".into(),
+            );
         }
 
         if delta < 0.15 {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V4LikelySynthetic,
-                coefficient_of_variation: delta,
-                linearity_score: None,
-                hurst_exponent: None,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: format!(
+            return fa(
+                ForensicVerdict::V4LikelySynthetic,
+                delta,
+                format!(
                     "Timing entropy too low (δ={:.3}): consistent with automated generation",
                     delta
                 ),
-            };
+            );
         }
 
         if delta > 0.80 {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V3Suspicious,
-                coefficient_of_variation: delta,
-                linearity_score: None,
-                hurst_exponent: None,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: format!(
+            return fa(
+                ForensicVerdict::V3Suspicious,
+                delta,
+                format!(
                     "Timing entropy too high (δ={:.3}): potential bot noise injection",
                     delta
                 ),
-            };
+            );
         }
 
         let hurst = if self.inter_checkpoint_intervals.len() >= 10 {
@@ -156,32 +163,26 @@ impl ForensicsEngine {
 
         if let Some(h) = hurst {
             if h < 0.45 {
-                return ForensicAnalysis {
-                    verdict: ForensicVerdict::V3Suspicious,
-                    coefficient_of_variation: delta,
-                    linearity_score: None,
-                    hurst_exponent: Some(h),
-                    checkpoint_count,
-                    chain_duration_secs,
-                    explanation: format!(
+                return fa(
+                    ForensicVerdict::V3Suspicious,
+                    delta,
+                    format!(
                         "White-noise timing (H={:.3}): inconsistent with human composition",
                         h
                     ),
-                };
+                )
+                .with_hurst(Some(h));
             }
             if h > 0.90 {
-                return ForensicAnalysis {
-                    verdict: ForensicVerdict::V3Suspicious,
-                    coefficient_of_variation: delta,
-                    linearity_score: None,
-                    hurst_exponent: Some(h),
-                    checkpoint_count,
-                    chain_duration_secs,
-                    explanation: format!(
+                return fa(
+                    ForensicVerdict::V3Suspicious,
+                    delta,
+                    format!(
                         "Highly predictable timing (H={:.3}): consistent with scripted input",
                         h
                     ),
-                };
+                )
+                .with_hurst(Some(h));
             }
         }
 
@@ -199,18 +200,16 @@ impl ForensicsEngine {
                     .unwrap_or(0.0);
 
                 if avg_burst > 15.0 {
-                    return ForensicAnalysis {
-                        verdict: ForensicVerdict::V3Suspicious,
-                        coefficient_of_variation: delta,
-                        linearity_score: Some(linearity),
-                        hurst_exponent: hurst,
-                        checkpoint_count,
-                        chain_duration_secs,
-                        explanation: format!(
+                    return fa(
+                        ForensicVerdict::V3Suspicious,
+                        delta,
+                        format!(
                             "High linearity ({:.3}) with long bursts ({:.1}): consistent with transcription",
                             linearity, avg_burst
                         ),
-                    };
+                    )
+                    .with_hurst(hurst)
+                    .with_linearity(Some(linearity));
                 }
             }
         }
@@ -219,28 +218,22 @@ impl ForensicsEngine {
             || linearity_score.is_some_and(|l| l > 0.85);
 
         if has_minor_anomalies {
-            return ForensicAnalysis {
-                verdict: ForensicVerdict::V2LikelyHuman,
-                coefficient_of_variation: delta,
-                linearity_score,
-                hurst_exponent: hurst,
-                checkpoint_count,
-                chain_duration_secs,
-                explanation: "Timing consistent with human composition, minor anomalies noted"
-                    .to_string(),
-            };
+            return fa(
+                ForensicVerdict::V2LikelyHuman,
+                delta,
+                "Timing consistent with human composition, minor anomalies noted".into(),
+            )
+            .with_hurst(hurst)
+            .with_linearity(linearity_score);
         }
 
-        ForensicAnalysis {
-            verdict: ForensicVerdict::V1VerifiedHuman,
-            coefficient_of_variation: delta,
-            linearity_score,
-            hurst_exponent: hurst,
-            checkpoint_count,
-            chain_duration_secs,
-            explanation: "High entropy, valid causality, non-linear composition confirmed"
-                .to_string(),
-        }
+        fa(
+            ForensicVerdict::V1VerifiedHuman,
+            delta,
+            "High entropy, valid causality, non-linear composition confirmed".into(),
+        )
+        .with_hurst(hurst)
+        .with_linearity(linearity_score)
     }
 
     fn calculate_coefficient_of_variation(&self) -> f64 {

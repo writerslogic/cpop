@@ -166,6 +166,7 @@ pub fn calculate_assessment_score(
     cadence: &CadenceMetrics,
     anomaly_count: usize,
     event_count: usize,
+    biological_cadence_score: f64,
 ) -> f64 {
     if event_count < MIN_EVENTS_FOR_ANALYSIS {
         return 0.5;
@@ -200,6 +201,11 @@ pub fn calculate_assessment_score(
     }
 
     score -= 0.05 * anomaly_count as f64;
+
+    // Reward steady biological cadence (supports human authorship)
+    if biological_cadence_score > 0.5 {
+        score += 0.05 * (biological_cadence_score - 0.5) / 0.5;
+    }
 
     score.clamp(0.0, 1.0)
 }

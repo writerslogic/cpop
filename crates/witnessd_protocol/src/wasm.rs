@@ -29,6 +29,23 @@ pub struct VerificationResult {
 }
 
 #[cfg(feature = "wasm")]
+impl VerificationResult {
+    fn error(verdict: ForensicVerdict, message: String) -> Self {
+        Self {
+            is_valid: false,
+            forensic_verdict: verdict.as_str().to_string(),
+            checkpoint_count: 0,
+            chain_duration_secs: 0,
+            coefficient_of_variation: 0.0,
+            hurst_exponent: -1.0,
+            linearity_score: -1.0,
+            error_message: message,
+            explanation: String::new(),
+        }
+    }
+}
+
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 impl VerificationResult {
     #[wasm_bindgen(getter)]
@@ -88,34 +105,20 @@ pub fn verify_pop_evidence(evidence_bytes: &[u8], public_key_bytes: &[u8]) -> Ve
     let key_bytes: [u8; 32] = match public_key_bytes.try_into() {
         Ok(bytes) => bytes,
         Err(_) => {
-            return VerificationResult {
-                is_valid: false,
-                forensic_verdict: ForensicVerdict::V5ConfirmedForgery.as_str().to_string(),
-                checkpoint_count: 0,
-                chain_duration_secs: 0,
-                coefficient_of_variation: 0.0,
-                hurst_exponent: -1.0,
-                linearity_score: -1.0,
-                error_message: "Public key must be exactly 32 bytes".to_string(),
-                explanation: String::new(),
-            };
+            return VerificationResult::error(
+                ForensicVerdict::V5ConfirmedForgery,
+                "Public key must be exactly 32 bytes".into(),
+            );
         }
     };
 
     let verifying_key = match VerifyingKey::from_bytes(&key_bytes) {
         Ok(key) => key,
         Err(e) => {
-            return VerificationResult {
-                is_valid: false,
-                forensic_verdict: ForensicVerdict::V5ConfirmedForgery.as_str().to_string(),
-                checkpoint_count: 0,
-                chain_duration_secs: 0,
-                coefficient_of_variation: 0.0,
-                hurst_exponent: -1.0,
-                linearity_score: -1.0,
-                error_message: format!("Invalid public key: {}", e),
-                explanation: String::new(),
-            };
+            return VerificationResult::error(
+                ForensicVerdict::V5ConfirmedForgery,
+                format!("Invalid public key: {}", e),
+            );
         }
     };
 
@@ -157,17 +160,9 @@ pub fn verify_pop_evidence(evidence_bytes: &[u8], public_key_bytes: &[u8]) -> Ve
                 _ => ForensicVerdict::V3Suspicious,
             };
 
-            VerificationResult {
-                is_valid: false,
-                forensic_verdict: verdict.as_str().to_string(),
-                checkpoint_count: 0,
-                chain_duration_secs: 0,
-                coefficient_of_variation: 0.0,
-                hurst_exponent: -1.0,
-                linearity_score: -1.0,
-                error_message: e.to_string(),
-                explanation: format!("Verification failed: {}", e),
-            }
+            let mut result = VerificationResult::error(verdict, e.to_string());
+            result.explanation = format!("Verification failed: {}", e);
+            result
         }
     }
 }

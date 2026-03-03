@@ -65,7 +65,7 @@ pub fn compute_causality_lock_v2(
     })
 }
 
-/// Supports both software keys and hardware tokens (TPM/Secure Enclave).
+/// Abstraction over signing backends (Ed25519 software key, TPM).
 pub trait PoPSigner {
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>>;
     fn algorithm(&self) -> coset::iana::Algorithm;

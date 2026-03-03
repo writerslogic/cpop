@@ -132,6 +132,9 @@ pub struct Packet {
     /// Contains behavioral biometric evidence with millibits scoring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub biology_claim: Option<BiologyInvariantClaim>,
+    /// Physical context evidence binding session to machine hardware signals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_context: Option<PhysicalContextEvidence>,
     /// Trust tier indicating evidence hardening level.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trust_tier: Option<TrustTier>,
@@ -330,6 +333,16 @@ pub struct ForensicMetrics {
     pub deletion_clustering: f64,
     pub assessment: Option<String>,
     pub anomaly_count: Option<i32>,
+}
+
+/// Physical environment evidence for machine binding and non-repudiation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicalContextEvidence {
+    pub clock_skew: u64,
+    pub thermal_proxy: u32,
+    pub silicon_puf_hash: String,
+    pub io_latency_ns: u64,
+    pub combined_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

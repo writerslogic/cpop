@@ -82,7 +82,25 @@ impl SentinelIpcHandler {
         }
         let event_data = Self::to_forensic_data(&events);
         let regions = std::collections::HashMap::new();
-        let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);
+
+        let accumulator = self
+            .sentinel
+            .activity_accumulator
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let jitter_samples = if accumulator.sample_count() > 0 {
+            Some(accumulator.samples())
+        } else {
+            None
+        };
+
+        let metrics = crate::forensics::analyze_forensics(
+            &event_data,
+            &regions,
+            jitter_samples.as_deref(),
+            None,
+            None,
+        );
         Ok((events, metrics))
     }
 
@@ -195,9 +213,53 @@ impl SentinelIpcHandler {
                 .map_err(|e| format!("Failed to create chain: {e}"))?
         };
 
-        let checkpoint = chain
-            .commit(Some(message))
-            .map_err(|e| format!("Commit failed: {e}"))?;
+        let checkpoint =
+            if chain.entanglement_mode == crate::checkpoint::EntanglementMode::Entangled {
+                // Gather jitter + physics data for entangled commit
+                let accumulator = self
+                    .sentinel
+                    .activity_accumulator
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
+                let samples = accumulator.samples();
+                let keystroke_count = samples.len() as u64;
+
+                // Compute jitter hash from timing samples
+                let mut jitter_hasher = Sha256::new();
+                jitter_hasher.update(b"witnessd-checkpoint-jitter-v1");
+                jitter_hasher.update(keystroke_count.to_be_bytes());
+                for s in &samples {
+                    jitter_hasher.update(s.duration_since_last_ns.to_be_bytes());
+                }
+                let jitter_hash: [u8; 32] = jitter_hasher.finalize().into();
+
+                // Find session ID for this document
+                let session_id = self
+                    .sentinel
+                    .sessions
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&path.to_string_lossy().to_string())
+                    .map(|s| s.session_id.clone())
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+                let physics = crate::physics::PhysicalContext::capture(&samples);
+
+                chain
+                    .commit_entangled(
+                        Some(message),
+                        jitter_hash,
+                        session_id,
+                        keystroke_count,
+                        std::time::Duration::from_secs(1),
+                        Some(&physics),
+                    )
+                    .map_err(|e| format!("Entangled commit failed: {e}"))?
+            } else {
+                chain
+                    .commit(Some(message))
+                    .map_err(|e| format!("Commit failed: {e}"))?
+            };
         chain
             .save(&chain_path)
             .map_err(|e| format!("Failed to save chain: {e}"))?;
@@ -312,6 +374,16 @@ impl SentinelIpcHandler {
         }
         builder = builder.with_baseline_verification(bv);
 
+        // Capture physical context from hardware sensors + behavioral samples
+        let jitter_samples = self
+            .sentinel
+            .activity_accumulator
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .samples();
+        let physics = crate::physics::PhysicalContext::capture(&jitter_samples);
+        builder = builder.with_physical_context(&physics);
+
         let packet = builder
             .build()
             .map_err(|e| format!("Failed to build packet: {e}"))?;
@@ -344,6 +416,7 @@ impl SentinelIpcHandler {
             monotonic_append_ratio: metrics.primary.monotonic_append_ratio,
             edit_entropy: metrics.primary.edit_entropy,
             median_interval: metrics.primary.median_interval,
+            biological_cadence_score: metrics.biological_cadence_score,
             error: None,
         })
     }
@@ -513,6 +586,7 @@ impl IpcMessageHandler for SentinelIpcHandler {
                     monotonic_append_ratio: 0.0,
                     edit_entropy: 0.0,
                     median_interval: 0.0,
+                    biological_cadence_score: 0.0,
                     error: Some(e),
                 }),
 

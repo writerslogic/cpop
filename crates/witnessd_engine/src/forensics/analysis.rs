@@ -105,6 +105,10 @@ pub fn analyze_forensics(
     if let Some(samples) = jitter_samples {
         metrics.cadence = analyze_cadence(samples);
 
+        // Biological cadence steadiness
+        metrics.biological_cadence_score =
+            crate::physics::biological::BiologicalCadence::analyze(samples);
+
         let fingerprint = BehavioralFingerprint::from_samples(samples);
         metrics.behavioral = Some(fingerprint);
 
@@ -135,6 +139,7 @@ pub fn analyze_forensics(
         &metrics.cadence,
         metrics.anomaly_count,
         events.len(),
+        metrics.biological_cadence_score,
     );
 
     metrics.risk_level = determine_risk_level(metrics.assessment_score, events.len());

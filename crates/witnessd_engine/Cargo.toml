@@ -104,7 +104,7 @@ witnessd_jitter = { path = "../witnessd_jitter", version = "0.2", optional = tru
 typeshare = "1.0.5"
 
 # Witnessd Protocol
-witnessd_protocol = { path = "../witnessd_protocol" }
+witnessd_protocol = { path = "../witnessd_protocol", version = "0.1" }
 
 # Windows Specific
 [target.'cfg(windows)'.dependencies]

@@ -97,12 +97,8 @@ impl Evidence {
         }
     }
 
-    /// Update hasher with binary representation of evidence.
-    ///
-    /// Provides a stable, canonical representation for cryptographic hashing.
-    /// Includes sequence number for tamper detection.
-    pub fn hash_into(&self, hasher: &mut sha2::Sha256) {
-        use sha2::Digest;
+    /// Write canonical binary representation to an arbitrary sink.
+    fn write_fields(&self, mut f: impl FnMut(&[u8])) {
         match self {
             Evidence::Phys {
                 phys_hash,
@@ -110,57 +106,36 @@ impl Evidence {
                 timestamp_us,
                 sequence,
             } => {
-                hasher.update([0u8]); // Type tag
-                hasher.update(phys_hash.hash);
-                hasher.update([phys_hash.entropy_bits]);
-                hasher.update(jitter.to_le_bytes());
-                hasher.update(timestamp_us.to_le_bytes());
-                hasher.update(sequence.to_le_bytes());
+                f(&[0u8]); // Type tag
+                f(&phys_hash.hash);
+                f(&[phys_hash.entropy_bits]);
+                f(&jitter.to_le_bytes());
+                f(&timestamp_us.to_le_bytes());
+                f(&sequence.to_le_bytes());
             }
             Evidence::Pure {
                 jitter,
                 timestamp_us,
                 sequence,
             } => {
-                hasher.update([1u8]); // Type tag
-                hasher.update(jitter.to_le_bytes());
-                hasher.update(timestamp_us.to_le_bytes());
-                hasher.update(sequence.to_le_bytes());
+                f(&[1u8]); // Type tag
+                f(&jitter.to_le_bytes());
+                f(&timestamp_us.to_le_bytes());
+                f(&sequence.to_le_bytes());
             }
         }
     }
 
-    /// Update HMAC with binary representation of evidence.
-    ///
-    /// Provides a stable, canonical representation for keyed MAC computation.
-    /// Includes sequence number for tamper detection.
+    /// Update hasher with canonical binary representation.
+    pub fn hash_into(&self, hasher: &mut sha2::Sha256) {
+        use sha2::Digest;
+        self.write_fields(|bytes| hasher.update(bytes));
+    }
+
+    /// Update HMAC with canonical binary representation.
     pub fn hash_into_mac(&self, mac: &mut hmac::Hmac<sha2::Sha256>) {
         use hmac::Mac;
-        match self {
-            Evidence::Phys {
-                phys_hash,
-                jitter,
-                timestamp_us,
-                sequence,
-            } => {
-                mac.update(&[0u8]); // Type tag
-                mac.update(&phys_hash.hash);
-                mac.update(&[phys_hash.entropy_bits]);
-                mac.update(&jitter.to_le_bytes());
-                mac.update(&timestamp_us.to_le_bytes());
-                mac.update(&sequence.to_le_bytes());
-            }
-            Evidence::Pure {
-                jitter,
-                timestamp_us,
-                sequence,
-            } => {
-                mac.update(&[1u8]); // Type tag
-                mac.update(&jitter.to_le_bytes());
-                mac.update(&timestamp_us.to_le_bytes());
-                mac.update(&sequence.to_le_bytes());
-            }
-        }
+        self.write_fields(|bytes| mac.update(bytes));
     }
 
     /// Get the jitter value regardless of evidence type.
@@ -399,18 +374,7 @@ impl EvidenceChain {
     }
 }
 
-/// Get current timestamp in microseconds since Unix epoch.
-///
-/// # Returns
-///
-/// Microseconds since 1970-01-01 00:00:00 UTC.
-/// Returns 0 if the system clock is set before the Unix epoch
-/// (which should not occur on properly configured systems).
-///
-/// # Note
-///
-/// The returned `u64` can represent timestamps until approximately
-/// year 586,912 CE, so overflow is not a practical concern.
+/// Current Unix timestamp in microseconds (0 if clock is pre-epoch).
 #[cfg(feature = "std")]
 fn current_timestamp_us() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

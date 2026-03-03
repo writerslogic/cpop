@@ -124,6 +124,8 @@ pub struct ForensicMetrics {
     pub steg_confidence: f64,
     pub anomaly_count: usize,
     pub risk_level: RiskLevel,
+    /// Biological cadence steadiness score (0.0-1.0, higher = steadier).
+    pub biological_cadence_score: f64,
 }
 
 impl ForensicMetrics {

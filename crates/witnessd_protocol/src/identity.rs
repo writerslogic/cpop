@@ -21,6 +21,8 @@ use x509_cert::ext::{AsExtension, Extension};
 use x509_cert::name::Name;
 use zeroize::Zeroizing;
 
+const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
+
 /// Wrapper to implement x509-cert builder traits for VerifyingKey.
 #[derive(Clone, Debug)]
 pub struct PoPVerifyingKey(pub VerifyingKey);
@@ -29,7 +31,7 @@ impl EncodePublicKey for PoPVerifyingKey {
     fn to_public_key_der(&self) -> spki::Result<spki::der::Document> {
         let spki = SubjectPublicKeyInfoOwned {
             algorithm: AlgorithmIdentifierOwned {
-                oid: ObjectIdentifier::new_unwrap("1.3.101.112"), // Ed25519
+                oid: ED25519_OID,
                 parameters: None,
             },
             subject_public_key: BitString::from_bytes(self.0.as_bytes())?,
@@ -52,7 +54,7 @@ impl Keypair for PoPSigner {
 impl DynSignatureAlgorithmIdentifier for PoPSigner {
     fn signature_algorithm_identifier(&self) -> spki::Result<AlgorithmIdentifierOwned> {
         Ok(AlgorithmIdentifierOwned {
-            oid: ObjectIdentifier::new_unwrap("1.3.101.112"), // Ed25519
+            oid: ED25519_OID,
             parameters: None,
         })
     }

@@ -135,16 +135,11 @@ impl PoPVerifier {
     }
 
     pub fn verify(&self, cose_data: &[u8]) -> Result<EvidencePacket> {
-        // 1. Verify COSE signature
         let payload = verify_evidence_cose(cose_data, &self.verifying_key)?;
-
-        // 2. Decode EvidencePacket
         let packet = decode_evidence(&payload)?;
-
-        // 3. Validate structural integrity
         self.validate_structure(&packet)?;
 
-        // 4. Verify causality chain (constant-time comparisons)
+        // Causality chain verification uses constant-time comparisons
         let mut last_hash = hash_sha256(&packet.document.content_hash.digest);
 
         for (i, checkpoint) in packet.checkpoints.iter().enumerate() {
@@ -187,10 +182,8 @@ impl PoPVerifier {
             last_hash = expected_hash;
         }
 
-        // 5. Validate temporal consistency (detects adversarial collapse)
         self.validate_temporal_consistency(&packet)?;
 
-        // 6. Validate baseline verification (if present)
         if let Some(ref bv) = packet.baseline_verification {
             self.validate_baseline_verification(bv)?;
         }

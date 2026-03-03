@@ -13,6 +13,21 @@ use crate::vdf::{self, Parameters};
 
 use super::types::*;
 
+/// Mix an optional physics seed into a base VDF input.
+///
+/// When present, hashes the base input together with the physics seed to produce
+/// a new VDF input that is bound to both the chain state and the physical context.
+fn mix_physics_seed(base_input: [u8; 32], physics_seed: Option<[u8; 32]>) -> [u8; 32] {
+    if let Some(seed) = physics_seed {
+        let mut hasher = Sha256::new();
+        hasher.update(base_input);
+        hasher.update(seed);
+        hasher.finalize().into()
+    } else {
+        base_input
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chain {
     pub document_id: String,
@@ -139,6 +154,10 @@ impl Chain {
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
     ///
     /// Prevents precomputation since each VDF depends on the previous VDF's actual output.
+    ///
+    /// When `physics` is provided, a physics seed is derived from the content
+    /// hash and physical context, then mixed into the VDF input for stronger
+    /// non-repudiation binding to the local hardware environment.
     pub fn commit_entangled(
         &mut self,
         message: Option<String>,
@@ -146,6 +165,7 @@ impl Chain {
         jitter_session_id: String,
         keystroke_count: u64,
         vdf_duration: Duration,
+        physics: Option<&crate::PhysicalContext>,
     ) -> Result<Checkpoint> {
         if self.entanglement_mode != EntanglementMode::Entangled {
             return Err(Error::invalid_state(
@@ -165,16 +185,23 @@ impl Chain {
             .map(|v| v.output)
             .unwrap_or([0u8; 32]);
 
+        // Derive physics seed if physical context is available
+        let physics_seed = physics
+            .map(|ctx| crate::physics::entanglement::Entanglement::create_seed(content_hash, ctx));
+
         let mut checkpoint =
             Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
         checkpoint.jitter_binding = Some(JitterBinding {
             jitter_hash,
             session_id: jitter_session_id,
             keystroke_count,
+            physics_seed,
         });
 
-        let vdf_input =
+        // Compute entangled VDF input, mixing in physics seed when available
+        let base_input =
             vdf::chain_input_entangled(previous_vdf_output, jitter_hash, content_hash, ordinal);
+        let vdf_input = mix_physics_seed(base_input, physics_seed);
         let proof = vdf::compute(vdf_input, vdf_duration, self.vdf_params)?;
         checkpoint.vdf = Some(proof);
 
@@ -187,7 +214,9 @@ impl Chain {
     /// Commit with full RFC-compliant structures (draft-condrey-rats-pop-01).
     ///
     /// Includes `VdfProofRfc`, `JitterBinding` (entropy + stats), and `TimeEvidence`.
-    /// Recommended for production use cases requiring standards-compliant output.
+    ///
+    /// When `physics` is provided and the chain is in `Entangled` mode,
+    /// the physics seed is mixed into the VDF input for stronger non-repudiation.
     pub fn commit_rfc(
         &mut self,
         message: Option<String>,
@@ -195,6 +224,7 @@ impl Chain {
         rfc_jitter: Option<rfc::JitterBinding>,
         time_evidence: Option<TimeEvidence>,
         calibration: rfc::CalibrationAttestation,
+        physics: Option<&crate::PhysicalContext>,
     ) -> Result<Checkpoint> {
         if matches!(self.entanglement_mode, EntanglementMode::Entangled) && rfc_jitter.is_none() {
             return Err(Error::checkpoint("entangled mode requires jitter data"));
@@ -207,6 +237,15 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = last_cp.map(|cp| cp.hash).unwrap_or([0u8; 32]);
 
+        // Derive physics seed for entangled mode when physical context is available
+        let physics_seed = if self.entanglement_mode == EntanglementMode::Entangled {
+            physics.map(|ctx| {
+                crate::physics::entanglement::Entanglement::create_seed(content_hash, ctx)
+            })
+        } else {
+            None
+        };
+
         let vdf_input = match self.entanglement_mode {
             EntanglementMode::Legacy => vdf::chain_input(content_hash, previous_hash, ordinal),
             EntanglementMode::Entangled => {
@@ -218,7 +257,13 @@ impl Chain {
                     .as_ref()
                     .map(|j| j.entropy_commitment.hash)
                     .unwrap_or([0u8; 32]);
-                vdf::chain_input_entangled(previous_vdf_output, jitter_hash, content_hash, ordinal)
+                let base_input = vdf::chain_input_entangled(
+                    previous_vdf_output,
+                    jitter_hash,
+                    content_hash,
+                    ordinal,
+                );
+                mix_physics_seed(base_input, physics_seed)
             }
         };
 
@@ -247,6 +292,7 @@ impl Chain {
             jitter_hash: rj.entropy_commitment.hash,
             session_id: format!("rfc-{}", ordinal),
             keystroke_count: rj.summary.sample_count,
+            physics_seed,
         });
 
         let mut checkpoint =
@@ -418,12 +464,13 @@ impl Chain {
                         [0u8; 32]
                     };
 
-                    let expected_input = vdf::chain_input_entangled(
+                    let base_input = vdf::chain_input_entangled(
                         previous_vdf_output,
                         jitter_binding.jitter_hash,
                         checkpoint.content_hash,
                         checkpoint.ordinal,
                     );
+                    let expected_input = mix_physics_seed(base_input, jitter_binding.physics_seed);
                     if vdf.input != expected_input {
                         report.fail(format!("checkpoint {i}: VDF input mismatch (entangled)"));
                         return report;

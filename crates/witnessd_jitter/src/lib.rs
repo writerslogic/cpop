@@ -24,18 +24,11 @@
 //! ```rust
 //! use witnessd_jitter::{HybridEngine, PureJitter, PhysJitter, Evidence};
 //!
-//! // Create hybrid engine with fallback
 //! let engine = HybridEngine::new(PhysJitter::default(), PureJitter::default());
-//! let secret = [0u8; 32]; // Your session secret
+//! let secret = [0u8; 32];
+//! let (jitter, evidence) = engine.sample(&secret, b"keystroke data").unwrap();
 //!
-//! // Sample jitter for each keystroke
-//! let inputs = b"keystroke data";
-//! let (jitter, evidence) = engine.sample(&secret, inputs).unwrap();
-//!
-//! // Apply jitter delay
 //! std::thread::sleep(std::time::Duration::from_micros(jitter as u64));
-//!
-//! // Store evidence for later verification
 //! println!("Jitter: {}us, Physics: {}", jitter, evidence.is_phys());
 //! ```
 //!

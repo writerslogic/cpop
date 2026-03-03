@@ -81,7 +81,10 @@ impl Sentinel {
 
     /// Return existing or lazily generate a 32-byte attestation nonce.
     pub fn get_or_generate_nonce(&self) -> [u8; 32] {
-        let mut nonce_lock = self.session_nonce.write().unwrap();
+        let mut nonce_lock = self
+            .session_nonce
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
         if let Some(nonce) = *nonce_lock {
             nonce
         } else {
@@ -95,13 +98,19 @@ impl Sentinel {
 
     /// Clear the session nonce, forcing regeneration on next access.
     pub fn reset_nonce(&self) {
-        let mut nonce_lock = self.session_nonce.write().unwrap();
+        let mut nonce_lock = self
+            .session_nonce
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
         *nonce_lock = None;
     }
 
     /// Enable voice fingerprinting. Requires prior user consent.
     pub fn enable_voice_fingerprinting(&self) {
-        let mut collector = self.voice_collector.write().unwrap();
+        let mut collector = self
+            .voice_collector
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
         if collector.is_none() {
             *collector = Some(crate::fingerprint::VoiceCollector::new());
         }
@@ -109,7 +118,10 @@ impl Sentinel {
 
     /// Disable voice fingerprinting and drop the collector.
     pub fn disable_voice_fingerprinting(&self) {
-        let mut collector = self.voice_collector.write().unwrap();
+        let mut collector = self
+            .voice_collector
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
         *collector = None;
     }
 
@@ -132,12 +144,18 @@ impl Sentinel {
 
     /// Clone the current mouse idle jitter statistics.
     pub fn mouse_idle_stats(&self) -> crate::platform::MouseIdleStats {
-        self.mouse_idle_stats.read().unwrap().clone()
+        self.mouse_idle_stats
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// Reset mouse idle statistics to empty state.
     pub fn reset_mouse_idle_stats(&self) {
-        *self.mouse_idle_stats.write().unwrap() = crate::platform::MouseIdleStats::new();
+        *self
+            .mouse_idle_stats
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = crate::platform::MouseIdleStats::new();
     }
 
     /// Access the mouse steganography engine.
@@ -147,9 +165,12 @@ impl Sentinel {
 
     /// Re-derive the mouse steganography seed from the current signing key.
     fn update_mouse_stego_seed(&self) {
-        let key = self.signing_key.read().unwrap();
+        let key = self.signing_key.read().unwrap_or_else(|p| p.into_inner());
         let mut seed = key.to_bytes();
-        let mut engine = self.mouse_stego_engine.write().unwrap();
+        let mut engine = self
+            .mouse_stego_engine
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
         engine.reset();
         *engine = crate::platform::MouseStegoEngine::new(seed);
         seed.zeroize();
@@ -157,21 +178,23 @@ impl Sentinel {
 
     /// Set the signing key (also re-seeds mouse steganography).
     pub fn set_signing_key(&self, key: SigningKey) {
-        *self.signing_key.write().unwrap() = key;
+        *self.signing_key.write().unwrap_or_else(|p| p.into_inner()) = key;
         self.update_mouse_stego_seed();
     }
 
     /// Set signing key from a 32-byte HMAC key. Silently ignores wrong-length keys.
     pub fn set_hmac_key(&self, key: Vec<u8>) {
         if key.len() == 32 {
-            let bytes: [u8; 32] = match key.try_into() {
+            let mut bytes: [u8; 32] = match key.try_into() {
                 Ok(b) => b,
                 Err(_) => {
                     log::error!("HMAC key must be exactly 32 bytes");
                     return;
                 }
             };
-            *self.signing_key.write().unwrap() = SigningKey::from_bytes(&bytes);
+            *self.signing_key.write().unwrap_or_else(|p| p.into_inner()) =
+                SigningKey::from_bytes(&bytes);
+            bytes.zeroize();
             self.update_mouse_stego_seed();
         } else {
             log::warn!("HMAC key length {} is not 32 bytes, ignoring", key.len());
@@ -314,9 +337,9 @@ impl Sentinel {
                         };
                         // RwLock::write() per keystroke: at human typing speeds (5-10 Hz)
                         // contention is negligible. Revisit only if profiling shows otherwise.
-                        activity_accumulator.write().unwrap().add_sample(&sample);
+                        activity_accumulator.write().unwrap_or_else(|p| p.into_inner()).add_sample(&sample);
 
-                        if let Some(ref mut collector) = *voice_collector.write().unwrap() {
+                        if let Some(ref mut collector) = *voice_collector.write().unwrap_or_else(|p| p.into_inner()) {
                             collector.record_keystroke(event.keycode, event.char_value);
                         }
 
@@ -327,7 +350,7 @@ impl Sentinel {
                         // Record micro-movements only during active typing (idle jitter)
                         let is_during_typing = last_keystroke_time.elapsed() < Duration::from_secs(2);
                         if is_during_typing && event.is_micro_movement() {
-                            mouse_idle_stats.write().unwrap().record(&event);
+                            mouse_idle_stats.write().unwrap_or_else(|p| p.into_inner()).record(&event);
                         }
 
                         // Advance stego jitter chain for evidence binding
@@ -418,7 +441,12 @@ impl Sentinel {
     }
 
     pub fn sessions(&self) -> Vec<DocumentSession> {
-        self.sessions.read().unwrap().values().cloned().collect()
+        self.sessions
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn session(&self, path: &str) -> Result<DocumentSession> {
@@ -431,7 +459,10 @@ impl Sentinel {
     }
 
     pub fn current_focus(&self) -> Option<String> {
-        self.current_focus.read().unwrap().clone()
+        self.current_focus
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// Subscribe to session lifecycle events (started, focused, ended, etc.).
@@ -486,7 +517,7 @@ impl Sentinel {
         let path_str = file_path.to_string_lossy().to_string();
 
         // Single write lock for check+insert to avoid TOCTOU race
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write().unwrap_or_else(|p| p.into_inner());
         if sessions.contains_key(&path_str) {
             return Err((
                 IpcErrorCode::AlreadyTracking,
@@ -514,7 +545,11 @@ impl Sentinel {
         let mut session_id_bytes = [0u8; 32];
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-            let key = self.signing_key.read().unwrap().clone();
+            let key = self
+                .signing_key
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
             if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
                 let payload = create_session_start_payload(&session);
                 if let Err(e) = wal.append(EntryType::SessionStart, payload) {
@@ -581,7 +616,12 @@ impl Sentinel {
     }
 
     pub fn tracked_files(&self) -> Vec<String> {
-        self.sessions.read().unwrap().keys().cloned().collect()
+        self.sessions
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .keys()
+            .cloned()
+            .collect()
     }
 
     pub fn start_time(&self) -> Option<SystemTime> {
@@ -599,7 +639,7 @@ impl Sentinel {
             return Ok(()); // Need at least 10 keystrokes for meaningful baseline
         }
 
-        let signing_key = self.signing_key.read().unwrap();
+        let signing_key = self.signing_key.read().unwrap_or_else(|p| p.into_inner());
         let public_key = signing_key.verifying_key().to_bytes();
         let mut hasher = sha2::Sha256::new();
         hasher.update(public_key);

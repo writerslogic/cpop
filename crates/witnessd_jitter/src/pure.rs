@@ -5,12 +5,7 @@
 //! Provides deterministic jitter computation using only cryptographic primitives.
 //! Security relies on economic cost of retyping content identically.
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-
 use crate::{Jitter, JitterEngine, PhysHash};
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// Pure jitter engine using HMAC for deterministic delay computation.
 ///
@@ -55,14 +50,7 @@ impl PureJitter {
 
 impl JitterEngine for PureJitter {
     fn compute_jitter(&self, secret: &[u8; 32], inputs: &[u8], _entropy: PhysHash) -> Jitter {
-        let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key size");
-        mac.update(b"witnessd_jitter/v1/jitter"); // Domain separation
-        mac.update(inputs);
-        let result = mac.finalize().into_bytes();
-
-        // Extract 4 bytes for jitter computation
-        let hash_val = u32::from_be_bytes([result[0], result[1], result[2], result[3]]);
-        self.jmin + (hash_val % self.range)
+        crate::traits::hmac_jitter(secret, inputs, &[], self.jmin, self.range)
     }
 }
 

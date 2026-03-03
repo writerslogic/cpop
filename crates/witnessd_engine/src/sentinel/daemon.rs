@@ -69,10 +69,10 @@ impl DaemonManager {
         let sentinel_dir = witnessd_dir.join("sentinel");
 
         Self {
-            witnessd_dir,
             pid_file: sentinel_dir.join("daemon.pid"),
             state_file: sentinel_dir.join("daemon.state"),
-            socket_path: sentinel_dir.join("daemon.sock"),
+            socket_path: witnessd_dir.join("sentinel.sock"),
+            witnessd_dir,
         }
     }
 
@@ -217,6 +217,11 @@ impl DaemonManager {
         status
     }
 
+    /// Path to the IPC socket.
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
+
     /// Path to the sentinel subdirectory.
     pub fn sentinel_dir(&self) -> PathBuf {
         self.witnessd_dir.join("sentinel")
@@ -228,13 +233,13 @@ impl DaemonManager {
     }
 }
 
-/// Probe process liveness via `kill(pid, SIGCONT)` (signal 0 alternative).
+/// Probe process liveness via `kill(pid, 0)` (null signal).
 #[cfg(unix)]
 fn is_process_running(pid: i32) -> bool {
-    use nix::sys::signal::{kill, Signal};
+    use nix::sys::signal::kill;
     use nix::unistd::Pid;
 
-    kill(Pid::from_raw(pid), Signal::SIGCONT).is_ok()
+    kill(Pid::from_raw(pid), None).is_ok()
 }
 
 #[cfg(not(unix))]
@@ -267,8 +272,7 @@ pub async fn cmd_start(witnessd_dir: &Path) -> Result<DaemonHandle> {
 
     sentinel.start().await?;
 
-    let socket_path = witnessd_dir.join("sentinel.sock");
-    let ipc_server = IpcServer::bind(socket_path.clone())
+    let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
         .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
 
     let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
@@ -324,8 +328,7 @@ pub async fn cmd_start_foreground(witnessd_dir: &Path) -> Result<()> {
 
     sentinel.start().await?;
 
-    let socket_path = witnessd_dir.join("sentinel.sock");
-    let ipc_server = IpcServer::bind(socket_path.clone())
+    let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
         .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
 
     let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
@@ -420,8 +423,7 @@ pub fn cmd_track(witnessd_dir: &Path, file_path: &Path) -> Result<()> {
 
     let abs_path = file_path.canonicalize()?;
 
-    let socket_path = witnessd_dir.join("sentinel.sock");
-    let mut client = IpcClient::connect(socket_path)
+    let mut client = IpcClient::connect(daemon_mgr.socket_path().to_path_buf())
         .map_err(|e| SentinelError::Ipc(format!("Failed to connect to daemon: {}", e)))?;
 
     let msg = IpcMessage::StartWitnessing {
@@ -474,8 +476,7 @@ pub fn cmd_untrack(witnessd_dir: &Path, file_path: &Path) -> Result<()> {
 
     let abs_path = file_path.canonicalize()?;
 
-    let socket_path = witnessd_dir.join("sentinel.sock");
-    let mut client = IpcClient::connect(socket_path)
+    let mut client = IpcClient::connect(daemon_mgr.socket_path().to_path_buf())
         .map_err(|e| SentinelError::Ipc(format!("Failed to connect to daemon: {}", e)))?;
 
     let msg = IpcMessage::StopWitnessing {

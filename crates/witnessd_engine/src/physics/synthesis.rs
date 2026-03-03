@@ -2,6 +2,7 @@
 
 use crate::jitter::SimpleJitterSample;
 use crate::physics::clock::ClockSkew;
+use crate::physics::environment::AmbientSensing;
 use crate::physics::puf::SiliconPUF;
 use sha2::{Digest, Sha256};
 
@@ -11,6 +12,8 @@ pub struct PhysicalContext {
     pub thermal_proxy: u32,
     pub silicon_puf: [u8; 32],
     pub io_latency_ns: u64,
+    pub ambient_hash: [u8; 32],
+    pub is_virtualized: bool,
     pub combined_hash: [u8; 32],
 }
 
@@ -20,8 +23,8 @@ impl PhysicalContext {
         let skew = ClockSkew::measure();
         let io_latency = measure_io_latency();
         let puf = SiliconPUF::generate_fingerprint();
-
         let thermal = measure_thermal_proxy();
+        let ambient = AmbientSensing::capture();
 
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-physics-v2"); // Versioned
@@ -29,6 +32,7 @@ impl PhysicalContext {
         hasher.update(thermal.to_be_bytes());
         hasher.update(puf);
         hasher.update(io_latency.to_be_bytes());
+        hasher.update(ambient.hash);
 
         // Bind the biological signature
         for sample in biological_cadence.iter().take(10) {
@@ -40,6 +44,8 @@ impl PhysicalContext {
             thermal_proxy: thermal,
             silicon_puf: puf,
             io_latency_ns: io_latency,
+            ambient_hash: ambient.hash,
+            is_virtualized: ambient.is_virtualized,
             combined_hash: hasher.finalize().into(),
         }
     }

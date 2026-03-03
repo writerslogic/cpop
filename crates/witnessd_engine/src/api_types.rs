@@ -79,6 +79,7 @@ pub struct ForensicsResponse {
     pub perplexity_score: f64,
     pub risk_level: String,
     pub anomaly_count: u32,
+    pub biological_cadence_score: f64,
     pub primary: PrimaryMetrics,
 }
 

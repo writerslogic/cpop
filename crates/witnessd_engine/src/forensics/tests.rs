@@ -314,7 +314,7 @@ fn test_assessment_score() {
         ..Default::default()
     };
 
-    let score = calculate_assessment_score(&good_primary, &good_cadence, 0, 100);
+    let score = calculate_assessment_score(&good_primary, &good_cadence, 0, 100, 0.0);
     assert!(score > 0.7);
 
     let bad_primary = PrimaryMetrics {
@@ -331,7 +331,7 @@ fn test_assessment_score() {
         ..Default::default()
     };
 
-    let bad_score = calculate_assessment_score(&bad_primary, &bad_cadence, 5, 100);
+    let bad_score = calculate_assessment_score(&bad_primary, &bad_cadence, 5, 100, 0.0);
     assert!(bad_score < 0.5);
 }
 
