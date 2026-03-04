@@ -6,7 +6,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::physics::puf::SiliconPUF;
 
@@ -60,8 +60,9 @@ impl SoftwarePUF {
     fn load_or_create_seed(&mut self) -> Result<(), KeyHierarchyError> {
         // 1. Try loading from secure storage
         if let Ok(Some(seed)) = crate::identity::SecureStorage::load_seed() {
+            let mut seed = Zeroizing::new(seed);
             if seed.len() == 32 {
-                self.seed = seed;
+                self.seed = std::mem::take(&mut *seed);
                 self.device_id = self.compute_device_id();
                 return Ok(());
             }
@@ -69,6 +70,7 @@ impl SoftwarePUF {
 
         // 2. Check for legacy file-based storage
         if let Ok(data) = fs::read(&self.seed_path) {
+            let mut data = Zeroizing::new(data);
             if data.len() == 32 {
                 // Try to migrate to secure storage
                 if let Err(e) = crate::identity::SecureStorage::save_seed(&data) {
@@ -80,7 +82,7 @@ impl SoftwarePUF {
                     // Delete file after successful migration
                     let _ = fs::remove_file(&self.seed_path);
                 }
-                self.seed = data;
+                self.seed = std::mem::take(&mut *data);
                 self.device_id = self.compute_device_id();
                 return Ok(());
             }
