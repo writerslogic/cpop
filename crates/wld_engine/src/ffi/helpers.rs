@@ -4,6 +4,7 @@ use crate::forensics::EventData;
 use crate::rfc::wire_types::AttestationTier;
 use crate::store::SecureStore;
 use std::path::PathBuf;
+use zeroize::Zeroizing;
 
 pub(crate) fn get_data_dir() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
@@ -20,24 +21,21 @@ pub(crate) fn get_db_path() -> Option<PathBuf> {
     get_data_dir().map(|d| d.join("events.db"))
 }
 
-pub(crate) fn load_hmac_key() -> Option<Vec<u8>> {
-    // 1. Try loading from secure storage (keychain/keyring) first
+pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
     if let Ok(Some(key)) = crate::identity::SecureStorage::load_hmac_key() {
-        return Some(key);
+        return Some(Zeroizing::new(key));
     }
 
-    // 2. Fallback to file-based storage
     let data_dir = get_data_dir()?;
     let key_path = data_dir.join("signing_key");
-    let key_data = std::fs::read(&key_path).ok()?;
+    let key_data = Zeroizing::new(std::fs::read(&key_path).ok()?);
     let seed = if key_data.len() >= 32 {
         &key_data[..32]
     } else {
         return None;
     };
-    let key = crate::crypto::derive_hmac_key(seed);
+    let key = Zeroizing::new(crate::crypto::derive_hmac_key(seed));
 
-    // Try to migrate to secure storage for next time
     if let Err(e) = crate::identity::SecureStorage::save_hmac_key(&key) {
         log::warn!("Failed to migrate signing key to secure storage: {}", e);
     }
@@ -49,8 +47,9 @@ pub(crate) fn open_store() -> Result<SecureStore, String> {
     let db_path = get_db_path()
         .filter(|p| p.exists())
         .ok_or_else(|| "Database not found".to_string())?;
-    let hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
-    SecureStore::open(&db_path, hmac_key).map_err(|e| format!("Failed to open database: {}", e))
+    let mut hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
+    SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))
+        .map_err(|e| format!("Failed to open database: {}", e))
 }
 
 pub(crate) fn detect_attestation_tier() -> AttestationTier {

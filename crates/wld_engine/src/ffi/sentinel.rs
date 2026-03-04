@@ -98,8 +98,8 @@ pub fn ffi_sentinel_start() -> FfiResult {
     };
 
     // Load and set HMAC key for event signing
-    if let Some(key) = load_hmac_key() {
-        sentinel.set_hmac_key(key.to_vec());
+    if let Some(mut key) = load_hmac_key() {
+        sentinel.set_hmac_key(std::mem::take(&mut *key));
     }
 
     let rt = ffi_runtime();

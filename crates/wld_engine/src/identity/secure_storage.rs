@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use keyring::Entry;
 use std::sync::{Once, OnceLock};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::ProtectedBuf;
 
@@ -44,7 +45,7 @@ impl SecureStorage {
         }
     }
 
-    fn load(account: &str) -> Result<Option<Vec<u8>>> {
+    fn load(account: &str) -> Result<Option<Zeroizing<Vec<u8>>>> {
         #[cfg(target_os = "macos")]
         {
             Self::migrate_macos_keychain();
@@ -60,7 +61,7 @@ impl SecureStorage {
                     let data = general_purpose::STANDARD
                         .decode(&encoded)
                         .map_err(|e| anyhow!("Failed to decode data from keyring: {}", e))?;
-                    Ok(Some(data))
+                    Ok(Some(Zeroizing::new(data)))
                 }
                 Err(keyring::Error::NoEntry) => Ok(None),
                 Err(e) => Err(anyhow!("Keyring error: {}", e)),
@@ -148,7 +149,7 @@ impl SecureStorage {
     }
 
     #[cfg(target_os = "macos")]
-    fn load_macos(account: &str) -> Result<Option<Vec<u8>>> {
+    fn load_macos(account: &str) -> Result<Option<Zeroizing<Vec<u8>>>> {
         use core_foundation::base::{CFType, TCFType};
         use core_foundation::boolean::CFBoolean;
         use core_foundation::dictionary::CFDictionary;
@@ -192,12 +193,14 @@ impl SecureStorage {
         if status == security_framework_sys::base::errSecSuccess && !result.is_null() {
             let data_cf =
                 unsafe { core_foundation::data::CFData::wrap_under_create_rule(result as _) };
-            let encoded = String::from_utf8(data_cf.bytes().to_vec())
+            let mut encoded = String::from_utf8(data_cf.bytes().to_vec())
                 .map_err(|e| anyhow!("Invalid UTF-8 in keychain data: {}", e))?;
-            let decoded = general_purpose::STANDARD
-                .decode(&encoded)
-                .map_err(|e| anyhow!("Failed to decode base64 from keychain: {}", e))?;
-            Ok(Some(decoded))
+            let decoded = general_purpose::STANDARD.decode(&encoded).map_err(|e| {
+                encoded.zeroize();
+                anyhow!("Failed to decode base64 from keychain: {}", e)
+            })?;
+            encoded.zeroize();
+            Ok(Some(Zeroizing::new(decoded)))
         } else if status == -25300 {
             // errSecItemNotFound
             Ok(None)
@@ -273,12 +276,12 @@ impl SecureStorage {
                 // Use keyring to read old item (may prompt once)
                 if let Ok(entry) = Entry::new(SERVICE_NAME, account) {
                     if let Ok(encoded) = entry.get_password() {
-                        if let Ok(data) = general_purpose::STANDARD.decode(&encoded) {
+                        if let Ok(mut data) = general_purpose::STANDARD.decode(&encoded) {
                             // Re-save with hardened policy
                             if Self::save_macos(account, &data).is_ok() {
-                                // Only delete if re-save succeeded
                                 let _ = entry.delete_password();
                             }
+                            data.zeroize();
                         }
                     }
                 }
@@ -299,10 +302,12 @@ impl SecureStorage {
             return Ok(Some(cached.as_slice().to_vec()));
         }
         let res = Self::load(SEED_ACCOUNT)?;
-        if let Some(ref data) = res {
-            let _ = SEED_CACHE.set(ProtectedBuf::new(data.clone()));
+        if let Some(data) = res {
+            let _ = SEED_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            Ok(Some(data.to_vec()))
+        } else {
+            Ok(None)
         }
-        Ok(res)
     }
 
     pub fn delete_seed() -> Result<()> {
@@ -318,10 +323,12 @@ impl SecureStorage {
             return Ok(Some(cached.as_slice().to_vec()));
         }
         let res = Self::load(HMAC_ACCOUNT)?;
-        if let Some(ref data) = res {
-            let _ = HMAC_CACHE.set(ProtectedBuf::new(data.clone()));
+        if let Some(data) = res {
+            let _ = HMAC_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            Ok(Some(data.to_vec()))
+        } else {
+            Ok(None)
         }
-        Ok(res)
     }
 
     pub fn save_mnemonic(phrase: &str) -> Result<()> {
@@ -334,8 +341,8 @@ impl SecureStorage {
         }
         let bytes = Self::load(MNEMONIC_ACCOUNT)?;
         if let Some(b) = bytes {
-            let s =
-                String::from_utf8(b).map_err(|e| anyhow!("Invalid UTF-8 in mnemonic: {}", e))?;
+            let s = String::from_utf8(b.to_vec())
+                .map_err(|e| anyhow!("Invalid UTF-8 in mnemonic: {}", e))?;
             let _ = MNEMONIC_CACHE.set(s.clone());
             Ok(Some(s))
         } else {
@@ -364,7 +371,7 @@ impl SecureStorage {
                 } else {
                     return Err(anyhow!("Invalid device ID length in keyring"));
                 }
-                let machine_id = String::from_utf8(mid)
+                let machine_id = String::from_utf8(mid.to_vec())
                     .map_err(|e| anyhow!("Invalid UTF-8 in machine ID from keyring: {}", e))?;
                 let _ = IDENTITY_CACHE.set((device_id, machine_id.clone()));
                 Ok(Some((device_id, machine_id)))
@@ -388,9 +395,11 @@ impl SecureStorage {
             return Ok(Some(cached.as_slice().to_vec()));
         }
         let res = Self::load(FINGERPRINT_KEY_ACCOUNT)?;
-        if let Some(ref data) = res {
-            let _ = FINGERPRINT_KEY_CACHE.set(ProtectedBuf::new(data.clone()));
+        if let Some(data) = res {
+            let _ = FINGERPRINT_KEY_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            Ok(Some(data.to_vec()))
+        } else {
+            Ok(None)
         }
-        Ok(res)
     }
 }

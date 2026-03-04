@@ -49,7 +49,7 @@ pub fn ffi_init() -> FfiResult {
     }
 
     let db_path = data_dir.join("events.db");
-    let hmac_key = match load_hmac_key() {
+    let mut hmac_key = match load_hmac_key() {
         Some(k) => k,
         None => {
             return FfiResult {
@@ -60,7 +60,7 @@ pub fn ffi_init() -> FfiResult {
         }
     };
 
-    match crate::store::SecureStore::open(&db_path, hmac_key) {
+    match crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key)) {
         Ok(_) => FfiResult {
             success: true,
             message: Some(format!("Initialized at {}", data_dir.display())),
