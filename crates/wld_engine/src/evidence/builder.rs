@@ -976,3 +976,112 @@ pub fn compute_events_binding_hash(events: &[crate::store::SecureEvent]) -> [u8;
     }
     hasher.finalize().into()
 }
+
+/// A content snapshot from an ephemeral session checkpoint.
+pub struct EphemeralSnapshot {
+    pub timestamp_ns: i64,
+    pub content_hash: [u8; 32],
+    pub char_count: u64,
+    pub message: Option<String>,
+}
+
+/// Build an evidence packet from ephemeral session data.
+///
+/// Constructs a signed declaration and checkpoint chain from in-memory
+/// snapshots. The caller provides the signing key and session metadata;
+/// this function handles all evidence assembly.
+pub fn build_ephemeral_packet(
+    final_hash_hex: &str,
+    statement: &str,
+    context_label: &str,
+    snapshots: &[EphemeralSnapshot],
+    signing_key: &ed25519_dalek::SigningKey,
+) -> crate::error::Result<Packet> {
+    let final_hash = hex::decode(final_hash_hex)
+        .map_err(|e| Error::evidence(format!("invalid final hash: {e}")))?;
+    let mut doc_hash = [0u8; 32];
+    if final_hash.len() >= 32 {
+        doc_hash.copy_from_slice(&final_hash[..32]);
+    }
+
+    let chain_hash = snapshots
+        .last()
+        .map(|s| s.content_hash)
+        .unwrap_or([0u8; 32]);
+
+    let signed_decl =
+        declaration::no_ai_declaration(doc_hash, chain_hash, context_label, statement)
+            .sign(signing_key)
+            .map_err(|e| Error::evidence(format!("declaration signing failed: {e}")))?;
+
+    let checkpoints: Vec<CheckpointProof> = snapshots
+        .iter()
+        .enumerate()
+        .map(|(i, snap)| CheckpointProof {
+            ordinal: i as u64,
+            timestamp: chrono::DateTime::from_timestamp_nanos(snap.timestamp_ns),
+            content_hash: hex::encode(snap.content_hash),
+            content_size: snap.char_count,
+            vdf_input: None,
+            vdf_output: None,
+            vdf_iterations: None,
+            elapsed_time: None,
+            previous_hash: if i > 0 {
+                hex::encode(snapshots[i - 1].content_hash)
+            } else {
+                hex::encode([0u8; 32])
+            },
+            hash: hex::encode(snap.content_hash),
+            message: snap.message.clone(),
+            signature: None,
+        })
+        .collect();
+
+    let packet = Packet {
+        version: 1,
+        exported_at: Utc::now(),
+        strength: Strength::Basic,
+        provenance: None,
+        document: DocumentInfo {
+            title: context_label.to_string(),
+            path: format!("ephemeral://{}", hex::encode(&doc_hash[..8])),
+            final_hash: final_hash_hex.to_string(),
+            final_size: snapshots.last().map(|s| s.char_count).unwrap_or(0),
+        },
+        checkpoints,
+        vdf_params: vdf::Parameters {
+            iterations_per_second: 0,
+            min_iterations: 0,
+            max_iterations: 0,
+        },
+        chain_hash: hex::encode(chain_hash),
+        declaration: Some(signed_decl),
+        presence: None,
+        hardware: None,
+        keystroke: None,
+        behavioral: None,
+        contexts: vec![],
+        external: None,
+        key_hierarchy: None,
+        jitter_binding: None,
+        time_evidence: None,
+        provenance_links: None,
+        continuation: None,
+        collaboration: None,
+        vdf_aggregate: None,
+        verifier_nonce: None,
+        packet_signature: None,
+        signing_public_key: None,
+        biology_claim: None,
+        physical_context: None,
+        trust_tier: None,
+        mmr_root: None,
+        mmr_proof: None,
+        writersproof_certificate_id: None,
+        baseline_verification: None,
+        claims: vec![],
+        limitations: vec![],
+    };
+
+    Ok(packet)
+}

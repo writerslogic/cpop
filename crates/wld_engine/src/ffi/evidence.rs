@@ -160,7 +160,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         _ => Some(crate::rfc::wire_types::ContentTier::Core),
     };
 
-    let checkpoints: Vec<CheckpointWire> = events
+    let checkpoints: Vec<CheckpointWire> = match events
         .iter()
         .enumerate()
         .map(|(i, ev)| {
@@ -172,11 +172,11 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             let vdf_output_bytes = ev.vdf_output.map(|b| b.to_vec());
             let merkle_root = vdf_output_bytes.clone().unwrap_or_else(|| vec![0u8; 32]);
 
-            CheckpointWire {
+            Ok(CheckpointWire {
                 sequence: i as u64,
                 checkpoint_id: ev.device_id,
                 timestamp: timestamp_ms,
-                content_hash: HashValue::sha256(ev.content_hash.to_vec()),
+                content_hash: HashValue::try_sha256(ev.content_hash.to_vec())?,
                 char_count: ev.file_size as u64,
                 delta: EditDelta {
                     chars_added: ev.size_delta.max(0) as u64,
@@ -185,8 +185,8 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                     op_count: 1,
                     positions: None,
                 },
-                prev_hash: HashValue::sha256(ev.previous_hash.to_vec()),
-                checkpoint_hash: HashValue::sha256(ev.event_hash.to_vec()),
+                prev_hash: HashValue::try_sha256(ev.previous_hash.to_vec())?,
+                checkpoint_hash: HashValue::try_sha256(ev.event_hash.to_vec())?,
                 process_proof: ProcessProof {
                     algorithm: ProofAlgorithm::SwfSha256,
                     params: ProofParams {
@@ -205,9 +205,30 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 entangled_mac: None,
                 self_receipts: None,
                 active_probes: None,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Invalid hash in event data: {e}")),
+            };
+        }
+    };
+
+    let doc_content_hash = match HashValue::try_sha256(latest.content_hash.to_vec()) {
+        Ok(h) => h,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Invalid document content hash: {e}")),
+            };
+        }
+    };
 
     let wire_packet = EvidencePacketWire {
         version: 1,
@@ -215,7 +236,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         packet_id: latest.device_id,
         created: now_ms,
         document: DocumentRef {
-            content_hash: HashValue::sha256(latest.content_hash.to_vec()),
+            content_hash: doc_content_hash,
             filename: file_path
                 .file_name()
                 .and_then(|n| n.to_str())

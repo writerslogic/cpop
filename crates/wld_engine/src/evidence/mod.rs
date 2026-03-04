@@ -19,4 +19,7 @@ pub use self::types::{
     RecordProvenance, Strength, TrustTier,
 };
 
-pub use self::builder::{compute_events_binding_hash, convert_anchor_proof, Builder};
+pub use self::builder::{
+    build_ephemeral_packet, compute_events_binding_hash, convert_anchor_proof, Builder,
+    EphemeralSnapshot,
+};
