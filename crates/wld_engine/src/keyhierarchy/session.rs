@@ -8,7 +8,7 @@ use chrono::Utc;
 use ed25519_dalek::{Signer, SigningKey};
 use rand::RngCore;
 use sha2::Digest;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::crypto::{
     build_cert_data, compute_entangled_nonce, hkdf_expand, RATCHET_ADVANCE_DOMAIN,
@@ -39,13 +39,13 @@ pub(crate) fn start_session_inner(
         bytes
     };
 
-    let mut key_bytes = signing_key.to_bytes();
-    let mut session_seed = hkdf_expand(
+    let key_bytes = Zeroizing::new(signing_key.to_bytes());
+    let session_seed = Zeroizing::new(hkdf_expand(
         key_bytes.as_slice(),
         SESSION_DOMAIN.as_bytes(),
         &session_input,
-    )?;
-    key_bytes.zeroize();
+    )?);
+    drop(key_bytes);
     let session_key = SigningKey::from_bytes(&session_seed);
     let session_pub = session_key.verifying_key().to_bytes().to_vec();
 
@@ -71,8 +71,7 @@ pub(crate) fn start_session_inner(
         end_restart_count: None,
     };
 
-    let ratchet_init = hkdf_expand(&session_seed, RATCHET_INIT_DOMAIN.as_bytes(), &[])?;
-    session_seed.zeroize();
+    let ratchet_init = hkdf_expand(session_seed.as_slice(), RATCHET_INIT_DOMAIN.as_bytes(), &[])?;
 
     Ok(Session {
         certificate,
@@ -362,14 +361,14 @@ impl Session {
 
         let challenge = sha2::Sha256::digest(b"witnessd-ratchet-recovery-v2");
         let response = puf.get_response(&challenge)?;
-        let mut key = hkdf_expand(&response, b"ratchet-recovery-key-v2", &[])?;
+        let key = Zeroizing::new(hkdf_expand(&response, b"ratchet-recovery-key-v2", &[])?);
 
         // Plaintext: ratchet_state(32) || ordinal(8)
-        let mut plaintext = vec![0u8; 40];
+        let mut plaintext = Zeroizing::new(vec![0u8; 40]);
         plaintext[..32].copy_from_slice(self.ratchet.current.as_bytes());
         plaintext[32..40].copy_from_slice(&self.ratchet.ordinal.to_be_bytes());
 
-        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        let cipher = ChaCha20Poly1305::new_from_slice(&*key)
             .map_err(|e| KeyHierarchyError::Crypto(format!("AEAD init: {e}")))?;
 
         // Generate random 12-byte nonce
@@ -381,9 +380,6 @@ impl Session {
         let ciphertext = cipher
             .encrypt(aead_nonce, plaintext.as_ref())
             .map_err(|e| KeyHierarchyError::Crypto(format!("AEAD encrypt: {e}")))?;
-
-        key.zeroize();
-        plaintext.zeroize();
 
         // Format: version(1) || aead_nonce(12) || ciphertext+tag
         let mut encrypted = Vec::with_capacity(1 + 12 + ciphertext.len());
