@@ -401,7 +401,7 @@ impl Wal {
             // Verify hash chain linkage (prev_hash must match our running last_hash).
             // Ed25519 signatures are NOT verified here because the verifying key
             // may differ from the signing key provided at open() time.
-            if entry.prev_hash != state.last_hash {
+            if entry.prev_hash.ct_eq(&state.last_hash).unwrap_u8() == 0 {
                 log::warn!(
                     "WAL broken chain at seq {}: truncating to last valid entry (offset {})",
                     entry.sequence,
@@ -414,7 +414,12 @@ impl Wal {
             state.cumulative_hasher.update(&entry_hash);
             let expected_cumulative = *state.cumulative_hasher.finalize().as_bytes();
 
-            if entry.cumulative_hash != expected_cumulative {
+            if entry
+                .cumulative_hash
+                .ct_eq(&expected_cumulative)
+                .unwrap_u8()
+                == 0
+            {
                 log::warn!(
                     "WAL cumulative hash mismatch at seq {}: truncating to last valid entry \
                      (offset {})",
