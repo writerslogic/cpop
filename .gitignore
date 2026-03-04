@@ -54,3 +54,4 @@ vendor/
 
 # Supabase (deployment config — keep private)
 supabase/
+todo.md
