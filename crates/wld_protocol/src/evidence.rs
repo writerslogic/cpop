@@ -33,7 +33,7 @@ impl PoPBuilder {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .expect("system clock before Unix epoch")
             .as_secs();
 
         let initial_hash = hash_sha256(&document.content_hash.digest);
@@ -66,7 +66,7 @@ impl PoPBuilder {
     pub fn add_checkpoint(&mut self, content: &[u8], char_count: u64) -> Result<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .expect("system clock before Unix epoch")
             .as_secs();
 
         let sequence = self.checkpoints.len() as u64;

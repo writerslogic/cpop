@@ -364,7 +364,10 @@ fn looks_like_file_path(s: &str) -> bool {
 pub fn normalize_document_path(path: &str) -> String {
     let path = Path::new(path);
 
-    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let abs = path.canonicalize().unwrap_or_else(|e| {
+        log::warn!("Failed to canonicalize path '{}': {e}", path.display());
+        path.to_path_buf()
+    });
 
     abs.to_string_lossy().to_string()
 }

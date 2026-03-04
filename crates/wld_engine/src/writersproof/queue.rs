@@ -82,12 +82,14 @@ impl OfflineQueue {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 match fs::read(&path) {
-                    Ok(data) => {
-                        if let Ok(queued) = serde_json::from_slice::<QueuedAttestation>(&data) {
-                            entries.push(queued);
-                        }
+                    Ok(data) => match serde_json::from_slice::<QueuedAttestation>(&data) {
+                        Ok(queued) => entries.push(queued),
+                        Err(e) => log::warn!("Malformed queue entry {}: {e}", path.display()),
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to read queue entry {}: {e}", path.display());
+                        continue;
                     }
-                    Err(_) => continue,
                 }
             }
         }

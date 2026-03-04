@@ -18,13 +18,21 @@ impl From<&Packet> for rfc::PacketRfc {
                 .checkpoints
                 .first()
                 .and_then(|cp| cp.vdf_input.as_ref())
-                .map(|s| hex::decode(s).unwrap_or_default())
+                .and_then(|s| {
+                    hex::decode(s)
+                        .map_err(|e| log::warn!("VDF input hex decode failed: {e}"))
+                        .ok()
+                })
                 .unwrap_or_default(),
             output: packet
                 .checkpoints
                 .last()
                 .and_then(|cp| cp.vdf_output.as_ref())
-                .map(|s| hex::decode(s).unwrap_or_default())
+                .and_then(|s| {
+                    hex::decode(s)
+                        .map_err(|e| log::warn!("VDF output hex decode failed: {e}"))
+                        .ok()
+                })
                 .unwrap_or_default(),
             iterations: packet
                 .checkpoints
@@ -60,7 +68,9 @@ impl From<&Packet> for rfc::PacketRfc {
         // Note: hex decode should not fail for well-formed packets, but if it does,
         // use empty root rather than zero-filled (empty signals error to verifiers).
         let content_hash_tree = rfc::ContentHashTree {
-            root: hex::decode(&packet.document.final_hash).unwrap_or_default(),
+            root: hex::decode(&packet.document.final_hash)
+                .map_err(|e| log::warn!("Content hash hex decode failed: {e}"))
+                .unwrap_or_default(),
             segment_count: packet.checkpoints.len().max(20) as u16,
         };
 
