@@ -142,8 +142,13 @@ pub fn analyze_forensics_ext(
         let forgery = BehavioralFingerprint::detect_forgery(samples);
         metrics.forgery_analysis = Some(forgery.clone());
 
-        // TODO: verify HMAC-jitter values; for now, approximate via CV
-        metrics.steg_confidence = if metrics.cadence.coefficient_of_variation > 0.3 {
+        // CV-based heuristic: higher timing variability correlates with genuine human input.
+        // Degenerate inputs (< 2 samples) yield a default CV of 0.0 — return 0.0 confidence
+        // since no meaningful inference is possible.
+        let cv = metrics.cadence.coefficient_of_variation;
+        metrics.steg_confidence = if samples.len() < 2 || !cv.is_finite() {
+            0.0
+        } else if cv > 0.3 {
             0.95
         } else {
             0.20

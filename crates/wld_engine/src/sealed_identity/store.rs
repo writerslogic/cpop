@@ -113,23 +113,39 @@ impl SealedIdentityStore {
     }
 
     /// **Anti-rollback**: Reads current hardware counter and verifies it is
-    /// `>=` last_known_counter stored in the blob.
+    /// `>=` both `counter_at_seal` and `last_known_counter` stored in the blob,
+    /// then ratchets `last_known_counter` forward to prevent replay.
     ///
     /// **Anti-hammering**: authValue is machine-specific, so the sealed file
     /// cannot be brute-forced on a different device.
     pub fn unseal_master_key(&self) -> Result<SigningKey, SealedIdentityError> {
-        let blob = self.load_blob()?;
+        let mut blob = self.load_blob()?;
 
-        // Anti-rollback check
-        if let Some(last_known) = blob.last_known_counter {
+        // Anti-rollback: validate hardware counter against both seal-time and
+        // last-known values, closing the gap where an older blob could be
+        // replayed if only last_known_counter was checked.
+        if blob.counter_at_seal.is_some() || blob.last_known_counter.is_some() {
             if let Ok(binding) = self.provider.bind(b"identity-counter-check") {
                 if let Some(current) = binding.monotonic_counter {
-                    if current < last_known {
-                        return Err(SealedIdentityError::RollbackDetected {
-                            current,
-                            last_known,
-                        });
+                    if let Some(at_seal) = blob.counter_at_seal {
+                        if current < at_seal {
+                            return Err(SealedIdentityError::RollbackDetected {
+                                current,
+                                last_known: at_seal,
+                            });
+                        }
                     }
+                    if let Some(last_known) = blob.last_known_counter {
+                        if current < last_known {
+                            return Err(SealedIdentityError::RollbackDetected {
+                                current,
+                                last_known,
+                            });
+                        }
+                    }
+                    // Ratchet forward so this counter value cannot be reused
+                    blob.last_known_counter = Some(current);
+                    self.persist_blob(&blob)?;
                 }
             }
         }

@@ -325,7 +325,7 @@ impl Session {
         seed.copy_from_slice(&seed_bytes);
         seed_bytes.zeroize();
 
-        Ok(Self {
+        let session = Self {
             id: data.id,
             started_at: data.started_at,
             ended_at: data.ended_at,
@@ -338,7 +338,67 @@ impl Session {
             last_mtime: None,
             last_size: None,
             last_doc_hash: None,
-        })
+        };
+
+        session.verify_loaded_integrity()?;
+        Ok(session)
+    }
+
+    /// Post-deserialization integrity checks to detect tampered session files.
+    fn verify_loaded_integrity(&self) -> crate::error::Result<()> {
+        // Hash chain: each sample's hash matches recomputation, chain links valid
+        self.verify_chain()?;
+
+        // Temporal: started_at must precede ended_at
+        if let Some(ended) = self.ended_at {
+            if ended < self.started_at {
+                return Err(Error::validation("ended_at precedes started_at"));
+            }
+        }
+
+        // Guard against far-future timestamps (5 min tolerance for clock skew)
+        let ceiling = Utc::now() + chrono::Duration::minutes(5);
+        if self.started_at > ceiling {
+            return Err(Error::validation("started_at is in the future"));
+        }
+        if let Some(ended) = self.ended_at {
+            if ended > ceiling {
+                return Err(Error::validation("ended_at is in the future"));
+            }
+        }
+
+        // Sample-level monotonicity: timestamps and keystroke counts must increase
+        for (i, sample) in self.samples.iter().enumerate() {
+            if i > 0 {
+                let prev = &self.samples[i - 1];
+                if sample.timestamp <= prev.timestamp {
+                    return Err(Error::validation(format!(
+                        "sample {i}: timestamp not monotonic"
+                    )));
+                }
+                if sample.keystroke_count <= prev.keystroke_count {
+                    return Err(Error::validation(format!(
+                        "sample {i}: keystroke count not monotonic"
+                    )));
+                }
+            }
+            if sample.timestamp > ceiling {
+                return Err(Error::validation(format!(
+                    "sample {i}: timestamp is in the future"
+                )));
+            }
+        }
+
+        // keystroke_count field must be >= the last sample's count
+        if let Some(last) = self.samples.last() {
+            if self.keystroke_count < last.keystroke_count {
+                return Err(Error::validation(
+                    "keystroke_count is less than last sample's count",
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn hash_document(&mut self) -> crate::error::Result<[u8; 32]> {

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use subtle::ConstantTimeEq;
 
 /// Incoming message from the browser extension.
@@ -103,8 +104,10 @@ struct Session {
     last_char_count: u64,
     /// Timestamp of last checkpoint (must be monotonically increasing).
     last_checkpoint_ns: u64,
-    /// Total jitter batches received (for rate limiting).
+    /// Jitter batches received in the current rate-limit window.
     jitter_batch_count: u64,
+    /// Start of the current rate-limit window.
+    jitter_window_start: Instant,
 }
 
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
@@ -301,6 +304,7 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         last_char_count: 0,
         last_checkpoint_ns: now_ns,
         jitter_batch_count: 0,
+        jitter_window_start: Instant::now(),
     });
 
     Response::SessionStarted {
@@ -524,8 +528,10 @@ fn handle_get_status() -> Response {
     }
 }
 
-/// Maximum jitter batches per session (rate limiting against flooding).
-const MAX_JITTER_BATCHES: u64 = 10_000;
+/// Maximum jitter batches allowed within a single rate-limit window.
+const MAX_JITTER_BATCHES_PER_WINDOW: u64 = 50;
+/// Duration of the rate-limit window for jitter batches.
+const JITTER_RATE_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 /// Maximum intervals per single batch.
 const MAX_BATCH_SIZE: usize = 200;
 
@@ -555,9 +561,14 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
         }
     };
 
-    // Rate limit jitter batches
+    // Rate limit jitter batches using a fixed time window
+    let now = Instant::now();
+    if now.duration_since(session.jitter_window_start) >= JITTER_RATE_WINDOW {
+        session.jitter_batch_count = 0;
+        session.jitter_window_start = now;
+    }
     session.jitter_batch_count += 1;
-    if session.jitter_batch_count > MAX_JITTER_BATCHES {
+    if session.jitter_batch_count > MAX_JITTER_BATCHES_PER_WINDOW {
         return Response::Error {
             message: "Jitter batch rate limit exceeded".into(),
             code: "RATE_LIMITED".into(),
