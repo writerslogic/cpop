@@ -14,17 +14,20 @@ use crate::RwLockRecover;
 use std::sync::{Arc, OnceLock};
 
 static SENTINEL: OnceLock<Arc<Sentinel>> = OnceLock::new();
-static FFI_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
 
-fn ffi_runtime() -> &'static tokio::runtime::Runtime {
-    FFI_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .thread_name("wld-ffi")
-            .build()
-            .expect("failed to create FFI tokio runtime")
-    })
+fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    FFI_RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .thread_name("wld-ffi")
+                .build()
+                .map_err(|e| format!("Failed to create FFI tokio runtime: {e}"))
+        })
+        .as_ref()
+        .map_err(|e| e.clone())
 }
 
 /// Start the sentinel daemon in-process.
@@ -102,7 +105,16 @@ pub fn ffi_sentinel_start() -> FfiResult {
         sentinel.set_hmac_key(std::mem::take(&mut *key));
     }
 
-    let rt = ffi_runtime();
+    let rt = match ffi_runtime() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(e),
+            };
+        }
+    };
     let start_result = rt.block_on(async {
         tokio::time::timeout(std::time::Duration::from_secs(10), sentinel.start()).await
     });
@@ -173,7 +185,16 @@ pub fn ffi_sentinel_stop() -> FfiResult {
         };
     }
 
-    let rt = ffi_runtime();
+    let rt = match ffi_runtime() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(e),
+            };
+        }
+    };
     if let Err(e) = rt.block_on(sentinel.stop()) {
         return FfiResult {
             success: false,

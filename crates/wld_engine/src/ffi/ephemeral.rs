@@ -363,28 +363,6 @@ fn build_war_block(
     statement: &str,
     session: &EphemeralSession,
 ) -> Result<String, String> {
-    use crate::declaration;
-    use crate::evidence;
-    use crate::vdf;
-
-    let final_hash = hex::decode(final_hash_hex).map_err(|e| format!("invalid final hash: {e}"))?;
-    let mut doc_hash = [0u8; 32];
-    if final_hash.len() >= 32 {
-        doc_hash.copy_from_slice(&final_hash[..32]);
-    }
-
-    // Use the last snapshot's hash as chain hash
-    let chain_hash = session
-        .content_snapshots
-        .last()
-        .map(|s| s.content_hash)
-        .unwrap_or([0u8; 32]);
-
-    // Build a minimal Packet with declaration
-    let decl =
-        declaration::no_ai_declaration(doc_hash, chain_hash, &session.context_label, statement);
-
-    // Load signing key for the WAR block
     let data_dir = crate::ffi::helpers::get_data_dir()
         .ok_or_else(|| "Cannot determine data directory".to_string())?;
     let key_path = data_dir.join("signing_key");
@@ -398,83 +376,25 @@ fn build_war_block(
             .map_err(|_| "invalid key length")?,
     );
 
-    let signed_decl = decl
-        .sign(&signing_key)
-        .map_err(|e| format!("declaration signing failed: {e}"))?;
-
-    let checkpoints: Vec<evidence::CheckpointProof> = session
+    let snapshots: Vec<crate::evidence::EphemeralSnapshot> = session
         .content_snapshots
         .iter()
-        .enumerate()
-        .map(|(i, snap)| evidence::CheckpointProof {
-            ordinal: i as u64,
-            timestamp: chrono::DateTime::from_timestamp_nanos(snap.timestamp_ns),
-            content_hash: hex::encode(snap.content_hash),
-            content_size: snap.char_count,
-            vdf_input: None,
-            vdf_output: None,
-            vdf_iterations: None,
-            elapsed_time: None,
-            previous_hash: if i > 0 {
-                hex::encode(session.content_snapshots[i - 1].content_hash)
-            } else {
-                hex::encode([0u8; 32])
-            },
-            hash: hex::encode(snap.content_hash),
-            message: snap.message.clone(),
-            signature: None,
+        .map(|s| crate::evidence::EphemeralSnapshot {
+            timestamp_ns: s.timestamp_ns,
+            content_hash: s.content_hash,
+            char_count: s.char_count,
+            message: s.message.clone(),
         })
         .collect();
 
-    let packet = evidence::Packet {
-        version: 1,
-        exported_at: chrono::Utc::now(),
-        strength: evidence::Strength::Basic,
-        provenance: None,
-        document: evidence::DocumentInfo {
-            title: session.context_label.clone(),
-            path: format!("ephemeral://{}", hex::encode(&doc_hash[..8])),
-            final_hash: final_hash_hex.to_string(),
-            final_size: session
-                .content_snapshots
-                .last()
-                .map(|s| s.char_count)
-                .unwrap_or(0),
-        },
-        checkpoints,
-        vdf_params: vdf::Parameters {
-            iterations_per_second: 0,
-            min_iterations: 0,
-            max_iterations: 0,
-        },
-        chain_hash: hex::encode(chain_hash),
-        declaration: Some(signed_decl),
-        presence: None,
-        hardware: None,
-        keystroke: None,
-        behavioral: None,
-        contexts: vec![],
-        external: None,
-        key_hierarchy: None,
-        jitter_binding: None,
-        time_evidence: None,
-        provenance_links: None,
-        continuation: None,
-        collaboration: None,
-        vdf_aggregate: None,
-        verifier_nonce: None,
-        packet_signature: None,
-        signing_public_key: None,
-        biology_claim: None,
-        physical_context: None,
-        trust_tier: None,
-        mmr_root: None,
-        mmr_proof: None,
-        writersproof_certificate_id: None,
-        baseline_verification: None,
-        claims: vec![],
-        limitations: vec![],
-    };
+    let packet = crate::evidence::build_ephemeral_packet(
+        final_hash_hex,
+        statement,
+        &session.context_label,
+        &snapshots,
+        &signing_key,
+    )
+    .map_err(|e| format!("{e}"))?;
 
     let block = crate::war::Block::from_packet_signed(&packet, &signing_key)
         .map_err(|e| format!("WAR block creation failed: {e}"))?;

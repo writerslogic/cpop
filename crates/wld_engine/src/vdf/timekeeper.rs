@@ -2,7 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
+
+use super::{default_parameters, VdfProof};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TimeAnchor {
@@ -74,11 +77,21 @@ impl TimeKeeper {
                     .map(|last| last + chrono::Duration::from_std(elapsed).unwrap())
                     .unwrap_or_else(Utc::now);
 
+                // Seed the VDF from the elapsed duration via domain separation
+                let seed: [u8; 32] = {
+                    let mut h = Sha256::new();
+                    h.update(b"witnessd-timekeeper-vdf-v1");
+                    h.update(elapsed.as_nanos().to_be_bytes());
+                    h.finalize().into()
+                };
+                let params = default_parameters();
+                let proof = VdfProof::compute_iterations(seed, params.min_iterations);
+
                 (
                     estimated,
                     TimeAnchor::Physical {
                         duration_since_anchor: elapsed,
-                        vdf_proof: [0u8; 32], // Bound to the actual VDF in the next step
+                        vdf_proof: proof.output,
                     },
                 )
             }

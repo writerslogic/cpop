@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use std::time::Duration;
 
 use super::types::{Evidence, Session};
 
+const PRESENCE_CHALLENGE_DST: &[u8] = b"witnessd-presence-challenge-v1";
+
+/// HMAC-SHA256 with domain separation to prevent precomputation attacks.
 pub fn hash_response(response: &str) -> String {
     let normalized = response.trim().to_lowercase();
-    let digest = Sha256::digest(normalized.as_bytes());
-    hex::encode(digest)
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(PRESENCE_CHALLENGE_DST).expect("HMAC accepts any key size");
+    mac.update(normalized.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 pub fn compile_evidence(sessions: &[Session]) -> Evidence {
