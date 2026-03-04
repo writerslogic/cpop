@@ -135,10 +135,15 @@ impl VerifiedConnection {
                 .and_then(|n| n.to_str())
                 .ok_or(IpcError::InvalidPeerExecutable)?;
 
-            if !allowed_names.contains(&exe_name) {
+            let exe_path_str = exe.to_string_lossy();
+
+            // Check both filename and full path to prevent same-named binary bypass
+            if !allowed_names.contains(&exe_name)
+                && !allowed_names.iter().any(|n| exe_path_str.ends_with(n))
+            {
                 return Err(IpcError::UnauthorizedExecutable {
                     expected: allowed_names.iter().map(|s| s.to_string()).collect(),
-                    actual: exe_name.to_string(),
+                    actual: exe_path_str.into_owned(),
                 });
             }
         }

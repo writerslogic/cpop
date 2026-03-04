@@ -187,7 +187,11 @@ unsafe extern "system" fn low_level_keyboard_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     if code >= 0 && (wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == WM_SYSKEYDOWN) {
-        let kbd = *(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let ptr = lparam.0 as *const KBDLLHOOKSTRUCT;
+        if ptr.is_null() {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let kbd = *ptr;
         let now = chrono::Utc::now().timestamp_nanos_safe();
         let session = GLOBAL_SESSION.lock().ok().and_then(|g| g.clone());
         if let Some(session_arc) = session {
@@ -311,7 +315,11 @@ unsafe extern "system" fn keystroke_capture_hook(
     lparam: LPARAM,
 ) -> LRESULT {
     if code >= 0 && (wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == WM_SYSKEYDOWN) {
-        let kbd = *(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let ptr = lparam.0 as *const KBDLLHOOKSTRUCT;
+        if ptr.is_null() {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let kbd = *ptr;
 
         let is_injected = (kbd.flags.0 & LLKHF_INJECTED.0) != 0;
 
@@ -571,7 +579,11 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             return CallNextHookEx(None, code, wparam, lparam);
         }
 
-        let mouse = *(lparam.0 as *const MSLLHOOKSTRUCT);
+        let ptr = lparam.0 as *const MSLLHOOKSTRUCT;
+        if ptr.is_null() {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
+        let mouse = *ptr;
         let now = chrono::Utc::now().timestamp_nanos_safe();
 
         let x = mouse.pt.x as f64;
