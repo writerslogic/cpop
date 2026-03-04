@@ -269,6 +269,7 @@ mod tests {
         assert_eq!(ContentTier::Enhanced as u8, 2);
         assert_eq!(ContentTier::Maximum as u8, 3);
 
+        assert_eq!(ProofAlgorithm::SwfSha256 as u8, 10);
         assert_eq!(ProofAlgorithm::SwfArgon2id as u8, 20);
         assert_eq!(ProofAlgorithm::SwfArgon2idEntangled as u8, 21);
 

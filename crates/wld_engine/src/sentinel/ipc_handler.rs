@@ -29,8 +29,8 @@ impl SentinelIpcHandler {
         let db_path = self.sentinel.config.writerslogic_dir.join("events.db");
         let key_bytes = self.sentinel.signing_key.read_recover().to_bytes();
         if key_bytes == [0u8; 32] {
-            log::warn!(
-                "Using zero signing key for HMAC derivation — identity may not be initialized"
+            return Err(
+                "Signing key is uninitialized (all zeros) — refusing to derive HMAC key".into(),
             );
         }
         let hmac_key = crate::crypto::derive_hmac_key(&key_bytes);

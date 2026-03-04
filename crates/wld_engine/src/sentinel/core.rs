@@ -43,6 +43,8 @@ pub struct Sentinel {
     mouse_stego_engine: Arc<RwLock<crate::platform::MouseStegoEngine>>,
     /// Attestation nonce for current daemon session
     session_nonce: Arc<RwLock<Option<[u8; 32]>>>,
+    /// Bridge thread handles for clean shutdown
+    bridge_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
 }
 
 impl Sentinel {
@@ -77,6 +79,7 @@ impl Sentinel {
                 mouse_stego_seed,
             ))),
             session_nonce: Arc::new(RwLock::new(None)),
+            bridge_threads: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -245,7 +248,7 @@ impl Sentinel {
             if let Ok(sync_rx) = keystroke_capture.start() {
                 let sync_rx: std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent> = sync_rx;
                 // Bridge std::sync::mpsc -> tokio::mpsc on a dedicated thread
-                std::thread::spawn(move || {
+                let handle = std::thread::spawn(move || {
                     while keystroke_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                             Ok(event) => {
@@ -256,6 +259,7 @@ impl Sentinel {
                         }
                     }
                 });
+                self.bridge_threads.lock_recover().push(handle);
             }
         }
 
@@ -274,7 +278,7 @@ impl Sentinel {
             if let Ok(sync_rx) = mouse_capture.start() {
                 let sync_rx: std::sync::mpsc::Receiver<crate::platform::MouseEvent> = sync_rx;
                 // Bridge std::sync::mpsc -> tokio::mpsc on a dedicated thread
-                std::thread::spawn(move || {
+                let handle = std::thread::spawn(move || {
                     while mouse_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                             Ok(event) => {
@@ -285,6 +289,7 @@ impl Sentinel {
                         }
                     }
                 });
+                self.bridge_threads.lock_recover().push(handle);
             }
         }
 
@@ -401,6 +406,12 @@ impl Sentinel {
         let tx = self.shutdown_tx.lock_recover().take();
         if let Some(tx) = tx {
             let _ = tx.send(()).await;
+        }
+
+        // Join bridge threads (they exit once `running` is false)
+        let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
+        for handle in handles {
+            let _ = handle.join();
         }
 
         self.shadow.cleanup_all();

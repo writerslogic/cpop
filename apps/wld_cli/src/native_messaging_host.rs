@@ -265,6 +265,29 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         .unwrap_or(0);
 
     let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+
+    // Finalize any previous session before starting a new one
+    if let Some(prev) = session_lock.take() {
+        eprintln!(
+            "Finalizing previous session {} ('{}', {} checkpoints) before starting new session",
+            prev.id, prev.document_title, prev.checkpoint_count
+        );
+        let final_result = wld_engine::ffi::ffi_create_checkpoint(
+            prev.evidence_path.display().to_string(),
+            format!(
+                "Browser session ended (superseded): {} ({} checkpoints)",
+                prev.document_title, prev.checkpoint_count
+            ),
+        );
+        if !final_result.success {
+            eprintln!(
+                "Warning: final checkpoint failed for previous session {}: {}",
+                prev.id,
+                final_result.error_message.as_deref().unwrap_or("unknown")
+            );
+        }
+    }
+
     *session_lock = Some(Session {
         id: session_id.clone(),
         document_url: document_url.clone(),

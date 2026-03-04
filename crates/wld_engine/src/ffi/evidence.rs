@@ -188,10 +188,10 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 prev_hash: HashValue::sha256(ev.previous_hash.to_vec()),
                 checkpoint_hash: HashValue::sha256(ev.event_hash.to_vec()),
                 process_proof: ProcessProof {
-                    algorithm: ProofAlgorithm::SwfArgon2id,
+                    algorithm: ProofAlgorithm::SwfSha256,
                     params: ProofParams {
-                        time_cost: 3,
-                        memory_cost: 65536,
+                        time_cost: 0,
+                        memory_cost: 0,
                         parallelism: 1,
                         iterations: ev.vdf_iterations,
                     },

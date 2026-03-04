@@ -38,7 +38,11 @@ impl TimeKeeper {
 
     /// Attempts to get a "Hard" network timestamp using Roughtime.
     pub async fn fetch_network_time() -> Option<DateTime<Utc>> {
-        match crate::vdf::RoughtimeClient::get_verified_time() {
+        // Roughtime does blocking UDP I/O; keep it off the async runtime thread.
+        let result = tokio::task::spawn_blocking(crate::vdf::RoughtimeClient::get_verified_time)
+            .await
+            .ok()?;
+        match result {
             Ok(micros) => {
                 let seconds = i64::try_from(micros / 1_000_000).unwrap_or(i64::MAX);
                 let nanos = ((micros % 1_000_000) * 1000) as u32;
