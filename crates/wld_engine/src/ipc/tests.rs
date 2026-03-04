@@ -478,3 +478,79 @@ fn test_status_response_with_many_files() {
         _ => panic!("Expected StatusResponse"),
     }
 }
+
+// ── Path traversal validation tests ────────────────────────────────────
+
+#[test]
+fn test_validate_paths_rejects_traversal() {
+    let msg = IpcMessage::StartWitnessing {
+        file_path: PathBuf::from("/home/user/../../../etc/passwd"),
+    };
+    let result = msg.validate_paths();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("traversal"));
+}
+
+#[test]
+fn test_validate_paths_rejects_relative_traversal() {
+    let msg = IpcMessage::VerifyFile {
+        path: PathBuf::from("documents/../../secrets/key.pem"),
+    };
+    assert!(msg.validate_paths().is_err());
+}
+
+#[test]
+fn test_validate_paths_accepts_normal_paths() {
+    let msg = IpcMessage::StartWitnessing {
+        file_path: PathBuf::from("/home/user/documents/essay.txt"),
+    };
+    assert!(msg.validate_paths().is_ok());
+}
+
+#[test]
+fn test_validate_paths_checks_both_export_file_paths() {
+    // Good source, traversal in output
+    let msg = IpcMessage::ExportFile {
+        path: PathBuf::from("/home/user/doc.txt"),
+        tier: "gold".to_string(),
+        output: PathBuf::from("/home/user/../../etc/cron.d/evil"),
+    };
+    assert!(msg.validate_paths().is_err());
+
+    // Traversal in source, good output
+    let msg = IpcMessage::ExportFile {
+        path: PathBuf::from("/tmp/../etc/shadow"),
+        tier: "gold".to_string(),
+        output: PathBuf::from("/home/user/out.pop"),
+    };
+    assert!(msg.validate_paths().is_err());
+}
+
+#[test]
+fn test_validate_paths_allows_messages_without_paths() {
+    assert!(IpcMessage::Heartbeat.validate_paths().is_ok());
+    assert!(IpcMessage::GetStatus.validate_paths().is_ok());
+    assert!(IpcMessage::GetAttestationNonce.validate_paths().is_ok());
+    assert!((IpcMessage::StopWitnessing { file_path: None })
+        .validate_paths()
+        .is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_validate_paths_rejects_system_directories() {
+    let msg = IpcMessage::StartWitnessing {
+        file_path: PathBuf::from("/etc/passwd"),
+    };
+    assert!(msg.validate_paths().is_err());
+
+    let msg = IpcMessage::VerifyFile {
+        path: PathBuf::from("/proc/self/environ"),
+    };
+    assert!(msg.validate_paths().is_err());
+
+    let msg = IpcMessage::GetFileForensics {
+        path: PathBuf::from("/System/Library/something"),
+    };
+    assert!(msg.validate_paths().is_err());
+}

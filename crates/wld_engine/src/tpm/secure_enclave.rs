@@ -168,7 +168,7 @@ fn init_state(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
         // Non-fatal - attestation will use signing key
     }
 
-    load_counter(state);
+    load_counter(state)?;
     state.start_time = SystemTime::now();
     Ok(())
 }
@@ -445,34 +445,27 @@ fn sign(state: &SecureEnclaveState, data: &[u8]) -> Result<Vec<u8>, TPMError> {
     Ok(sig.bytes().to_vec())
 }
 
-fn load_counter(state: &mut SecureEnclaveState) {
+fn load_counter(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
     match fs::read(&state.counter_file) {
         Ok(data) if data.len() >= 8 => {
-            state.counter = u64::from_be_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
+            let bytes: [u8; 8] = data[0..8].try_into().expect("slice is exactly 8 bytes");
+            state.counter = u64::from_be_bytes(bytes);
+            Ok(())
         }
         Ok(data) => {
-            // File exists but is too short — corrupt. Log error and refuse
-            // to silently reset to 0 (which could allow counter rollback).
+            // Corruption could be attacker-induced to force counter rollback.
             log::error!(
                 "Counter file corrupt ({} bytes, expected >= 8): {:?}",
                 data.len(),
                 state.counter_file
             );
-            // Leave counter at 0; caller (init_state) should treat this as
-            // an error or prompt for recovery. A future improvement would
-            // propagate Result here.
+            Err(TPMError::CounterRollback)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // First run — counter starts at 0.
             state.counter = 0;
+            Ok(())
         }
-        Err(e) => {
-            log::error!(
-                "Failed to read counter file {:?}: {}",
-                state.counter_file,
-                e
-            );
-        }
+        Err(e) => Err(TPMError::Io(e)),
     }
 }
 

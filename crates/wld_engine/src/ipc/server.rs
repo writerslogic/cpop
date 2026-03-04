@@ -128,6 +128,29 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
 
         match decode_for_protocol(&plaintext, decode_protocol) {
             Ok(msg) => {
+                // Reject paths with traversal components before any handler sees them
+                if let Err(e) = msg.validate_paths() {
+                    log::warn!(
+                        "IPC: path validation failed on {}: {} (rejecting)",
+                        transport_label,
+                        e
+                    );
+                    let error_response = IpcMessage::Error {
+                        code: IpcErrorCode::PermissionDenied,
+                        message: e,
+                    };
+                    if let Ok(response_bytes) = encode_message_json(&error_response) {
+                        if let Some(ref session) = secure_session {
+                            let _ = send_encrypted(stream, session, &response_bytes).await;
+                        } else {
+                            let len_bytes = (response_bytes.len() as u32).to_le_bytes();
+                            let _ = stream.write_all(&len_bytes).await;
+                            let _ = stream.write_all(&response_bytes).await;
+                        }
+                    }
+                    continue;
+                }
+
                 // Per-category rate limit check (shared across all connections)
                 let key = rate_limit_key(&msg);
                 let allowed = shared_rate_limiter.lock_recover().check(key);

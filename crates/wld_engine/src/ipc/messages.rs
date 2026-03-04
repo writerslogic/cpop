@@ -2,10 +2,54 @@
 
 use crate::jitter::SimpleJitterSample;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 /// 1 MB cap on IPC frames
 pub(crate) const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
+/// Reject paths with `..` components or that resolve into system directories.
+/// Called on every PathBuf deserialized from an IPC message before any handler
+/// touches the filesystem.
+fn validate_ipc_path(path: &Path) -> Result<(), String> {
+    // Reject any ".." component (traversal) before canonicalization — canonicalize
+    // itself would follow symlinks/".." silently, but the raw path should never
+    // contain them in a legitimate GUI→engine message.
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err(format!("Path traversal rejected: '{}'", path.display()));
+        }
+    }
+
+    // Block well-known system directories on the raw (pre-canonicalized) path.
+    // The sentinel's validate_path() does a second check after canonicalization;
+    // this is the first line of defense at the IPC boundary.
+    #[cfg(unix)]
+    {
+        let s = path.to_string_lossy();
+        const BLOCKED: &[&str] = &[
+            "/etc/",
+            "/var/root/",
+            "/System/",
+            "/Library/",
+            "/proc/",
+            "/dev/",
+            "/sys/",
+            "/root/",
+            "/private/etc/",
+            "/private/var/root/",
+            "/boot/",
+            "/sbin/",
+            "/bin/",
+        ];
+        for prefix in BLOCKED {
+            if s.starts_with(prefix) {
+                return Err("Access to system directory denied".to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
 
 /// IPC message protocol between the engine (Brain) and GUI (Face).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +191,46 @@ pub enum IpcMessage {
         hash: Option<String>,
         error: Option<String>,
     },
+}
+
+impl IpcMessage {
+    /// Validate all PathBuf fields in this message against traversal attacks.
+    /// Must be called immediately after deserialization, before dispatching to any handler.
+    pub(crate) fn validate_paths(&self) -> Result<(), String> {
+        match self {
+            IpcMessage::StartWitnessing { file_path } => {
+                validate_ipc_path(file_path)?;
+            }
+            IpcMessage::StopWitnessing { file_path: Some(p) } => {
+                validate_ipc_path(p)?;
+            }
+            IpcMessage::ExportWithNonce { file_path, .. } => {
+                validate_ipc_path(file_path)?;
+            }
+            IpcMessage::VerifyWithNonce { evidence_path, .. } => {
+                validate_ipc_path(evidence_path)?;
+            }
+            IpcMessage::VerifyFile { path } => {
+                validate_ipc_path(path)?;
+            }
+            IpcMessage::ExportFile { path, output, .. } => {
+                validate_ipc_path(path)?;
+                validate_ipc_path(output)?;
+            }
+            IpcMessage::GetFileForensics { path } => {
+                validate_ipc_path(path)?;
+            }
+            IpcMessage::ComputeProcessScore { path } => {
+                validate_ipc_path(path)?;
+            }
+            IpcMessage::CreateFileCheckpoint { path, .. } => {
+                validate_ipc_path(path)?;
+            }
+            // Variants with no PathBuf fields
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

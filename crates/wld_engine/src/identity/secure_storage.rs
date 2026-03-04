@@ -252,12 +252,65 @@ impl SecureStorage {
     #[cfg(target_os = "macos")]
     fn migrate_macos_keychain() {
         MIGRATION_ONCE.call_once(|| {
-            let data_dir = match dirs::home_dir().map(|h| h.join(".writerslogic")) {
-                Some(d) => d,
+            let home_dir = match dirs::home_dir() {
+                Some(h) => h,
                 None => return,
             };
+            let data_dir = home_dir.join(".writerslogic");
+
+            // Reject paths with traversal components (H-069)
+            if data_dir
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                log::warn!(
+                    "Migration path contains traversal components, skipping: {}",
+                    data_dir.display()
+                );
+                return;
+            }
+
+            // If data_dir already exists, resolve symlinks and verify it's
+            // still under the home directory to prevent redirection attacks.
+            if data_dir.exists() {
+                match std::fs::canonicalize(&data_dir) {
+                    Ok(resolved) => {
+                        let canonical_home =
+                            std::fs::canonicalize(&home_dir).unwrap_or_else(|_| home_dir.clone());
+                        if !resolved.starts_with(&canonical_home) {
+                            log::warn!(
+                                "Migration path resolves outside home directory, skipping: \
+                                 {} -> {}",
+                                data_dir.display(),
+                                resolved.display()
+                            );
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Cannot resolve migration path, skipping: {}: {}",
+                            data_dir.display(),
+                            e
+                        );
+                        return;
+                    }
+                }
+            }
+
             let flag_path = data_dir.join(".keychain_migrated_v1");
             if flag_path.exists() {
+                // Refuse to read/trust a symlinked flag file
+                if flag_path
+                    .symlink_metadata()
+                    .is_ok_and(|m| m.file_type().is_symlink())
+                {
+                    log::warn!(
+                        "Migration flag is a symlink, skipping: {}",
+                        flag_path.display()
+                    );
+                    return;
+                }
                 return;
             }
 
@@ -288,7 +341,20 @@ impl SecureStorage {
             }
 
             let _ = std::fs::create_dir_all(&data_dir);
-            let _ = std::fs::write(flag_path, "done");
+
+            // Verify flag_path is not a symlink before writing (race window
+            // is narrow but check anyway as a defense-in-depth measure)
+            if flag_path
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink())
+            {
+                log::warn!(
+                    "Migration flag appeared as symlink during write, skipping: {}",
+                    flag_path.display()
+                );
+                return;
+            }
+            let _ = std::fs::write(&flag_path, "done");
             log::info!("macOS keychain migration complete.");
         });
     }

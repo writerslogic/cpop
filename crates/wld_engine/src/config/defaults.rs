@@ -11,17 +11,15 @@ pub(super) fn default_false() -> bool {
 }
 
 pub(super) fn default_data_dir() -> PathBuf {
+    let home = dirs::home_dir()
+        .expect("cannot determine home directory; refusing to use insecure fallback path");
     #[cfg(target_os = "macos")]
     {
-        dirs::home_dir()
-            .map(|h| h.join("Library/Application Support/WritersLogic"))
-            .unwrap_or_else(|| PathBuf::from(".writerslogic"))
+        home.join("Library/Application Support/WritersLogic")
     }
     #[cfg(not(target_os = "macos"))]
     {
-        dirs::home_dir()
-            .map(|h| h.join(".writerslogic"))
-            .unwrap_or_else(|| PathBuf::from(".writerslogic"))
+        home.join(".writerslogic")
     }
 }
 
@@ -72,8 +70,8 @@ pub(super) fn default_checkpoint() -> u64 {
 
 pub(super) fn default_writerslogic_dir() -> PathBuf {
     dirs::home_dir()
-        .map(|h| h.join(".writerslogic"))
-        .unwrap_or_else(|| PathBuf::from(".writerslogic"))
+        .expect("cannot determine home directory; refusing to use insecure fallback path")
+        .join(".writerslogic")
 }
 
 pub(super) fn default_allowed_apps() -> Vec<String> {
@@ -111,8 +109,9 @@ pub(super) fn default_blocked_apps() -> Vec<String> {
 
 pub(super) fn default_research_dir() -> PathBuf {
     dirs::home_dir()
-        .map(|h| h.join(".writerslogic").join("research"))
-        .unwrap_or_else(|| PathBuf::from(".writerslogic/research"))
+        .expect("cannot determine home directory; refusing to use insecure fallback path")
+        .join(".writerslogic")
+        .join("research")
 }
 
 pub(super) fn default_max_research_sessions() -> usize {
@@ -137,8 +136,9 @@ pub(super) fn default_min_fingerprint_samples() -> u32 {
 
 pub(super) fn default_fingerprint_dir() -> PathBuf {
     dirs::home_dir()
-        .map(|h| h.join(".writerslogic").join("fingerprints"))
-        .unwrap_or_else(|| PathBuf::from(".writerslogic/fingerprints"))
+        .expect("cannot determine home directory; refusing to use insecure fallback path")
+        .join(".writerslogic")
+        .join("fingerprints")
 }
 
 pub(super) fn default_privacy_excluded() -> Vec<String> {

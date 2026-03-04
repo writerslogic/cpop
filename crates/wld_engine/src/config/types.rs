@@ -242,7 +242,8 @@ pub struct SentinelConfig {
 
 impl Default for SentinelConfig {
     fn default() -> Self {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home = dirs::home_dir()
+            .expect("cannot determine home directory; refusing to use insecure fallback path");
         let writerslogic_dir = home.join(".writerslogic");
 
         Self {

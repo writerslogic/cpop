@@ -81,7 +81,12 @@ impl WLDConfig {
         fs::create_dir_all(&self.data_dir)?;
         let config_path = self.data_dir.join("writerslogic.json");
         let raw = serde_json::to_string_pretty(self)?;
-        fs::write(config_path, raw)?;
+        fs::write(&config_path, raw)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))?;
+        }
         Ok(())
     }
 }
