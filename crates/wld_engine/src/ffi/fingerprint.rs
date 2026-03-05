@@ -3,7 +3,10 @@
 //! FFI bindings for fingerprint management — status, consent, export.
 
 use super::helpers::get_data_dir;
-use super::types::{FfiConsentResult, FfiFingerprintStatus, FfiFingerprintSummary, FfiResult};
+use super::types::{
+    FfiConsentResult, FfiFingerprintDimension, FfiFingerprintStatus, FfiFingerprintSummary,
+    FfiResult,
+};
 use crate::fingerprint::manager::FingerprintManager;
 use std::sync::Mutex;
 
@@ -38,134 +41,95 @@ where
     f(mgr)
 }
 
-/// Return fingerprint status: enabled flags, sample counts, confidence, quality score.
+/// Return fingerprint status: enabled flags and sample counts.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_fingerprint_status() -> FfiFingerprintStatus {
     match with_manager(|mgr| {
         let status = mgr.status();
-
-        // Quality score: activity saturates at ~500 samples, voice at ~100
-        let activity_quality = (status.activity_samples as f64 / 500.0).min(1.0);
-        let voice_quality = (status.voice_samples as f64 / 100.0).min(1.0);
-        let quality_score = if status.voice_enabled {
-            activity_quality * 0.4 + voice_quality * 0.6
-        } else {
-            activity_quality
-        };
-
         Ok(FfiFingerprintStatus {
-            success: true,
-            activity_enabled: status.activity_enabled,
             voice_enabled: status.voice_enabled,
-            voice_consent: status.voice_consent,
-            activity_samples: status.activity_samples as u64,
             voice_samples: status.voice_samples as u64,
-            confidence: status.confidence,
-            quality_score,
-            current_profile_id: status.current_profile_id,
-            error_message: None,
+            voice_consent: status.voice_consent,
+            activity_enabled: status.activity_enabled,
+            activity_samples: status.activity_samples as u64,
         })
     }) {
         Ok(s) => s,
-        Err(e) => FfiFingerprintStatus {
-            success: false,
-            activity_enabled: false,
+        Err(_) => FfiFingerprintStatus {
             voice_enabled: false,
-            voice_consent: false,
-            activity_samples: 0,
             voice_samples: 0,
-            confidence: 0.0,
-            quality_score: 0.0,
-            current_profile_id: None,
-            error_message: Some(e),
+            voice_consent: false,
+            activity_enabled: false,
+            activity_samples: 0,
         },
     }
 }
 
-/// Return human-readable fingerprint dimensions plus serialized JSON for cloud sync.
+/// Return human-readable fingerprint dimensions with quality score.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_fingerprint_summary() -> FfiFingerprintSummary {
     match with_manager(|mgr| {
+        let status = mgr.status();
         let activity = mgr.current_activity_fingerprint();
-        let voice = mgr.current_voice_fingerprint();
 
-        let avg_wpm = activity.session_signature.mean_typing_speed;
-        let iki_mean = activity.iki_distribution.mean;
-        let iki_std_dev = activity.iki_distribution.std_dev;
-        let dominant_zone = activity.zone_profile.dominant_zone();
+        let mut dimensions = vec![
+            FfiFingerprintDimension {
+                name: "typing_speed_wpm".into(),
+                value: activity.session_signature.mean_typing_speed,
+                confidence: status.confidence,
+            },
+            FfiFingerprintDimension {
+                name: "iki_mean_ms".into(),
+                value: activity.iki_distribution.mean,
+                confidence: status.confidence,
+            },
+            FfiFingerprintDimension {
+                name: "iki_std_dev_ms".into(),
+                value: activity.iki_distribution.std_dev,
+                confidence: status.confidence,
+            },
+            FfiFingerprintDimension {
+                name: "sentence_pause_ms".into(),
+                value: activity.pause_signature.sentence_pause_mean,
+                confidence: status.confidence,
+            },
+            FfiFingerprintDimension {
+                name: "thinking_pause_ms".into(),
+                value: activity.pause_signature.thinking_pause_mean,
+                confidence: status.confidence,
+            },
+        ];
 
-        // Peak hour from circadian pattern
-        let peak_hour = activity
-            .circadian_pattern
-            .hourly_activity
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i as u8)
-            .unwrap_or(0);
+        if let Some(ref voice) = mgr.current_voice_fingerprint() {
+            dimensions.push(FfiFingerprintDimension {
+                name: "avg_word_length".into(),
+                value: voice.avg_word_length(),
+                confidence: status.confidence,
+            });
+            dimensions.push(FfiFingerprintDimension {
+                name: "correction_rate".into(),
+                value: voice.correction_rate,
+                confidence: status.confidence,
+            });
+        }
 
-        // Pause patterns
-        let sentence_pause_mean = activity.pause_signature.sentence_pause_mean;
-        let thinking_pause_mean = activity.pause_signature.thinking_pause_mean;
-
-        // Voice dimensions (optional)
-        let (avg_word_length, correction_rate, top_punctuation) = if let Some(ref v) = voice {
-            let avg_wl = v.avg_word_length();
-            let cr = v.correction_rate;
-            // Top 5 punctuation marks
-            let mut punct: Vec<(char, f32)> = v
-                .punctuation_signature
-                .char_frequencies
-                .iter()
-                .map(|(c, f)| (*c, *f))
-                .collect();
-            punct.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            punct.truncate(5);
-            let punct_str = punct
-                .iter()
-                .map(|(c, f)| format!("{c}:{f:.2}"))
-                .collect::<Vec<_>>()
-                .join(",");
-            (Some(avg_wl), Some(cr), Some(punct_str))
-        } else {
-            (None, None, None)
-        };
-
-        // Serialize full fingerprint to JSON for cloud sync
-        let author_fp = mgr.current_author_fingerprint();
-        let serialized_json =
-            serde_json::to_string(&author_fp).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
+        let activity_quality = (status.activity_samples as f64 / 500.0).min(1.0);
+        let total_samples = status.activity_samples as u64 + status.voice_samples as u64;
 
         Ok(FfiFingerprintSummary {
             success: true,
-            avg_wpm,
-            iki_mean_ms: iki_mean,
-            iki_std_dev_ms: iki_std_dev,
-            dominant_zone,
-            peak_hour,
-            sentence_pause_mean_ms: sentence_pause_mean,
-            thinking_pause_mean_ms: thinking_pause_mean,
-            avg_word_length,
-            correction_rate,
-            top_punctuation,
-            serialized_json,
+            dimensions,
+            quality_score: activity_quality,
+            total_samples,
             error_message: None,
         })
     }) {
         Ok(s) => s,
         Err(e) => FfiFingerprintSummary {
             success: false,
-            avg_wpm: 0.0,
-            iki_mean_ms: 0.0,
-            iki_std_dev_ms: 0.0,
-            dominant_zone: String::new(),
-            peak_hour: 0,
-            sentence_pause_mean_ms: 0.0,
-            thinking_pause_mean_ms: 0.0,
-            avg_word_length: None,
-            correction_rate: None,
-            top_punctuation: None,
-            serialized_json: String::new(),
+            dimensions: Vec::new(),
+            quality_score: 0.0,
+            total_samples: 0,
             error_message: Some(e),
         },
     }
@@ -180,23 +144,16 @@ pub fn ffi_grant_voice_consent() -> FfiConsentResult {
             .map_err(|e| format!("Failed to grant consent: {e}"))?;
         mgr.enable_voice()
             .map_err(|e| format!("Failed to enable voice: {e}"))?;
-
-        let explanation = mgr.consent_manager.get_explanation().to_string();
-        let version = mgr.consent_manager.get_version().to_string();
         Ok(FfiConsentResult {
             success: true,
-            granted: true,
-            consent_version: version,
-            explanation,
+            consent_given: true,
             error_message: None,
         })
     }) {
         Ok(r) => r,
         Err(e) => FfiConsentResult {
             success: false,
-            granted: false,
-            consent_version: String::new(),
-            explanation: String::new(),
+            consent_given: false,
             error_message: Some(e),
         },
     }

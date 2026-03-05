@@ -120,7 +120,9 @@ impl Verifier {
             id: hex::encode(id),
             challenge_type,
             issued_at: now,
-            expires_at: now + chrono::Duration::from_std(self.config.response_window).unwrap(),
+            expires_at: now
+                + chrono::Duration::from_std(self.config.response_window)
+                    .unwrap_or(chrono::Duration::seconds(60)),
             window: self.config.response_window,
             prompt,
             expected_hash: hash_response(&expected),
@@ -205,11 +207,16 @@ impl Verifier {
             * self.config.interval_variance
             * (self.rng.random_range(-1.0..1.0));
 
+        let total_secs = (interval.as_secs_f64() + variance).max(0.0);
+        // Guard against NaN/Inf from extreme config values
+        let total_secs = if total_secs.is_finite() {
+            total_secs
+        } else {
+            interval.as_secs_f64()
+        };
         let next = last_time
-            + chrono::Duration::from_std(Duration::from_secs_f64(
-                (interval.as_secs_f64() + variance).max(0.0),
-            ))
-            .unwrap();
+            + chrono::Duration::from_std(Duration::from_secs_f64(total_secs))
+                .unwrap_or(chrono::Duration::seconds(600));
         Some(next)
     }
 

@@ -6,6 +6,9 @@ use crate::store::SecureStore;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
+/// Maximum Shannon entropy for the edit-position histogram (log2(20 bins)).
+pub const ENTROPY_NORMALIZATION_FACTOR: f64 = 4.321928;
+
 pub(crate) fn get_data_dir() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {

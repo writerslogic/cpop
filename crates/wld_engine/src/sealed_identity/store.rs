@@ -148,6 +148,14 @@ impl SealedIdentityStore {
                     self.persist_blob(&blob)?;
                 }
             }
+        } else if blob.last_known_counter.is_none() {
+            // First unseal: set last_known_counter to prevent rollback gap
+            if let Ok(binding) = self.provider.bind(b"identity-counter-check") {
+                if let Some(current) = binding.monotonic_counter {
+                    blob.last_known_counter = Some(current);
+                    self.persist_blob(&blob)?;
+                }
+            }
         }
 
         let caps = self.provider.capabilities();

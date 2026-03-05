@@ -18,14 +18,17 @@ pub fn compute_mouse_jitter(
     prev_mouse_jitter: [u8; 32],
     params: &MouseStegoParams,
 ) -> u32 {
-    let mut mac = Hmac::<Sha256>::new_from_slice(seed).expect("hmac key");
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(seed) else {
+        log::warn!("mouse_stego: HMAC init failed, returning min delay");
+        return params.min_delay_micros;
+    };
     mac.update(&doc_hash);
     mac.update(&mouse_event_count.to_be_bytes());
     mac.update(&prev_mouse_jitter);
     mac.update(b"mouse"); // Domain separator to differentiate from keystroke jitter
 
     let hash = mac.finalize().into_bytes();
-    let raw = u32::from_be_bytes(hash[0..4].try_into().unwrap());
+    let raw = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]);
 
     let jitter_range = params
         .max_delay_micros
@@ -45,7 +48,10 @@ pub fn compute_jitter_hash(
     jitter_micros: u32,
     prev_hash: [u8; 32],
 ) -> [u8; 32] {
-    let mut mac = Hmac::<Sha256>::new_from_slice(seed).expect("hmac key");
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(seed) else {
+        log::warn!("mouse_stego: HMAC init failed in jitter_hash, returning zeroed hash");
+        return [0u8; 32];
+    };
     mac.update(&doc_hash);
     mac.update(&mouse_event_count.to_be_bytes());
     mac.update(&jitter_micros.to_be_bytes());
@@ -163,7 +169,10 @@ impl MouseStegoEngine {
             return (0.0, 0.0);
         }
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.seed).expect("hmac key");
+        let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(&self.seed) else {
+            log::warn!("mouse_stego: HMAC init failed in sub_pixel_offset");
+            return (0.0, 0.0);
+        };
         mac.update(&self.doc_hash);
         mac.update(&self.event_count.to_be_bytes());
         mac.update(b"subpixel");

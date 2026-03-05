@@ -40,7 +40,7 @@ impl WLDConfig {
                     config.retention_days = val
                         .get("retention_days")
                         .and_then(|v| v.as_u64())
-                        .map(|v| v as u32)
+                        .map(|v| v.min(u32::MAX as u64) as u32)
                         .unwrap_or(config.retention_days);
                     if let Some(dirs) = val.get("watch_dirs").and_then(|v| v.as_array()) {
                         config.watch_dirs = dirs

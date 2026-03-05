@@ -349,6 +349,8 @@ impl IpcServer {
                             }
                             Err(e) => {
                                 log::error!("IPC: accept error: {}", e);
+                                // Backoff to prevent tight error loop (e.g. fd exhaustion)
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             }
                         }
                     }

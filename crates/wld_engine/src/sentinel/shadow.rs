@@ -139,8 +139,7 @@ impl ShadowManager {
     /// List all active shadow buffers
     pub fn list(&self) -> Vec<(String, String, String)> {
         self.shadows
-            .read()
-            .unwrap()
+            .read_recover()
             .values()
             .map(|s| (s.id.clone(), s.app_name.clone(), s.window_title.reveal()))
             .collect()

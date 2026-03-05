@@ -21,8 +21,6 @@ use dashmap::DashMap;
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-use zeroize::Zeroize;
-
 /// Max context label length (chars).
 const MAX_CONTEXT_LABEL_LEN: usize = 256;
 /// Max content size for checkpoint/finalize (bytes).
@@ -45,6 +43,7 @@ struct EphemeralSession {
     jitter_intervals: Vec<u64>,
     checkpoint_count: u64,
     keystroke_count: u64,
+    #[allow(dead_code)] // Retained for diagnostic/audit purposes
     last_timestamp_ns: i64,
     /// Content hashes from each checkpoint (for chain building).
     content_snapshots: Vec<ContentSnapshot>,
@@ -55,6 +54,7 @@ struct ContentSnapshot {
     timestamp_ns: i64,
     content_hash: [u8; 32],
     char_count: u64,
+    #[allow(dead_code)] // Retained for diagnostic/audit purposes
     size_delta: i32,
     message: Option<String>,
 }
@@ -165,6 +165,26 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
         }
     };
 
+    if content.len() > MAX_CONTENT_SIZE {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some(format!(
+                "Content too large: {} bytes (max {})",
+                content.len(),
+                MAX_CONTENT_SIZE
+            )),
+        };
+    }
+
+    if entry.content_snapshots.len() >= MAX_SNAPSHOTS {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some(format!("Max snapshots reached ({})", MAX_SNAPSHOTS)),
+        };
+    }
+
     let content_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
     let char_count = content.len() as u64;
     let prev_chars = entry
@@ -254,7 +274,6 @@ pub fn ffi_ephemeral_inject_jitter(session_id: String, intervals: Vec<u64>) -> F
         .collect();
 
     let accepted = valid.len();
-    const MAX_JITTER_INTERVALS: usize = 100_000;
     let remaining_cap = MAX_JITTER_INTERVALS.saturating_sub(entry.jitter_intervals.len());
     entry
         .jitter_intervals
@@ -276,6 +295,25 @@ pub fn ffi_ephemeral_finalize(
     content: String,
     statement: String,
 ) -> FfiEphemeralFinalizeResult {
+    if content.len() > MAX_CONTENT_SIZE {
+        return FfiEphemeralFinalizeResult {
+            success: false,
+            war_block: String::new(),
+            compact_ref: String::new(),
+            error_message: Some(format!(
+                "Content too large: {} bytes (max {})",
+                content.len(),
+                MAX_CONTENT_SIZE
+            )),
+        };
+    }
+
+    let statement = if statement.len() > MAX_STATEMENT_LEN {
+        statement[..MAX_STATEMENT_LEN].to_string()
+    } else {
+        statement
+    };
+
     let session = match sessions().remove(&session_id) {
         Some((_, s)) => s,
         None => {
