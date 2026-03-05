@@ -204,9 +204,9 @@ async fn test_ipc_server_client_interaction() {
     let ts = client.heartbeat().await.expect("heartbeat failed");
     assert_eq!(ts, 123456789);
 
-    // Test start_witnessing
+    // Test start_witnessing (must be absolute — server rejects relative paths)
     client
-        .start_witnessing(PathBuf::from("new.txt"))
+        .start_witnessing(PathBuf::from("/tmp/new.txt"))
         .await
         .expect("start_witnessing failed");
 
@@ -536,6 +536,22 @@ fn test_validate_paths_allows_messages_without_paths() {
         .is_ok());
 }
 
+#[test]
+fn test_validate_paths_rejects_relative_paths() {
+    let msg = IpcMessage::StartWitnessing {
+        file_path: PathBuf::from("relative/file.txt"),
+    };
+    let err = msg.validate_paths().unwrap_err();
+    assert!(err.contains("Relative path rejected"), "got: {}", err);
+
+    let msg = IpcMessage::ExportFile {
+        path: PathBuf::from("/home/user/doc.txt"),
+        tier: "gold".to_string(),
+        output: PathBuf::from("output.pop"),
+    };
+    assert!(msg.validate_paths().is_err());
+}
+
 #[cfg(unix)]
 #[test]
 fn test_validate_paths_rejects_system_directories() {
@@ -553,4 +569,27 @@ fn test_validate_paths_rejects_system_directories() {
         path: PathBuf::from("/System/Library/something"),
     };
     assert!(msg.validate_paths().is_err());
+}
+
+#[test]
+fn test_secure_channel_nonce_overflow_rejected() {
+    use super::secure_channel::SecureChannel;
+
+    let (tx, _rx) = SecureChannel::<u64>::new_pair();
+    // Simulate near-overflow by setting counter close to max
+    tx.nonce_counter
+        .store(u64::MAX - 1, std::sync::atomic::Ordering::SeqCst);
+
+    // First send at MAX-1 should fail (>= NONCE_COUNTER_MAX)
+    assert!(tx.send(42u64).is_err());
+}
+
+#[test]
+fn test_secure_channel_normal_send_recv() {
+    use super::secure_channel::SecureChannel;
+
+    let (tx, rx) = SecureChannel::<String>::new_pair();
+    tx.send("hello".to_string()).unwrap();
+    let received = rx.recv().unwrap();
+    assert_eq!(received, "hello");
 }

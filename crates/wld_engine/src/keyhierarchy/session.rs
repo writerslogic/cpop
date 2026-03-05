@@ -8,7 +8,7 @@ use chrono::Utc;
 use ed25519_dalek::{Signer, SigningKey};
 use rand::RngCore;
 use sha2::Digest;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use super::crypto::{
     build_cert_data, compute_entangled_nonce, hkdf_expand, RATCHET_ADVANCE_DOMAIN,

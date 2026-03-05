@@ -86,7 +86,9 @@ impl ShadowManager {
     /// Delete a shadow buffer
     pub fn delete(&self, id: &str) -> Result<()> {
         if let Some(shadow) = self.shadows.write().unwrap().remove(id) {
-            let _ = fs::remove_file(&shadow.path);
+            if let Err(e) = fs::remove_file(&shadow.path) {
+                log::debug!("shadow file remove: {e}");
+            }
         }
         Ok(())
     }
@@ -94,7 +96,9 @@ impl ShadowManager {
     /// Migrate a shadow buffer to a real file path (when unsaved document is saved)
     pub fn migrate(&self, id: &str, _new_path: &str) -> Result<()> {
         if let Some(shadow) = self.shadows.write().unwrap().remove(id) {
-            let _ = fs::remove_file(&shadow.path);
+            if let Err(e) = fs::remove_file(&shadow.path) {
+                log::debug!("shadow file remove: {e}");
+            }
         }
         Ok(())
     }
@@ -103,7 +107,9 @@ impl ShadowManager {
     pub fn cleanup_all(&self) {
         let mut shadows = self.shadows.write().unwrap();
         for shadow in shadows.values() {
-            let _ = fs::remove_file(&shadow.path);
+            if let Err(e) = fs::remove_file(&shadow.path) {
+                log::debug!("shadow cleanup: {e}");
+            }
         }
         shadows.clear();
     }
@@ -116,7 +122,9 @@ impl ShadowManager {
 
         shadows.retain(|_, shadow| {
             if shadow.updated_at < cutoff {
-                let _ = fs::remove_file(&shadow.path);
+                if let Err(e) = fs::remove_file(&shadow.path) {
+                    log::debug!("shadow cleanup: {e}");
+                }
                 removed += 1;
                 false
             } else {

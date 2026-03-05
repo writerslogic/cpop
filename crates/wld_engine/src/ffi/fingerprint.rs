@@ -32,7 +32,10 @@ where
         *guard = Some(mgr);
     }
 
-    f(guard.as_mut().unwrap())
+    let mgr = guard
+        .as_mut()
+        .ok_or("Fingerprint manager unexpectedly None after initialization")?;
+    f(mgr)
 }
 
 /// Return fingerprint status: enabled flags, sample counts, confidence, quality score.

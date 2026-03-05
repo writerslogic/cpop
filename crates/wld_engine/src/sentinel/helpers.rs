@@ -313,7 +313,9 @@ pub fn end_all_sessions_sync(
         });
 
         if let Some(shadow_id) = session.shadow_id {
-            let _ = shadow.delete(&shadow_id);
+            if let Err(e) = shadow.delete(&shadow_id) {
+                log::warn!("shadow buffer cleanup failed for {shadow_id}: {e}");
+            }
         }
     }
 }

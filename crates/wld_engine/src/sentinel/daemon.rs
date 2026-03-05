@@ -189,9 +189,13 @@ impl DaemonManager {
 
     /// Remove PID, state, and socket files.
     pub fn cleanup(&self) {
-        let _ = fs::remove_file(&self.pid_file);
-        let _ = fs::remove_file(&self.state_file);
-        let _ = fs::remove_file(&self.socket_path);
+        for path in [&self.pid_file, &self.state_file, &self.socket_path] {
+            if let Err(e) = fs::remove_file(path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    log::debug!("cleanup {}: {e}", path.display());
+                }
+            }
+        }
     }
 
     /// Build a `DaemonStatus` from PID and state files.

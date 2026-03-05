@@ -7,10 +7,19 @@ use std::path::{Component, Path, PathBuf};
 /// 1 MB cap on IPC frames
 pub(crate) const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 
-/// Reject paths with `..` components or that resolve into system directories.
-/// Called on every PathBuf deserialized from an IPC message before any handler
-/// touches the filesystem.
+/// Reject paths with `..` components, relative paths, or paths that resolve
+/// into system directories. Called on every PathBuf deserialized from an IPC
+/// message before any handler touches the filesystem.
 fn validate_ipc_path(path: &Path) -> Result<(), String> {
+    // Require absolute paths — relative paths are ambiguous and could resolve
+    // differently depending on the daemon's cwd.
+    if !path.is_absolute() {
+        return Err(format!(
+            "Relative path rejected (must be absolute): '{}'",
+            path.display()
+        ));
+    }
+
     // Reject any ".." component (traversal) before canonicalization — canonicalize
     // itself would follow symlinks/".." silently, but the raw path should never
     // contain them in a legitimate GUI→engine message.
@@ -43,6 +52,24 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
         ];
         for prefix in BLOCKED {
             if s.starts_with(prefix) {
+                return Err("Access to system directory denied".to_string());
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let s = path.to_string_lossy();
+        // Normalize to lowercase for case-insensitive Windows paths
+        let lower = s.to_lowercase();
+        const BLOCKED_WIN: &[&str] = &[
+            r"c:\windows\",
+            r"c:\program files\",
+            r"c:\program files (x86)\",
+            r"c:\programdata\",
+        ];
+        for prefix in BLOCKED_WIN {
+            if lower.starts_with(prefix) {
                 return Err("Access to system directory denied".to_string());
             }
         }

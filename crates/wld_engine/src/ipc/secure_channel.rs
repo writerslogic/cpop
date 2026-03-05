@@ -10,6 +10,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvError, SendError, Sender};
 use zeroize::Zeroize;
 
+/// Max nonce counter value before we refuse to encrypt. ChaCha20-Poly1305
+/// requires unique nonces per key; wrapping to 0 would reuse a nonce and
+/// break authenticated encryption. In practice an ephemeral in-process
+/// channel will never reach this, but we guard it anyway.
+const NONCE_COUNTER_MAX: u64 = u64::MAX - 1;
+
+/// Max bincode payload size accepted on the secure channel.
+/// Prevents a malicious or buggy sender from causing unbounded allocation.
+/// Uses the same cap as IPC wire frames.
+const MAX_SECURE_CHANNEL_PAYLOAD: usize = super::messages::MAX_MESSAGE_SIZE;
+
 /// Typed channel pair with ChaCha20-Poly1305 encryption over `mpsc`
 pub struct SecureChannel<T> {
     _phantom: std::marker::PhantomData<T>,
@@ -49,7 +60,8 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
 pub struct SecureSender<T> {
     tx: Sender<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
-    nonce_counter: AtomicU64,
+    // pub(super) for test access to simulate near-overflow
+    pub(super) nonce_counter: AtomicU64,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -63,8 +75,15 @@ impl<T: serde::Serialize> SecureSender<T> {
                 })
             })?;
 
-        // Counter-based nonce; safe because the key is ephemeral
+        // Counter-based nonce; safe because the key is ephemeral.
+        // Guard against overflow to prevent nonce reuse.
         let counter = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
+        if counter >= NONCE_COUNTER_MAX {
+            return Err(SendError(EncryptedMessage {
+                nonce: [0; 12],
+                ciphertext: vec![],
+            }));
+        }
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[4..].copy_from_slice(&counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -102,9 +121,16 @@ impl<T: serde::de::DeserializeOwned> SecureReceiver<T> {
             .decrypt(nonce, msg.ciphertext.as_ref())
             .map_err(|_| RecvError)?;
 
-        let (value, _): (T, usize) =
-            bincode::serde::decode_from_slice(&plaintext, bincode::config::standard())
-                .map_err(|_| RecvError)?;
+        if plaintext.len() > MAX_SECURE_CHANNEL_PAYLOAD {
+            plaintext.zeroize();
+            return Err(RecvError);
+        }
+
+        let (value, _): (T, usize) = bincode::serde::decode_from_slice(
+            &plaintext,
+            bincode::config::standard().with_limit::<{ super::messages::MAX_MESSAGE_SIZE }>(),
+        )
+        .map_err(|_| RecvError)?;
 
         plaintext.zeroize();
 

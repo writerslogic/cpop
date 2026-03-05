@@ -252,7 +252,9 @@ impl Sentinel {
                     while keystroke_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                             Ok(event) => {
-                                let _ = keystroke_tx.blocking_send(event);
+                                if keystroke_tx.blocking_send(event).is_err() {
+                                    log::debug!("keystroke channel full, dropping event");
+                                }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -282,7 +284,9 @@ impl Sentinel {
                     while mouse_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                             Ok(event) => {
-                                let _ = mouse_tx.blocking_send(event);
+                                if mouse_tx.blocking_send(event).is_err() {
+                                    log::debug!("mouse channel full, dropping event");
+                                }
                             }
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -336,7 +340,7 @@ impl Sentinel {
 
                         // Advance stego jitter chain for evidence binding
                         if let Ok(mut engine) = mouse_stego_engine.write() {
-                            let _ = engine.next_jitter();
+                            engine.next_jitter();
                         }
                     }
 
@@ -389,7 +393,9 @@ impl Sentinel {
                 }
             }
 
-            let _ = focus_monitor.stop();
+            if let Err(e) = focus_monitor.stop() {
+                log::debug!("focus monitor stop: {e}");
+            }
             end_all_sessions_sync(&sessions, &shadow, &session_events_tx);
         });
 
@@ -538,12 +544,18 @@ impl Sentinel {
             );
         }
 
-        let _ = self.session_events_tx.send(SessionEvent {
-            event_type: SessionEventType::Started,
-            session_id: session.session_id.clone(),
-            document_path: path_str.clone(),
-            timestamp: SystemTime::now(),
-        });
+        if self
+            .session_events_tx
+            .send(SessionEvent {
+                event_type: SessionEventType::Started,
+                session_id: session.session_id.clone(),
+                document_path: path_str.clone(),
+                timestamp: SystemTime::now(),
+            })
+            .is_err()
+        {
+            log::debug!("no session event listeners for Started");
+        }
 
         sessions.insert(path_str, session);
         Ok(())
@@ -558,15 +570,23 @@ impl Sentinel {
         let session = self.sessions.write_recover().remove(&path_str);
 
         if let Some(session) = session {
-            let _ = self.session_events_tx.send(SessionEvent {
-                event_type: SessionEventType::Ended,
-                session_id: session.session_id,
-                document_path: path_str,
-                timestamp: SystemTime::now(),
-            });
+            if self
+                .session_events_tx
+                .send(SessionEvent {
+                    event_type: SessionEventType::Ended,
+                    session_id: session.session_id,
+                    document_path: path_str,
+                    timestamp: SystemTime::now(),
+                })
+                .is_err()
+            {
+                log::debug!("no session event listeners for Ended");
+            }
 
             if let Some(shadow_id) = session.shadow_id {
-                let _ = self.shadow.delete(&shadow_id);
+                if let Err(e) = self.shadow.delete(&shadow_id) {
+                    log::warn!("shadow buffer delete failed for {shadow_id}: {e}");
+                }
             }
 
             if let Err(e) = self.update_baseline() {
