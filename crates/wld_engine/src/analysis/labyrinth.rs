@@ -213,8 +213,6 @@ fn calculate_mutual_information(data: &[f64], delay: usize, num_bins: usize) -> 
 
 /// Estimate embedding dimension using false nearest neighbors.
 fn estimate_embedding_dimension(data: &[f64], delay: usize, max_dim: usize) -> usize {
-    let _n = data.len();
-
     for dim in 1..=max_dim {
         let embedding = construct_embedding(data, dim, delay);
         if embedding.len() < 20 {
@@ -251,16 +249,16 @@ fn calculate_fnn_ratio(embedding: &[Vec<f64>], original: &[f64], dim: usize, del
     let mut fnn_count = 0;
     let mut total_count = 0;
 
-    // Sample subset for efficiency
+    // Sample subset for efficiency — search only within sampled points
     let sample_size = n.min(100);
     let step = (n / sample_size).max(1);
+    let sampled: Vec<usize> = (0..n).step_by(step).collect();
 
-    for i in (0..n).step_by(step) {
-        // Find nearest neighbor in current embedding
+    for &i in &sampled {
         let mut min_dist = f64::INFINITY;
         let mut nn_idx = 0;
 
-        for j in 0..n {
+        for &j in &sampled {
             if i != j {
                 let dist = euclidean_distance(&embedding[i], &embedding[j]);
                 if dist < min_dist && dist > 0.0 {

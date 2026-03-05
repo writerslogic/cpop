@@ -71,7 +71,7 @@ impl From<&Packet> for rfc::PacketRfc {
             root: hex::decode(&packet.document.final_hash)
                 .map_err(|e| log::warn!("Content hash hex decode failed: {e}"))
                 .unwrap_or_default(),
-            segment_count: packet.checkpoints.len().max(20) as u16,
+            segment_count: packet.checkpoints.len().max(1) as u16,
         };
 
         // Convert correlation proof from behavioral evidence

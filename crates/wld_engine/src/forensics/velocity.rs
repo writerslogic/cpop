@@ -17,7 +17,7 @@ pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
     let mut sorted = events.to_vec();
     sorted.sort_by_key(|e| e.timestamp_ns);
 
-    let mut velocities = Vec::new();
+    let mut velocities = Vec::with_capacity(sorted.len() - 1);
     let mut high_velocity_bursts = 0;
     let mut autocomplete_chars: i64 = 0;
 

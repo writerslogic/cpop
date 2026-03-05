@@ -298,8 +298,11 @@ fn are_keys_adjacent(key1: u16, key2: u16) -> bool {
 
 /// Approximate (row, col) on US QWERTY layout. `None` for unknown keys.
 fn key_to_position(key: u16) -> Option<(u8, u8)> {
+    if key > 127 {
+        return None;
+    }
     match key as u8 as char {
-        '1'..='9' => Some((0, (key - '1' as u16) as u8)),
+        '1'..='9' => Some((0, (key - u16::from(b'1')) as u8)),
         '0' => Some((0, 9)),
         'q' | 'Q' => Some((1, 0)),
         'w' | 'W' => Some((1, 1)),

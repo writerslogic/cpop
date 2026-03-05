@@ -84,6 +84,74 @@ pub(crate) fn detect_attestation_tier_info() -> (AttestationTier, u8, String) {
     }
 }
 
+/// Streak statistics computed from a set of active days.
+pub(crate) struct StreakStats {
+    pub current_streak_days: u32,
+    pub longest_streak_days: u32,
+    pub active_days_in_window: u32,
+}
+
+/// Compute streak and activity stats from nanosecond timestamps.
+///
+/// `timestamps_ns`: event timestamps in nanoseconds.
+/// `today_day`: the current day as Unix epoch / 86400.
+/// `window_days`: how many days back to count active days (e.g. 30).
+pub(crate) fn compute_streak_stats(
+    timestamps_ns: &[i64],
+    today_day: i64,
+    window_days: i64,
+) -> StreakStats {
+    let mut active_days: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    for ts in timestamps_ns {
+        let day = ts / (86400 * 1_000_000_000);
+        active_days.insert(day);
+    }
+
+    let active_days_in_window = active_days
+        .iter()
+        .filter(|d| **d >= today_day - window_days)
+        .count() as u32;
+
+    let mut longest_streak: u32 = 0;
+    let mut streak: u32 = 0;
+    let mut prev_day: Option<i64> = None;
+
+    for &day in active_days.iter().rev() {
+        if let Some(prev) = prev_day {
+            if prev - day == 1 {
+                streak += 1;
+            } else {
+                longest_streak = longest_streak.max(streak);
+                streak = 1;
+            }
+        } else {
+            streak = 1;
+        }
+        prev_day = Some(day);
+    }
+    longest_streak = longest_streak.max(streak);
+
+    let mut current_streak: u32 = 0;
+    let mut check_day = today_day;
+    while active_days.contains(&check_day) {
+        current_streak += 1;
+        check_day -= 1;
+    }
+    if current_streak == 0 {
+        check_day = today_day - 1;
+        while active_days.contains(&check_day) {
+            current_streak += 1;
+            check_day -= 1;
+        }
+    }
+
+    StreakStats {
+        current_streak_days: current_streak,
+        longest_streak_days: longest_streak,
+        active_days_in_window,
+    }
+}
+
 pub(crate) fn events_to_forensic_data(events: &[crate::store::SecureEvent]) -> Vec<EventData> {
     events
         .iter()

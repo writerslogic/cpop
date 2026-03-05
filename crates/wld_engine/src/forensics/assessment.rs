@@ -12,6 +12,17 @@ use super::types::{
     THRESHOLD_MONOTONIC_APPEND,
 };
 
+/// Max Shannon entropy for 20-bin edit-position histogram: log2(20).
+const ENTROPY_NORMALIZATION: f64 = 4.321928;
+/// Below this normalized entropy, editing pattern is suspiciously ordered.
+const LOW_ENTROPY_SCORE_THRESHOLD: f64 = 0.35;
+/// Monotonic append ratio above which penalty starts.
+const MONOTONIC_PENALTY_START: f64 = 0.85;
+/// Coefficient of variation below which typing cadence is suspiciously uniform.
+const CV_ROBOTIC_THRESHOLD: f64 = 0.2;
+/// Per-anomaly penalty in authenticity score.
+const ANOMALY_PENALTY: f64 = 0.05;
+
 /// Detect anomalies in editing patterns (topology + temporal).
 pub fn detect_anomalies(
     events: &[EventData],
@@ -174,13 +185,13 @@ pub fn calculate_assessment_score(
 
     let mut score = 1.0;
 
-    if primary.monotonic_append_ratio > 0.85 {
-        score -= 0.2 * (primary.monotonic_append_ratio - 0.85) / 0.15;
+    if primary.monotonic_append_ratio > MONOTONIC_PENALTY_START {
+        score -= 0.2 * (primary.monotonic_append_ratio - MONOTONIC_PENALTY_START)
+            / (1.0 - MONOTONIC_PENALTY_START);
     }
 
-    // max entropy for 20 bins: log2(20) ~ 4.32
-    let normalized_entropy = primary.edit_entropy / 4.32;
-    if normalized_entropy < 0.35 {
+    let normalized_entropy = primary.edit_entropy / ENTROPY_NORMALIZATION;
+    if normalized_entropy < LOW_ENTROPY_SCORE_THRESHOLD {
         score -= 0.15;
     }
 
@@ -196,11 +207,12 @@ pub fn calculate_assessment_score(
         score -= 0.35;
     }
 
-    if cadence.coefficient_of_variation < 0.2 {
-        score -= 0.15 * (0.2 - cadence.coefficient_of_variation) / 0.2;
+    if cadence.coefficient_of_variation < CV_ROBOTIC_THRESHOLD {
+        score -=
+            0.15 * (CV_ROBOTIC_THRESHOLD - cadence.coefficient_of_variation) / CV_ROBOTIC_THRESHOLD;
     }
 
-    score -= 0.05 * anomaly_count as f64;
+    score -= ANOMALY_PENALTY * anomaly_count as f64;
 
     // Reward steady biological cadence (supports human authorship)
     if biological_cadence_score > 0.5 {

@@ -95,8 +95,14 @@ fn generate_session_id(label: &str) -> String {
     hex::encode(&hash[..16])
 }
 
+/// Minimum session count before eviction scan is worthwhile.
+const EVICTION_THRESHOLD: usize = 4;
+
 /// Evict sessions that have been idle longer than `SESSION_TIMEOUT`.
 fn evict_stale_sessions() {
+    if sessions().len() < EVICTION_THRESHOLD {
+        return;
+    }
     let now = Instant::now();
     sessions().retain(|id, session| {
         let stale = now.duration_since(session.last_activity) > SESSION_TIMEOUT;
@@ -314,32 +320,40 @@ pub fn ffi_ephemeral_finalize(
         statement
     };
 
-    let session = match sessions().remove(&session_id) {
-        Some((_, s)) => s,
-        None => {
+    // Validate session exists and has checkpoints BEFORE removing it,
+    // so the session is preserved if validation fails.
+    {
+        let entry = match sessions().get(&session_id) {
+            Some(e) => e,
+            None => {
+                return FfiEphemeralFinalizeResult {
+                    success: false,
+                    war_block: String::new(),
+                    compact_ref: String::new(),
+                    error_message: Some(format!("No ephemeral session: {session_id}")),
+                }
+            }
+        };
+        if entry.content_snapshots.is_empty() {
             return FfiEphemeralFinalizeResult {
                 success: false,
                 war_block: String::new(),
                 compact_ref: String::new(),
-                error_message: Some(format!("No ephemeral session: {session_id}")),
-            }
+                error_message: Some("No checkpoints recorded in session".to_string()),
+            };
         }
-    };
+    }
+
+    // Validation passed — now remove the session for finalization
+    let session = sessions()
+        .remove(&session_id)
+        .expect("session verified present above")
+        .1;
 
     // Final content hash
     let final_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
     let final_hash_hex = hex::encode(final_hash);
     let _char_count = content.len() as u64;
-
-    // Need at least one snapshot
-    if session.content_snapshots.is_empty() {
-        return FfiEphemeralFinalizeResult {
-            success: false,
-            war_block: String::new(),
-            compact_ref: String::new(),
-            error_message: Some("No checkpoints recorded in session".to_string()),
-        };
-    }
 
     let checkpoint_count = session.content_snapshots.len();
 

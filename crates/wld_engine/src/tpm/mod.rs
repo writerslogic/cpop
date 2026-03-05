@@ -19,6 +19,10 @@ pub use verification::{verify_binding_chain, verify_quote};
 
 use std::sync::Arc;
 
+/// Default PCR banks to include in attestation quotes.
+/// PCR 0 = firmware, PCR 4 = boot manager, PCR 7 = Secure Boot state.
+const DEFAULT_QUOTE_PCRS: &[u32] = &[0, 4, 7];
+
 pub trait Provider: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     fn device_id(&self) -> String;
@@ -59,21 +63,27 @@ pub(crate) fn parse_sealed_blob(sealed: &[u8]) -> Result<(&[u8], &[u8]), TPMErro
         return Err(TPMError::SealedDataTooShort);
     }
     let pub_len = u32::from_be_bytes([sealed[0], sealed[1], sealed[2], sealed[3]]) as usize;
-    if sealed.len() < 4 + pub_len + 4 {
+    let pub_end = 4usize
+        .checked_add(pub_len)
+        .ok_or(TPMError::SealedCorrupted)?;
+    let priv_hdr = pub_end.checked_add(4).ok_or(TPMError::SealedCorrupted)?;
+    if sealed.len() < priv_hdr {
         return Err(TPMError::SealedCorrupted);
     }
-    let pub_bytes = &sealed[4..4 + pub_len];
-    let offset = 4 + pub_len;
+    let pub_bytes = &sealed[4..pub_end];
     let priv_len = u32::from_be_bytes([
-        sealed[offset],
-        sealed[offset + 1],
-        sealed[offset + 2],
-        sealed[offset + 3],
+        sealed[pub_end],
+        sealed[pub_end + 1],
+        sealed[pub_end + 2],
+        sealed[pub_end + 3],
     ]) as usize;
-    if sealed.len() < offset + 4 + priv_len {
+    let priv_end = priv_hdr
+        .checked_add(priv_len)
+        .ok_or(TPMError::SealedCorrupted)?;
+    if sealed.len() < priv_end {
         return Err(TPMError::SealedCorrupted);
     }
-    let priv_bytes = &sealed[offset + 4..offset + 4 + priv_len];
+    let priv_bytes = &sealed[priv_hdr..priv_end];
     Ok((pub_bytes, priv_bytes))
 }
 
@@ -96,7 +106,7 @@ pub fn generate_attestation_report(
     hasher.update(&quote_payload);
     let quote_nonce = hasher.finalize();
 
-    let quote = provider.quote(&quote_nonce, &[0, 4, 7])?;
+    let quote = provider.quote(&quote_nonce, DEFAULT_QUOTE_PCRS)?;
 
     // 3. Create the report
     Ok(AttestationReport {

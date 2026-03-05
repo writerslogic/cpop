@@ -325,7 +325,7 @@ impl VoiceCollector {
             self.chars_since_backspace += 1;
 
             if c.is_alphabetic() {
-                self.current_word.push(c.to_lowercase().next().unwrap_or(c));
+                self.current_word.extend(c.to_lowercase());
                 self.add_to_ngram_buffer(c);
             } else if c.is_whitespace() || c.is_ascii_punctuation() {
                 self.finish_word();
