@@ -19,6 +19,24 @@ use super::types::{
 };
 use super::velocity::{compute_session_stats, count_sessions_sorted};
 
+/// Perplexity score above this triggers an anomaly flag.
+const PERPLEXITY_ANOMALY_THRESHOLD: f64 = 15.0;
+
+/// Minimum IKI samples required for Hurst exponent analysis.
+const MIN_IKI_FOR_HURST: usize = 50;
+
+/// CV threshold below which steganographic confidence is low.
+const STEG_LOW_CONF: f64 = 0.3;
+
+/// Steganographic confidence value when CV indicates genuine variability.
+const STEG_HIGH_CONF: f64 = 0.95;
+
+/// Steganographic confidence value when CV is suspiciously low.
+const STEG_PENALTY: f64 = 0.20;
+
+/// Steg confidence above which a suspicious forgery triggers an anomaly.
+const STEG_ALERT_THRESHOLD: f64 = 0.8;
+
 /// Build a complete authorship profile from events and edit regions.
 pub fn build_profile(
     events: &[EventData],
@@ -118,7 +136,7 @@ pub fn analyze_forensics_ext(
 
     if let (Some(model), Some(text)) = (perplexity_model, document_text) {
         metrics.perplexity_score = model.calculate_perplexity(text);
-        if metrics.perplexity_score > 15.0 {
+        if metrics.perplexity_score > PERPLEXITY_ANOMALY_THRESHOLD {
             metrics.anomaly_count += 1;
         }
     } else {
@@ -138,7 +156,7 @@ pub fn analyze_forensics_ext(
             .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64)
             .filter(|&d| d > 0.0)
             .collect();
-        if iki_intervals.len() >= 50 {
+        if iki_intervals.len() >= MIN_IKI_FOR_HURST {
             if let Ok(hurst) = crate::analysis::hurst::calculate_hurst_rs(&iki_intervals) {
                 metrics.hurst_exponent = Some(hurst.exponent);
             }
@@ -160,14 +178,14 @@ pub fn analyze_forensics_ext(
         let cv = metrics.cadence.coefficient_of_variation;
         metrics.steg_confidence = if samples.len() < 2 || !cv.is_finite() {
             0.0
-        } else if cv > 0.3 {
-            0.95
+        } else if cv > STEG_LOW_CONF {
+            STEG_HIGH_CONF
         } else {
-            0.20
+            STEG_PENALTY
         };
 
         // "Perfect Replay" detection: steg looks valid but behavioral is suspicious
-        if forgery.is_suspicious && metrics.steg_confidence > 0.8 {
+        if forgery.is_suspicious && metrics.steg_confidence > STEG_ALERT_THRESHOLD {
             metrics.anomaly_count += 1;
         }
     }

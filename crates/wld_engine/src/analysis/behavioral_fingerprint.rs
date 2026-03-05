@@ -6,6 +6,48 @@ use crate::analysis::stats;
 use crate::jitter::SimpleJitterSample;
 use serde::{Deserialize, Serialize};
 
+/// Maximum interval in ms before filtering as an outlier pause (5 seconds).
+const MAX_PAUSE_FILTER_MS: f64 = 5000.0;
+
+/// Intervals above this threshold indicate paragraph-level pauses.
+const PARAGRAPH_PAUSE_MS: f64 = 2000.0;
+
+/// Intervals above this threshold separate typing bursts.
+const BURST_SEPARATOR_MS: f64 = 500.0;
+
+/// Intervals below this threshold count as fast typing within a burst.
+const BURST_INTERVAL_MS: f64 = 200.0;
+
+/// CV below this flags suspiciously regular (robotic) timing.
+const CV_FORGERY_THRESHOLD: f64 = 0.2;
+
+/// Skewness below this flags non-human timing distribution.
+const SKEWNESS_FORGERY_THRESHOLD: f64 = 0.2;
+
+/// Lower bound for micro-pause detection (ms).
+const MICRO_PAUSE_MIN_MS: f64 = 150.0;
+
+/// Upper bound for micro-pause detection (ms).
+const MICRO_PAUSE_MAX_MS: f64 = 500.0;
+
+/// Minimum fraction of micro-pauses expected in natural typing.
+const MICRO_PAUSE_RATIO_THRESHOLD: f64 = 0.05;
+
+/// Intervals below this are physically impossible for a single typist.
+const IMPOSSIBLY_FAST_MS: f64 = 20.0;
+
+/// Percentage of impossibly fast intervals that triggers a flag.
+const SUSPICIOUS_FAST_PERCENT: usize = 10;
+
+/// Minimum interval count required for fatigue analysis.
+const MIN_FATIGUE_SAMPLES: usize = 40;
+
+/// Last-quarter mean must exceed first-quarter mean by this ratio to show fatigue.
+const FATIGUE_SLOWDOWN_RATIO: f64 = 1.05;
+
+/// Per-flag confidence multiplier in forgery analysis.
+const FORGERY_CONFIDENCE_PER_FLAG: f64 = 0.3;
+
 /// Features extracted from typing that are hard to fake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehavioralFingerprint {
@@ -54,7 +96,7 @@ impl BehavioralFingerprint {
         let intervals: Vec<f64> = samples
             .windows(2)
             .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0)
-            .filter(|&i| i > 0.0 && i < 5000.0) // Filter outlier pauses > 5s
+            .filter(|&i| i > 0.0 && i < MAX_PAUSE_FILTER_MS)
             .collect();
 
         if intervals.is_empty() {
@@ -69,7 +111,7 @@ impl BehavioralFingerprint {
         let long_pauses = samples
             .windows(2)
             .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0)
-            .filter(|&i| i > 2000.0)
+            .filter(|&i| i > PARAGRAPH_PAUSE_MS)
             .count();
 
         let thinking_freq = if !samples.is_empty() {
@@ -78,12 +120,12 @@ impl BehavioralFingerprint {
             0.0
         };
 
-        // Bursts: sequences separated by > 500ms
+        // Bursts: sequences separated by > BURST_SEPARATOR_MS
         let mut bursts = Vec::new();
         let mut current_burst_len = 0;
         for w in samples.windows(2) {
             let interval = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0;
-            if interval > 500.0 {
+            if interval > BURST_SEPARATOR_MS {
                 if current_burst_len > 0 {
                     bursts.push(current_burst_len as f64);
                 }
@@ -122,23 +164,33 @@ impl BehavioralFingerprint {
             }
         }
 
-        let sentence_pauses: Vec<f64> = intervals.iter().copied().filter(|&i| i > 500.0).collect();
+        let sentence_pauses: Vec<f64> = intervals
+            .iter()
+            .copied()
+            .filter(|&i| i > BURST_SEPARATOR_MS)
+            .collect();
         let sentence_pause_mean = if !sentence_pauses.is_empty() {
             sentence_pauses.iter().sum::<f64>() / sentence_pauses.len() as f64
         } else {
             0.0
         };
 
-        let paragraph_pauses: Vec<f64> =
-            intervals.iter().copied().filter(|&i| i > 2000.0).collect();
+        let paragraph_pauses: Vec<f64> = intervals
+            .iter()
+            .copied()
+            .filter(|&i| i > PARAGRAPH_PAUSE_MS)
+            .collect();
         let paragraph_pause_mean = if !paragraph_pauses.is_empty() {
             paragraph_pauses.iter().sum::<f64>() / paragraph_pauses.len() as f64
         } else {
             0.0
         };
 
-        // < 200ms = fast typing bursts
-        let burst_intervals: Vec<f64> = intervals.iter().copied().filter(|&i| i < 200.0).collect();
+        let burst_intervals: Vec<f64> = intervals
+            .iter()
+            .copied()
+            .filter(|&i| i < BURST_INTERVAL_MS)
+            .collect();
         let burst_speed_variance = if burst_intervals.len() >= 2 {
             let burst_mean_val = burst_intervals.iter().sum::<f64>() / burst_intervals.len() as f64;
             burst_intervals
@@ -177,7 +229,7 @@ impl BehavioralFingerprint {
         let intervals: Vec<f64> = samples
             .windows(2)
             .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0)
-            .filter(|&i| i > 0.0 && i < 5000.0)
+            .filter(|&i| i > 0.0 && i < MAX_PAUSE_FILTER_MS)
             .collect();
 
         let mut flags = Vec::new();
@@ -186,55 +238,53 @@ impl BehavioralFingerprint {
 
         // Too regular (humans have high variance)
         if mean > 0.0 {
-            let cv = std / mean; // Coefficient of variation
-                                 // Threshold 0.2 is conservative for forgery detection. Human typing
-                                 // typically > 0.3-0.4. The gap reduces false positives for slow/regular typists.
-            if cv < 0.2 {
+            let cv = std / mean;
+            if cv < CV_FORGERY_THRESHOLD {
                 flags.push(ForgeryFlag::TooRegular { cv });
             }
         }
 
         let skewness = stats::skewness(&intervals, mean, std);
-        if skewness < 0.2 {
+        if skewness < SKEWNESS_FORGERY_THRESHOLD {
             // Human typing is usually positively skewed (long tail)
             flags.push(ForgeryFlag::WrongSkewness { skewness });
         }
 
         let micro_pauses = intervals
             .iter()
-            .filter(|&&i| i > 150.0 && i < 500.0)
+            .filter(|&&i| i > MICRO_PAUSE_MIN_MS && i < MICRO_PAUSE_MAX_MS)
             .count();
-        if !intervals.is_empty() && (micro_pauses as f64 / intervals.len() as f64) < 0.05 {
+        if !intervals.is_empty()
+            && (micro_pauses as f64 / intervals.len() as f64) < MICRO_PAUSE_RATIO_THRESHOLD
+        {
             flags.push(ForgeryFlag::MissingMicroPauses);
         }
 
-        // Impossible speeds: < 20ms implies script injection or mechanical rollover without debounce
-        let impossibly_fast = intervals.iter().filter(|&&i| i < 20.0).count();
-        if impossibly_fast > (intervals.len() / 10) {
-            // >10% is suspicious
+        let impossibly_fast = intervals
+            .iter()
+            .filter(|&&i| i < IMPOSSIBLY_FAST_MS)
+            .count();
+        if impossibly_fast > (intervals.len() / SUSPICIOUS_FAST_PERCENT) {
             flags.push(ForgeryFlag::SuperhumanSpeed {
                 count: impossibly_fast,
             });
         }
 
         // Fatigue detection: real humans slow down over extended typing sessions.
-        // Split intervals into first and last quarter; if the last quarter is not
-        // slower (within tolerance), the session lacks a natural fatigue pattern.
-        if intervals.len() >= 40 {
+        if intervals.len() >= MIN_FATIGUE_SAMPLES {
             let quarter = intervals.len() / 4;
             let first_q = &intervals[..quarter];
             let last_q = &intervals[intervals.len() - quarter..];
             let first_mean = first_q.iter().sum::<f64>() / first_q.len() as f64;
             let last_mean = last_q.iter().sum::<f64>() / last_q.len() as f64;
-            // Humans typically slow down by at least 5% over a long session
-            if first_mean > 0.0 && last_mean <= first_mean * 1.05 {
+            if first_mean > 0.0 && last_mean <= first_mean * FATIGUE_SLOWDOWN_RATIO {
                 flags.push(ForgeryFlag::NoFatiguePattern);
             }
         }
 
         ForgeryAnalysis {
             is_suspicious: !flags.is_empty(),
-            confidence: (flags.len() as f64 * 0.3).min(1.0),
+            confidence: (flags.len() as f64 * FORGERY_CONFIDENCE_PER_FLAG).min(1.0),
             flags,
         }
     }

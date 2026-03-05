@@ -144,7 +144,8 @@ pub fn positive_negative_ratio(regions: &[RegionData]) -> f64 {
     insertions as f64 / total as f64
 }
 
-/// Nearest-neighbor distance ratio for deletions.
+/// Compute mean nearest-neighbor distance among deletion positions, normalized
+/// against the expected uniform spacing `1/(n+1)`.
 ///
 /// < 1 = clustered (revision pass), ~ 1 = scattered (suspicious), 0 = no deletions.
 pub fn deletion_clustering_coef(regions: &[RegionData]) -> f64 {

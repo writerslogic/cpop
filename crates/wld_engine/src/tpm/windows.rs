@@ -500,7 +500,16 @@ impl WindowsTpmProvider {
             }
             offset += 2; // hash algorithm
             let size_of_select = response[offset] as usize;
-            offset += 1 + size_of_select;
+            offset += 1;
+            if offset
+                .checked_add(size_of_select)
+                .is_none_or(|end| end > response.len())
+            {
+                return Err(TPMError::Quote(
+                    "PCR read response: sizeOfSelect exceeds buffer".to_string(),
+                ));
+            }
+            offset += size_of_select;
         }
 
         if offset + 4 > response.len() {
@@ -519,13 +528,20 @@ impl WindowsTpmProvider {
         let mut values = Vec::new();
         for (_i, &pcr) in pcrs.iter().take(digest_count as usize).enumerate() {
             if offset + 2 > response.len() {
-                break;
+                return Err(TPMError::Quote(
+                    "PCR read response truncated in digest header".to_string(),
+                ));
             }
             let digest_size = u16::from_be_bytes([response[offset], response[offset + 1]]) as usize;
             offset += 2;
 
-            if offset + digest_size > response.len() {
-                break;
+            if offset
+                .checked_add(digest_size)
+                .is_none_or(|end| end > response.len())
+            {
+                return Err(TPMError::Quote(
+                    "PCR read response truncated in digest value".to_string(),
+                ));
             }
             let value = response[offset..offset + digest_size].to_vec();
             offset += digest_size;

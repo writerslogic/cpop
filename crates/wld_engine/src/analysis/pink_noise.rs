@@ -18,6 +18,25 @@
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
+/// Minimum number of data points for spectral analysis.
+const MIN_SPECTRAL_SAMPLES: usize = 32;
+
+/// Floor power value; bins below this are excluded from log-log regression.
+const MIN_POWER_THRESHOLD: f64 = 1e-20;
+
+/// Minimum number of valid frequency bins for a meaningful regression.
+const MIN_FREQ_BINS: usize = 5;
+
+/// Slope classification boundaries (ascending).
+const SLOPE_WHITE_MAX: f64 = 0.3;
+const SLOPE_PINKISH_WHITE_MAX: f64 = 0.8;
+const SLOPE_PINK_MAX: f64 = 1.2;
+const SLOPE_PINKISH_BROWN_MAX: f64 = 1.8;
+const SLOPE_BROWN_MAX: f64 = 2.2;
+
+/// Multiplier of mean power used for peak detection in PSD.
+const PEAK_DETECTION_MULTIPLIER: f64 = 3.0;
+
 /// Result of pink noise analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinkNoiseAnalysis {
@@ -70,12 +89,12 @@ impl PinkNoiseAnalysis {
 
     /// Check if the signal appears to be white noise (suspicious).
     pub fn is_white_noise(&self) -> bool {
-        self.spectral_slope < 0.3
+        self.spectral_slope < SLOPE_WHITE_MAX
     }
 
     /// Check if the signal appears to be over-smoothed (suspicious).
     pub fn is_over_smoothed(&self) -> bool {
-        self.spectral_slope > 1.8
+        self.spectral_slope > SLOPE_PINKISH_BROWN_MAX
     }
 }
 
@@ -92,7 +111,7 @@ impl PinkNoiseAnalysis {
 /// * `PinkNoiseAnalysis` with spectral characteristics
 pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAnalysis, String> {
     let n = data.len();
-    if n < 32 {
+    if n < MIN_SPECTRAL_SAMPLES {
         return Err("Insufficient data for spectral analysis (minimum 32 points)".to_string());
     }
 
@@ -108,13 +127,13 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
     for (i, &power) in psd.iter().enumerate().take(nyquist_idx).skip(1) {
         let freq = i as f64 * freq_step;
 
-        if power > 1e-20 {
+        if power > MIN_POWER_THRESHOLD {
             log_freq.push(freq.ln());
             log_power.push(power.ln());
         }
     }
 
-    if log_freq.len() < 5 {
+    if log_freq.len() < MIN_FREQ_BINS {
         return Err("Insufficient valid frequency bins for analysis".to_string());
     }
 
@@ -143,15 +162,15 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
 
 /// Classify noise type based on spectral slope.
 fn classify_noise_type(slope: f64) -> NoiseType {
-    if slope < 0.3 {
+    if slope < SLOPE_WHITE_MAX {
         NoiseType::White
-    } else if slope < 0.8 {
+    } else if slope < SLOPE_PINKISH_WHITE_MAX {
         NoiseType::PinkishWhite
-    } else if slope <= 1.2 {
+    } else if slope <= SLOPE_PINK_MAX {
         NoiseType::Pink
-    } else if slope <= 1.8 {
+    } else if slope <= SLOPE_PINKISH_BROWN_MAX {
         NoiseType::PinkishBrown
-    } else if slope <= 2.2 {
+    } else if slope <= SLOPE_BROWN_MAX {
         NoiseType::Brown
     } else {
         NoiseType::Black
@@ -241,7 +260,7 @@ fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
 /// Returns frequencies of peaks that are significantly above the mean.
 fn find_dominant_frequencies(psd: &[f64], freq_step: f64) -> Vec<f64> {
     let n = psd.len();
-    if n < 5 {
+    if n < MIN_FREQ_BINS {
         return Vec::new();
     }
 
@@ -249,7 +268,7 @@ fn find_dominant_frequencies(psd: &[f64], freq_step: f64) -> Vec<f64> {
 
     // Calculate mean power (excluding DC)
     let mean_power: f64 = psd[1..nyquist_idx].iter().sum::<f64>() / (nyquist_idx - 1) as f64;
-    let threshold = mean_power * 3.0; // 3x mean for peak detection
+    let threshold = mean_power * PEAK_DETECTION_MULTIPLIER;
 
     let mut peaks = Vec::new();
 

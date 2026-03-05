@@ -46,14 +46,19 @@ impl LabyrinthAnalysis {
     pub const MIN_CORRELATION_DIM: f64 = 1.5;
     pub const MAX_CORRELATION_DIM: f64 = 5.0;
 
+    /// Minimum determinism for biological plausibility.
+    pub const MIN_DETERMINISM: f64 = 0.3;
+    /// Maximum determinism for biological plausibility.
+    pub const MAX_DETERMINISM: f64 = 0.95;
+
     /// Check if labyrinth structure is characteristic of human input.
     pub fn is_biologically_plausible(&self) -> bool {
         self.embedding_dimension >= Self::MIN_EMBEDDING_DIM
             && self.embedding_dimension <= Self::MAX_EMBEDDING_DIM
             && self.correlation_dimension >= Self::MIN_CORRELATION_DIM
             && self.correlation_dimension <= Self::MAX_CORRELATION_DIM
-            && self.determinism > 0.3
-            && self.determinism < 0.95
+            && self.determinism > Self::MIN_DETERMINISM
+            && self.determinism < Self::MAX_DETERMINISM
     }
 }
 
@@ -81,26 +86,35 @@ impl Default for LabyrinthParams {
     }
 }
 
+/// Minimum data points for labyrinth analysis.
+const MIN_LABYRINTH_DATA_POINTS: usize = 50;
+/// Hard limit on maximum embedding dimension parameter.
+const MAX_EMBEDDING_DIM_LIMIT: usize = 20;
+/// Hard limit on maximum delay parameter.
+const MAX_DELAY_LIMIT: usize = 50;
+/// FNN ratio below which the embedding dimension is sufficient.
+const FNN_RATIO_THRESHOLD: f64 = 0.1;
+
 /// Perform labyrinth structure analysis on a time series.
 pub fn analyze_labyrinth(
     data: &[f64],
     params: &LabyrinthParams,
 ) -> Result<LabyrinthAnalysis, String> {
     let n = data.len();
-    if n < 50 {
+    if n < MIN_LABYRINTH_DATA_POINTS {
         return Err("Insufficient data for labyrinth analysis (minimum 50 points)".to_string());
     }
 
-    if params.max_embedding_dim > 20 {
+    if params.max_embedding_dim > MAX_EMBEDDING_DIM_LIMIT {
         return Err(format!(
-            "max_embedding_dim {} exceeds limit of 20",
-            params.max_embedding_dim
+            "max_embedding_dim {} exceeds limit of {}",
+            params.max_embedding_dim, MAX_EMBEDDING_DIM_LIMIT
         ));
     }
-    if params.max_delay > 50 {
+    if params.max_delay > MAX_DELAY_LIMIT {
         return Err(format!(
-            "max_delay {} exceeds limit of 50",
-            params.max_delay
+            "max_delay {} exceeds limit of {}",
+            params.max_delay, MAX_DELAY_LIMIT
         ));
     }
 
@@ -222,7 +236,7 @@ fn estimate_embedding_dimension(data: &[f64], delay: usize, max_dim: usize) -> u
         let fnn_ratio = calculate_fnn_ratio(&embedding, data, dim, delay);
 
         // If FNN ratio drops below threshold, we've found the dimension
-        if fnn_ratio < 0.1 {
+        if fnn_ratio < FNN_RATIO_THRESHOLD {
             return dim;
         }
     }

@@ -26,6 +26,43 @@ const MIN_EDIT_TO_JITTER_RATIO: f64 = 0.02;
 /// Maximum allowable gap between last jitter sample and last edit event (seconds).
 const MAX_TEMPORAL_DRIFT_SEC: f64 = 120.0;
 
+/// Default score for insufficient data.
+const INSUFFICIENT_SCORE: f64 = 0.5;
+/// Score for a failed binary check.
+const FAILED_CHECK_SCORE: f64 = 0.3;
+/// Minimum session duration (seconds) for growth rate analysis.
+const MIN_SESSION_DURATION_SEC: f64 = 10.0;
+/// Events-per-checkpoint lower bound (below = suspicious).
+const EVENTS_PER_CHECKPOINT_MIN: f64 = 0.5;
+/// Events-per-checkpoint upper bound (above = suspicious).
+const EVENTS_PER_CHECKPOINT_MAX: f64 = 200.0;
+/// Edit/jitter ratio above which coherence is fully passing.
+const EDIT_JITTER_RATIO_GOOD: f64 = 0.1;
+/// Score for marginal edit/jitter coherence.
+const COHERENCE_MARGINAL_SCORE: f64 = 0.6;
+/// Maximum score when edit/jitter ratio is below minimum.
+const COHERENCE_FAILED_MAX_SCORE: f64 = 0.4;
+/// Temporal drift (seconds) below which score is perfect.
+const DRIFT_PERFECT_SEC: f64 = 10.0;
+/// Score penalty fraction for moderate temporal drift.
+const DRIFT_MODERATE_PENALTY: f64 = 0.4;
+/// Large-drift denominator (seconds beyond MAX_TEMPORAL_DRIFT_SEC).
+const DRIFT_LARGE_DIVISOR: f64 = 600.0;
+/// Maximum score for very large temporal drift.
+const DRIFT_LARGE_MAX_SCORE: f64 = 0.3;
+/// Keystroke/content ratio threshold for passing.
+const KS_CONTENT_MIN: f64 = 0.5;
+/// Jitter/keystroke ratio threshold for passing.
+const JITTER_KS_MIN: f64 = 0.3;
+/// Keystroke/content ratio for optimal score.
+const KS_CONTENT_OPTIMAL: f64 = 1.0;
+/// Jitter/keystroke ratio for optimal score.
+const JITTER_KS_OPTIMAL: f64 = 0.8;
+/// Score for passing but non-optimal entanglement.
+const ENTANGLEMENT_MARGINAL_SCORE: f64 = 0.6;
+/// Score for failed entanglement check.
+const ENTANGLEMENT_FAILED_SCORE: f64 = 0.2;
+
 /// Cross-modal consistency input bundle.
 pub struct CrossModalInput<'a> {
     pub events: &'a [EventData],
@@ -74,7 +111,7 @@ pub fn analyze_cross_modal(input: &CrossModalInput<'_>) -> CrossModalResult {
 
     if input.events.len() < MIN_EVENTS {
         return CrossModalResult {
-            score: 0.5,
+            score: INSUFFICIENT_SCORE,
             checks,
             verdict: CrossModalVerdict::Insufficient,
         };
@@ -97,7 +134,7 @@ pub fn analyze_cross_modal(input: &CrossModalInput<'_>) -> CrossModalResult {
 
     if checks.is_empty() {
         return CrossModalResult {
-            score: 0.5,
+            score: INSUFFICIENT_SCORE,
             checks,
             verdict: CrossModalVerdict::Insufficient,
         };
@@ -139,11 +176,11 @@ fn check_content_growth_rate(input: &CrossModalInput<'_>) -> CrossModalCheck {
         };
     }
 
-    if input.session_duration_sec < 10.0 {
+    if input.session_duration_sec < MIN_SESSION_DURATION_SEC {
         return CrossModalCheck {
             name: "content_growth_rate".into(),
             passed: true,
-            score: 0.5,
+            score: INSUFFICIENT_SCORE,
             detail: "Session too short for growth rate analysis".into(),
         };
     }
@@ -187,8 +224,9 @@ fn check_edit_checkpoint_ratio(input: &CrossModalInput<'_>) -> CrossModalCheck {
     let events_per_checkpoint = input.events.len() as f64 / input.checkpoint_count as f64;
 
     // Expect roughly 1-100 events per checkpoint; outside this range is suspicious
-    let passed = (0.5..=200.0).contains(&events_per_checkpoint);
-    let score = if passed { 1.0 } else { 0.3 };
+    let passed =
+        (EVENTS_PER_CHECKPOINT_MIN..=EVENTS_PER_CHECKPOINT_MAX).contains(&events_per_checkpoint);
+    let score = if passed { 1.0 } else { FAILED_CHECK_SCORE };
 
     CrossModalCheck {
         name: "edit_checkpoint_ratio".into(),
@@ -217,12 +255,12 @@ fn check_jitter_edit_coherence(
     let ratio = edit_count as f64 / jitter_count as f64;
     let passed = ratio >= MIN_EDIT_TO_JITTER_RATIO;
 
-    let score = if ratio >= 0.1 {
+    let score = if ratio >= EDIT_JITTER_RATIO_GOOD {
         1.0
     } else if ratio >= MIN_EDIT_TO_JITTER_RATIO {
-        0.6
+        COHERENCE_MARGINAL_SCORE
     } else {
-        (ratio / MIN_EDIT_TO_JITTER_RATIO).clamp(0.0, 0.4)
+        (ratio / MIN_EDIT_TO_JITTER_RATIO).clamp(0.0, COHERENCE_FAILED_MAX_SCORE)
     };
 
     CrossModalCheck {
@@ -268,12 +306,14 @@ fn check_temporal_span_alignment(
     let max_drift = start_drift.max(end_drift);
 
     let passed = max_drift <= MAX_TEMPORAL_DRIFT_SEC;
-    let score = if max_drift <= 10.0 {
+    let score = if max_drift <= DRIFT_PERFECT_SEC {
         1.0
     } else if max_drift <= MAX_TEMPORAL_DRIFT_SEC {
-        1.0 - (max_drift - 10.0) / (MAX_TEMPORAL_DRIFT_SEC - 10.0) * 0.4
+        1.0 - (max_drift - DRIFT_PERFECT_SEC) / (MAX_TEMPORAL_DRIFT_SEC - DRIFT_PERFECT_SEC)
+            * DRIFT_MODERATE_PENALTY
     } else {
-        (0.3 - (max_drift - MAX_TEMPORAL_DRIFT_SEC) / 600.0).clamp(0.0, 0.3)
+        (DRIFT_LARGE_MAX_SCORE - (max_drift - MAX_TEMPORAL_DRIFT_SEC) / DRIFT_LARGE_DIVISOR)
+            .clamp(0.0, DRIFT_LARGE_MAX_SCORE)
     };
 
     CrossModalCheck {
@@ -301,7 +341,7 @@ fn check_jitter_content_entanglement(
         return CrossModalCheck {
             name: "jitter_content_entanglement".into(),
             passed: true,
-            score: 0.5,
+            score: INSUFFICIENT_SCORE,
             detail: "No document content for entanglement check".into(),
         };
     }
@@ -329,14 +369,14 @@ fn check_jitter_content_entanglement(
     };
 
     // Content with no keystrokes at all = highly suspicious
-    let passed = ks_content_ratio >= 0.5 && jitter_ks_ratio >= 0.3;
+    let passed = ks_content_ratio >= KS_CONTENT_MIN && jitter_ks_ratio >= JITTER_KS_MIN;
 
-    let score = if ks_content_ratio >= 1.0 && jitter_ks_ratio >= 0.8 {
+    let score = if ks_content_ratio >= KS_CONTENT_OPTIMAL && jitter_ks_ratio >= JITTER_KS_OPTIMAL {
         1.0
     } else if passed {
-        0.6
+        ENTANGLEMENT_MARGINAL_SCORE
     } else {
-        0.2
+        ENTANGLEMENT_FAILED_SCORE
     };
 
     CrossModalCheck {

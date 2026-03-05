@@ -15,6 +15,17 @@
 (() => {
   "use strict";
 
+  // M-115: Named constants for site detection
+  const SITE_GOOGLE_DOCS = "google-docs";
+  const SITE_OVERLEAF = "overleaf";
+  const SITE_MEDIUM = "medium";
+  const SITE_NOTION = "notion";
+
+  // M-135: Valid actions accepted from the background script
+  const VALID_CONTENT_ACTIONS = [
+    "capture_state", "start", "stop", "stop_witnessing", "get_page_info"
+  ];
+
   let isWitnessing = false;
   let lastCharCount = 0;
   let lastContentHash = "";
@@ -26,6 +37,10 @@
   const MAX_OBSERVER_RETRIES = 20;
   const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10 MB — stop traversal beyond this
 
+  // M-091: Cached editor element references, invalidated on stop/start
+  let cachedEditorElements = null;
+  let cachedSite = null;
+
   function storageKey() {
     return `witnessing_${window.location.origin}${window.location.pathname}`;
   }
@@ -35,19 +50,25 @@
     const pathname = window.location.pathname;
 
     if (hostname === "docs.google.com" && pathname.startsWith("/document/")) {
-      return "google-docs";
+      return SITE_GOOGLE_DOCS;
     }
     if (hostname === "www.overleaf.com" && pathname.startsWith("/project/")) {
-      return "overleaf";
+      return SITE_OVERLEAF;
     }
     if (hostname === "medium.com") {
-      return "medium";
+      return SITE_MEDIUM;
     }
     if (hostname.includes("notion.so")) {
-      return "notion";
+      return SITE_NOTION;
     }
 
     return null;
+  }
+
+  /** Invalidate cached editor elements (call on start/stop witnessing). */
+  function invalidateEditorCache() {
+    cachedEditorElements = null;
+    cachedSite = null;
   }
 
   /**
@@ -70,37 +91,59 @@
     console.log(`[WritersLogic] Timer resolution detected: ${timerResolution.toFixed(4)}ms`);
   }
 
+  /**
+   * M-091: Returns cached editor element references when available.
+   * Cache is invalidated on start/stop witnessing and when elements are
+   * detached from the DOM.
+   */
   function getEditorElement() {
+    // Return cache if elements are still attached to the DOM
+    if (cachedEditorElements && cachedEditorElements.length > 0) {
+      if (cachedEditorElements[0].isConnected) {
+        return cachedEditorElements;
+      }
+      cachedEditorElements = null;
+    }
+
     const site = detectSite();
+    let elements;
 
     switch (site) {
-      case "google-docs": {
+      case SITE_GOOGLE_DOCS: {
         const pages = document.querySelectorAll(".kix-page");
-        if (pages.length > 0) return pages;
-        return document.querySelectorAll(
-          '.kix-appview-editor [contenteditable="true"]'
-        );
+        elements = pages.length > 0
+          ? pages
+          : document.querySelectorAll(
+              '.kix-appview-editor [contenteditable="true"]'
+            );
+        break;
       }
 
-      case "overleaf": {
-        return document.querySelectorAll(".cm-content");
-      }
+      case SITE_OVERLEAF:
+        elements = document.querySelectorAll(".cm-content");
+        break;
 
-      case "medium": {
-        return document.querySelectorAll(
+      case SITE_MEDIUM:
+        elements = document.querySelectorAll(
           'article [contenteditable="true"], .postArticle [contenteditable="true"], [role="textbox"]'
         );
-      }
+        break;
 
-      case "notion": {
-        return document.querySelectorAll(
+      case SITE_NOTION:
+        elements = document.querySelectorAll(
           '.notion-page-content [contenteditable="true"]'
         );
-      }
+        break;
 
       default:
-        return document.querySelectorAll('[contenteditable="true"]');
+        elements = document.querySelectorAll('[contenteditable="true"]');
     }
+
+    if (elements && elements.length > 0) {
+      cachedEditorElements = elements;
+      cachedSite = site;
+    }
+    return elements;
   }
 
   /**
@@ -168,18 +211,18 @@
     const site = detectSite();
 
     switch (site) {
-      case "google-docs": {
+      case SITE_GOOGLE_DOCS: {
         const titleEl = document.querySelector(".docs-title-input input");
         return titleEl?.value || document.title.replace(" - Google Docs", "");
       }
-      case "overleaf":
+      case SITE_OVERLEAF:
         return document.title.replace(" - Overleaf, Online LaTeX Editor", "");
-      case "medium":
+      case SITE_MEDIUM:
         return (
           document.querySelector("h3.graf--title")?.textContent ||
           document.title
         );
-      case "notion":
+      case SITE_NOTION:
         return (
           document.querySelector(".notion-page-block .notranslate")
             ?.textContent || document.title
@@ -295,9 +338,10 @@
 
   function startWitnessing() {
     if (isWitnessing) return;
-    
+
     calibrateTimer();
     isWitnessing = true;
+    invalidateEditorCache();
 
     chrome.storage.local.set({ [`${storageKey()}`]: true });
 
@@ -315,6 +359,7 @@
   function stopWitnessing() {
     if (!isWitnessing) return;
     isWitnessing = false;
+    invalidateEditorCache();
 
     chrome.storage.local.remove([`${storageKey()}`]);
 
@@ -325,7 +370,21 @@
     chrome.runtime.sendMessage({ action: "stop_witnessing" });
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // SYS-019/M-135: Validate sender is our own extension
+    if (sender.id !== chrome.runtime.id) {
+      return;
+    }
+
+    // SYS-019: Validate message structure and action
+    if (!message || typeof message !== "object" || typeof message.action !== "string") {
+      return;
+    }
+    if (!VALID_CONTENT_ACTIONS.includes(message.action)) {
+      sendResponse({ ok: false, error: "Unknown action" });
+      return true;
+    }
+
     switch (message.action) {
       case "capture_state":
         handleContentChange();

@@ -9,6 +9,18 @@ use crate::jitter::SimpleJitterSample;
 use super::topology::compute_median;
 use super::types::{CadenceMetrics, ROBOTIC_CV_THRESHOLD};
 
+/// IKI threshold in nanoseconds for fast-burst detection (200 ms).
+const BURST_THRESHOLD_NS: f64 = 200_000_000.0;
+
+/// IKI threshold in nanoseconds for pause detection (2 seconds).
+const PAUSE_THRESHOLD_NS: f64 = 2_000_000_000.0;
+
+/// Minimum consecutive fast keystrokes to qualify as a burst.
+const MIN_BURST_LENGTH: usize = 3;
+
+/// Minimum samples needed before flagging content as retyped.
+const MIN_RETYPED_SAMPLES: usize = 20;
+
 /// Analyze keystroke cadence from jitter samples.
 pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     let mut metrics = CadenceMetrics::default();
@@ -77,12 +89,8 @@ pub struct TypingBurst {
     pub avg_iki_ns: f64,
 }
 
-/// Segment IKI sequence into bursts (<200ms between keystrokes)
-/// and pauses (>2s intervals).
+/// Segment IKI sequence into bursts and pauses.
 fn detect_bursts_and_pauses(ikis: &[f64]) -> (Vec<TypingBurst>, Vec<f64>) {
-    const BURST_THRESHOLD_NS: f64 = 200_000_000.0; // 200ms
-    const PAUSE_THRESHOLD_NS: f64 = 2_000_000_000.0; // 2 seconds
-
     let mut bursts = Vec::new();
     let mut pauses = Vec::new();
 
@@ -99,7 +107,7 @@ fn detect_bursts_and_pauses(ikis: &[f64]) -> (Vec<TypingBurst>, Vec<f64>) {
         } else {
             if let Some(start) = burst_start {
                 let length = i - start;
-                if length >= 3 {
+                if length >= MIN_BURST_LENGTH {
                     bursts.push(TypingBurst {
                         start_idx: start,
                         length,
@@ -131,5 +139,5 @@ fn detect_bursts_and_pauses(ikis: &[f64]) -> (Vec<TypingBurst>, Vec<f64>) {
 
 /// Return `true` if cadence is too rhythmic for original composition (likely retyped).
 pub fn is_retyped_content(samples: &[SimpleJitterSample]) -> bool {
-    samples.len() >= 20 && analyze_cadence(samples).is_robotic
+    samples.len() >= MIN_RETYPED_SAMPLES && analyze_cadence(samples).is_robotic
 }

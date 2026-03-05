@@ -23,6 +23,47 @@ const CV_ROBOTIC_THRESHOLD: f64 = 0.2;
 /// Per-anomaly penalty in authenticity score.
 const ANOMALY_PENALTY: f64 = 0.05;
 
+/// Deletion clustering lower bound for scattered-deletion anomaly.
+const DELETION_CLUSTERING_LOW: f64 = 0.9;
+/// Deletion clustering upper bound for scattered-deletion anomaly.
+const DELETION_CLUSTERING_HIGH: f64 = 1.1;
+/// Monotonic append ratio for "suspicious" verdict (stricter than penalty start).
+const MONOTONIC_SUSPICIOUS: f64 = 0.90;
+/// Positive-to-negative edit ratio above which pattern is suspicious.
+const POS_NEG_SUSPICIOUS: f64 = 0.95;
+/// Default score when insufficient data is available.
+const INSUFFICIENT_DATA_SCORE: f64 = 0.5;
+/// Penalty multiplier for high monotonic append ratio.
+const MONOTONIC_PENALTY_WEIGHT: f64 = 0.2;
+/// Penalty for low normalized edit entropy.
+const LOW_ENTROPY_PENALTY: f64 = 0.15;
+/// Penalty for high positive/negative edit ratio.
+const POS_NEG_PENALTY: f64 = 0.1;
+/// Penalty when cadence is flagged robotic.
+const ROBOTIC_CADENCE_PENALTY: f64 = 0.35;
+/// Penalty multiplier for low coefficient of variation.
+const COV_PENALTY_WEIGHT: f64 = 0.15;
+/// Biological cadence score above which a reward is applied.
+const BIOLOGICAL_CADENCE_THRESHOLD: f64 = 0.5;
+/// Maximum reward for biological cadence evidence.
+const BIOLOGICAL_CADENCE_REWARD: f64 = 0.05;
+/// Cadence-only penalty for robotic flag.
+const CADENCE_ROBOTIC_PENALTY: f64 = 0.5;
+/// Cadence-only penalty multiplier for low CoV.
+const CADENCE_COV_PENALTY: f64 = 0.2;
+/// Assessment score at or above which risk is Low.
+const RISK_LOW_THRESHOLD: f64 = 0.7;
+/// Assessment score at or above which risk is Medium (below Low).
+const RISK_MEDIUM_THRESHOLD: f64 = 0.4;
+/// Warning count triggering suspicious verdict.
+const SUSPICIOUS_WARNING_COUNT: usize = 3;
+/// Indicator count triggering suspicious verdict.
+const SUSPICIOUS_INDICATOR_COUNT: usize = 2;
+/// Indicator count triggering immediate suspicious verdict.
+const SUSPICIOUS_INDICATOR_CRITICAL: usize = 3;
+/// Maximum inter-event delta (seconds) for velocity anomaly detection.
+const VELOCITY_WINDOW_SEC: f64 = 60.0;
+
 /// Detect anomalies in editing patterns (topology + temporal).
 pub fn detect_anomalies(
     events: &[EventData],
@@ -55,7 +96,9 @@ pub fn detect_anomalies(
         });
     }
 
-    if metrics.deletion_clustering > 0.9 && metrics.deletion_clustering < 1.1 {
+    if metrics.deletion_clustering > DELETION_CLUSTERING_LOW
+        && metrics.deletion_clustering < DELETION_CLUSTERING_HIGH
+    {
         anomalies.push(Anomaly {
             timestamp: None,
             anomaly_type: AnomalyType::ScatteredDeletions,
@@ -105,7 +148,7 @@ fn detect_temporal_anomalies(
             });
         }
 
-        if delta_sec > 0.0 && delta_sec < 60.0 {
+        if delta_sec > 0.0 && delta_sec < VELOCITY_WINDOW_SEC {
             let bytes_delta = curr.size_delta.abs();
             let bytes_per_sec = bytes_delta as f64 / delta_sec;
             if bytes_per_sec > THRESHOLD_HIGH_VELOCITY_BPS {
@@ -144,7 +187,7 @@ pub fn determine_assessment(
 
     let mut suspicious_indicators = 0;
 
-    if metrics.monotonic_append_ratio > 0.90 {
+    if metrics.monotonic_append_ratio > MONOTONIC_SUSPICIOUS {
         suspicious_indicators += 1;
     }
 
@@ -152,19 +195,23 @@ pub fn determine_assessment(
         suspicious_indicators += 1;
     }
 
-    if metrics.positive_negative_ratio > 0.95 {
+    if metrics.positive_negative_ratio > POS_NEG_SUSPICIOUS {
         suspicious_indicators += 1;
     }
 
-    if metrics.deletion_clustering > 0.9 && metrics.deletion_clustering < 1.1 {
+    if metrics.deletion_clustering > DELETION_CLUSTERING_LOW
+        && metrics.deletion_clustering < DELETION_CLUSTERING_HIGH
+    {
         suspicious_indicators += 1;
     }
 
-    if alert_count >= ALERT_THRESHOLD || suspicious_indicators >= 3 {
+    if alert_count >= ALERT_THRESHOLD || suspicious_indicators >= SUSPICIOUS_INDICATOR_CRITICAL {
         return Assessment::Suspicious;
     }
 
-    if warning_count >= 3 || suspicious_indicators >= 2 {
+    if warning_count >= SUSPICIOUS_WARNING_COUNT
+        || suspicious_indicators >= SUSPICIOUS_INDICATOR_COUNT
+    {
         return Assessment::Suspicious;
     }
 
@@ -180,43 +227,48 @@ pub fn calculate_assessment_score(
     biological_cadence_score: f64,
 ) -> f64 {
     if event_count < MIN_EVENTS_FOR_ANALYSIS {
-        return 0.5;
+        return INSUFFICIENT_DATA_SCORE;
     }
 
     let mut score = 1.0;
 
     if primary.monotonic_append_ratio > MONOTONIC_PENALTY_START {
-        score -= 0.2 * (primary.monotonic_append_ratio - MONOTONIC_PENALTY_START)
+        score -= MONOTONIC_PENALTY_WEIGHT
+            * (primary.monotonic_append_ratio - MONOTONIC_PENALTY_START)
             / (1.0 - MONOTONIC_PENALTY_START);
     }
 
     let normalized_entropy = primary.edit_entropy / ENTROPY_NORMALIZATION;
     if normalized_entropy < LOW_ENTROPY_SCORE_THRESHOLD {
-        score -= 0.15;
+        score -= LOW_ENTROPY_PENALTY;
     }
 
-    if primary.positive_negative_ratio > 0.95 {
-        score -= 0.1;
+    if primary.positive_negative_ratio > POS_NEG_SUSPICIOUS {
+        score -= POS_NEG_PENALTY;
     }
 
-    if primary.deletion_clustering > 0.9 && primary.deletion_clustering < 1.1 {
-        score -= 0.1;
+    if primary.deletion_clustering > DELETION_CLUSTERING_LOW
+        && primary.deletion_clustering < DELETION_CLUSTERING_HIGH
+    {
+        score -= POS_NEG_PENALTY;
     }
 
     if cadence.is_robotic {
-        score -= 0.35;
+        score -= ROBOTIC_CADENCE_PENALTY;
     }
 
     if cadence.coefficient_of_variation < CV_ROBOTIC_THRESHOLD {
-        score -=
-            0.15 * (CV_ROBOTIC_THRESHOLD - cadence.coefficient_of_variation) / CV_ROBOTIC_THRESHOLD;
+        score -= COV_PENALTY_WEIGHT * (CV_ROBOTIC_THRESHOLD - cadence.coefficient_of_variation)
+            / CV_ROBOTIC_THRESHOLD;
     }
 
     score -= ANOMALY_PENALTY * anomaly_count as f64;
 
     // Reward steady biological cadence (supports human authorship)
-    if biological_cadence_score > 0.5 {
-        score += 0.05 * (biological_cadence_score - 0.5) / 0.5;
+    if biological_cadence_score > BIOLOGICAL_CADENCE_THRESHOLD {
+        score += BIOLOGICAL_CADENCE_REWARD
+            * (biological_cadence_score - BIOLOGICAL_CADENCE_THRESHOLD)
+            / BIOLOGICAL_CADENCE_THRESHOLD;
     }
 
     score.clamp(0.0, 1.0)
@@ -227,16 +279,17 @@ pub fn calculate_cadence_score(cadence: &CadenceMetrics) -> f64 {
     let mut score = 1.0;
 
     if cadence.is_robotic {
-        score -= 0.5;
+        score -= CADENCE_ROBOTIC_PENALTY;
     }
 
-    if cadence.coefficient_of_variation < 0.2 {
-        let penalty = (0.2 - cadence.coefficient_of_variation) / 0.2;
-        score -= 0.2 * penalty;
+    if cadence.coefficient_of_variation < CV_ROBOTIC_THRESHOLD {
+        let penalty =
+            (CV_ROBOTIC_THRESHOLD - cadence.coefficient_of_variation) / CV_ROBOTIC_THRESHOLD;
+        score -= CADENCE_COV_PENALTY * penalty;
     }
 
     if cadence.percentiles[4] == 0.0 {
-        return 0.5;
+        return INSUFFICIENT_DATA_SCORE;
     }
 
     score.clamp(0.0, 1.0)
@@ -248,9 +301,9 @@ pub fn determine_risk_level(score: f64, event_count: usize) -> RiskLevel {
         return RiskLevel::Insufficient;
     }
 
-    if score >= 0.7 {
+    if score >= RISK_LOW_THRESHOLD {
         RiskLevel::Low
-    } else if score >= 0.4 {
+    } else if score >= RISK_MEDIUM_THRESHOLD {
         RiskLevel::Medium
     } else {
         RiskLevel::High

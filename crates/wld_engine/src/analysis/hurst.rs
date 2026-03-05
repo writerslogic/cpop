@@ -66,10 +66,25 @@ impl HurstAnalysis {
     }
 
     /// Check if the series is suspiciously predictable.
+    /// Threshold above which Hurst exponent is suspiciously predictable.
+    pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
+
+    /// Check if the series is suspiciously predictable.
     pub fn is_suspiciously_predictable(&self) -> bool {
-        self.exponent > 0.95
+        self.exponent > Self::SUSPICIOUSLY_PREDICTABLE
     }
 }
+
+/// Minimum data points for R/S analysis.
+const RS_MIN_DATA_POINTS: usize = 20;
+/// Minimum window size (power of 2) for R/S analysis.
+const RS_MIN_WINDOW: usize = 8;
+/// Minimum data points for DFA analysis.
+#[allow(dead_code)]
+const DFA_MIN_DATA_POINTS: usize = 32;
+/// Minimum DFA scale size.
+#[allow(dead_code)]
+const DFA_MIN_SCALE: usize = 8;
 
 /// Calculate Hurst exponent using R/S (Rescaled Range) analysis.
 ///
@@ -82,15 +97,15 @@ impl HurstAnalysis {
 /// * `HurstAnalysis` with exponent and diagnostics, or error message
 pub fn calculate_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
-    if n < 20 {
+    if n < RS_MIN_DATA_POINTS {
         return Err("Insufficient data points (minimum 20 required)".to_string());
     }
 
     let mut log_n_vec = Vec::new();
     let mut log_rs_vec = Vec::new();
 
-    // Window sizes: powers of 2 from 8 to n/4
-    let min_window = 8;
+    // Window sizes: powers of 2 from RS_MIN_WINDOW to n/4
+    let min_window = RS_MIN_WINDOW;
     let max_window = n / 4;
 
     let mut window_size = min_window;
@@ -121,11 +136,11 @@ pub fn calculate_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     // `is_biologically_plausible()` and `is_valid` below.
     let exponent = slope.clamp(0.0, 1.0);
 
-    let interpretation = if (exponent - 0.5).abs() < 0.05 {
+    let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
         HurstInterpretation::WhiteNoise
     } else if exponent < 0.5 {
         HurstInterpretation::AntiPersistent
-    } else if exponent <= 0.85 {
+    } else if exponent <= HurstAnalysis::MAX_VALID {
         HurstInterpretation::Persistent
     } else {
         HurstInterpretation::HighlyPredictable
@@ -202,9 +217,10 @@ fn calculate_rs_for_window(data: &[f64], window_size: usize) -> f64 {
 ///
 /// # Returns
 /// * `HurstAnalysis` with exponent and diagnostics
+#[allow(dead_code)]
 pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
-    if n < 32 {
+    if n < DFA_MIN_DATA_POINTS {
         return Err("Insufficient data points for DFA (minimum 32 required)".to_string());
     }
 
@@ -219,8 +235,8 @@ pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     let mut log_scales = Vec::new();
     let mut log_fluct = Vec::new();
 
-    // Scales from 8 to n/4
-    let min_scale = 8;
+    // Scales from DFA_MIN_SCALE to n/4
+    let min_scale = DFA_MIN_SCALE;
     let max_scale = n / 4;
 
     let mut scale = min_scale;
@@ -249,11 +265,11 @@ pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     // still applies for human typing detection.
     let exponent = slope.clamp(0.0, 2.0);
 
-    let interpretation = if (exponent - 0.5).abs() < 0.05 {
+    let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
         HurstInterpretation::WhiteNoise
     } else if exponent < 0.5 {
         HurstInterpretation::AntiPersistent
-    } else if exponent <= 0.85 {
+    } else if exponent <= HurstAnalysis::MAX_VALID {
         HurstInterpretation::Persistent
     } else {
         HurstInterpretation::HighlyPredictable

@@ -9,6 +9,45 @@ use super::session::INTERVAL_BUCKET_SIZE_MS;
 
 const NUM_INTERVAL_BUCKETS: i64 = super::session::NUM_INTERVAL_BUCKETS;
 
+/// Number of histogram buckets per typing category.
+const HISTOGRAM_BUCKET_COUNT: usize = 10;
+
+/// Minimum hand alternation ratio for plausible human typing.
+const MIN_HAND_ALTERNATION: f32 = 0.15;
+
+/// Tolerance band used in quick-verify alerts (symmetric around 0.5).
+const ALTERNATION_TOLERANCE: f32 = 0.85;
+
+/// Maximum same-hand ratio; above this is implausible.
+const MAX_SAME_HAND_RATIO: f64 = 0.30;
+
+/// Minimum transitions before plausibility checks apply.
+const MIN_TRANSITIONS_PLAUSIBILITY: u64 = 10;
+
+/// Minimum total transitions before bucket analysis applies.
+const MIN_TOTAL_BUCKET_ANALYSIS: u64 = 100;
+
+/// Maximum fraction in a single bucket before flagging as robotic.
+const MAX_BUCKET_CONCENTRATION: f64 = 0.80;
+
+/// Minimum total transitions for concentration check.
+const MIN_TRANSITIONS_VERIFICATION: u64 = 50;
+
+/// Alert threshold: hand alternation below this is suspiciously low.
+const ALTERNATION_ALERT_LOW: f32 = 0.25;
+
+/// Alert threshold: hand alternation above this is suspiciously high.
+const ALTERNATION_ALERT_HIGH: f32 = 0.75;
+
+/// Weight for same-finger histogram in profile comparison.
+const COMPARE_WEIGHT_SAME_FINGER: f64 = 0.3;
+/// Weight for same-hand histogram in profile comparison.
+const COMPARE_WEIGHT_SAME_HAND: f64 = 0.3;
+/// Weight for alternating histogram in profile comparison.
+const COMPARE_WEIGHT_ALTERNATING: f64 = 0.3;
+/// Weight for hand alternation scalar in profile comparison.
+const COMPARE_WEIGHT_HAND_ALT: f64 = 0.1;
+
 pub fn interval_to_bucket(duration: Duration) -> u8 {
     let ms = duration.as_millis().min(i64::MAX as u128) as i64;
     let mut bucket = ms / INTERVAL_BUCKET_SIZE_MS;
@@ -37,14 +76,17 @@ pub fn compare_profiles(a: TypingProfile, b: TypingProfile) -> f64 {
         1.0 - hand_alt_diff
     };
 
-    0.3 * same_finger + 0.3 * same_hand + 0.3 * alternating + 0.1 * hand_alt_sim
+    COMPARE_WEIGHT_SAME_FINGER * same_finger
+        + COMPARE_WEIGHT_SAME_HAND * same_hand
+        + COMPARE_WEIGHT_ALTERNATING * alternating
+        + COMPARE_WEIGHT_HAND_ALT * hand_alt_sim
 }
 
 fn histogram_cosine_similarity(a: &[u32; 10], b: &[u32; 10]) -> f64 {
     let mut dot = 0.0;
     let mut norm_a = 0.0;
     let mut norm_b = 0.0;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         let fa = a[i] as f64;
         let fb = b[i] as f64;
         dot += fa * fb;
@@ -65,18 +107,20 @@ fn sqrt(x: f64) -> f64 {
 }
 
 pub fn is_human_plausible(profile: TypingProfile) -> bool {
-    if profile.total_transitions < 10 {
+    if profile.total_transitions < MIN_TRANSITIONS_PLAUSIBILITY {
         return true;
     }
 
-    if profile.hand_alternation < 0.15 || profile.hand_alternation > 0.85 {
+    if profile.hand_alternation < MIN_HAND_ALTERNATION
+        || profile.hand_alternation > ALTERNATION_TOLERANCE
+    {
         return false;
     }
 
     let mut same_finger_total = 0u64;
     let mut same_hand_total = 0u64;
     let mut alternating_total = 0u64;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         same_finger_total += profile.same_finger_hist[i] as u64;
         same_hand_total += profile.same_hand_hist[i] as u64;
         alternating_total += profile.alternating_hist[i] as u64;
@@ -88,12 +132,12 @@ pub fn is_human_plausible(profile: TypingProfile) -> bool {
     }
 
     let same_finger_ratio = same_finger_total as f64 / total as f64;
-    if same_finger_ratio > 0.30 {
+    if same_finger_ratio > MAX_SAME_HAND_RATIO {
         return false;
     }
 
     let mut non_zero = 0;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         if profile.same_finger_hist[i] > 0
             || profile.same_hand_hist[i] > 0
             || profile.alternating_hist[i] > 0
@@ -101,12 +145,12 @@ pub fn is_human_plausible(profile: TypingProfile) -> bool {
             non_zero += 1;
         }
     }
-    if non_zero < 3 && total > 100 {
+    if non_zero < 3 && total > MIN_TOTAL_BUCKET_ANALYSIS {
         return false;
     }
 
     let max_bucket_pct = max_histogram_concentration(&profile);
-    if max_bucket_pct > 0.80 && total > 50 {
+    if max_bucket_pct > MAX_BUCKET_CONCENTRATION && total > MIN_TRANSITIONS_VERIFICATION {
         return false;
     }
 
@@ -116,7 +160,7 @@ pub fn is_human_plausible(profile: TypingProfile) -> bool {
 fn max_histogram_concentration(profile: &TypingProfile) -> f64 {
     let mut total = 0u64;
     let mut max_bucket = 0u64;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         let bucket_total = profile.same_finger_hist[i] as u64
             + profile.same_hand_hist[i] as u64
             + profile.alternating_hist[i] as u64;
@@ -136,15 +180,15 @@ pub fn profile_distance(a: TypingProfile, b: TypingProfile) -> f64 {
     let b_norm = normalize_histograms(&b);
 
     let mut sum = 0.0;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         let diff = a_norm.same_finger[i] - b_norm.same_finger[i];
         sum += diff * diff;
     }
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         let diff = a_norm.same_hand[i] - b_norm.same_hand[i];
         sum += diff * diff;
     }
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         let diff = a_norm.alternating[i] - b_norm.alternating[i];
         sum += diff * diff;
     }
@@ -158,28 +202,28 @@ pub fn profile_distance(a: TypingProfile, b: TypingProfile) -> f64 {
 }
 
 struct NormalizedProfile {
-    same_finger: [f64; 10],
-    same_hand: [f64; 10],
-    alternating: [f64; 10],
+    same_finger: [f64; HISTOGRAM_BUCKET_COUNT],
+    same_hand: [f64; HISTOGRAM_BUCKET_COUNT],
+    alternating: [f64; HISTOGRAM_BUCKET_COUNT],
 }
 
 fn normalize_histograms(profile: &TypingProfile) -> NormalizedProfile {
     let mut same_finger_total = 0u64;
     let mut same_hand_total = 0u64;
     let mut alternating_total = 0u64;
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         same_finger_total += profile.same_finger_hist[i] as u64;
         same_hand_total += profile.same_hand_hist[i] as u64;
         alternating_total += profile.alternating_hist[i] as u64;
     }
 
     let mut out = NormalizedProfile {
-        same_finger: [0.0; 10],
-        same_hand: [0.0; 10],
-        alternating: [0.0; 10],
+        same_finger: [0.0; HISTOGRAM_BUCKET_COUNT],
+        same_hand: [0.0; HISTOGRAM_BUCKET_COUNT],
+        alternating: [0.0; HISTOGRAM_BUCKET_COUNT],
     };
 
-    for i in 0..10 {
+    for i in 0..HISTOGRAM_BUCKET_COUNT {
         if same_finger_total > 0 {
             out.same_finger[i] = profile.same_finger_hist[i] as f64 / same_finger_total as f64;
         }
@@ -199,11 +243,11 @@ pub fn quick_verify_profile(profile: TypingProfile) -> Vec<String> {
     if !is_human_plausible(profile) {
         issues.push("profile fails human plausibility check".to_string());
     }
-    if profile.total_transitions > 50 {
-        if profile.hand_alternation < 0.25 {
+    if profile.total_transitions > MIN_TRANSITIONS_VERIFICATION {
+        if profile.hand_alternation < ALTERNATION_ALERT_LOW {
             issues.push("hand alternation too low (< 25%)".to_string());
         }
-        if profile.hand_alternation > 0.75 {
+        if profile.hand_alternation > ALTERNATION_ALERT_HIGH {
             issues.push("hand alternation too high (> 75%)".to_string());
         }
     }

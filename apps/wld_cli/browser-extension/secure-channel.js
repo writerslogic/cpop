@@ -10,6 +10,19 @@
  * actual keystroke behavior.
  */
 
+// M-114: Cross-language domain-separation strings. Must match Rust native host exactly.
+const DST_HKDF_SALT = "wld-nmh-v1";
+const DST_SESSION_KEY_INFO = "aes-256-gcm-key";
+const DST_CANARY_SEED_INFO = "canary-seed";
+const DST_KEY_CONFIRM = "wld-key-confirm-ok";
+const DST_KEY_RATCHET = "wld-key-ratchet";
+const DST_JITTER_BINDING = "wld-jitter-binding";
+const DST_BROWSER_COMMIT = "wld-browser-commit";
+
+// M-081: Expected sizes for public key validation
+const P256_UNCOMPRESSED_PUBKEY_LEN = 65; // 0x04 || X(32) || Y(32)
+const AES_256_KEY_LEN = 32;
+
 // eslint-disable-next-line no-unused-vars
 class SecureChannel {
   constructor() {
@@ -89,9 +102,18 @@ class SecureChannel {
     }
 
     try {
+      // M-081: Validate server public key format and length
+      if (typeof message.server_pubkey !== "string" || message.server_pubkey.length === 0) {
+        throw new Error("Missing or empty server_pubkey in hello_accept");
+      }
       const serverPubKeyBytes = base64ToUint8(message.server_pubkey);
-      if (serverPubKeyBytes.length !== 65) {
-        throw new Error(`Invalid server pubkey size: ${serverPubKeyBytes.length}`);
+      if (serverPubKeyBytes.length !== P256_UNCOMPRESSED_PUBKEY_LEN) {
+        throw new Error(
+          `Invalid server pubkey size: expected ${P256_UNCOMPRESSED_PUBKEY_LEN}, got ${serverPubKeyBytes.length}`
+        );
+      }
+      if (serverPubKeyBytes[0] !== 0x04) {
+        throw new Error("Server pubkey is not uncompressed SEC1 format (missing 0x04 prefix)");
       }
 
       // Import server's public key
@@ -134,7 +156,7 @@ class SecureChannel {
       // Decrypt and verify server's confirmation
       const confirmCiphertext = base64ToUint8(message.confirm);
       const confirmPlaintext = await this.decryptRaw(confirmCiphertext);
-      const expectedConfirm = new TextEncoder().encode("wld-key-confirm-ok");
+      const expectedConfirm = new TextEncoder().encode(DST_KEY_CONFIRM);
       if (!constantTimeEqual(confirmPlaintext, expectedConfirm)) {
         throw new Error("Key confirmation failed: server derived different key");
       }
@@ -168,7 +190,7 @@ class SecureChannel {
    * Info strings match the Rust side exactly for cross-language compatibility.
    */
   async deriveKeys(sharedSecret, clientPubKey, serverPubKey) {
-    const salt = new TextEncoder().encode("wld-nmh-v1");
+    const salt = new TextEncoder().encode(DST_HKDF_SALT);
 
     // Import shared secret as HKDF key material
     const ikm = await crypto.subtle.importKey(
@@ -179,9 +201,9 @@ class SecureChannel {
       ["deriveBits"]
     );
 
-    // Session key info: "aes-256-gcm-key" || client_pubkey(65) || server_pubkey(65)
+    // Session key info: DST_SESSION_KEY_INFO || client_pubkey(65) || server_pubkey(65)
     const keyInfo = concatBytes(
-      new TextEncoder().encode("aes-256-gcm-key"),
+      new TextEncoder().encode(DST_SESSION_KEY_INFO),
       clientPubKey,
       serverPubKey
     );
@@ -193,9 +215,9 @@ class SecureChannel {
     );
     const sessionKeyBytes = new Uint8Array(sessionKeyBits);
 
-    // Canary seed info: "canary-seed" || client_pubkey(65) || server_pubkey(65)
+    // Canary seed info: DST_CANARY_SEED_INFO || client_pubkey(65) || server_pubkey(65)
     const canaryInfo = concatBytes(
-      new TextEncoder().encode("canary-seed"),
+      new TextEncoder().encode(DST_CANARY_SEED_INFO),
       clientPubKey,
       serverPubKey
     );
@@ -285,10 +307,18 @@ class SecureChannel {
    * @returns {Object} Decrypted JSON message with validated `type` field
    */
   async decrypt(envelope) {
-    if (envelope.rc !== undefined && envelope.rc !== this.ratchetCount) {
-      throw new Error(
-        `Ratchet count desync: local=${this.ratchetCount}, remote=${envelope.rc}`
-      );
+    // M-079: Validate ratchet count from envelope is a non-negative integer
+    if (envelope.rc !== undefined) {
+      if (!Number.isInteger(envelope.rc) || envelope.rc < 0) {
+        throw new Error(`Invalid remote ratchet count: ${envelope.rc}`);
+      }
+      // M-099: Ratchet count check is single-threaded in JS event loop,
+      // so get-then-compare is effectively atomic.
+      if (envelope.rc !== this.ratchetCount) {
+        throw new Error(
+          `Ratchet count desync: local=${this.ratchetCount}, remote=${envelope.rc}`
+        );
+      }
     }
     const data = base64ToUint8(envelope.payload);
     const plaintext = await this.decryptRaw(data);
@@ -315,7 +345,7 @@ class SecureChannel {
    * jitter_hash = SHA-256("wld-jitter-binding" || interval_1_le64 || interval_2_le64 || ...)
    */
   async computeJitterHash(intervals) {
-    const prefix = new TextEncoder().encode("wld-jitter-binding");
+    const prefix = new TextEncoder().encode(DST_JITTER_BINDING);
     const data = new Uint8Array(prefix.length + intervals.length * 8);
     data.set(prefix, 0);
     for (let i = 0; i < intervals.length; i++) {
@@ -331,8 +361,13 @@ class SecureChannel {
    * Must be called AFTER receiving jitter_received ACK from NMH.
    */
   async ratchetWithJitter(jitterHash, newRatchetCount) {
+    // M-079: Validate ratchet count is a non-negative integer
+    if (!Number.isInteger(newRatchetCount) || newRatchetCount < 0) {
+      throw new Error(`Invalid ratchet count: ${newRatchetCount}`);
+    }
+
     const info = concatBytes(
-      new TextEncoder().encode("wld-key-ratchet"),
+      new TextEncoder().encode(DST_KEY_RATCHET),
       uint64ToLE(newRatchetCount)
     );
 
@@ -351,7 +386,9 @@ class SecureChannel {
       256
     );
 
-    // Zeroize old key
+    // M-082: Best-effort zeroization of old key material. In JavaScript, the GC
+    // may retain copies of TypedArray backing buffers, and crypto.subtle CryptoKey
+    // objects cannot be explicitly zeroized. This fill(0) is the best we can do.
     if (this.rawKeyBytes) {
       this.rawKeyBytes.fill(0);
     }
@@ -374,7 +411,7 @@ class SecureChannel {
    */
   async computeCommitment(sessionId, ordinal, contentHash, timestamp) {
     const data = concatBytes(
-      new TextEncoder().encode("wld-browser-commit"),
+      new TextEncoder().encode(DST_BROWSER_COMMIT),
       new TextEncoder().encode(sessionId),
       uint64ToLE(ordinal),
       new TextEncoder().encode(contentHash),
@@ -408,6 +445,28 @@ class SecureChannel {
   /** True if the encrypted channel is established. */
   get isSecure() {
     return this.handshakeComplete;
+  }
+
+  /**
+   * M-082: Best-effort zeroization of all key material.
+   * Call on disconnect/session end. CryptoKey objects cannot be explicitly
+   * zeroized in JS — setting to null drops the reference for GC.
+   */
+  destroy() {
+    if (this.rawKeyBytes) {
+      this.rawKeyBytes.fill(0);
+      this.rawKeyBytes = null;
+    }
+    if (this.canarySeed) {
+      this.canarySeed.fill(0);
+      this.canarySeed = null;
+    }
+    this.sessionKey = null;
+    this.keyPair = null;
+    this.handshakeComplete = false;
+    this.txSequence = 0;
+    this.rxSequence = 1;
+    this.ratchetCount = 0;
   }
 }
 

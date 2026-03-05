@@ -6,6 +6,12 @@ use super::types::{
     EventData, SessionStats, VelocityMetrics, DEFAULT_SESSION_GAP_SEC, THRESHOLD_HIGH_VELOCITY_BPS,
 };
 
+/// Maximum inter-event delta in seconds before treating as a session gap.
+const MAX_DELTA_SEC: f64 = 60.0;
+
+/// Upper bound of plausible human typing speed in bytes per second.
+const HUMAN_MAX_BYTES_PER_SEC: f64 = 50.0;
+
 /// Analyze edit velocity patterns (bytes/sec).
 pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
     let mut metrics = VelocityMetrics::default();
@@ -25,7 +31,7 @@ pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
         let delta_ns = window[1].timestamp_ns - window[0].timestamp_ns;
         let delta_sec = delta_ns as f64 / 1e9;
 
-        if delta_sec > 0.0 && delta_sec < 60.0 {
+        if delta_sec > 0.0 && delta_sec < MAX_DELTA_SEC {
             let bytes_delta = window[1].size_delta.abs() as f64;
             let bps = bytes_delta / delta_sec;
             velocities.push(bps);
@@ -33,9 +39,8 @@ pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
             if bps > THRESHOLD_HIGH_VELOCITY_BPS {
                 high_velocity_bursts += 1;
 
-                let human_max_bps = 50.0;
-                if bps > human_max_bps {
-                    let excess = (bps - human_max_bps) * delta_sec;
+                if bps > HUMAN_MAX_BYTES_PER_SEC {
+                    let excess = (bps - HUMAN_MAX_BYTES_PER_SEC) * delta_sec;
                     autocomplete_chars += excess as i64;
                 }
             }

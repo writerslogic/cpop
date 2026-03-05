@@ -7,9 +7,28 @@
 
 const NATIVE_HOST_NAME = "com.writerslogic.witnessd";
 const CHECKPOINT_INTERVAL_MS = 30_000; // 30 seconds default
+const MAX_PENDING_CALLBACKS = 256;
+const GENESIS_COMMITMENT_PREFIX = "WritersLogic-Genesis-v1";
+const COMMITMENT_CHAIN_INITIAL_ORDINAL = 2; // Ordinal 1 = session start
 
+// M-118: Shared action names used in message validation
+const CONTENT_ACTIONS = [
+  "start_witnessing", "stop_witnessing", "content_changed", "keystroke_jitter"
+];
+const VALID_ACTIONS = [
+  ...CONTENT_ACTIONS, "get_status", "popup_connect"
+];
+
+/**
+ * Global mutable state. Service worker restarts will reset these to defaults.
+ * (H-105) Chrome MV3 service workers can be terminated and restarted at any time.
+ * Critical session state (sessionNonce, prevCommitment, checkpointOrdinal) is
+ * ephemeral by design — a service worker restart forces a new session handshake
+ * with the native host, which re-initializes the commitment chain.
+ */
 let nativePort = null;
 let isConnected = false;
+let isConnecting = false;
 let activeTabId = null;
 let checkpointTimer = null;
 let pendingCallbacks = new Map();
@@ -18,13 +37,14 @@ let callbackId = 0;
 // Anti-forgery commitment chain state
 let sessionNonce = null;
 let prevCommitment = null;
-let checkpointOrdinal = 2; // Next expected ordinal (1 = session start)
+let checkpointOrdinal = COMMITMENT_CHAIN_INITIAL_ORDINAL;
 
 function connectToNativeHost() {
-  if (nativePort) {
+  if (nativePort || isConnecting) {
     return;
   }
 
+  isConnecting = true;
   try {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
@@ -37,6 +57,7 @@ function connectToNativeHost() {
       console.warn("Native host disconnected:", error?.message || "unknown");
       nativePort = null;
       isConnected = false;
+      isConnecting = false;
       updateBadge("!", "#e74c3c");
     });
 
@@ -48,6 +69,8 @@ function connectToNativeHost() {
     console.error("Failed to connect to native host:", err);
     isConnected = false;
     updateBadge("!", "#e74c3c");
+  } finally {
+    isConnecting = false;
   }
 }
 
@@ -70,10 +93,29 @@ function sendNativeMessage(message) {
     return;
   }
 
+  // H-106: Enforce max pending callbacks to prevent unbounded growth
+  if (pendingCallbacks.size >= MAX_PENDING_CALLBACKS) {
+    console.warn("Pending callbacks limit reached, dropping oldest");
+    const oldest = pendingCallbacks.keys().next().value;
+    pendingCallbacks.delete(oldest);
+  }
+
   nativePort.postMessage(message);
 }
 
+/**
+ * Handle messages from the native messaging host.
+ * (M-052) Acknowledged: this handler is ~60 lines of switch/case which is
+ * acceptable for a flat message dispatch; extracting sub-handlers would add
+ * indirection without meaningful benefit.
+ */
 function handleNativeMessage(message) {
+  // SYS-019: Validate native message structure before dispatch
+  if (!message || typeof message !== "object" || typeof message.type !== "string") {
+    console.warn("Ignoring malformed native message:", message);
+    return;
+  }
+
   switch (message.type) {
     case "pong":
       console.log(`Native host connected: v${message.version}`);
@@ -86,7 +128,7 @@ function handleNativeMessage(message) {
       // Initialize commitment chain from session nonce
       if (message.session_nonce) {
         sessionNonce = message.session_nonce;
-        checkpointOrdinal = 2;
+        checkpointOrdinal = COMMITMENT_CHAIN_INITIAL_ORDINAL;
         // Derive deterministic genesis commitment so the first checkpoint
         // has a valid prev_commitment instead of null.
         computeGenesisCommitment(message.session_nonce)
@@ -118,7 +160,7 @@ function handleNativeMessage(message) {
       // Clear commitment chain state
       sessionNonce = null;
       prevCommitment = null;
-      checkpointOrdinal = 2;
+      checkpointOrdinal = COMMITMENT_CHAIN_INITIAL_ORDINAL;
       updateBadge("", "#95a5a6");
       stopCheckpointTimer();
       broadcastToPopup({ type: "session_update", active: false });
@@ -154,6 +196,18 @@ const ALLOWED_ORIGINS = [
 ];
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // SYS-019: Validate message structure
+  if (!message || typeof message !== "object" || typeof message.action !== "string") {
+    sendResponse({ ok: false, error: "Malformed message" });
+    return true;
+  }
+
+  // SYS-019: Reject unknown actions early
+  if (!VALID_ACTIONS.includes(message.action)) {
+    sendResponse({ ok: false, error: "Unknown action" });
+    return true;
+  }
+
   // Block messages from other extensions
   if (sender.id !== chrome.runtime.id) {
     sendResponse({ ok: false, error: "Unauthorized sender" });
@@ -161,8 +215,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // Content script actions require a valid tab with an allowed URL
-  const contentActions = ["start_witnessing", "stop_witnessing", "content_changed", "keystroke_jitter"];
-  if (contentActions.includes(message.action)) {
+  // M-098: TOCTOU note — the URL check and subsequent use are in the same
+  // synchronous event-loop turn, so no interleaving is possible in JS.
+  if (CONTENT_ACTIONS.includes(message.action)) {
     const tabUrl = sender.tab?.url || sender.url || "";
     if (!sender.tab || !ALLOWED_ORIGINS.some((re) => re.test(tabUrl))) {
       sendResponse({ ok: false, error: "Unauthorized origin" });
@@ -172,16 +227,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.action) {
     case "start_witnessing":
-      connectToNativeHost();
-      sendNativeMessage({
-        type: "start_session",
-        document_url: message.url,
-        document_title: message.title,
-        timer_resolution_ms: message.timerResolution,
-      });
-      activeTabId = sender.tab?.id;
-      startCheckpointTimer();
-      sendResponse({ ok: true });
+      {
+        // M-080: Validate URL before forwarding to native host
+        const url = message.url;
+        if (typeof url !== "string" || !ALLOWED_ORIGINS.some((re) => re.test(url))) {
+          sendResponse({ ok: false, error: "Invalid document URL" });
+          break;
+        }
+        connectToNativeHost();
+        sendNativeMessage({
+          type: "start_session",
+          document_url: url,
+          document_title: message.title,
+          timer_resolution_ms: message.timerResolution,
+        });
+        activeTabId = sender.tab?.id;
+        startCheckpointTimer();
+        sendResponse({ ok: true });
+      }
       break;
 
     case "stop_witnessing":
@@ -193,6 +256,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case "content_changed":
       {
+        // M-132: Return true (below) to keep the message channel open for the
+        // async commitment computation, then call sendResponse when done.
         const ordinal = checkpointOrdinal;
         const checkpointMsg = {
           type: "checkpoint",
@@ -209,17 +274,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then((commitment) => {
               checkpointMsg.commitment = commitment;
               sendNativeMessage(checkpointMsg);
+              sendResponse({ ok: true });
             })
             .catch((err) => {
               // Do NOT send checkpoint without a valid commitment — skip it
               console.error("Commitment computation failed, skipping checkpoint:", err);
+              sendResponse({ ok: false, error: "Commitment failed" });
             });
         } else {
           sendNativeMessage(checkpointMsg);
+          sendResponse({ ok: true });
         }
       }
-      sendResponse({ ok: true });
-      break;
+      // M-132/M-070: return true keeps the channel open for async sendResponse
+      return true;
 
     case "keystroke_jitter":
       sendNativeMessage({
@@ -292,9 +360,13 @@ function sanitizeErrorMessage(raw) {
  * Derive a deterministic genesis commitment from the session nonce.
  * SHA-256("WritersLogic-Genesis-v1" || session_nonce).
  * This ensures the first checkpoint has a valid prev_commitment.
+ *
+ * M-090: The commitment chain is stored entirely in memory (prevCommitment is
+ * a single hash, not a growing list). Storage I/O only occurs for the session
+ * nonce read at startup. Chain length does not affect storage I/O.
  */
 async function computeGenesisCommitment(sessionNonceHex) {
-  const prefix = new TextEncoder().encode("WritersLogic-Genesis-v1");
+  const prefix = new TextEncoder().encode(GENESIS_COMMITMENT_PREFIX);
   const nonce = hexToBytes(sessionNonceHex);
   const combined = new Uint8Array(prefix.length + nonce.length);
   combined.set(prefix, 0);
@@ -354,7 +426,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     activeTabId = null;
     sessionNonce = null;
     prevCommitment = null;
-    checkpointOrdinal = 2;
+    checkpointOrdinal = COMMITMENT_CHAIN_INITIAL_ORDINAL;
     stopCheckpointTimer();
     updateBadge("", "#95a5a6");
   }

@@ -2,6 +2,36 @@
 
 use super::types::{AppraisalPolicy, EvidenceMetrics, FactorType, ThresholdType, TrustComputation};
 
+/// CoV below this is suspiciously regular (robotic).
+const COV_LOW_THRESHOLD: f32 = 0.1;
+
+/// CoV above this is the upper end of typical human variation.
+const COV_HIGH_THRESHOLD: f32 = 0.6;
+
+/// Checkpoint count at which the score saturates to 1.0.
+const CHECKPOINT_SATURATION_COUNT: f32 = 20.0;
+
+/// Factors scoring below this are counted as caveats.
+const CAVEAT_SCORE_THRESHOLD: f32 = 0.5;
+
+/// Score weight for below-low-CoV range (robotic).
+const COV_BELOW_LOW_WEIGHT: f32 = 0.3;
+/// Score weight for normal CoV range.
+const COV_NORMAL_WEIGHT: f32 = 0.7;
+/// CoV overflow penalty band width.
+const COV_OVERFLOW_BAND: f32 = 0.4;
+/// Maximum penalty fraction applied in CoV overflow.
+const COV_OVERFLOW_PENALTY: f32 = 0.2;
+
+/// Attestation score for tier 4 (hardware-backed, Secure Enclave / TPM).
+const ATTESTATION_TIER4_SCORE: f32 = 1.0;
+/// Attestation score for tier 3 (platform attestation).
+const ATTESTATION_TIER3_SCORE: f32 = 0.85;
+/// Attestation score for tier 2 (software-only, key-backed).
+const ATTESTATION_TIER2_SCORE: f32 = 0.5;
+/// Attestation score for tier 1 (self-attested, no hardware proof).
+const ATTESTATION_TIER1_SCORE: f32 = 0.2;
+
 impl AppraisalPolicy {
     /// Compute the aggregate trust score from all factors.
     pub fn compute_score(&self) -> f32 {
@@ -59,16 +89,20 @@ impl AppraisalPolicy {
                     (score, score)
                 }
                 FactorType::TypingRateConsistency => {
-                    // CoV 0.3-0.6 is typical human; <0.1 is suspiciously regular
                     let cov = metrics.checkpoint_interval_cov;
                     let score = if cov <= 0.0 {
                         0.0
-                    } else if cov < 0.1 {
-                        cov / 0.1 * 0.3
-                    } else if cov <= 0.6 {
-                        0.3 + (cov - 0.1) / 0.5 * 0.7
+                    } else if cov < COV_LOW_THRESHOLD {
+                        cov / COV_LOW_THRESHOLD * COV_BELOW_LOW_WEIGHT
+                    } else if cov <= COV_HIGH_THRESHOLD {
+                        COV_BELOW_LOW_WEIGHT
+                            + (cov - COV_LOW_THRESHOLD) / (COV_HIGH_THRESHOLD - COV_LOW_THRESHOLD)
+                                * COV_NORMAL_WEIGHT
                     } else {
-                        (1.0 - (cov - 0.6).min(0.4) / 0.4 * 0.2).max(0.0)
+                        (1.0 - (cov - COV_HIGH_THRESHOLD).min(COV_OVERFLOW_BAND)
+                            / COV_OVERFLOW_BAND
+                            * COV_OVERFLOW_PENALTY)
+                            .max(0.0)
                     };
                     (cov, score)
                 }
@@ -79,18 +113,17 @@ impl AppraisalPolicy {
                 FactorType::EditEntropy => (metrics.behavioral_entropy, metrics.behavioral_entropy),
                 FactorType::HardwareAttestation => {
                     let score = match metrics.attestation_tier_level {
-                        4 => 1.0,
-                        3 => 0.85,
-                        2 => 0.5,
-                        1 => 0.2,
+                        4 => ATTESTATION_TIER4_SCORE,
+                        3 => ATTESTATION_TIER3_SCORE,
+                        2 => ATTESTATION_TIER2_SCORE,
+                        1 => ATTESTATION_TIER1_SCORE,
                         _ => 0.0,
                     };
                     (metrics.attestation_tier_level as f32, score)
                 }
                 FactorType::CheckpointCount => {
                     let count = metrics.checkpoint_count as f32;
-                    // Linear up to 20, then saturates
-                    let score = (count / 20.0).min(1.0);
+                    let score = (count / CHECKPOINT_SATURATION_COUNT).min(1.0);
                     (count, score)
                 }
                 _ => (factor.observed_value, factor.normalized_score),
@@ -140,11 +173,10 @@ impl AppraisalPolicy {
                     }
                 }
                 ThresholdType::MaximumCaveats => {
-                    // Factors scoring <0.5 count as caveats
                     let caveat_count = policy
                         .factors
                         .iter()
-                        .filter(|f| f.normalized_score < 0.5)
+                        .filter(|f| f.normalized_score < CAVEAT_SCORE_THRESHOLD)
                         .count() as f32;
                     threshold.met = caveat_count <= threshold.required_value;
                     if !threshold.met {

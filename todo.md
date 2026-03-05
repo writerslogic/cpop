@@ -364,7 +364,7 @@ Windows app: independent of engine groups (separate C# codebase)
 
 <details><summary>Code Quality (8)</summary>
 
-- [ ] M-102 tpm/windows.rs:537 — 65-line PCR parse no bounds
+- [x] M-102 tpm/windows.rs — PCR parse bounds checking added (checked_add + error on truncation)
 - [x] M-103 evidence/builder.rs:857 — string slice no bounds check
 - [x] M-104 evidence/builder.rs:571 — ALREADY FIXED: uses total_cmp
 - [x] M-105 error_topology.rs:302 — u16 to u8 to char truncation
@@ -378,7 +378,7 @@ Windows app: independent of engine groups (separate C# codebase)
 <details><summary>Maintainability (9)</summary>
 
 - [x] M-111 forensics/assessment.rs:178 — scattered calibration constants
-- [ ] M-112 forensics/topology.rs:150 — algorithm lacks docs
+- [x] M-112 forensics/topology.rs — algorithm doc comment added to deletion_clustering_coef
 - [x] M-113 rfc/time_evidence.rs:291 — ALREADY FIXED: all add methods call recalculate_tier()
 - [ ] M-114 secure-channel.js:164 — cross-language magic strings
 - [ ] M-115 content.js:33 — magic strings for site detection
