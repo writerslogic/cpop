@@ -123,6 +123,15 @@ impl Wal {
         let mut count = 0u64;
 
         loop {
+            if count >= MAX_WAL_ENTRIES {
+                return Ok(WalVerification {
+                    valid: false,
+                    entries: count,
+                    final_hash: prev_hash,
+                    error: Some(WalError::TooManyEntries(MAX_WAL_ENTRIES)),
+                });
+            }
+
             let mut len_buf = [0u8; 4];
             if let Err(err) = file.read_exact(&mut len_buf) {
                 if err.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -222,6 +231,9 @@ impl Wal {
         file.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
 
         loop {
+            if all_entries.len() as u64 >= MAX_WAL_ENTRIES {
+                return Err(WalError::TooManyEntries(MAX_WAL_ENTRIES));
+            }
             let mut len_buf = [0u8; 4];
             if file.read_exact(&mut len_buf).is_err() {
                 break;
@@ -376,6 +388,10 @@ impl Wal {
     fn scan_to_end(state: &mut WalState) -> Result<(), WalError> {
         let mut offset = HEADER_SIZE as u64;
         loop {
+            if state.entry_count >= MAX_WAL_ENTRIES {
+                return Err(WalError::TooManyEntries(MAX_WAL_ENTRIES));
+            }
+
             let mut len_buf = [0u8; 4];
             if state.file.read_exact(&mut len_buf).is_err() {
                 break;

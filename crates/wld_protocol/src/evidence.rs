@@ -217,6 +217,14 @@ impl PoPVerifier {
     }
 
     fn validate_structure(&self, packet: &EvidencePacket) -> Result<()> {
+        const EXPECTED_PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
+        if packet.profile_uri != EXPECTED_PROFILE_URI {
+            return Err(Error::Validation(format!(
+                "Invalid profile_uri: expected \"{}\", got \"{}\"",
+                EXPECTED_PROFILE_URI, packet.profile_uri
+            )));
+        }
+
         if packet.packet_id.len() != 16 {
             return Err(Error::Validation(format!(
                 "Invalid packet_id length: expected 16, got {}",
@@ -228,6 +236,17 @@ impl PoPVerifier {
             return Err(Error::Validation(
                 "Document content_hash digest length does not match algorithm".to_string(),
             ));
+        }
+
+        const MAX_FILENAME_LEN: usize = 256;
+        if let Some(ref filename) = packet.document.filename {
+            if filename.len() > MAX_FILENAME_LEN {
+                return Err(Error::Validation(format!(
+                    "Document filename too long: {} bytes exceeds limit of {}",
+                    filename.len(),
+                    MAX_FILENAME_LEN
+                )));
+            }
         }
 
         const MAX_CHECKPOINTS: usize = 100_000;

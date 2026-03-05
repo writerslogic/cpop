@@ -320,10 +320,14 @@ fn construct_embedding(data: &[f64], dim: usize, delay: usize) -> Vec<Vec<f64>> 
 }
 
 /// Compute recurrence quantification analysis metrics.
+///
+/// `min_line_length` controls the minimum diagonal line length in the recurrence
+/// matrix that counts toward determinism. Longer minimums filter out short
+/// (potentially spurious) diagonal structures.
 fn compute_recurrence_quantification(
     embedding: &[Vec<f64>],
     threshold: f64,
-    _min_line_length: usize,
+    min_line_length: usize,
 ) -> (f64, f64) {
     let n = embedding.len();
     if n < 10 {
@@ -354,17 +358,25 @@ fn compute_recurrence_quantification(
                 if dist < eps {
                     recurrent_count += 1;
 
-                    // Check for diagonal structure
-                    if si + 1 < sampled_indices.len() && sj + 1 < sampled_indices.len() {
-                        let i_next = sampled_indices[si + 1];
-                        let j_next = sampled_indices[sj + 1];
-                        if i_next < n && j_next < n {
-                            let dist_next =
-                                euclidean_distance(&embedding[i_next], &embedding[j_next]);
-                            if dist_next < eps {
-                                diagonal_count += 1;
-                            }
+                    // Count diagonal lines of at least min_line_length consecutive
+                    // recurrent points. Walk forward from (si, sj) along the diagonal.
+                    let mut line_len = 1;
+                    let mut k = 1;
+                    while si + k < sampled_indices.len() && sj + k < sampled_indices.len() {
+                        let i_next = sampled_indices[si + k];
+                        let j_next = sampled_indices[sj + k];
+                        if i_next < n
+                            && j_next < n
+                            && euclidean_distance(&embedding[i_next], &embedding[j_next]) < eps
+                        {
+                            line_len += 1;
+                            k += 1;
+                        } else {
+                            break;
                         }
+                    }
+                    if line_len >= min_line_length {
+                        diagonal_count += 1;
                     }
                 }
             }

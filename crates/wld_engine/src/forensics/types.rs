@@ -141,6 +141,8 @@ pub struct ForensicMetrics {
     pub forgery_cost: Option<ForgeryCostEstimate>,
     /// Number of checkpoints in the evidence chain (distinct from session_count).
     pub checkpoint_count: usize,
+    /// Hurst exponent from cadence timing analysis, if computed.
+    pub hurst_exponent: Option<f64>,
 }
 
 impl ForensicMetrics {
@@ -185,7 +187,7 @@ impl ForensicMetrics {
             verdict: self.map_to_protocol_verdict(),
             coefficient_of_variation: self.cadence.coefficient_of_variation,
             linearity_score: Some(self.primary.monotonic_append_ratio),
-            hurst_exponent: None,
+            hurst_exponent: self.hurst_exponent,
             checkpoint_count: self.checkpoint_count,
             chain_duration_secs: self.session_stats.total_editing_time_sec as u64,
             explanation: format!("Internal Assessment Score: {:.2}", self.assessment_score),

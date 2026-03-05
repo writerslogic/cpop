@@ -27,7 +27,6 @@ pub struct DimensionScores {
     pub interval_similarity: f64,
     pub pos_neg_ratio_similarity: f64,
     pub deletion_clustering_similarity: f64,
-    pub cadence_cv_similarity: f64,
 }
 
 /// Compare two profiles for authorship consistency (Gaussian kernel similarity).

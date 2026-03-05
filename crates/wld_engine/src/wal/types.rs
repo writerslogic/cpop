@@ -11,6 +11,8 @@ pub(super) const VERSION: u32 = 2;
 pub(super) const MAGIC: &[u8; 4] = b"SWAL"; // Secure WAL
 pub(super) const HEADER_SIZE: usize = 64;
 pub(super) const MAX_ENTRY_SIZE: u32 = 16 * 1024 * 1024; // 16 MiB
+/// Reject WAL files claiming more entries than this to prevent OOM on corrupt data.
+pub(super) const MAX_WAL_ENTRIES: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryType {
@@ -62,6 +64,8 @@ pub enum WalError {
     SequenceGap,
     #[error("wal: invalid entry type {0}")]
     InvalidEntryType(u8),
+    #[error("wal: entry count exceeds maximum ({0})")]
+    TooManyEntries(u64),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("serialization error: {0}")]

@@ -34,7 +34,7 @@ pub mod phys;
 pub mod pure;
 pub mod traits;
 
-pub use evidence::{Evidence, EvidenceChain};
+pub use evidence::{Evidence, EvidenceChain, MAX_EVIDENCE_RECORDS};
 pub use model::{Anomaly, AnomalyKind, HumanModel, SequenceStats, ValidationResult};
 #[cfg(feature = "std")]
 pub use phys::PhysJitter;

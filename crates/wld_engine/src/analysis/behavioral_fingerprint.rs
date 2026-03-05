@@ -217,6 +217,21 @@ impl BehavioralFingerprint {
             });
         }
 
+        // Fatigue detection: real humans slow down over extended typing sessions.
+        // Split intervals into first and last quarter; if the last quarter is not
+        // slower (within tolerance), the session lacks a natural fatigue pattern.
+        if intervals.len() >= 40 {
+            let quarter = intervals.len() / 4;
+            let first_q = &intervals[..quarter];
+            let last_q = &intervals[intervals.len() - quarter..];
+            let first_mean = first_q.iter().sum::<f64>() / first_q.len() as f64;
+            let last_mean = last_q.iter().sum::<f64>() / last_q.len() as f64;
+            // Humans typically slow down by at least 5% over a long session
+            if first_mean > 0.0 && last_mean <= first_mean * 1.05 {
+                flags.push(ForgeryFlag::NoFatiguePattern);
+            }
+        }
+
         ForgeryAnalysis {
             is_suspicious: !flags.is_empty(),
             confidence: (flags.len() as f64 * 0.3).min(1.0),

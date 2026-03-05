@@ -142,6 +142,10 @@ impl Evidence {
     }
 }
 
+/// Max number of evidence records in a single chain.
+/// Prevents unbounded allocation on deserialization of untrusted data.
+pub const MAX_EVIDENCE_RECORDS: usize = 100_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceChain {
     pub version: u8,
@@ -188,6 +192,12 @@ impl EvidenceChain {
             next_sequence: 0,
             secret: Some(Zeroizing::new(secret)),
         }
+    }
+
+    /// Validate that the chain does not exceed bounds after deserialization.
+    /// Returns false if the record count exceeds [`MAX_EVIDENCE_RECORDS`].
+    pub fn validate_bounds(&self) -> bool {
+        self.records.len() <= MAX_EVIDENCE_RECORDS
     }
 
     pub fn append(&mut self, mut evidence: Evidence) {
@@ -292,8 +302,8 @@ fn current_timestamp_us() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_micros() as u64)
-        .unwrap_or(0)
+        .expect("system clock is before UNIX epoch")
+        .as_micros() as u64
 }
 
 #[cfg(all(test, feature = "std"))]

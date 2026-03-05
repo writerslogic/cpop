@@ -132,6 +132,18 @@ pub fn analyze_forensics_ext(
     if let Some(samples) = jitter_samples {
         metrics.cadence = analyze_cadence(samples);
 
+        // Hurst exponent from inter-keystroke intervals (R/S method)
+        let iki_intervals: Vec<f64> = samples
+            .windows(2)
+            .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64)
+            .filter(|&d| d > 0.0)
+            .collect();
+        if iki_intervals.len() >= 50 {
+            if let Ok(hurst) = crate::analysis::hurst::calculate_hurst_rs(&iki_intervals) {
+                metrics.hurst_exponent = Some(hurst.exponent);
+            }
+        }
+
         // Biological cadence steadiness
         metrics.biological_cadence_score =
             crate::physics::biological::BiologicalCadence::analyze(samples);
