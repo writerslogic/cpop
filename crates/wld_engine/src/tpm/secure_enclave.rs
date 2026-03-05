@@ -1070,10 +1070,9 @@ fn writerslogic_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("WLD_DATA_DIR") {
         return PathBuf::from(dir);
     }
-    if let Some(home) = dirs::home_dir() {
-        return home.join(".writerslogic");
-    }
-    PathBuf::from(".writerslogic")
+    dirs::home_dir()
+        .expect("cannot determine home directory; refusing to use insecure fallback path")
+        .join(".writerslogic")
 }
 
 #[cfg(test)]

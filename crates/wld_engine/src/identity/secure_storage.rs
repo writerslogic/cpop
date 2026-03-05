@@ -329,12 +329,12 @@ impl SecureStorage {
                 // Use keyring to read old item (may prompt once)
                 if let Ok(entry) = Entry::new(SERVICE_NAME, account) {
                     if let Ok(encoded) = entry.get_password() {
-                        if let Ok(mut data) = general_purpose::STANDARD.decode(&encoded) {
+                        if let Ok(data) = general_purpose::STANDARD.decode(&encoded) {
+                            let data = Zeroizing::new(data);
                             // Re-save with hardened policy
                             if Self::save_macos(account, &data).is_ok() {
                                 let _ = entry.delete_password();
                             }
-                            data.zeroize();
                         }
                     }
                 }
@@ -384,14 +384,14 @@ impl SecureStorage {
         Self::save(HMAC_ACCOUNT, key)
     }
 
-    pub fn load_hmac_key() -> Result<Option<Vec<u8>>> {
+    pub fn load_hmac_key() -> Result<Option<Zeroizing<Vec<u8>>>> {
         if let Some(cached) = HMAC_CACHE.get() {
-            return Ok(Some(cached.as_slice().to_vec()));
+            return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
         }
         let res = Self::load(HMAC_ACCOUNT)?;
         if let Some(data) = res {
             let _ = HMAC_CACHE.set(ProtectedBuf::new(data.to_vec()));
-            Ok(Some(data.to_vec()))
+            Ok(Some(data))
         } else {
             Ok(None)
         }

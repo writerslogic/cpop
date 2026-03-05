@@ -5,7 +5,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Nonce as AeadNonce,
 };
 use sha2::{Digest, Sha256};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::crypto::{hkdf_expand, RATCHET_INIT_DOMAIN};
 use super::error::KeyHierarchyError;
@@ -107,20 +107,20 @@ fn recover_ratchet_v2_aead(
 
     let challenge = Sha256::digest(b"witnessd-ratchet-recovery-v2");
     let response = puf.get_response(&challenge)?;
-    let mut key = hkdf_expand(&response, b"ratchet-recovery-key-v2", &[])?;
+    let key = Zeroizing::new(hkdf_expand(&response, b"ratchet-recovery-key-v2", &[])?);
 
-    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+    let cipher = ChaCha20Poly1305::new_from_slice(key.as_ref())
         .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?;
     let aead_nonce = AeadNonce::from_slice(nonce_bytes);
 
-    let mut plaintext = cipher
-        .decrypt(aead_nonce, ciphertext)
-        .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?;
-
-    key.zeroize();
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(aead_nonce, ciphertext)
+            .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?,
+    );
+    drop(key);
 
     if plaintext.len() < 40 {
-        plaintext.zeroize();
         return Err(KeyHierarchyError::SessionRecoveryFailed);
     }
 
@@ -131,7 +131,6 @@ fn recover_ratchet_v2_aead(
             .try_into()
             .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?,
     );
-    plaintext.zeroize();
 
     Ok(Session {
         certificate: recovery.certificate.clone(),
@@ -161,7 +160,7 @@ fn recover_session_with_new_ratchet(
         last_hash = last.checkpoint_hash;
     }
 
-    let mut continuation_input = Vec::new();
+    let mut continuation_input = Zeroizing::new(Vec::new());
     continuation_input.extend_from_slice(&response);
     continuation_input.extend_from_slice(&last_hash);
     continuation_input.extend_from_slice(&recovery.certificate.session_id);
@@ -171,6 +170,7 @@ fn recover_session_with_new_ratchet(
         RATCHET_INIT_DOMAIN.as_bytes(),
         b"continuation",
     )?;
+    drop(continuation_input);
 
     Ok(Session {
         certificate: recovery.certificate.clone(),

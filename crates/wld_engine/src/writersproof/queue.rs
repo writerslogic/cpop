@@ -30,11 +30,15 @@ impl OfflineQueue {
         })
     }
 
-    /// Return `~/.writerslogic/queue/`, falling back to a relative path.
+    /// Return `~/.writerslogic/queue/`.
+    ///
+    /// # Panics
+    /// Panics if the home directory cannot be determined.
     pub fn default_dir() -> PathBuf {
         dirs::home_dir()
-            .map(|h| h.join(".writerslogic").join("queue"))
-            .unwrap_or_else(|| PathBuf::from(".writerslogic/queue"))
+            .expect("cannot determine home directory; refusing to use insecure fallback path")
+            .join(".writerslogic")
+            .join("queue")
     }
 
     /// Enqueue an attestation for later submission.

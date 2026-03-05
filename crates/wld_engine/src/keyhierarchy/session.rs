@@ -109,11 +109,11 @@ impl Session {
             return Err(KeyHierarchyError::RatchetWiped);
         }
 
-        let mut signing_seed = hkdf_expand(
+        let signing_seed = Zeroizing::new(hkdf_expand(
             self.ratchet.current.as_bytes(),
             SIGNING_KEY_DOMAIN.as_bytes(),
             &[],
-        )?;
+        )?);
         let signing_key = SigningKey::from_bytes(&signing_seed);
         let public_key = signing_key.verifying_key().to_bytes().to_vec();
         let signature = signing_key.sign(&checkpoint_hash).to_bytes();
@@ -125,7 +125,7 @@ impl Session {
         )?;
 
         let current_ordinal = self.ratchet.ordinal;
-        signing_seed.zeroize();
+        drop(signing_seed);
         self.ratchet.current = next_ratchet.into();
         self.ratchet.ordinal += 1;
 
@@ -168,14 +168,15 @@ impl Session {
         };
 
         // Derive signing key
-        let mut signing_seed = hkdf_expand(
+        let signing_seed = Zeroizing::new(hkdf_expand(
             self.ratchet.current.as_bytes(),
             SIGNING_KEY_DOMAIN.as_bytes(),
             &[],
-        )?;
+        )?);
         let signing_key = SigningKey::from_bytes(&signing_seed);
         let public_key = signing_key.verifying_key().to_bytes().to_vec();
         let signature = signing_key.sign(&checkpoint_hash).to_bytes();
+        drop(signing_seed);
 
         // Hash counter_delta into the ratchet advance (makes ratchet state
         // depend on counter progression, preventing time-skip attacks)
@@ -190,7 +191,6 @@ impl Session {
         )?;
 
         let current_ordinal = self.ratchet.ordinal;
-        signing_seed.zeroize();
         self.ratchet.current = next_ratchet.into();
         self.ratchet.ordinal += 1;
 
@@ -305,14 +305,14 @@ impl Session {
 
         let payload = crate::checkpoint_mmr::metadata_signing_payload(metadata);
 
-        let mut signing_seed = hkdf_expand(
+        let signing_seed = Zeroizing::new(hkdf_expand(
             self.ratchet.current.as_bytes(),
             SIGNING_KEY_DOMAIN.as_bytes(),
             &[],
-        )?;
+        )?);
         let signing_key = SigningKey::from_bytes(&signing_seed);
         let signature = signing_key.sign(&payload).to_bytes();
-        signing_seed.zeroize();
+        drop(signing_seed);
 
         metadata.metadata_signature = Some(signature.to_vec());
         Ok(())

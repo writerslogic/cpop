@@ -190,6 +190,67 @@ mod tests {
     }
 
     #[test]
+    fn test_session_load_rejects_tampered_chain() {
+        let dir = TempDir::new().expect("temp dir");
+        let doc_path = dir.path().join("doc.txt");
+        let session_path = dir.path().join("session.json");
+
+        fs::write(&doc_path, b"test content").expect("write doc");
+
+        let mut session = Session::new(&doc_path, test_params()).expect("session");
+        for _ in 0..3 {
+            session.record_keystroke().expect("keystroke");
+        }
+        session.save(&session_path).expect("save");
+
+        // Tamper with the saved file: flip a bit in a sample hash
+        let raw = fs::read_to_string(&session_path).expect("read");
+        let mut data: serde_json::Value = serde_json::from_str(&raw).expect("parse");
+        let hash_str = data["samples"][0]["hash"][0].as_u64().expect("hash byte");
+        data["samples"][0]["hash"][0] = serde_json::Value::from(hash_str ^ 0xFF);
+        let tampered = serde_json::to_string_pretty(&data).expect("serialize");
+        fs::write(&session_path, tampered).expect("write tampered");
+
+        let err = Session::load(&session_path).unwrap_err();
+        assert!(
+            err.to_string().contains("hash mismatch"),
+            "Expected 'hash mismatch', got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_session_load_rejects_non_monotonic_timestamps() {
+        let dir = TempDir::new().expect("temp dir");
+        let doc_path = dir.path().join("doc.txt");
+        let session_path = dir.path().join("session.json");
+
+        fs::write(&doc_path, b"test content").expect("write doc");
+
+        let mut session = Session::new(&doc_path, test_params()).expect("session");
+        for _ in 0..3 {
+            session.record_keystroke().expect("keystroke");
+        }
+        session.save(&session_path).expect("save");
+
+        // Tamper: set sample 2's timestamp equal to sample 1's
+        let raw = fs::read_to_string(&session_path).expect("read");
+        let mut data: serde_json::Value = serde_json::from_str(&raw).expect("parse");
+        let ts0 = data["samples"][0]["timestamp"].clone();
+        data["samples"][1]["timestamp"] = ts0;
+        let tampered = serde_json::to_string_pretty(&data).expect("serialize");
+        fs::write(&session_path, tampered).expect("write tampered");
+
+        let err = Session::load(&session_path).unwrap_err();
+        // Could be hash mismatch (timestamp changed the hash) or
+        // timestamp not monotonic (if chain check passes for some reason)
+        let msg = err.to_string();
+        assert!(
+            msg.contains("hash mismatch") || msg.contains("timestamp not monotonic"),
+            "Expected chain integrity error, got: {msg}"
+        );
+    }
+
+    #[test]
     fn test_evidence_verify_hash_mismatch() {
         let path = temp_document_path();
         fs::write(&path, b"test").expect("write");

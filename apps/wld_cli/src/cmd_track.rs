@@ -6,9 +6,7 @@ use std::path::Path;
 
 use crate::cli::TrackAction;
 use crate::util::{ensure_dirs, validate_session_id};
-use wld_engine::jitter::{
-    default_parameters as default_jitter_params, Session as JitterSession,
-};
+use wld_engine::jitter::{default_parameters as default_jitter_params, Session as JitterSession};
 
 /// Helper function for track start command
 #[allow(unused_variables)]
@@ -34,9 +32,8 @@ fn cmd_track_start(
     #[cfg(feature = "wld_jitter")]
     if use_wld_jitter {
         let jitter_params = default_jitter_params();
-        let session =
-            wld_engine::HybridJitterSession::new(&abs_path, Some(jitter_params), None)
-                .map_err(|e| anyhow!("Error creating hybrid session: {}", e))?;
+        let session = wld_engine::HybridJitterSession::new(&abs_path, Some(jitter_params), None)
+            .map_err(|e| anyhow!("Error creating hybrid session: {}", e))?;
 
         let session_info = serde_json::json!({
             "id": session.id,
@@ -106,10 +103,7 @@ pub(crate) fn cmd_track(action: TrackAction) -> Result<()> {
 
     match action {
         #[cfg(feature = "wld_jitter")]
-        TrackAction::Start {
-            file,
-            wld_jitter,
-        } => {
+        TrackAction::Start { file, wld_jitter } => {
             cmd_track_start(&file, &tracking_dir, &current_file, wld_jitter)?;
         }
         #[cfg(not(feature = "wld_jitter"))]
@@ -136,9 +130,8 @@ pub(crate) fn cmd_track(action: TrackAction) -> Result<()> {
             #[cfg(feature = "wld_jitter")]
             if is_hybrid {
                 let session_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
-                let mut session =
-                    wld_engine::HybridJitterSession::load(&session_path, None)
-                        .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
+                let mut session = wld_engine::HybridJitterSession::load(&session_path, None)
+                    .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
 
                 session.end();
                 session
@@ -301,8 +294,7 @@ pub(crate) fn cmd_track(action: TrackAction) -> Result<()> {
 
                 #[cfg(feature = "wld_jitter")]
                 if filename.ends_with(".hybrid.json") {
-                    if let Ok(session) = wld_engine::HybridJitterSession::load(&path, None)
-                    {
+                    if let Ok(session) = wld_engine::HybridJitterSession::load(&path, None) {
                         hybrid_sessions.push(session);
                     }
                 }
@@ -352,9 +344,8 @@ pub(crate) fn cmd_track(action: TrackAction) -> Result<()> {
             {
                 let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
                 if hybrid_path.exists() {
-                    let session =
-                        wld_engine::HybridJitterSession::load(&hybrid_path, None)
-                            .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
+                    let session = wld_engine::HybridJitterSession::load(&hybrid_path, None)
+                        .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
 
                     let ev = session.export();
 

@@ -104,10 +104,10 @@ struct Session {
     last_char_count: u64,
     /// Timestamp of last checkpoint (must be monotonically increasing).
     last_checkpoint_ns: u64,
-    /// Jitter batches received in the current rate-limit window.
-    jitter_batch_count: u64,
-    /// Start of the current rate-limit window.
-    jitter_window_start: Instant,
+    /// Token bucket: fractional tokens available for jitter rate limiting.
+    jitter_tokens: f64,
+    /// Timestamp of the last token bucket refill.
+    jitter_last_refill: Instant,
 }
 
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
@@ -303,8 +303,8 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         session_nonce,
         last_char_count: 0,
         last_checkpoint_ns: now_ns,
-        jitter_batch_count: 0,
-        jitter_window_start: Instant::now(),
+        jitter_tokens: MAX_JITTER_BATCHES_PER_WINDOW as f64,
+        jitter_last_refill: Instant::now(),
     });
 
     Response::SessionStarted {
@@ -376,6 +376,17 @@ fn handle_checkpoint(
         return Response::Error {
             message: "Non-monotonic timestamp detected: clock moved backward".into(),
             code: "TIMESTAMP_NON_MONOTONIC".into(),
+        };
+    }
+
+    // Monotonic char_count enforcement — cumulative count must never decrease
+    if char_count < session.last_char_count {
+        return Response::Error {
+            message: format!(
+                "Non-monotonic char_count: {} < previous {}",
+                char_count, session.last_char_count
+            ),
+            code: "CHAR_COUNT_NON_MONOTONIC".into(),
         };
     }
 
@@ -528,10 +539,10 @@ fn handle_get_status() -> Response {
     }
 }
 
-/// Maximum jitter batches allowed within a single rate-limit window.
+/// Maximum jitter batches allowed in the token bucket (burst capacity).
 const MAX_JITTER_BATCHES_PER_WINDOW: u64 = 50;
-/// Duration of the rate-limit window for jitter batches.
-const JITTER_RATE_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+/// Token refill rate: batches per second. 50 tokens over 5 seconds = 10/sec.
+const JITTER_TOKEN_REFILL_RATE: f64 = 10.0;
 /// Maximum intervals per single batch.
 const MAX_BATCH_SIZE: usize = 200;
 
@@ -561,19 +572,23 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
         }
     };
 
-    // Rate limit jitter batches using a fixed time window
+    // Token bucket rate limiter: refill tokens proportional to elapsed time,
+    // capped at burst capacity. Each batch costs 1 token. This prevents
+    // gaming by waiting for window boundaries (unlike a fixed window).
     let now = Instant::now();
-    if now.duration_since(session.jitter_window_start) >= JITTER_RATE_WINDOW {
-        session.jitter_batch_count = 0;
-        session.jitter_window_start = now;
-    }
-    session.jitter_batch_count += 1;
-    if session.jitter_batch_count > MAX_JITTER_BATCHES_PER_WINDOW {
+    let elapsed = now.duration_since(session.jitter_last_refill);
+    let refill = elapsed.as_secs_f64() * JITTER_TOKEN_REFILL_RATE;
+    session.jitter_tokens =
+        (session.jitter_tokens + refill).min(MAX_JITTER_BATCHES_PER_WINDOW as f64);
+    session.jitter_last_refill = now;
+
+    if session.jitter_tokens < 1.0 {
         return Response::Error {
             message: "Jitter batch rate limit exceeded".into(),
             code: "RATE_LIMITED".into(),
         };
     }
+    session.jitter_tokens -= 1.0;
 
     let valid: Vec<u64> = intervals
         .into_iter()

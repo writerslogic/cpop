@@ -85,25 +85,24 @@ pub(crate) fn cmd_status() -> Result<()> {
     let db_path = dir.join("events.db");
 
     if db_path.exists() {
-        let hmac_key =
-            if let Ok(Some(key)) = wld_engine::identity::SecureStorage::load_hmac_key() {
-                Some(key.to_vec())
-            } else {
-                let signing_key_path = dir.join("signing_key");
-                if signing_key_path.exists() {
-                    if let Ok(key_data) = fs::read(&signing_key_path).map(Zeroizing::new) {
-                        if key_data.len() < 32 {
-                            None
-                        } else {
-                            Some(derive_hmac_key(&key_data[..32]))
-                        }
-                    } else {
+        let hmac_key = if let Ok(Some(key)) = wld_engine::identity::SecureStorage::load_hmac_key() {
+            Some(key.to_vec())
+        } else {
+            let signing_key_path = dir.join("signing_key");
+            if signing_key_path.exists() {
+                if let Ok(key_data) = fs::read(&signing_key_path).map(Zeroizing::new) {
+                    if key_data.len() < 32 {
                         None
+                    } else {
+                        Some(derive_hmac_key(&key_data[..32]))
                     }
                 } else {
                     None
                 }
-            };
+            } else {
+                None
+            }
+        };
 
         if let Some(hmac_key) = hmac_key {
             match SecureStore::open(&db_path, hmac_key) {

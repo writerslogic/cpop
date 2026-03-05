@@ -276,7 +276,7 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
     let sentinel = Arc::new(Sentinel::new(config)?);
 
     if let Ok(Some(hmac_key)) = crate::identity::SecureStorage::load_hmac_key() {
-        sentinel.set_hmac_key(hmac_key);
+        sentinel.set_hmac_key(hmac_key.to_vec());
     }
 
     sentinel.start().await?;
@@ -332,7 +332,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
     let sentinel = Arc::new(Sentinel::new(config)?);
 
     if let Ok(Some(hmac_key)) = crate::identity::SecureStorage::load_hmac_key() {
-        sentinel.set_hmac_key(hmac_key);
+        sentinel.set_hmac_key(hmac_key.to_vec());
     }
 
     sentinel.start().await?;

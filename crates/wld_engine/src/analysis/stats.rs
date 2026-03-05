@@ -86,10 +86,18 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
     }
 
     let slope = ss_xy / ss_xx;
+    if !slope.is_finite() {
+        return Err("Degenerate regression: slope is NaN/Inf".to_string());
+    }
     let intercept = y_mean - slope * x_mean;
 
     let r_squared = if ss_yy > 0.0 {
-        (ss_xy * ss_xy) / (ss_xx * ss_yy)
+        let r2 = (ss_xy * ss_xy) / (ss_xx * ss_yy);
+        if r2.is_finite() {
+            r2
+        } else {
+            0.0
+        }
     } else {
         1.0
     };
@@ -101,6 +109,11 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
     }
     let mse = ss_res / (n - 2).max(1) as f64;
     let std_error = (mse / ss_xx).sqrt();
+    let std_error = if std_error.is_finite() {
+        std_error
+    } else {
+        0.0
+    };
 
     Ok((slope, intercept, r_squared, std_error))
 }

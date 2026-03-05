@@ -367,7 +367,7 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
     let path = data_dir.join("hmac.key");
 
     if let Ok(Some(key)) = SecureStorage::load_hmac_key() {
-        return Ok(key);
+        return Ok(key.to_vec());
     }
 
     // Fallback: legacy file-based key

@@ -53,8 +53,7 @@ async fn run() -> Result<()> {
         if let Ok(dir) = util::writerslogic_dir() {
             if let Ok(config) = wld_engine::config::WLDConfig::load_or_default(&dir) {
                 if config.sentinel.auto_start {
-                    let daemon_manager =
-                        wld_engine::DaemonManager::new(config.data_dir.clone());
+                    let daemon_manager = wld_engine::DaemonManager::new(config.data_dir.clone());
                     let _status = daemon_manager.status();
                 }
             }

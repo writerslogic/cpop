@@ -251,13 +251,14 @@ fn check_temporal_span_alignment(
     let jitter_first = samples.iter().map(|s| s.timestamp_ns).min().unwrap_or(0);
     let jitter_last = samples.iter().map(|s| s.timestamp_ns).max().unwrap_or(0);
 
-    // Allow 0 timestamps (legacy data that doesn't have them)
+    // Zero timestamps are invalid -- they indicate missing or uninitialized data,
+    // not legitimate temporal information. Treat as a failed check to prevent bypass.
     if jitter_first == 0 || jitter_last == 0 || edit_first == 0 || edit_last == 0 {
         return CrossModalCheck {
             name: "temporal_span_alignment".into(),
-            passed: true,
-            score: 0.5,
-            detail: "Timestamps unavailable for temporal alignment check".into(),
+            passed: false,
+            score: 0.0,
+            detail: "Zero timestamps detected; cannot verify temporal alignment".into(),
         };
     }
 
@@ -306,10 +307,14 @@ fn check_jitter_content_entanglement(
     }
 
     let jitter_count = samples.len() as i64;
+
+    // Without an independent keystroke count, jitter/keystroke ratio would be
+    // self-referential (jitter_count / jitter_count = 1.0), trivially passing.
+    // Fall back to document_length as an independent lower bound instead.
     let keystroke_source = if total_keystrokes > 0 {
         total_keystrokes
     } else {
-        jitter_count
+        document_length
     };
 
     // Keystrokes should be >= document_length (because of edits, deletions, nav keys)

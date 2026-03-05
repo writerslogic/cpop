@@ -204,7 +204,7 @@ impl BehavioralFingerprint {
             .iter()
             .filter(|&&i| i > 150.0 && i < 500.0)
             .count();
-        if (micro_pauses as f64 / intervals.len() as f64) < 0.05 {
+        if !intervals.is_empty() && (micro_pauses as f64 / intervals.len() as f64) < 0.05 {
             flags.push(ForgeryFlag::MissingMicroPauses);
         }
 

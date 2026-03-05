@@ -1023,7 +1023,8 @@ fn test_metadata_count_mismatch_detected() {
 fn test_entangled_commit_with_physics_context() {
     let (dir, path) = temp_document();
     let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
-        .expect("create chain");
+        .expect("create chain")
+        .with_signature_policy(SignaturePolicy::Optional);
 
     let physics = crate::PhysicalContext {
         clock_skew: 42,
@@ -1087,7 +1088,8 @@ fn test_entangled_commit_with_physics_context() {
 fn test_entangled_commit_mixed_physics_and_none() {
     let (dir, path) = temp_document();
     let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Entangled)
-        .expect("create chain");
+        .expect("create chain")
+        .with_signature_policy(SignaturePolicy::Optional);
 
     let physics = crate::PhysicalContext {
         clock_skew: 100,

@@ -310,13 +310,25 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
         })
         .map(|c| c.name.clone());
 
-    let estimated_forge_time_sec = components
-        .iter()
-        .filter(|c| c.present && c.cost_cpu_sec.is_finite())
-        .map(|c| c.cost_cpu_sec)
-        .fold(0.0_f64, f64::max); // Bottleneck = slowest sequential component
+    let estimated_forge_time_sec = {
+        let has_any_present = components.iter().any(|c| c.present);
+        let all_infinite = has_any_present
+            && components
+                .iter()
+                .filter(|c| c.present)
+                .all(|c| c.cost_cpu_sec.is_infinite());
+        if all_infinite {
+            f64::INFINITY
+        } else {
+            components
+                .iter()
+                .filter(|c| c.present && c.cost_cpu_sec.is_finite())
+                .map(|c| c.cost_cpu_sec)
+                .fold(0.0_f64, f64::max) // Bottleneck = slowest sequential component
+        }
+    };
 
-    let tier = classify_tier(overall_difficulty, has_infinite);
+    let tier = classify_tier(overall_difficulty, input.has_hardware_attestation);
 
     ForgeryCostEstimate {
         components,
@@ -327,8 +339,8 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
     }
 }
 
-fn classify_tier(difficulty: f64, has_hardware: bool) -> ForgeryResistanceTier {
-    if has_hardware {
+fn classify_tier(difficulty: f64, has_hardware_attestation: bool) -> ForgeryResistanceTier {
+    if has_hardware_attestation {
         return ForgeryResistanceTier::VeryHigh;
     }
     if difficulty.is_infinite() {

@@ -2,9 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use std::io::{self, BufRead, Write};
-use wld_engine::fingerprint::{
-    ConsentManager, ConsentStatus, FingerprintManager, ProfileId,
-};
+use wld_engine::fingerprint::{ConsentManager, ConsentStatus, FingerprintManager, ProfileId};
 
 use crate::cli::FingerprintAction;
 use crate::util::ensure_dirs;
@@ -111,10 +109,7 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
 
             println!("=== Voice Fingerprinting Consent ===");
             println!();
-            println!(
-                "{}",
-                wld_engine::fingerprint::consent::CONSENT_EXPLANATION
-            );
+            println!("{}", wld_engine::fingerprint::consent::CONSENT_EXPLANATION);
             println!();
 
             print!("Do you consent to voice fingerprinting? (yes/no): ");

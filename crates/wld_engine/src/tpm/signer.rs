@@ -16,9 +16,9 @@ impl TpmSigner {
 
 impl PoPSigner for TpmSigner {
     fn sign(&self, data: &[u8]) -> wld_protocol::error::Result<Vec<u8>> {
-        self.provider.sign(data).map_err(|e| {
-            wld_protocol::error::Error::Crypto(format!("TPM sign error: {}", e))
-        })
+        self.provider
+            .sign(data)
+            .map_err(|e| wld_protocol::error::Error::Crypto(format!("TPM sign error: {}", e)))
     }
 
     fn algorithm(&self) -> iana::Algorithm {

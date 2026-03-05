@@ -23,7 +23,7 @@ pub(crate) fn get_db_path() -> Option<PathBuf> {
 
 pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
     if let Ok(Some(key)) = crate::identity::SecureStorage::load_hmac_key() {
-        return Some(Zeroizing::new(key));
+        return Some(key);
     }
 
     let data_dir = get_data_dir()?;

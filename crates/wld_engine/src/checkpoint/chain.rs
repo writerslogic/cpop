@@ -576,7 +576,74 @@ impl Chain {
         let mut chain: Chain = serde_json::from_slice(&data)
             .map_err(|e| Error::checkpoint(format!("failed to unmarshal chain: {e}")))?;
         chain.storage_path = Some(path.as_ref().to_path_buf());
+        chain.validate_vdf_proofs()?;
         Ok(chain)
+    }
+
+    /// Validate VDF proofs embedded in checkpoints after deserialization.
+    ///
+    /// Re-derives expected VDF inputs from the chain state and re-computes
+    /// each proof's hash chain to confirm the output matches. Returns an
+    /// error on the first invalid proof encountered.
+    fn validate_vdf_proofs(&self) -> Result<()> {
+        for (i, checkpoint) in self.checkpoints.iter().enumerate() {
+            let vdf = match checkpoint.vdf.as_ref() {
+                Some(v) => v,
+                None => continue,
+            };
+
+            // Verify the VDF input was derived correctly from the chain state
+            let expected_input = match self.entanglement_mode {
+                EntanglementMode::Legacy => vdf::chain_input(
+                    checkpoint.content_hash,
+                    checkpoint.previous_hash,
+                    checkpoint.ordinal,
+                ),
+                EntanglementMode::Entangled => {
+                    let previous_vdf_output = if i > 0 {
+                        match self.checkpoints[i - 1].vdf.as_ref() {
+                            Some(v) => v.output,
+                            None => {
+                                return Err(Error::checkpoint(format!(
+                                    "checkpoint {i}: previous checkpoint missing VDF \
+                                     (required for entangled chain)"
+                                )));
+                            }
+                        }
+                    } else {
+                        [0u8; 32]
+                    };
+
+                    let jitter_binding = checkpoint.jitter_binding.as_ref().ok_or_else(|| {
+                        Error::checkpoint(format!(
+                            "checkpoint {i}: missing jitter binding \
+                             (required for entangled mode)"
+                        ))
+                    })?;
+
+                    let base_input = vdf::chain_input_entangled(
+                        previous_vdf_output,
+                        jitter_binding.jitter_hash,
+                        checkpoint.content_hash,
+                        checkpoint.ordinal,
+                    );
+                    mix_physics_seed(base_input, jitter_binding.physics_seed)
+                }
+            };
+
+            if vdf.input != expected_input {
+                return Err(Error::checkpoint(format!(
+                    "checkpoint {i}: VDF input mismatch on deserialization"
+                )));
+            }
+
+            if !vdf::verify(vdf) {
+                return Err(Error::checkpoint(format!(
+                    "checkpoint {i}: VDF proof invalid on deserialization"
+                )));
+            }
+        }
+        Ok(())
     }
 
     pub fn find_chain(
