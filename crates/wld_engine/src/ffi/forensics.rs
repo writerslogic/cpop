@@ -4,6 +4,13 @@ use crate::ffi::helpers::open_store;
 use crate::ffi::types::{FfiCalibrationResult, FfiForensicResult, FfiProcessScore};
 use std::time::Duration;
 
+/// Weights for composite process score (sum = 1.0).
+const WEIGHT_RESIDENCY: f64 = 0.3;
+const WEIGHT_SEQUENCE: f64 = 0.3;
+const WEIGHT_BEHAVIORAL: f64 = 0.4;
+/// Minimum composite score to pass verification.
+const COMPOSITE_PASS_THRESHOLD: f64 = 0.9;
+
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
     let path = match crate::sentinel::helpers::validate_path(&path) {
@@ -193,8 +200,9 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
         0.3
     };
 
-    let composite = 0.3 * residency + 0.3 * sequence + 0.4 * behavioral;
-    let meets_threshold = composite >= 0.9;
+    let composite =
+        WEIGHT_RESIDENCY * residency + WEIGHT_SEQUENCE * sequence + WEIGHT_BEHAVIORAL * behavioral;
+    let meets_threshold = composite >= COMPOSITE_PASS_THRESHOLD;
 
     FfiProcessScore {
         success: true,

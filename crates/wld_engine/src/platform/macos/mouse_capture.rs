@@ -118,12 +118,11 @@ impl MouseCapture for MacOSMouseCapture {
                         let y = location.y;
 
                         // Calculate delta from last position
-                        let (dx, dy) = if let Ok(mut last_pos) = last_position.write() {
+                        let (dx, dy) = {
+                            let mut last_pos = last_position.write_recover();
                             let delta = (x - last_pos.0, y - last_pos.1);
                             *last_pos = (x, y);
                             delta
-                        } else {
-                            (0.0, 0.0)
                         };
 
                         // Create mouse event
@@ -136,9 +135,7 @@ impl MouseCapture for MacOSMouseCapture {
 
                         // Record idle statistics for micro-movements
                         if mouse_event.is_micro_movement() && is_idle {
-                            if let Ok(mut stats) = idle_stats.write() {
-                                stats.record(&mouse_event);
-                            }
+                            idle_stats.write_recover().record(&mouse_event);
                         }
 
                         // Send event

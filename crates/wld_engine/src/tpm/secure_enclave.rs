@@ -225,9 +225,10 @@ fn get_os_version() -> Option<String> {
     None
 }
 
-/// Load or create a separate attestation key.
-fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
-    let tag = CFData::from_buffer(SE_ATTESTATION_KEY_TAG.as_bytes());
+/// Load an existing SE key by tag, or create a new one if not found.
+/// Returns (key_ref, public_key).
+fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TPMError> {
+    let tag = CFData::from_buffer(tag_str.as_bytes());
     let query = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[
         (
             unsafe { CFString::wrap_under_get_rule(kSecClass) },
@@ -251,9 +252,9 @@ fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), 
     let status = unsafe { SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result) };
 
     if status == errSecSuccess && !result.is_null() {
-        state.attestation_key_ref = Some(result as SecKeyRef);
-        state.attestation_public_key = Some(extract_public_key(result as SecKeyRef)?);
-        return Ok(());
+        let key_ref = result as SecKeyRef;
+        let public_key = extract_public_key(key_ref)?;
+        return Ok((key_ref, public_key));
     }
 
     let access = unsafe {
@@ -312,13 +313,20 @@ fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), 
     // which took ownership and will release it when private_attrs is dropped
 
     if key_ref.is_null() {
-        return Err(TPMError::KeyGeneration(
-            "Secure Enclave attestation key generation failed".into(),
-        ));
+        return Err(TPMError::KeyGeneration(format!(
+            "Secure Enclave key generation failed for tag {tag_str}"
+        )));
     }
 
+    let public_key = extract_public_key(key_ref)?;
+    Ok((key_ref, public_key))
+}
+
+/// Load or create a separate attestation key.
+fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
+    let (key_ref, public_key) = load_or_create_se_key(SE_ATTESTATION_KEY_TAG)?;
     state.attestation_key_ref = Some(key_ref);
-    state.attestation_public_key = Some(extract_public_key(key_ref)?);
+    state.attestation_public_key = Some(public_key);
     Ok(())
 }
 
@@ -333,95 +341,9 @@ fn load_device_id() -> Result<String, TPMError> {
 }
 
 fn load_or_create_key(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
-    let tag = CFData::from_buffer(SE_KEY_TAG.as_bytes());
-    let query = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecClass) },
-            unsafe { CFType::wrap_under_get_rule(kSecClassKey as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrApplicationLabel) },
-            tag.as_CFType(),
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrKeyType) },
-            unsafe { CFType::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecReturnRef) },
-            CFBoolean::true_value().as_CFType(),
-        ),
-    ]);
-
-    let mut result: CFTypeRef = null_mut();
-    let status = unsafe { SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result) };
-    if status == errSecSuccess && !result.is_null() {
-        state.key_ref = result as SecKeyRef;
-        state.public_key = extract_public_key(state.key_ref)?;
-        return Ok(());
-    }
-
-    let access = unsafe {
-        SecAccessControlCreateWithFlags(
-            core_foundation_sys::base::kCFAllocatorDefault,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly as CFTypeRef,
-            kSecAccessControlPrivateKeyUsage,
-            null_mut(),
-        )
-    };
-
-    let mut private_pairs: Vec<(CFString, CFType)> = Vec::new();
-    private_pairs.push((
-        unsafe { CFString::wrap_under_get_rule(kSecAttrIsPermanent) },
-        CFBoolean::true_value().as_CFType(),
-    ));
-    private_pairs.push((
-        unsafe { CFString::wrap_under_get_rule(kSecAttrApplicationLabel) },
-        tag.as_CFType(),
-    ));
-    if !access.is_null() {
-        private_pairs.push((
-            unsafe { CFString::wrap_under_get_rule(kSecAttrAccessControl) },
-            unsafe { CFType::wrap_under_create_rule(access as CFTypeRef) },
-        ));
-    }
-    let private_attrs =
-        core_foundation::dictionary::CFDictionary::from_CFType_pairs(&private_pairs);
-
-    let key_size = 256i32;
-    let key_size_cf = CFNumber::from(key_size);
-
-    let key_attrs = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrKeyType) },
-            unsafe { CFType::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrKeySizeInBits) },
-            key_size_cf.as_CFType(),
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecAttrTokenID) },
-            unsafe { CFType::wrap_under_get_rule(kSecAttrTokenIDSecureEnclave as CFTypeRef) },
-        ),
-        (
-            unsafe { CFString::wrap_under_get_rule(kSecPrivateKeyAttrs) },
-            private_attrs.as_CFType(),
-        ),
-    ]);
-
-    let mut error: CFErrorRef = null_mut();
-    let key_ref = unsafe { SecKeyCreateRandomKey(key_attrs.as_concrete_TypeRef(), &mut error) };
-    // Note: Do NOT call CFRelease on `access` here - it was passed to wrap_under_create_rule
-    // which took ownership and will release it when private_attrs is dropped
-    if key_ref.is_null() {
-        return Err(TPMError::KeyGeneration(
-            "Secure Enclave key generation failed".into(),
-        ));
-    }
-
+    let (key_ref, public_key) = load_or_create_se_key(SE_KEY_TAG)?;
     state.key_ref = key_ref;
-    state.public_key = extract_public_key(state.key_ref)?;
+    state.public_key = public_key;
     Ok(())
 }
 

@@ -479,7 +479,8 @@ impl BiologyInvariantClaim {
             + params.pink_noise_weight
             + params.error_topology_weight
             + params.cadence_weight;
-        if (total_weight - 1.0).abs() > 0.01 && total_weight > 0.0 {
+        const WEIGHT_SUM_TOLERANCE: f64 = 0.01;
+        if (total_weight - 1.0).abs() > WEIGHT_SUM_TOLERANCE && total_weight > 0.0 {
             // Allow 0.0 (unset) or 1.0 (normalized)
             errors.push(format!(
                 "parameter weights sum to {} (expected 1.0)",

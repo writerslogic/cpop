@@ -126,6 +126,18 @@ pub fn save_sealed(
 /// and deserializes it. Returns an error if the file is tampered,
 /// the wrong key is used, or the format is invalid.
 pub fn load_sealed(path: &Path, key: &ChainEncryptionKey) -> Result<Chain> {
+    load_sealed_verified(path, key, None)
+}
+
+/// Load a sealed chain, verifying the embedded document_id matches `expected_id`.
+///
+/// Eliminates the TOCTOU gap between `read_sealed_document_id` and `load_sealed`
+/// by performing header read and decryption in a single atomic file read.
+pub fn load_sealed_verified(
+    path: &Path,
+    key: &ChainEncryptionKey,
+    expected_id: Option<&[u8; 32]>,
+) -> Result<Chain> {
     let data = fs::read(path)?;
 
     if data.len() < HEADER_SIZE + 16 {
@@ -151,7 +163,18 @@ pub fn load_sealed(path: &Path, key: &ChainEncryptionKey) -> Result<Chain> {
     }
 
     let nonce_bytes = &data[8..20];
-    // document_id is at [20..52] (available for caller verification if needed)
+    let header_doc_id = &data[20..52];
+
+    // Verify document_id matches expectation (eliminates TOCTOU between
+    // read_sealed_document_id and load_sealed).
+    if let Some(expected) = expected_id {
+        if header_doc_id != expected.as_slice() {
+            return Err(Error::checkpoint(
+                "sealed file document_id does not match expected value",
+            ));
+        }
+    }
+
     let ciphertext = &data[HEADER_SIZE..];
 
     let cipher = Aes256Gcm::new_from_slice(key.key.as_bytes())
@@ -209,9 +232,13 @@ pub fn migrate_to_sealed(
     let sealed_path = json_path.with_extension("sealed");
     save_sealed(&chain, &sealed_path, key, document_id)?;
 
-    // Rename original to .bak
+    // Rename original to .bak — clean up sealed file on failure to avoid
+    // leaving both plaintext and encrypted copies.
     let bak_path = json_path.with_extension("json.bak");
-    fs::rename(json_path, &bak_path)?;
+    if let Err(e) = fs::rename(json_path, &bak_path) {
+        let _ = fs::remove_file(&sealed_path);
+        return Err(e.into());
+    }
 
     Ok(sealed_path)
 }
@@ -441,5 +468,58 @@ mod tests {
         fs::write(&path, &data).unwrap();
 
         assert!(load_sealed(&path, &test_key()).is_err());
+    }
+
+    #[test]
+    fn test_load_sealed_verified_correct_id() {
+        let dir = TempDir::new().unwrap();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let doc_path = canonical_dir.join("test.txt");
+        fs::write(&doc_path, b"data").unwrap();
+
+        let mut chain = Chain::new(&doc_path, test_vdf_params())
+            .unwrap()
+            .with_signature_policy(SignaturePolicy::Optional);
+        chain
+            .commit_with_vdf_duration(None, Duration::from_millis(10))
+            .unwrap();
+
+        let key = test_key();
+        let doc_id = test_document_id();
+        let sealed_path = canonical_dir.join("chain.sealed");
+        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
+
+        // Correct expected_id succeeds
+        let loaded = load_sealed_verified(&sealed_path, &key, Some(&doc_id)).unwrap();
+        assert_eq!(loaded.checkpoints.len(), chain.checkpoints.len());
+    }
+
+    #[test]
+    fn test_load_sealed_verified_wrong_id() {
+        let dir = TempDir::new().unwrap();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let doc_path = canonical_dir.join("test.txt");
+        fs::write(&doc_path, b"data").unwrap();
+
+        let mut chain = Chain::new(&doc_path, test_vdf_params())
+            .unwrap()
+            .with_signature_policy(SignaturePolicy::Optional);
+        chain
+            .commit_with_vdf_duration(None, Duration::from_millis(10))
+            .unwrap();
+
+        let key = test_key();
+        let doc_id = test_document_id();
+        let sealed_path = canonical_dir.join("chain.sealed");
+        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
+
+        // Wrong expected_id fails
+        let wrong_id = [0xCC; 32];
+        let result = load_sealed_verified(&sealed_path, &key, Some(&wrong_id));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("does not match expected value"));
     }
 }

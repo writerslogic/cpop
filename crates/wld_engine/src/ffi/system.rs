@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use crate::ffi::helpers::{get_data_dir, load_hmac_key, open_store};
+use crate::ffi::helpers::{compute_streak_stats, get_data_dir, load_hmac_key, open_store};
 use crate::ffi::types::{
     FfiActivityPoint, FfiDashboardMetrics, FfiLogEntry, FfiResult, FfiStatus, FfiTrackedFile,
 };
@@ -219,63 +219,23 @@ pub fn ffi_get_dashboard_metrics() -> FfiDashboardMetrics {
         .sum();
     let total_words_witnessed = total_chars_added / 5;
 
-    let thirty_days_ago_ns =
+    let ninety_days_ago_ns =
         (chrono::Utc::now() - chrono::Duration::days(90)).timestamp_nanos_safe();
     let timestamps = store
-        .get_all_event_timestamps(thirty_days_ago_ns)
+        .get_all_event_timestamps(ninety_days_ago_ns)
         .unwrap_or_default();
 
-    let mut active_days: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
-    for ts in &timestamps {
-        let day = ts / (86400 * 1_000_000_000);
-        active_days.insert(day);
-    }
-
-    let now_day = chrono::Utc::now().timestamp() / 86400;
-    let active_days_30d = active_days.iter().filter(|d| **d >= now_day - 30).count() as u32;
-
-    let today = now_day;
-    let mut longest_streak: u32 = 0;
-    let mut streak: u32 = 0;
-    let mut prev_day: Option<i64> = None;
-
-    for &day in active_days.iter().rev() {
-        if let Some(prev) = prev_day {
-            if prev - day == 1 {
-                streak += 1;
-            } else {
-                longest_streak = longest_streak.max(streak);
-                streak = 1;
-            }
-        } else {
-            streak = 1;
-        }
-        prev_day = Some(day);
-    }
-    longest_streak = longest_streak.max(streak);
-
-    let mut current_streak: u32 = 0;
-    let mut check_day = today;
-    while active_days.contains(&check_day) {
-        current_streak += 1;
-        check_day -= 1;
-    }
-    if current_streak == 0 {
-        check_day = today - 1;
-        while active_days.contains(&check_day) {
-            current_streak += 1;
-            check_day -= 1;
-        }
-    }
+    let today_day = chrono::Utc::now().timestamp() / 86400;
+    let streaks = compute_streak_stats(&timestamps, today_day, 30);
 
     FfiDashboardMetrics {
         success: true,
         total_files: files.len() as u32,
         total_checkpoints,
         total_words_witnessed,
-        current_streak_days: current_streak,
-        longest_streak_days: longest_streak,
-        active_days_30d,
+        current_streak_days: streaks.current_streak_days,
+        longest_streak_days: streaks.longest_streak_days,
+        active_days_30d: streaks.active_days_in_window,
         error_message: None,
     }
 }

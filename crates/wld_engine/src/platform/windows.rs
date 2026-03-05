@@ -589,13 +589,12 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
         let x = mouse.pt.x as f64;
         let y = mouse.pt.y as f64;
 
-        let (dx, dy) = if let Ok(mut pos) = MOUSE_LAST_POSITION.lock() {
+        let (dx, dy) = {
+            let mut pos = MOUSE_LAST_POSITION.lock_recover();
             let dx = x - pos.0;
             let dy = y - pos.1;
             *pos = (x, y);
             (dx, dy)
-        } else {
-            (0.0, 0.0)
         };
 
         let event = MouseEvent {

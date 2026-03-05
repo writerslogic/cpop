@@ -144,7 +144,13 @@ impl Block {
                     has_hw_attest,
                 )
             } else {
-                (None, None, None, self.version == Version::V1_1, false)
+                (
+                    None,
+                    None,
+                    None,
+                    matches!(self.version, Version::V1_1 | Version::V2_0),
+                    false,
+                )
             };
 
         ForensicDetails {

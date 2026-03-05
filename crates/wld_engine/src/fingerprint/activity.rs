@@ -9,7 +9,6 @@ use crate::analysis::stats;
 use crate::jitter::SimpleJitterSample;
 use crate::MutexRecover;
 use serde::{Deserialize, Serialize};
-use statrs::statistics::Statistics;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -202,8 +201,10 @@ impl IkiDistribution {
             return Self::default();
         }
 
-        let mean = intervals.to_vec().mean();
-        let std_dev = intervals.to_vec().std_dev();
+        let n = intervals.len() as f64;
+        let mean = intervals.iter().sum::<f64>() / n;
+        let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let std_dev = if variance > 0.0 { variance.sqrt() } else { 0.0 };
 
         let skewness = stats::skewness(intervals, mean, std_dev);
         let kurtosis = stats::kurtosis(intervals, mean, std_dev);
@@ -719,13 +720,10 @@ impl ActivityFingerprintAccumulator {
         let mut cached = self.cached_fingerprint.lock_recover();
         if self.dirty.load(Ordering::Relaxed) || cached.sample_count == 0 {
             let samples: Vec<_> = self.samples.iter().cloned().collect();
-            let fp = ActivityFingerprint::from_samples(&samples);
+            *cached = ActivityFingerprint::from_samples(&samples);
             self.dirty.store(false, Ordering::Relaxed);
-            *cached = fp.clone();
-            fp
-        } else {
-            cached.clone()
         }
+        cached.clone()
     }
 
     /// Snapshot of the current sample buffer for forensic analysis.

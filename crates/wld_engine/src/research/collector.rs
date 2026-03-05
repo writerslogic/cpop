@@ -43,8 +43,9 @@ impl ResearchCollector {
         let anonymized = AnonymizedSession::from_evidence(evidence);
         self.sessions.push(anonymized);
 
-        while self.sessions.len() > self.config.max_sessions {
-            self.sessions.remove(0);
+        if self.sessions.len() > self.config.max_sessions {
+            let excess = self.sessions.len() - self.config.max_sessions;
+            self.sessions.drain(..excess);
         }
     }
 
@@ -102,8 +103,9 @@ impl ResearchCollector {
             }
         }
 
-        while self.sessions.len() > self.config.max_sessions {
-            self.sessions.remove(0);
+        if self.sessions.len() > self.config.max_sessions {
+            let excess = self.sessions.len() - self.config.max_sessions;
+            self.sessions.drain(..excess);
         }
 
         Ok(())

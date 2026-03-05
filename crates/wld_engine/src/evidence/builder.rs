@@ -855,7 +855,15 @@ impl Builder {
             let mut desc = format!(
                 "Identity {} with {} ratchet generations",
                 if kh.master_fingerprint.len() > 16 {
-                    format!("{}...", &kh.master_fingerprint[..16])
+                    // Fingerprints are hex-encoded (ASCII-only), safe to slice
+                    format!(
+                        "{}...",
+                        &kh.master_fingerprint[..kh
+                            .master_fingerprint
+                            .char_indices()
+                            .nth(16)
+                            .map_or(kh.master_fingerprint.len(), |(i, _)| i)]
+                    )
                 } else {
                     kh.master_fingerprint.clone()
                 },

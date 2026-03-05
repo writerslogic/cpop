@@ -47,8 +47,8 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
 
     Ok(Parameters {
         iterations_per_second,
-        min_iterations: iterations_per_second / 10,
-        max_iterations: iterations_per_second * 3600,
+        min_iterations: iterations_per_second / 10, // ~0.1 seconds of work
+        max_iterations: iterations_per_second * 3600, // ~1 hour maximum
     })
 }
 

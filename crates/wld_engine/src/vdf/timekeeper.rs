@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 
 use super::{default_parameters, VdfProof};
 
+const DEFAULT_NTP_SOURCES: &[&str] = &["pool.ntp.org", "time.apple.com"];
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TimeAnchor {
     Network {
@@ -67,14 +69,20 @@ impl TimeKeeper {
                 ntp,
                 TimeAnchor::Network {
                     timestamp: ntp,
-                    sources: vec!["pool.ntp.org".to_string(), "time.apple.com".to_string()],
+                    sources: DEFAULT_NTP_SOURCES
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect(),
                 },
             ),
             None => {
                 let elapsed = self.start_instant.elapsed();
                 let estimated = self
                     .last_network_sync
-                    .map(|last| last + chrono::Duration::from_std(elapsed).unwrap())
+                    .map(|last| {
+                        last + chrono::Duration::from_std(elapsed)
+                            .unwrap_or(chrono::Duration::zero())
+                    })
                     .unwrap_or_else(Utc::now);
 
                 // Seed the VDF from the elapsed duration via domain separation
