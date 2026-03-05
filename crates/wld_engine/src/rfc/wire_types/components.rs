@@ -170,6 +170,15 @@ pub struct ProcessProof {
     pub claimed_duration: u64,
 }
 
+/// Max sampled Merkle proofs per process-proof.
+const MAX_SAMPLED_PROOFS: usize = 1000;
+/// Max Merkle sibling path depth (log2 of max tree).
+const MAX_MERKLE_DEPTH: usize = 64;
+/// Max hash digest length in bytes.
+const MAX_DIGEST_LEN: usize = 64;
+/// Max jitter intervals per binding.
+const MAX_JITTER_INTERVALS: usize = 100_000;
+
 impl ProcessProof {
     /// Returns `true` if `claimed_duration` falls within the IETF-mandated
     /// `[SWF_MIN_DURATION_FACTOR, SWF_MAX_DURATION_FACTOR]` range relative
@@ -180,6 +189,58 @@ impl ProcessProof {
         }
         let ratio = self.claimed_duration as f64 / expected_duration_ms as f64;
         (SWF_MIN_DURATION_FACTOR..=SWF_MAX_DURATION_FACTOR).contains(&ratio)
+    }
+
+    /// Validate size limits on proof fields.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.input.len() > MAX_DIGEST_LEN {
+            return Err(format!(
+                "process_proof input too long: {} (max {})",
+                self.input.len(),
+                MAX_DIGEST_LEN
+            ));
+        }
+        if self.merkle_root.len() > MAX_DIGEST_LEN {
+            return Err(format!(
+                "merkle_root too long: {} (max {})",
+                self.merkle_root.len(),
+                MAX_DIGEST_LEN
+            ));
+        }
+        if self.sampled_proofs.len() > MAX_SAMPLED_PROOFS {
+            return Err(format!(
+                "too many sampled_proofs: {} (max {})",
+                self.sampled_proofs.len(),
+                MAX_SAMPLED_PROOFS
+            ));
+        }
+        for (i, proof) in self.sampled_proofs.iter().enumerate() {
+            proof
+                .validate()
+                .map_err(|e| format!("sampled_proofs[{}]: {}", i, e))?;
+        }
+        Ok(())
+    }
+}
+
+impl MerkleProof {
+    /// Validate size limits.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.sibling_path.len() > MAX_MERKLE_DEPTH {
+            return Err(format!(
+                "sibling_path too deep: {} (max {})",
+                self.sibling_path.len(),
+                MAX_MERKLE_DEPTH
+            ));
+        }
+        if self.leaf_value.len() > MAX_DIGEST_LEN {
+            return Err(format!(
+                "leaf_value too long: {} (max {})",
+                self.leaf_value.len(),
+                MAX_DIGEST_LEN
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -205,6 +266,27 @@ pub struct JitterBindingWire {
     /// HMAC seal
     #[serde(rename = "3", with = "serde_bytes")]
     pub jitter_seal: Vec<u8>,
+}
+
+impl JitterBindingWire {
+    /// Validate size limits.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.intervals.len() > MAX_JITTER_INTERVALS {
+            return Err(format!(
+                "too many jitter intervals: {} (max {})",
+                self.intervals.len(),
+                MAX_JITTER_INTERVALS
+            ));
+        }
+        if self.jitter_seal.len() > MAX_DIGEST_LEN {
+            return Err(format!(
+                "jitter_seal too long: {} (max {})",
+                self.jitter_seal.len(),
+                MAX_DIGEST_LEN
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Physical state binding per CDDL `physical-state`.

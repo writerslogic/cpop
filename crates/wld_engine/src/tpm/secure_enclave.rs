@@ -2,6 +2,7 @@
 
 use super::{Attestation, Binding, Capabilities, Provider, Quote, TPMError};
 use crate::DateTimeNanosExt;
+use crate::MutexRecover;
 use anyhow::Result;
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
@@ -545,7 +546,7 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn device_id(&self) -> String {
-        self.state.lock().unwrap().device_id.clone()
+        self.state.lock_recover().device_id.clone()
     }
 
     fn algorithm(&self) -> coset::iana::Algorithm {
@@ -553,11 +554,11 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn public_key(&self) -> Vec<u8> {
-        self.state.lock().unwrap().public_key.clone()
+        self.state.lock_recover().public_key.clone()
     }
 
     fn quote(&self, nonce: &[u8], _pcrs: &[u32]) -> Result<Quote, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         let timestamp = Utc::now();
         let mut payload = Vec::new();
         payload.extend_from_slice(nonce);
@@ -580,7 +581,7 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn bind(&self, data: &[u8]) -> Result<Binding, TPMError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_recover();
         state.counter += 1;
         save_counter(&state);
 
@@ -612,12 +613,12 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         sign(&state, data)
     }
 
     fn seal(&self, data: &[u8], _policy: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
 
         // Deterministic nonce: SE signs this to derive the encryption key
         let mut hasher = Sha256::new();
@@ -652,7 +653,7 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         if sealed.is_empty() {
             return Err(TPMError::SealedDataTooShort);
         }
@@ -667,7 +668,7 @@ impl Provider for SecureEnclaveProvider {
     fn clock_info(&self) -> Result<super::ClockInfo, TPMError> {
         // Secure Enclave doesn't expose reboot counters.
         // macOS trust is established via code signing + notarization instead.
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         let elapsed = state.start_time.elapsed().unwrap_or_default().as_millis() as u64;
         Ok(super::ClockInfo {
             clock: elapsed,
@@ -683,7 +684,7 @@ impl SecureEnclaveProvider {
     /// Generate a self-attestation proving the signing key lives in the Secure Enclave.
     /// Full Apple App Attest requires entitlements; this is a local self-attestation.
     pub fn generate_key_attestation(&self, challenge: &[u8]) -> Result<KeyAttestation, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         let timestamp = Utc::now();
 
         let mut attestation_data = Vec::new();
@@ -752,7 +753,7 @@ impl SecureEnclaveProvider {
         attestation: &KeyAttestation,
         expected_challenge: &[u8],
     ) -> Result<bool, TPMError> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
 
         let mut expected_data = Vec::new();
         expected_data.extend_from_slice(b"WITSE-ATTEST-V1\n");
@@ -790,7 +791,7 @@ impl SecureEnclaveProvider {
 
     /// Get information about the signing key.
     pub fn get_key_info(&self) -> SecureEnclaveKeyInfo {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         SecureEnclaveKeyInfo {
             tag: SE_KEY_TAG.to_string(),
             public_key: state.public_key.clone(),
@@ -802,7 +803,7 @@ impl SecureEnclaveProvider {
 
     /// Get information about the attestation key (if separate from signing key).
     pub fn get_attestation_key_info(&self) -> Option<SecureEnclaveKeyInfo> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         state
             .attestation_public_key
             .as_ref()
@@ -817,7 +818,7 @@ impl SecureEnclaveProvider {
 
     /// Get hardware information for this device.
     pub fn get_hardware_info(&self) -> HashMap<String, String> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock_recover();
         let mut info = HashMap::new();
 
         if let Some(ref model) = state.hardware_info.model {
@@ -837,12 +838,12 @@ impl SecureEnclaveProvider {
 
     /// Get the current monotonic counter value without incrementing.
     pub fn get_counter(&self) -> u64 {
-        self.state.lock().unwrap().counter
+        self.state.lock_recover().counter
     }
 
     /// Increment and return the monotonic counter.
     pub fn increment_counter(&self) -> u64 {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_recover();
         state.counter += 1;
         save_counter(&state);
         state.counter

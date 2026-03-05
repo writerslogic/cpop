@@ -4,6 +4,7 @@ use super::{
     default_pcr_selection, Attestation, Binding, Capabilities, PCRSelection, PcrValue, Provider,
     Quote, TPMError,
 };
+use crate::MutexRecover;
 use chrono::Utc;
 use sha2::{Digest as Sha2Digest, Sha256};
 use std::sync::Mutex;
@@ -86,7 +87,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn device_id(&self) -> String {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         match get_device_id(&mut state) {
             Ok(id) => format!("tpm-{}", hex::encode(&id[..8])),
             Err(_) => "tpm-unknown".to_string(),
@@ -98,11 +99,11 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn public_key(&self) -> Vec<u8> {
-        self.inner.lock().unwrap().ak_public.clone()
+        self.inner.lock_recover().ak_public.clone()
     }
 
     fn quote(&self, nonce: &[u8], pcrs: &[u32]) -> Result<Quote, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let ak_handle = state.ak_handle.ok_or(TPMError::NotAvailable)?;
 
         let pcr_list = if pcrs.is_empty() {
@@ -152,7 +153,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn bind(&self, data: &[u8]) -> Result<Binding, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let ak_handle = state.ak_handle.ok_or(TPMError::NotAvailable)?;
 
         let timestamp = Utc::now();
@@ -211,7 +212,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let ak_handle = state.ak_handle.ok_or(TPMError::NotAvailable)?;
 
         let data_hash = Sha256::digest(data).to_vec();
@@ -246,7 +247,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn seal(&self, data: &[u8], _policy: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let pcrs = default_pcr_selection();
         let srk = create_srk(&mut state)?;
 
@@ -295,7 +296,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn clock_info(&self) -> Result<super::ClockInfo, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let clock_data = state
             .context
             .read_clock()
@@ -311,7 +312,7 @@ impl Provider for LinuxTpmProvider {
     }
 
     fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>, TPMError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         let (pub_bytes, priv_bytes) = super::parse_sealed_blob(sealed)?;
 
         let public =

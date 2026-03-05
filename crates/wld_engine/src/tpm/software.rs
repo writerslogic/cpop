@@ -2,6 +2,7 @@
 
 use super::{Binding, Capabilities, Provider, Quote, TPMError};
 use crate::DateTimeNanosExt;
+use crate::MutexRecover;
 use chrono::Utc;
 use ed25519_dalek::Signer;
 use sha2::{Digest, Sha256};
@@ -58,7 +59,7 @@ impl Provider for SoftwareProvider {
     }
 
     fn device_id(&self) -> String {
-        self.state.lock().unwrap().device_id.clone()
+        self.state.lock_recover().device_id.clone()
     }
 
     fn algorithm(&self) -> coset::iana::Algorithm {
@@ -94,7 +95,7 @@ impl Provider for SoftwareProvider {
     }
 
     fn bind(&self, data: &[u8]) -> Result<Binding, TPMError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_recover();
         state.counter += 1;
 
         let data_hash = Sha256::digest(data).to_vec();

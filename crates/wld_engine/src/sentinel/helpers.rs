@@ -4,6 +4,7 @@ use super::shadow::ShadowManager;
 use super::types::*;
 use crate::config::SentinelConfig;
 use crate::wal::{EntryType, Wal};
+use crate::RwLockRecover;
 use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,12 +26,12 @@ pub fn handle_focus_event_sync(
 ) {
     if !config.is_app_allowed(&event.app_bundle_id, &event.app_name) {
         let path_to_unfocus = {
-            let focus = current_focus.read().unwrap();
+            let focus = current_focus.read_recover();
             focus.clone()
         };
         if let Some(path) = path_to_unfocus {
             unfocus_document_sync(&path, sessions, session_events_tx);
-            *current_focus.write().unwrap() = None;
+            *current_focus.write_recover() = None;
         }
         return;
     }
@@ -48,7 +49,7 @@ pub fn handle_focus_event_sync(
             };
 
             let path_to_unfocus = {
-                let focus = current_focus.read().unwrap();
+                let focus = current_focus.read_recover();
                 if let Some(ref current) = *focus {
                     if *current != doc_path {
                         Some(current.clone())
@@ -62,7 +63,7 @@ pub fn handle_focus_event_sync(
 
             if let Some(path) = path_to_unfocus {
                 unfocus_document_sync(&path, sessions, session_events_tx);
-                *current_focus.write().unwrap() = None;
+                *current_focus.write_recover() = None;
             }
 
             focus_document_sync(
@@ -75,26 +76,26 @@ pub fn handle_focus_event_sync(
                 wal_dir,
                 session_events_tx,
             );
-            *current_focus.write().unwrap() = Some(doc_path);
+            *current_focus.write_recover() = Some(doc_path);
         }
         FocusEventType::FocusLost => {
             let prev_path = {
-                let focus = current_focus.read().unwrap();
+                let focus = current_focus.read_recover();
                 focus.clone()
             };
             if let Some(path) = prev_path {
                 unfocus_document_sync(&path, sessions, session_events_tx);
-                *current_focus.write().unwrap() = None;
+                *current_focus.write_recover() = None;
             }
         }
         FocusEventType::FocusUnknown => {
             let prev_path = {
-                let focus = current_focus.read().unwrap();
+                let focus = current_focus.read_recover();
                 focus.clone()
             };
             if let Some(path) = prev_path {
                 unfocus_document_sync(&path, sessions, session_events_tx);
-                *current_focus.write().unwrap() = None;
+                *current_focus.write_recover() = None;
             }
         }
     }
@@ -111,8 +112,8 @@ pub fn focus_document_sync(
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
-    let key = signing_key.read().unwrap().clone();
-    let mut sessions_map = sessions.write().unwrap();
+    let key = signing_key.read_recover().clone();
+    let mut sessions_map = sessions.write_recover();
 
     let session = sessions_map.entry(path.to_string()).or_insert_with(|| {
         let mut session = DocumentSession::new(
@@ -171,7 +172,7 @@ pub fn unfocus_document_sync(
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
-    let mut sessions_map = sessions.write().unwrap();
+    let mut sessions_map = sessions.write_recover();
 
     if let Some(session) = sessions_map.get_mut(path) {
         session.focus_lost();
@@ -193,8 +194,8 @@ pub fn handle_change_event_sync(
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
     // Acquire signing_key before sessions to match lock order in focus_document_sync
-    let key = signing_key.read().unwrap().clone();
-    let mut sessions_map = sessions.write().unwrap();
+    let key = signing_key.read_recover().clone();
+    let mut sessions_map = sessions.write_recover();
 
     if let Some(session) = sessions_map.get_mut(&event.path) {
         match event.event_type {
@@ -260,7 +261,7 @@ pub fn check_idle_sessions_sync(
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
     let sessions_to_end: Vec<String> = {
-        let sessions_map = sessions.read().unwrap();
+        let sessions_map = sessions.read_recover();
         sessions_map
             .iter()
             .filter(|(_, session)| {
@@ -285,7 +286,7 @@ pub fn end_session_sync(
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
-    let session = sessions.write().unwrap().remove(path);
+    let session = sessions.write_recover().remove(path);
 
     if let Some(session) = session {
         let _ = session_events_tx.send(SessionEvent {
@@ -302,7 +303,7 @@ pub fn end_all_sessions_sync(
     shadow: &Arc<ShadowManager>,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
-    let all_sessions: Vec<_> = sessions.write().unwrap().drain().collect();
+    let all_sessions: Vec<_> = sessions.write_recover().drain().collect();
 
     for (path, session) in all_sessions {
         let _ = session_events_tx.send(SessionEvent {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use crate::MutexRecover;
 use blake3::Hasher;
 use ed25519_dalek::{Signature, Signer, Verifier};
 use std::fs::{self, File, OpenOptions};
@@ -60,7 +61,7 @@ impl Wal {
     }
 
     pub fn append(&self, entry_type: EntryType, payload: Vec<u8>) -> Result<(), WalError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         if state.closed {
             return Err(WalError::Closed);
         }
@@ -102,7 +103,7 @@ impl Wal {
     }
 
     pub fn verify(&self) -> Result<WalVerification, WalError> {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock_recover();
         let verifying_key = state.signing_key.verifying_key();
 
         let mut file = state.file.try_clone()?;
@@ -214,7 +215,7 @@ impl Wal {
     }
 
     pub fn truncate(&self, before_seq: u64) -> Result<(), WalError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         // Read all entries, verify hash chain linkage, then re-write retained entries.
         let mut all_entries = Vec::new();
         let mut file = state.file.try_clone()?;
@@ -305,17 +306,17 @@ impl Wal {
     }
 
     pub fn size(&self) -> u64 {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock_recover();
         state.byte_count
     }
 
     pub fn entry_count(&self) -> u64 {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock_recover();
         state.entry_count
     }
 
     pub fn last_sequence(&self) -> u64 {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock_recover();
         if state.next_sequence == 0 {
             0
         } else {
@@ -324,7 +325,7 @@ impl Wal {
     }
 
     pub fn close(&self) -> Result<(), WalError> {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock_recover();
         if state.closed {
             return Ok(());
         }
@@ -334,7 +335,7 @@ impl Wal {
     }
 
     pub fn path(&self) -> PathBuf {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock_recover();
         state.path.clone()
     }
 

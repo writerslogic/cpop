@@ -58,7 +58,7 @@ impl<P: WindowProvider + ?Sized> PollingSentinelFocusTracker<P> {
 
 impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTracker<P> {
     fn start(&self) -> Result<()> {
-        let mut running = self.running.write().unwrap();
+        let mut running = self.running.write_recover();
         if *running {
             return Err(SentinelError::AlreadyRunning);
         }
@@ -78,7 +78,7 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
             loop {
                 interval_timer.tick().await;
 
-                if !*running_clone.read().unwrap() {
+                if !*running_clone.read_recover() {
                     break;
                 }
 

@@ -10,6 +10,7 @@
 
 use super::{Attestation, Binding, Capabilities, PcrValue, Provider, Quote, TPMError};
 use crate::DateTimeNanosExt;
+use crate::MutexRecover;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::ffi::c_void;
@@ -829,7 +830,7 @@ impl Provider for WindowsTpmProvider {
 
     fn bind(&self, data: &[u8]) -> Result<Binding, TPMError> {
         let counter = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock_recover();
             state.counter += 1;
             state.counter
         };

@@ -2,6 +2,7 @@
 
 use super::error::{Result, SentinelError};
 use crate::crypto::ObfuscatedString;
+use crate::RwLockRecover;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -59,14 +60,14 @@ impl ShadowManager {
             size: 0,
         };
 
-        self.shadows.write().unwrap().insert(id.clone(), shadow);
+        self.shadows.write_recover().insert(id.clone(), shadow);
 
         Ok(id)
     }
 
     /// Update the content of a shadow buffer
     pub fn update(&self, id: &str, content: &[u8]) -> Result<()> {
-        let mut shadows = self.shadows.write().unwrap();
+        let mut shadows = self.shadows.write_recover();
         let shadow = shadows
             .get_mut(id)
             .ok_or_else(|| SentinelError::ShadowNotFound(id.to_string()))?;
@@ -80,12 +81,12 @@ impl ShadowManager {
 
     /// Get the file path for a shadow buffer
     pub fn get_path(&self, id: &str) -> Option<PathBuf> {
-        self.shadows.read().unwrap().get(id).map(|s| s.path.clone())
+        self.shadows.read_recover().get(id).map(|s| s.path.clone())
     }
 
     /// Delete a shadow buffer
     pub fn delete(&self, id: &str) -> Result<()> {
-        if let Some(shadow) = self.shadows.write().unwrap().remove(id) {
+        if let Some(shadow) = self.shadows.write_recover().remove(id) {
             if let Err(e) = fs::remove_file(&shadow.path) {
                 log::debug!("shadow file remove: {e}");
             }
@@ -95,7 +96,7 @@ impl ShadowManager {
 
     /// Migrate a shadow buffer to a real file path (when unsaved document is saved)
     pub fn migrate(&self, id: &str, _new_path: &str) -> Result<()> {
-        if let Some(shadow) = self.shadows.write().unwrap().remove(id) {
+        if let Some(shadow) = self.shadows.write_recover().remove(id) {
             if let Err(e) = fs::remove_file(&shadow.path) {
                 log::debug!("shadow file remove: {e}");
             }
@@ -105,7 +106,7 @@ impl ShadowManager {
 
     /// Remove all shadow buffers
     pub fn cleanup_all(&self) {
-        let mut shadows = self.shadows.write().unwrap();
+        let mut shadows = self.shadows.write_recover();
         for shadow in shadows.values() {
             if let Err(e) = fs::remove_file(&shadow.path) {
                 log::debug!("shadow cleanup: {e}");
@@ -117,7 +118,7 @@ impl ShadowManager {
     /// Remove shadow buffers older than max_age
     pub fn cleanup_old(&self, max_age: Duration) -> u32 {
         let cutoff = SystemTime::now() - max_age;
-        let mut shadows = self.shadows.write().unwrap();
+        let mut shadows = self.shadows.write_recover();
         let mut removed = 0u32;
 
         shadows.retain(|_, shadow| {

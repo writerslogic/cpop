@@ -6,6 +6,7 @@ use crate::jitter::SimpleJitterSession;
 #[cfg(target_os = "macos")]
 use crate::platform;
 use crate::store::{SecureEvent, SecureStore};
+use crate::MutexRecover;
 use anyhow::{anyhow, Context, Result};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rand::RngCore;
@@ -111,7 +112,7 @@ impl Engine {
         if std::env::var("WLD_SKIP_PERMISSIONS").is_err() {
             let monitor =
                 platform::macos::KeystrokeMonitor::start(Arc::clone(&inner.jitter_session))?;
-            *inner.keystroke_monitor.lock().unwrap() = Some(monitor);
+            *inner.keystroke_monitor.lock_recover() = Some(monitor);
         }
 
         start_file_watcher(&inner, config.watch_dirs)?;
@@ -125,19 +126,19 @@ impl Engine {
 
     pub fn pause(&self) -> Result<()> {
         self.inner.running.store(false, Ordering::SeqCst);
-        *self.inner.watcher.lock().unwrap() = None;
+        *self.inner.watcher.lock_recover() = None;
         #[cfg(target_os = "macos")]
         {
-            *self.inner.keystroke_monitor.lock().unwrap() = None;
+            *self.inner.keystroke_monitor.lock_recover() = None;
         }
 
-        let mut status = self.inner.status.lock().unwrap();
+        let mut status = self.inner.status.lock_recover();
         status.running = false;
         Ok(())
     }
 
     pub fn resume(&self) -> Result<()> {
-        if self.inner.status.lock().unwrap().running {
+        if self.inner.status.lock_recover().running {
             return Ok(());
         }
 
@@ -147,25 +148,25 @@ impl Engine {
         {
             let monitor =
                 platform::macos::KeystrokeMonitor::start(Arc::clone(&self.inner.jitter_session))?;
-            *self.inner.keystroke_monitor.lock().unwrap() = Some(monitor);
+            *self.inner.keystroke_monitor.lock_recover() = Some(monitor);
         }
 
-        let dirs = self.inner.watch_dirs.lock().unwrap().clone();
+        let dirs = self.inner.watch_dirs.lock_recover().clone();
         start_file_watcher(&self.inner, dirs)?;
 
-        let mut status = self.inner.status.lock().unwrap();
+        let mut status = self.inner.status.lock_recover();
         status.running = true;
         Ok(())
     }
 
     pub fn status(&self) -> EngineStatus {
-        let mut status = self.inner.status.lock().unwrap().clone();
-        status.jitter_samples = self.inner.jitter_session.lock().unwrap().samples.len() as u64;
+        let mut status = self.inner.status.lock_recover().clone();
+        status.jitter_samples = self.inner.jitter_session.lock_recover().samples.len() as u64;
         status
     }
 
     pub fn report_files(&self) -> Result<Vec<ReportFile>> {
-        let rows = self.inner.store.lock().unwrap().list_files()?;
+        let rows = self.inner.store.lock_recover().list_files()?;
         Ok(rows
             .into_iter()
             .map(|(file_path, last_ts, count)| ReportFile {
@@ -184,8 +185,8 @@ impl Engine {
         config.data_dir = self.inner.data_dir.clone();
         config.persist()?;
 
-        *self.inner.watch_dirs.lock().unwrap() = config.watch_dirs.clone();
-        let mut status = self.inner.status.lock().unwrap();
+        *self.inner.watch_dirs.lock_recover() = config.watch_dirs.clone();
+        let mut status = self.inner.status.lock_recover();
         status.watch_dirs = config.watch_dirs.clone();
         drop(status);
 
@@ -219,7 +220,7 @@ fn start_file_watcher(inner: &Arc<EngineInner>, watch_dirs: Vec<PathBuf>) -> Res
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     for path in event.paths {
                         if let Err(err) = process_file_event(&inner_clone, &path) {
-                            let mut status = inner_clone.status.lock().unwrap();
+                            let mut status = inner_clone.status.lock_recover();
                             status.last_event_timestamp_ns = Some(now_ns());
                             eprintln!("WritersLogic: file event error: {err}");
                         }
@@ -229,7 +230,7 @@ fn start_file_watcher(inner: &Arc<EngineInner>, watch_dirs: Vec<PathBuf>) -> Res
         }
     });
 
-    *inner.watcher.lock().unwrap() = Some(watcher);
+    *inner.watcher.lock_recover() = Some(watcher);
     Ok(())
 }
 
@@ -244,7 +245,7 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
     let content_hash = crate::crypto::hash_file(path)?;
 
     let size_delta = {
-        let mut map = inner.file_sizes.lock().unwrap();
+        let mut map = inner.file_sizes.lock_recover();
         let previous = map
             .insert(path.to_path_buf(), file_size)
             .unwrap_or(file_size);
@@ -258,7 +259,7 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
     };
 
     let (forensic_score, is_paste) = {
-        let mut session = inner.jitter_session.lock().unwrap();
+        let mut session = inner.jitter_session.lock_recover();
         if session.samples.is_empty() {
             // No keystrokes: automatic save or background modification
             (1.0, false)
@@ -303,7 +304,7 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
         .unwrap()
         .insert_secure_event(&mut event)?;
 
-    let mut status = inner.status.lock().unwrap();
+    let mut status = inner.status.lock_recover();
     status.events_written += 1;
     status.last_event_timestamp_ns = Some(event.timestamp_ns);
     Ok(())

@@ -91,6 +91,14 @@ pub struct EvidencePacketWire {
 
 /// Minimum number of checkpoints per CDDL: `6 => [3* checkpoint]`.
 const MIN_CHECKPOINTS: usize = 3;
+/// Maximum checkpoints before rejecting as DoS payload.
+const MAX_CHECKPOINTS: usize = 10_000;
+/// Maximum number of limitation strings.
+const MAX_LIMITATIONS: usize = 100;
+/// Maximum number of presence challenges.
+const MAX_PRESENCE_CHALLENGES: usize = 100;
+/// Maximum length of any single string field (profile_uri, limitation text).
+const MAX_STRING_LEN: usize = 4096;
 
 impl EvidencePacketWire {
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {
@@ -113,7 +121,7 @@ impl EvidencePacketWire {
         Ok(packet)
     }
 
-    /// Check CDDL-mandated invariants after deserialization.
+    /// Check CDDL-mandated invariants and size limits after deserialization.
     pub fn validate(&self) -> Result<(), CodecError> {
         if self.version != 1 {
             return Err(CodecError::Validation(format!(
@@ -122,10 +130,12 @@ impl EvidencePacketWire {
             )));
         }
 
-        if self.profile_uri.is_empty() {
-            return Err(CodecError::Validation(
-                "profile_uri must not be empty".into(),
-            ));
+        if self.profile_uri.is_empty() || self.profile_uri.len() > MAX_STRING_LEN {
+            return Err(CodecError::Validation(format!(
+                "profile_uri length {} out of range [1, {}]",
+                self.profile_uri.len(),
+                MAX_STRING_LEN
+            )));
         }
 
         if self.packet_id == [0u8; 16] {
@@ -147,22 +157,61 @@ impl EvidencePacketWire {
                 self.checkpoints.len()
             )));
         }
+        if self.checkpoints.len() > MAX_CHECKPOINTS {
+            return Err(CodecError::Validation(format!(
+                "too many checkpoints: {} (max {})",
+                self.checkpoints.len(),
+                MAX_CHECKPOINTS
+            )));
+        }
+
+        // Validate collection sizes
+        if let Some(ref lims) = self.limitations {
+            if lims.len() > MAX_LIMITATIONS {
+                return Err(CodecError::Validation(format!(
+                    "too many limitations: {} (max {})",
+                    lims.len(),
+                    MAX_LIMITATIONS
+                )));
+            }
+            for (i, s) in lims.iter().enumerate() {
+                if s.len() > MAX_STRING_LEN {
+                    return Err(CodecError::Validation(format!(
+                        "limitation[{}] too long: {} (max {})",
+                        i,
+                        s.len(),
+                        MAX_STRING_LEN
+                    )));
+                }
+            }
+        }
+        if let Some(ref pcs) = self.presence_challenges {
+            if pcs.len() > MAX_PRESENCE_CHALLENGES {
+                return Err(CodecError::Validation(format!(
+                    "too many presence_challenges: {} (max {})",
+                    pcs.len(),
+                    MAX_PRESENCE_CHALLENGES
+                )));
+            }
+        }
 
         // Validate hash digest lengths in document ref and checkpoints.
         self.document
             .content_hash
             .validate_digest_length()
             .map_err(CodecError::Validation)?;
+        if let Some(ref name) = self.document.filename {
+            if name.len() > MAX_STRING_LEN {
+                return Err(CodecError::Validation(format!(
+                    "document filename too long: {} (max {})",
+                    name.len(),
+                    MAX_STRING_LEN
+                )));
+            }
+        }
 
         for (i, cp) in self.checkpoints.iter().enumerate() {
-            cp.content_hash
-                .validate_digest_length()
-                .map_err(|e| CodecError::Validation(format!("checkpoint[{}]: {}", i, e)))?;
-            cp.prev_hash
-                .validate_digest_length()
-                .map_err(|e| CodecError::Validation(format!("checkpoint[{}]: {}", i, e)))?;
-            cp.checkpoint_hash
-                .validate_digest_length()
+            cp.validate()
                 .map_err(|e| CodecError::Validation(format!("checkpoint[{}]: {}", i, e)))?;
         }
 

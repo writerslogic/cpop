@@ -255,15 +255,26 @@ pub struct AttestationResultWire {
     pub forensic_summary: Option<ForensicSummary>,
 }
 
+/// Max absence claims.
+const MAX_ABSENCE_CLAIMS: usize = 100;
+/// Max warnings.
+const MAX_WARNINGS: usize = 100;
+/// Max string length for warnings/claims.
+const MAX_STRING_LEN: usize = 4096;
+/// Max forensic flags.
+const MAX_FORENSIC_FLAGS: usize = 200;
+
 impl AttestationResultWire {
     /// Encode to tagged CBOR (tag 1463894560).
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {
         codec::cbor::encode_tagged(self, CBOR_TAG_ATTESTATION_RESULT)
     }
 
-    /// Decode from tagged CBOR bytes.
+    /// Decode from tagged CBOR bytes with validation.
     pub fn decode_cbor(data: &[u8]) -> Result<Self, CodecError> {
-        codec::cbor::decode_tagged(data, CBOR_TAG_ATTESTATION_RESULT)
+        let result: Self = codec::cbor::decode_tagged(data, CBOR_TAG_ATTESTATION_RESULT)?;
+        result.validate()?;
+        Ok(result)
     }
 
     /// Encode to untagged CBOR.
@@ -271,8 +282,59 @@ impl AttestationResultWire {
         codec::cbor::encode(self)
     }
 
-    /// Decode from untagged CBOR bytes.
+    /// Decode from untagged CBOR bytes with validation.
     pub fn decode_cbor_untagged(data: &[u8]) -> Result<Self, CodecError> {
-        codec::cbor::decode(data)
+        let result: Self = codec::cbor::decode(data)?;
+        result.validate()?;
+        Ok(result)
+    }
+
+    /// Validate size limits after deserialization.
+    pub fn validate(&self) -> Result<(), CodecError> {
+        if self.version != 1 {
+            return Err(CodecError::Validation(format!(
+                "unsupported WAR version {}, expected 1",
+                self.version
+            )));
+        }
+        if let Some(ref claims) = self.absence_claims {
+            if claims.len() > MAX_ABSENCE_CLAIMS {
+                return Err(CodecError::Validation(format!(
+                    "too many absence_claims: {} (max {})",
+                    claims.len(),
+                    MAX_ABSENCE_CLAIMS
+                )));
+            }
+            for (i, claim) in claims.iter().enumerate() {
+                if claim.claim_id.len() > MAX_STRING_LEN {
+                    return Err(CodecError::Validation(format!(
+                        "absence_claims[{}].claim_id too long: {}",
+                        i,
+                        claim.claim_id.len()
+                    )));
+                }
+            }
+        }
+        if let Some(ref warnings) = self.warnings {
+            if warnings.len() > MAX_WARNINGS {
+                return Err(CodecError::Validation(format!(
+                    "too many warnings: {} (max {})",
+                    warnings.len(),
+                    MAX_WARNINGS
+                )));
+            }
+        }
+        if let Some(ref summary) = self.forensic_summary {
+            if let Some(ref flags) = summary.flags {
+                if flags.len() > MAX_FORENSIC_FLAGS {
+                    return Err(CodecError::Validation(format!(
+                        "too many forensic_flags: {} (max {})",
+                        flags.len(),
+                        MAX_FORENSIC_FLAGS
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 }

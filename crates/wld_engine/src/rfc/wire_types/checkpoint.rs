@@ -84,3 +84,55 @@ pub struct CheckpointWire {
     #[serde(rename = "14", default, skip_serializing_if = "Option::is_none")]
     pub active_probes: Option<Vec<ActiveProbe>>,
 }
+
+/// Max self-receipts per checkpoint.
+const MAX_SELF_RECEIPTS: usize = 100;
+/// Max active probes per checkpoint.
+const MAX_ACTIVE_PROBES: usize = 100;
+/// Max entangled MAC length (HMAC-SHA256 = 32 bytes).
+const MAX_ENTANGLED_MAC_LEN: usize = 64;
+
+impl CheckpointWire {
+    /// Validate size limits and hash digests.
+    pub fn validate(&self) -> Result<(), String> {
+        self.content_hash.validate_digest_length()?;
+        self.prev_hash.validate_digest_length()?;
+        self.checkpoint_hash.validate_digest_length()?;
+
+        if let Some(ref mac) = self.entangled_mac {
+            if mac.len() > MAX_ENTANGLED_MAC_LEN {
+                return Err(format!(
+                    "entangled_mac too long: {} (max {})",
+                    mac.len(),
+                    MAX_ENTANGLED_MAC_LEN
+                ));
+            }
+        }
+        if let Some(ref receipts) = self.self_receipts {
+            if receipts.len() > MAX_SELF_RECEIPTS {
+                return Err(format!(
+                    "too many self_receipts: {} (max {})",
+                    receipts.len(),
+                    MAX_SELF_RECEIPTS
+                ));
+            }
+        }
+        if let Some(ref probes) = self.active_probes {
+            if probes.len() > MAX_ACTIVE_PROBES {
+                return Err(format!(
+                    "too many active_probes: {} (max {})",
+                    probes.len(),
+                    MAX_ACTIVE_PROBES
+                ));
+            }
+        }
+
+        self.process_proof.validate()?;
+
+        if let Some(ref jb) = self.jitter_binding {
+            jb.validate()?;
+        }
+
+        Ok(())
+    }
+}
