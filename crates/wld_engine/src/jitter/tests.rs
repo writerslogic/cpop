@@ -116,8 +116,6 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    // Additional tests for jitter.rs
-
     #[test]
     fn test_session_new_with_id() {
         let path = temp_document_path();
@@ -203,7 +201,6 @@ mod tests {
         }
         session.save(&session_path).expect("save");
 
-        // Tamper with the saved file: flip a bit in a sample hash
         let raw = fs::read_to_string(&session_path).expect("read");
         let mut data: serde_json::Value = serde_json::from_str(&raw).expect("parse");
         let hash_str = data["samples"][0]["hash"][0].as_u64().expect("hash byte");
@@ -232,7 +229,6 @@ mod tests {
         }
         session.save(&session_path).expect("save");
 
-        // Tamper: set sample 2's timestamp equal to sample 1's
         let raw = fs::read_to_string(&session_path).expect("read");
         let mut data: serde_json::Value = serde_json::from_str(&raw).expect("parse");
         let ts0 = data["samples"][0]["timestamp"].clone();
@@ -260,7 +256,6 @@ mod tests {
         session.record_keystroke().expect("keystroke");
 
         let mut evidence = session.export();
-        // Tamper with sample hash
         evidence.samples[0].hash[0] ^= 0xFF;
 
         let err = evidence.verify().unwrap_err();
@@ -279,7 +274,6 @@ mod tests {
         session.record_keystroke().expect("keystroke");
 
         let mut evidence = session.export();
-        // Tamper with previous_hash
         evidence.samples[1].previous_hash[0] ^= 0xFF;
         // Recompute hash to pass hash check (but chain link is broken)
         evidence.samples[1].hash = evidence.samples[1].compute_hash();
@@ -300,8 +294,6 @@ mod tests {
         fs::write(&path, b"test").expect("write");
 
         let mut session = Session::new(&path, test_params()).expect("session");
-        // Simulate realistic typing at ~200 wpm (1000 chars/min = ~17 chars/sec)
-        // So ~60ms per keystroke
         for _ in 0..10 {
             session.record_keystroke().expect("keystroke");
             std::thread::sleep(Duration::from_millis(60));
@@ -309,8 +301,6 @@ mod tests {
         session.end();
 
         let evidence = session.export();
-        // With normal timing and limited keystrokes, should be plausible
-        // Rate should be ~1000 keystrokes per minute or less
         let rate = evidence.typing_rate();
         assert!(rate >= 10.0, "typing rate {} is too low", rate);
         assert!(rate <= 1000.0, "typing rate {} is too high", rate);
@@ -563,8 +553,6 @@ mod tests {
         assert!(err.to_string().contains("sample hash is zero"));
     }
 
-    // Zone and typing profile tests
-
     #[test]
     fn test_char_to_zone() {
         assert_eq!(char_to_zone('q'), 0);
@@ -680,12 +668,10 @@ mod tests {
     #[test]
     fn test_is_human_plausible() {
         let mut profile = TypingProfile::default();
-        // Very few transitions - should be plausible
         profile.total_transitions = 5;
         profile.hand_alternation = 0.5;
         assert!(is_human_plausible(profile));
 
-        // Extreme hand alternation
         let mut profile2 = TypingProfile::default();
         profile2.total_transitions = 100;
         profile2.hand_alternation = 0.05; // Too low
@@ -876,7 +862,6 @@ mod tests {
 
         let evidence = session.export();
         let rate = evidence.typing_rate();
-        // 60 keystrokes in ~100ms = very high rate; should be well above 100
         assert!(
             rate > 100.0,
             "typing rate {} is too low for 60 fast keystrokes",

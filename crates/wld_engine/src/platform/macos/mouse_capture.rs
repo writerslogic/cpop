@@ -38,7 +38,7 @@ impl MacOSMouseCapture {
             thread: None,
             idle_stats: Arc::new(RwLock::new(MouseIdleStats::new())),
             stego_params: MouseStegoParams::default(),
-            idle_only_mode: true, // Default to idle-only for fingerprinting
+            idle_only_mode: true,
             last_position: Arc::new(RwLock::new((0.0, 0.0))),
             keyboard_active: Arc::new(AtomicBool::new(false)),
             last_keystroke_time: Arc::new(RwLock::new(std::time::Instant::now())),
@@ -79,13 +79,12 @@ impl MouseCapture for MacOSMouseCapture {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
 
         let thread = std::thread::spawn(move || {
-            // Capture mouse moved events
             let events = vec![CGEventType::MouseMoved];
 
             let tap = CGEventTap::new(
                 CGEventTapLocation::HID,
                 CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly, // Listen only, don't modify
+                CGEventTapOptions::ListenOnly,
                 events,
                 move |_proxy, event_type, event| {
                     if !running.load(Ordering::SeqCst) {
@@ -93,9 +92,7 @@ impl MouseCapture for MacOSMouseCapture {
                     }
 
                     if matches!(event_type, CGEventType::MouseMoved) {
-                        // Check if we should capture (idle-only mode consideration)
                         let should_capture = if idle_only_mode {
-                            // Only capture if keyboard was active recently (within 2 seconds)
                             if let Ok(time) = last_keystroke_time.read() {
                                 time.elapsed() < std::time::Duration::from_secs(2)
                             } else {
@@ -111,13 +108,10 @@ impl MouseCapture for MacOSMouseCapture {
 
                         let now = chrono::Utc::now().timestamp_nanos_safe();
 
-                        // Get mouse position from event
-                        // CGEvent location is in screen coordinates
                         let location = event.location();
                         let x = location.x;
                         let y = location.y;
 
-                        // Calculate delta from last position
                         let (dx, dy) = {
                             let mut last_pos = last_position.write_recover();
                             let delta = (x - last_pos.0, y - last_pos.1);
@@ -125,7 +119,6 @@ impl MouseCapture for MacOSMouseCapture {
                             delta
                         };
 
-                        // Create mouse event
                         let is_idle = !keyboard_active.load(Ordering::SeqCst);
                         let mouse_event = if is_idle {
                             MouseEvent::idle_jitter(now, x, y, dx, dy)
@@ -133,16 +126,12 @@ impl MouseCapture for MacOSMouseCapture {
                             MouseEvent::new(now, x, y, dx, dy)
                         };
 
-                        // Record idle statistics for micro-movements
                         if mouse_event.is_micro_movement() && is_idle {
                             idle_stats.write_recover().record(&mouse_event);
                         }
 
-                        // Send event
                         let _ = tx.send(mouse_event);
 
-                        // Reset keyboard active flag after processing
-                        // (will be set again by next keystroke)
                         if !idle_only_mode {
                             keyboard_active.store(false, Ordering::SeqCst);
                         }
@@ -171,7 +160,6 @@ impl MouseCapture for MacOSMouseCapture {
             let _ = ready_tx.send(Ok(()));
             let current_loop = CFRunLoop::get_current();
             unsafe {
-                // Store the run loop ref so stop() can terminate it
                 let rl_ref = CFRunLoopGetCurrent();
                 CFRetain(rl_ref);
                 if let Ok(mut rl) = run_loop.lock() {
@@ -204,7 +192,6 @@ impl MouseCapture for MacOSMouseCapture {
     fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
-        // Stop the CFRunLoop so the thread can exit
         if let Ok(mut rl) = self.run_loop.lock() {
             if let Some(handle) = rl.take() {
                 unsafe {

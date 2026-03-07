@@ -12,7 +12,6 @@ use super::types::{Packet, Strength};
 
 impl From<&Packet> for rfc::PacketRfc {
     fn from(packet: &Packet) -> Self {
-        // Convert VDF parameters to VdfStructure
         let vdf = rfc::VdfStructure {
             input: packet
                 .checkpoints
@@ -39,20 +38,19 @@ impl From<&Packet> for rfc::PacketRfc {
                 .iter()
                 .filter_map(|cp| cp.vdf_iterations)
                 .sum(),
-            rdtsc_checkpoints: Vec::new(), // Not available in legacy format
-            entropic_pulse: Vec::new(),    // Not available in legacy format
+            rdtsc_checkpoints: Vec::new(),
+            entropic_pulse: Vec::new(),
         };
 
-        // Convert jitter binding to JitterSealStructure
         let jitter_seal = if let Some(jb) = &packet.jitter_binding {
-            // Estimate entropy from sample count (approx 8 bits per sample)
+            // ~8 bits of entropy per sample, scaled to millibits
             let entropy_estimate = jb.summary.sample_count as u32 * 8 * 1000;
             rfc::JitterSealStructure {
-                lang: "en-US".to_string(), // Default, not tracked in legacy
+                lang: "en-US".to_string(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),
-                entropy_millibits: entropy_estimate.min(20_000_000), // Cap at 20k bits
-                dp_epsilon_centibits: rfc::Centibits::from_float(0.5), // Default
-                pink_noise_slope_decibits: rfc::SlopeDecibits::from_float(-1.0), // Default
+                entropy_millibits: entropy_estimate.min(20_000_000),
+                dp_epsilon_centibits: rfc::Centibits::from_float(0.5),
+                pink_noise_slope_decibits: rfc::SlopeDecibits::from_float(-1.0),
             }
         } else {
             rfc::JitterSealStructure {
@@ -64,9 +62,7 @@ impl From<&Packet> for rfc::PacketRfc {
             }
         };
 
-        // Convert content hash tree
-        // Note: hex decode should not fail for well-formed packets, but if it does,
-        // use empty root rather than zero-filled (empty signals error to verifiers).
+        // Empty root (not zero-filled) signals decode failure to verifiers
         let content_hash_tree = rfc::ContentHashTree {
             root: hex::decode(&packet.document.final_hash)
                 .map_err(|e| log::warn!("Content hash hex decode failed: {e}"))
@@ -74,13 +70,11 @@ impl From<&Packet> for rfc::PacketRfc {
             segment_count: packet.checkpoints.len().max(1) as u16,
         };
 
-        // Convert correlation proof from behavioral evidence
         let correlation_proof = if let Some(behavioral) = &packet.behavioral {
             if let Some(fp) = &behavioral.fingerprint {
-                // Use coefficient of variation as a proxy for correlation
-                // Higher consistency = higher correlation
+                // CV as proxy for correlation: lower CV -> higher rho
                 let cv = fp.keystroke_interval_std / fp.keystroke_interval_mean.max(1.0);
-                let rho = (1.0 - cv.min(1.0)).max(0.5); // Convert CV to correlation estimate
+                let rho = (1.0 - cv.min(1.0)).max(0.5);
                 rfc::CorrelationProof {
                     rho: rfc::RhoMillibits::from_float(rho),
                     threshold: 700,
@@ -92,7 +86,6 @@ impl From<&Packet> for rfc::PacketRfc {
             rfc::CorrelationProof::default()
         };
 
-        // Convert error topology if available
         let error_topology = packet.behavioral.as_ref().and_then(|b| {
             b.fingerprint.as_ref().map(|fp| rfc::ErrorTopology {
                 fractal_dimension_decibits: rfc::Decibits::from_float(fp.keystroke_interval_std),
@@ -103,7 +96,6 @@ impl From<&Packet> for rfc::PacketRfc {
             })
         });
 
-        // Convert hardware enclave if available
         let enclave_vise = packet.hardware.as_ref().and_then(|hw| {
             hw.bindings.first().map(|binding| rfc::EnclaveVise {
                 enclave_type: match binding.provider_type.as_str() {
@@ -117,7 +109,6 @@ impl From<&Packet> for rfc::PacketRfc {
             })
         });
 
-        // Determine profile tier
         let profile = Some(match packet.strength {
             Strength::Basic => rfc::ProfileDeclaration::core(),
             Strength::Standard => rfc::ProfileDeclaration::core(),
@@ -133,10 +124,10 @@ impl From<&Packet> for rfc::PacketRfc {
             correlation_proof,
             error_topology,
             enclave_vise,
-            zk_verdict: None, // Not available in legacy format
+            zk_verdict: None,
             profile,
-            privacy_budget: None, // Not available in legacy format
-            key_rotation: None,   // Not available in legacy format
+            privacy_budget: None,
+            key_rotation: None,
             extensions: std::collections::HashMap::new(),
         }
     }

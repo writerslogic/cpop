@@ -128,7 +128,6 @@ impl SecureSession {
     /// A failed decrypt or sequence mismatch indicates tampering, replay, or
     /// key desynchronization — none of which are recoverable on the same channel.
     pub(crate) fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        // Minimum: 8 (seq) + 12 (nonce) + 16 (GCM tag) = 36 bytes
         if data.len() < 36 {
             return Err(anyhow!("Encrypted message too short: {} bytes", data.len()));
         }
@@ -195,11 +194,11 @@ impl RateLimitConfig {
     /// Max operations per window for a given category.
     pub(crate) fn max_ops(category: &str) -> u32 {
         match category {
-            "heartbeat" | "status" => 120, // Frequent, cheap operations
-            "witnessing" => 30,            // Moderate — start/stop tracking
-            "verify" | "export" | "forensics" | "process_score" => 10, // Expensive crypto ops
-            "checkpoint" => 20,            // Moderately expensive
-            _ => 60,                       // General operations
+            "heartbeat" | "status" => 120,
+            "witnessing" => 30,
+            "verify" | "export" | "forensics" | "process_score" => 10,
+            "checkpoint" => 20,
+            _ => 60,
         }
     }
 }
@@ -266,7 +265,6 @@ pub(crate) async fn secure_handshake_server<
     }
 
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
-        // 1. Read client's uncompressed P-256 public key (65 bytes)
         let mut client_pubkey_bytes = [0u8; P256_PUBLIC_KEY_SIZE];
         stream
             .read_exact(&mut client_pubkey_bytes)
@@ -276,7 +274,6 @@ pub(crate) async fn secure_handshake_server<
         let client_pubkey = PublicKey::from_sec1_bytes(&client_pubkey_bytes)
             .map_err(|_| anyhow!("Invalid client P-256 public key"))?;
 
-        // 2. Generate server ephemeral keypair and send public key
         let server_secret = EphemeralSecret::random(&mut OsRng);
         let server_pubkey_point = server_secret.public_key().to_encoded_point(false);
         let server_pubkey_bytes = server_pubkey_point.as_bytes();
@@ -286,10 +283,8 @@ pub(crate) async fn secure_handshake_server<
             .map_err(|e| anyhow!("Failed to send server public key: {}", e))?;
         stream.flush().await?;
 
-        // 3. Compute ECDH shared secret
         let shared_secret = server_secret.diffie_hellman(&client_pubkey);
 
-        // 4. Derive session key via channel-bound HKDF (includes both public keys)
         let session = SecureSession::from_shared_secret(
             shared_secret.raw_secret_bytes().as_slice(),
             &client_pubkey_bytes,
@@ -297,14 +292,12 @@ pub(crate) async fn secure_handshake_server<
             true,
         )?;
 
-        // 5. Key confirmation: server sends encrypted known token
         let confirm_encrypted = session.encrypt(KEY_CONFIRM_PLAINTEXT)?;
         let confirm_len = confirm_encrypted.len() as u32;
         stream.write_all(&confirm_len.to_le_bytes()).await?;
         stream.write_all(&confirm_encrypted).await?;
         stream.flush().await?;
 
-        // 6. Read and verify client's confirmation token
         let mut client_confirm_len_buf = [0u8; 4];
         stream.read_exact(&mut client_confirm_len_buf).await?;
         let client_confirm_len = u32::from_le_bytes(client_confirm_len_buf) as usize;

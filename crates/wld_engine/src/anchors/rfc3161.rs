@@ -510,11 +510,8 @@ mod tests {
 
     #[test]
     fn test_der_length_parsing() {
-        // Short form
         assert_eq!(read_der_length(&[0x05], 0), Some((5, 1)));
-        // Long form: 2 bytes
         assert_eq!(read_der_length(&[0x82, 0x01, 0x00], 0), Some((256, 3)));
-        // Single byte long form
         assert_eq!(read_der_length(&[0x81, 0x80], 0), Some((128, 2)));
     }
 

@@ -5,18 +5,15 @@
 use wld_jitter::{HybridEngine, PhysJitter, PureJitter};
 
 fn main() {
-    // Create custom engines with specific parameters
-    let phys = PhysJitter::new(8) // Require 8 bits minimum entropy
-        .with_jitter_range(1000, 2000); // 1000-3000μs range
+    let phys = PhysJitter::new(8).with_jitter_range(1000, 2000);
 
-    let pure = PureJitter::new(1000, 2000); // Matching range for fallback
+    let pure = PureJitter::new(1000, 2000);
 
     let engine = HybridEngine::new(phys, pure).with_min_entropy(8);
 
     println!("Custom engine created");
     println!("  Physics available: {}", engine.phys_available());
 
-    // Sample some jitter
     let secret = [42u8; 32];
     for i in 0..5 {
         let (jitter, evidence) = engine

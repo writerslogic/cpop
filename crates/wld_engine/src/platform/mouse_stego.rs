@@ -25,7 +25,7 @@ pub fn compute_mouse_jitter(
     mac.update(&doc_hash);
     mac.update(&mouse_event_count.to_be_bytes());
     mac.update(&prev_mouse_jitter);
-    mac.update(b"mouse"); // Domain separator to differentiate from keystroke jitter
+    mac.update(b"mouse");
 
     let hash = mac.finalize().into_bytes();
     let raw = u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]);
@@ -130,11 +130,7 @@ impl MouseStegoEngine {
                     self.params.inject_while_traveling
                 }
             }
-            MouseStegoMode::SubPixel => {
-                // Sub-pixel mode uses coordinate encoding, not timing
-                // Return None for timing injection
-                false
-            }
+            MouseStegoMode::SubPixel => false,
         };
 
         self.event_count += 1;
@@ -148,7 +144,6 @@ impl MouseStegoEngine {
                 &self.params,
             );
 
-            // Update chain hash
             self.prev_hash = compute_jitter_hash(
                 &self.seed,
                 self.doc_hash,
@@ -179,12 +174,10 @@ impl MouseStegoEngine {
 
         let hash = mac.finalize().into_bytes();
 
-        // Extract 2 bits each for x and y offset
-        // Map to range [-0.5, 0.5] in 0.25 increments
         let x_bits = (hash[0] & 0x03) as f64;
         let y_bits = ((hash[0] >> 2) & 0x03) as f64;
 
-        let dx = (x_bits - 1.5) * 0.25; // -0.375, -0.125, 0.125, 0.375
+        let dx = (x_bits - 1.5) * 0.25;
         let dy = (y_bits - 1.5) * 0.25;
 
         (dx, dy)
@@ -197,7 +190,7 @@ impl MouseStegoEngine {
         jitter_values: &[(u64, u32)], // (event_count, jitter_micros)
         params: &MouseStegoParams,
     ) -> bool {
-        let tolerance_micros = 100; // ±100μs tolerance
+        let tolerance_micros = 100;
 
         let mut prev_hash = [0u8; 32];
 
@@ -230,7 +223,6 @@ mod tests {
 
         let jitter = compute_mouse_jitter(&seed, doc_hash, 1, prev_hash, &params);
 
-        // Should be within configured range
         assert!(jitter >= params.min_delay_micros);
         assert!(jitter <= params.max_delay_micros);
     }
@@ -258,7 +250,6 @@ mod tests {
         let jitter1 = compute_mouse_jitter(&seed, doc_hash, 1, prev_hash, &params);
         let jitter2 = compute_mouse_jitter(&seed, doc_hash, 2, prev_hash, &params);
 
-        // Different counts should produce different jitter (with high probability)
         assert_ne!(jitter1, jitter2);
     }
 
@@ -272,10 +263,8 @@ mod tests {
             ..Default::default()
         });
 
-        // First call should return jitter
         assert!(engine.next_jitter().is_some());
 
-        // Subsequent calls should return None
         assert!(engine.next_jitter().is_none());
         assert!(engine.next_jitter().is_none());
     }
@@ -291,7 +280,6 @@ mod tests {
             ..Default::default()
         });
 
-        // All calls should return jitter
         assert!(engine.next_jitter().is_some());
         assert!(engine.next_jitter().is_some());
         assert!(engine.next_jitter().is_some());
@@ -308,7 +296,6 @@ mod tests {
         assert!(engine.next_jitter().is_none());
         assert!(engine.next_jitter().is_none());
 
-        // Event count should still increment
         assert_eq!(engine.event_count(), 2);
     }
 
@@ -323,7 +310,6 @@ mod tests {
 
         let (dx, dy) = engine.sub_pixel_offset();
 
-        // Offsets should be small (within ±0.5)
         assert!(dx.abs() < 0.5);
         assert!(dy.abs() < 0.5);
     }
@@ -334,7 +320,6 @@ mod tests {
         let doc_hash = [1u8; 32];
         let params = MouseStegoParams::default();
 
-        // Generate some jitter values
         let mut prev_hash = [0u8; 32];
         let mut jitter_values = Vec::new();
 
@@ -344,7 +329,6 @@ mod tests {
             prev_hash = compute_jitter_hash(&seed, doc_hash, count, jitter, prev_hash);
         }
 
-        // Verification should pass
         assert!(MouseStegoEngine::verify_sequence(
             &seed,
             doc_hash,
@@ -352,9 +336,8 @@ mod tests {
             &params
         ));
 
-        // Tampered sequence should fail
         let mut tampered = jitter_values.clone();
-        tampered[2].1 += 500; // Add 500μs to third value
+        tampered[2].1 += 500;
         assert!(!MouseStegoEngine::verify_sequence(
             &seed, doc_hash, &tampered, &params
         ));
@@ -370,14 +353,11 @@ mod tests {
             ..Default::default()
         });
 
-        // Use the first move
         assert!(engine.next_jitter().is_some());
         assert!(engine.next_jitter().is_none());
 
-        // Reset
         engine.reset();
 
-        // First move should work again
         assert!(engine.next_jitter().is_some());
     }
 }

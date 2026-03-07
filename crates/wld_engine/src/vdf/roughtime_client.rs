@@ -148,7 +148,6 @@ impl RoughtimeClient {
             ));
         }
 
-        // Return median of the agreeing group
         let median_idx = best_start + best_count / 2;
         let chosen = timestamps[median_idx].0;
         log::info!(

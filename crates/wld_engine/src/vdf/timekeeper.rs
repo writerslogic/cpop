@@ -17,7 +17,7 @@ pub enum TimeAnchor {
     },
     Physical {
         duration_since_anchor: Duration,
-        vdf_proof: [u8; 32], // Output of the VDF
+        vdf_proof: [u8; 32],
     },
     Offline,
 }

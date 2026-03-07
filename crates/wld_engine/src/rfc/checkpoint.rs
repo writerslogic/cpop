@@ -82,7 +82,7 @@ impl CheckpointRfc {
             timestamp,
             content_hash,
             prev_hash,
-            checkpoint_hash: [0u8; 32], // Computed later
+            checkpoint_hash: [0u8; 32],
             vdf_proof: None,
             jitter_binding: None,
             chain_mac: None,
@@ -113,28 +113,24 @@ impl CheckpointRfc {
 
         let mut hasher = Sha256::new();
 
-        // Domain separation
         hasher.update(b"witnessd-checkpoint-v3");
 
-        // Hash core fields
         hasher.update(self.sequence.to_be_bytes());
         hasher.update(self.checkpoint_id.as_bytes());
         hasher.update(self.timestamp.to_be_bytes());
         hasher.update(self.content_hash);
         hasher.update(self.prev_hash);
 
-        // Hash optional VDF proof
         if let Some(vdf) = &self.vdf_proof {
-            hasher.update(b"\x01"); // present marker
+            hasher.update(b"\x01");
             hasher.update(vdf.challenge);
             hasher.update(vdf.output);
             hasher.update(vdf.iterations.to_be_bytes());
             hasher.update(vdf.duration_ms.to_be_bytes());
         } else {
-            hasher.update(b"\x00"); // absent marker
+            hasher.update(b"\x00");
         }
 
-        // Hash optional jitter binding
         if let Some(jitter) = &self.jitter_binding {
             hasher.update(b"\x01");
             hasher.update(jitter.entropy_commitment.hash);
@@ -142,7 +138,6 @@ impl CheckpointRfc {
             hasher.update(b"\x00");
         }
 
-        // Hash optional chain MAC
         if let Some(mac) = &self.chain_mac {
             hasher.update(b"\x01");
             hasher.update(mac);
@@ -157,22 +152,18 @@ impl CheckpointRfc {
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
-        // Content hash must be non-zero
         if self.content_hash == [0u8; 32] {
             errors.push("content_hash is zero".into());
         }
 
-        // Checkpoint hash must be non-zero (except during construction)
         if self.checkpoint_hash == [0u8; 32] {
             errors.push("checkpoint_hash is zero (call compute_hash first)".into());
         }
 
-        // Validate VDF if present
         if let Some(vdf) = &self.vdf_proof {
             errors.extend(vdf.validate());
         }
 
-        // Validate jitter binding if present
         if let Some(jitter) = &self.jitter_binding {
             errors.extend(jitter.validate());
         }
@@ -252,13 +243,13 @@ impl BioBinding {
     /// Returns `true` if Hurst exponent is in the human typing range (0.55..0.85).
     pub fn is_hurst_human_like(&self) -> bool {
         let h = self.hurst_millibits.raw();
-        h > 550 && h < 850 // 0.55 < H < 0.85
+        h > 550 && h < 850
     }
 
     /// Returns `true` if rho is in the acceptable range (0.5..=0.95).
     pub fn is_correlation_valid(&self) -> bool {
         let rho = self.rho_millibits.raw();
-        (500..=950).contains(&rho) // 0.5 <= rho <= 0.95
+        (500..=950).contains(&rho)
     }
 }
 

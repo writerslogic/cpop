@@ -215,10 +215,8 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         }
     }
 
-    // Compute overall status from trust vector (weakest non-zero component)
     let overall = tv.overall_status();
 
-    // Build seal claims
     let seal_claims = SealClaims {
         h1: seal.h1,
         h2: seal.h2,
@@ -227,10 +225,8 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         public_key: seal.public_key,
     };
 
-    // Evidence reference = SHA-256 of packet
     let evidence_ref = packet_hash(packet)?;
 
-    // Build the appraisal
     let appraisal = EarAppraisal {
         ear_status: overall,
         ear_trustworthiness_vector: Some(tv),

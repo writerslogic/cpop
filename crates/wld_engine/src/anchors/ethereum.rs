@@ -82,7 +82,6 @@ impl EthereumProvider {
             return Self::new(rpc_url, contract, &private_key, chain_id);
         }
 
-        // Deprecated legacy path
         if std::env::var("ETHEREUM_RAW_TX_TEMPLATE").is_ok() {
             log::warn!(
                 "ETHEREUM_RAW_TX_TEMPLATE is deprecated. \

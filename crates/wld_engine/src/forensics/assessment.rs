@@ -264,7 +264,6 @@ pub fn calculate_assessment_score(
 
     score -= ANOMALY_PENALTY * anomaly_count as f64;
 
-    // Reward steady biological cadence (supports human authorship)
     if biological_cadence_score > BIOLOGICAL_CADENCE_THRESHOLD {
         score += BIOLOGICAL_CADENCE_REWARD
             * (biological_cadence_score - BIOLOGICAL_CADENCE_THRESHOLD)

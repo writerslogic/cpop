@@ -441,7 +441,6 @@ impl PacketRfc {
             ));
         }
 
-        // Correlation threshold should be 700 (0.7)
         if self.correlation_proof.threshold != 700 {
             errors.push(format!(
                 "non-standard correlation threshold: {} (expected 700)",
@@ -517,12 +516,10 @@ mod tests {
         let packet = create_test_packet();
         let json = serde_json::to_string(&packet).unwrap();
 
-        // Check integer keys are used
-        assert!(json.contains("\"1\":1")); // version
-        assert!(json.contains("\"2\":{")); // vdf
-        assert!(json.contains("\"3\":{")); // jitter_seal
+        assert!(json.contains("\"1\":1"));
+        assert!(json.contains("\"2\":{"));
+        assert!(json.contains("\"3\":{"));
 
-        // Deserialize back
         let decoded: PacketRfc = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.version, packet.version);
     }

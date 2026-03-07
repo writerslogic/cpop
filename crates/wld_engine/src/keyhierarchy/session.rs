@@ -155,19 +155,16 @@ impl Session {
             return Err(KeyHierarchyError::RatchetWiped);
         }
 
-        // Get counter from binding
         let binding = provider.bind(&checkpoint_hash).ok();
         let current_counter = binding.as_ref().and_then(|b| b.monotonic_counter);
 
-        // Compute counter delta from previous checkpoint
         let previous_counter = self.signatures.last().and_then(|s| s.counter_value);
         let counter_delta = match (current_counter, previous_counter) {
             (Some(curr), Some(prev)) => Some(curr.saturating_sub(prev)),
-            (Some(_), None) => Some(0), // first checkpoint with counter
+            (Some(_), None) => Some(0),
             _ => None,
         };
 
-        // Derive signing key
         let signing_seed = Zeroizing::new(hkdf_expand(
             self.ratchet.current.as_bytes(),
             SIGNING_KEY_DOMAIN.as_bytes(),
@@ -194,7 +191,6 @@ impl Session {
         self.ratchet.current = next_ratchet.into();
         self.ratchet.ordinal += 1;
 
-        // Advance the sealed store's counter (anti-rollback ratchet)
         if let (Some(store), Some(counter)) = (sealed_store, current_counter) {
             if let Err(e) = store.advance_counter(counter) {
                 log::warn!("Failed to advance sealed counter: {}", e);
@@ -235,7 +231,6 @@ impl Session {
             mmr_root,
         );
 
-        // Generate closing TPM quote with entangled nonce
         if let Ok(quote) = provider.quote(&closing_nonce, &[0, 4, 7]) {
             self.certificate.end_quote = serde_json::to_vec(&quote)
                 .map_err(|e| {
@@ -245,7 +240,6 @@ impl Session {
                 .ok();
         }
 
-        // Record end counter and reboot state
         if let Ok(binding) = provider.bind(&closing_nonce) {
             self.certificate.end_counter = binding.monotonic_counter;
         }
@@ -254,7 +248,6 @@ impl Session {
             self.certificate.end_restart_count = Some(clock.restart_count);
         }
 
-        // End session (wipes ratchet)
         self.end();
     }
 
@@ -269,7 +262,6 @@ impl Session {
             mmr_root,
         );
 
-        // Generate TPM quote over PCRs [0, 4, 7] with entangled nonce
         if let Ok(quote) = provider.quote(&start_nonce, &[0, 4, 7]) {
             self.certificate.start_quote = serde_json::to_vec(&quote)
                 .map_err(|e| {
@@ -279,12 +271,10 @@ impl Session {
                 .ok();
         }
 
-        // Record start counter
         if let Ok(binding) = provider.bind(&start_nonce) {
             self.certificate.start_counter = binding.monotonic_counter;
         }
 
-        // Record start reboot state
         if let Ok(clock) = provider.clock_info() {
             self.certificate.start_reset_count = Some(clock.reset_count);
             self.certificate.start_restart_count = Some(clock.restart_count);
@@ -363,7 +353,6 @@ impl Session {
         let response = puf.get_response(&challenge)?;
         let key = Zeroizing::new(hkdf_expand(&response, b"ratchet-recovery-key-v2", &[])?);
 
-        // Plaintext: ratchet_state(32) || ordinal(8)
         let mut plaintext = Zeroizing::new(vec![0u8; 40]);
         plaintext[..32].copy_from_slice(self.ratchet.current.as_bytes());
         plaintext[32..40].copy_from_slice(&self.ratchet.ordinal.to_be_bytes());
@@ -371,7 +360,6 @@ impl Session {
         let cipher = ChaCha20Poly1305::new_from_slice(&*key)
             .map_err(|e| KeyHierarchyError::Crypto(format!("AEAD init: {e}")))?;
 
-        // Generate random 12-byte nonce
         let mut nonce_bytes = [0u8; 12];
         getrandom::getrandom(&mut nonce_bytes)
             .map_err(|e| KeyHierarchyError::Crypto(format!("rng: {e}")))?;
@@ -381,7 +369,6 @@ impl Session {
             .encrypt(aead_nonce, plaintext.as_ref())
             .map_err(|e| KeyHierarchyError::Crypto(format!("AEAD encrypt: {e}")))?;
 
-        // Format: version(1) || aead_nonce(12) || ciphertext+tag
         let mut encrypted = Vec::with_capacity(1 + 12 + ciphertext.len());
         encrypted.push(0x02); // version 2 = AEAD
         encrypted.extend_from_slice(&nonce_bytes);

@@ -256,13 +256,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let key = SigningKey::from_bytes(&[0x42; 32]);
 
-        // Enqueue in one instance
         {
             let queue = OfflineQueue::new(dir.path()).unwrap();
             queue.enqueue(b"data1", None, "hw-1", &key).unwrap();
         }
 
-        // Read from a new instance
         {
             let queue = OfflineQueue::new(dir.path()).unwrap();
             assert_eq!(queue.len().unwrap(), 1);

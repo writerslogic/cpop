@@ -25,7 +25,6 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
 ) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    // Detect protocol: read first 2 bytes to check for magic sequences.
     let mut peek_buf = [0u8; 2];
     if stream.read_exact(&mut peek_buf).await.is_err() {
         return;
@@ -42,9 +41,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
         return;
     };
 
-    // For secure JSON, read version byte and perform ECDH key exchange
     let secure_session = if protocol == WireProtocol::SecureJson {
-        // Read protocol version byte (1 byte after magic)
         let mut version_buf = [0u8; 1];
         if stream.read_exact(&mut version_buf).await.is_err() {
             log::error!(
@@ -103,7 +100,6 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
             break;
         }
 
-        // Decrypt if secure session is active
         let plaintext = if let Some(ref session) = secure_session {
             match session.decrypt(&msg_buf) {
                 Ok(pt) => pt,
@@ -128,7 +124,6 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
 
         match decode_for_protocol(&plaintext, decode_protocol) {
             Ok(msg) => {
-                // Reject paths with traversal components before any handler sees them
                 if let Err(e) = msg.validate_paths() {
                     log::warn!(
                         "IPC: path validation failed on {}: {} (rejecting)",
@@ -151,7 +146,6 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     continue;
                 }
 
-                // Per-category rate limit check (shared across all connections)
                 let key = rate_limit_key(&msg);
                 let allowed = shared_rate_limiter.lock_recover().check(key);
                 if !allowed {
@@ -259,7 +253,6 @@ impl IpcServer {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
-        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -277,7 +270,6 @@ impl IpcServer {
 
     #[cfg(target_os = "windows")]
     pub fn bind(path: PathBuf) -> Result<Self> {
-        // On Windows, use the path to derive a pipe name
         let pipe_name = format!(
             r"\\.\pipe\writerslogic-{}",
             path.file_name()
@@ -311,7 +303,6 @@ impl IpcServer {
         }
         #[cfg(target_os = "windows")]
         {
-            // Windows Named Pipe implementation using tokio
             loop {
                 let server = named_pipe::ServerOptions::new()
                     .first_pipe_instance(false)
@@ -355,7 +346,6 @@ impl IpcServer {
                         }
                     }
                     _ = shutdown_rx.recv() => {
-                        // Clean up socket file on shutdown
                         let _ = std::fs::remove_file(&self.socket_path);
                         break;
                     }
@@ -425,32 +415,27 @@ fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
     }
 
     unsafe {
-        // Get client process ID
         let pipe_handle = HANDLE(pipe.as_raw_handle());
         let mut client_pid: u32 = 0;
         GetNamedPipeClientProcessId(pipe_handle, &mut client_pid)
             .map_err(|e| anyhow!("GetNamedPipeClientProcessId failed: {}", e))?;
 
-        // Get server (current) process token → user SID
         let mut server_token_raw = HANDLE::default();
         OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut server_token_raw)
             .map_err(|e| anyhow!("OpenProcessToken (server) failed: {}", e))?;
         let server_token = OwnedHandle(server_token_raw);
         let server_sid = get_token_user_sid(server_token.0)?;
 
-        // Get client process handle (RAII-wrapped)
         let client_process_raw = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, client_pid)
             .map_err(|e| anyhow!("OpenProcess (client PID {}) failed: {}", client_pid, e))?;
         let client_process = OwnedHandle(client_process_raw);
 
-        // Get client process token (RAII-wrapped)
         let mut client_token_raw = HANDLE::default();
         OpenProcessToken(client_process.0, TOKEN_QUERY, &mut client_token_raw)
             .map_err(|e| anyhow!("OpenProcessToken (client) failed: {}", e))?;
         let client_token = OwnedHandle(client_token_raw);
         let client_sid = get_token_user_sid(client_token.0)?;
 
-        // Compare SIDs
         if server_sid != client_sid {
             return Err(anyhow!(
                 "IPC peer SID mismatch: client SID {} != server SID {}",
@@ -470,7 +455,6 @@ unsafe fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Resul
     use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
     use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
-    // First call to get buffer size
     let mut size: u32 = 0;
     let _ = GetTokenInformation(token, TokenUser, None, 0, &mut size);
 

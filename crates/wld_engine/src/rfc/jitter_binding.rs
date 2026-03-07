@@ -462,7 +462,6 @@ impl JitterBinding {
             errors.push("entropy bits is negative".into());
         }
 
-        // Percentiles must be monotonically non-decreasing
         for i in 1..5 {
             if self.summary.percentiles[i] < self.summary.percentiles[i - 1] {
                 errors.push(format!(
@@ -599,7 +598,6 @@ impl From<&crate::analysis::labyrinth::LabyrinthAnalysis> for LabyrinthStructure
 
 /// Estimate percentiles from mean and std assuming normal distribution.
 fn estimate_percentiles(mean: f64, std: f64) -> [f64; 5] {
-    // z-scores for 10th, 25th, 50th, 75th, 90th percentiles
     let z_scores = [-1.28, -0.67, 0.0, 0.67, 1.28];
     [
         (mean + z_scores[0] * std).max(0.0),

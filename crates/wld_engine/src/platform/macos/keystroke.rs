@@ -124,7 +124,6 @@ impl KeystrokeMonitor {
                 let keycode = event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYCODE) as u16;
                 let zone = crate::jitter::keycode_to_zone(keycode);
 
-                // Record keystroke in hybrid session
                 if let Ok(mut s) = session_clone.lock() {
                     let _ = s.record_keystroke(keycode);
                 }

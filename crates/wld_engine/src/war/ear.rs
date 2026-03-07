@@ -17,7 +17,6 @@ use crate::rfc::wire_types::attestation::{
 /// EAT profile URI per draft-condrey-rats-pop-protocol.
 pub const POP_EAR_PROFILE: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
 
-// --- CWT / EAR standard CBOR integer keys ---
 pub const CWT_KEY_IAT: i64 = 6;
 pub const CWT_KEY_EAT_PROFILE: i64 = 265;
 pub const CWT_KEY_SUBMODS: i64 = 266;
@@ -26,7 +25,6 @@ pub const EAR_KEY_TRUST_VECTOR: i64 = 1001;
 pub const EAR_KEY_POLICY_ID: i64 = 1003;
 pub const EAR_KEY_VERIFIER_ID: i64 = 1004;
 
-// --- WritersLogic private-use extension keys ---
 pub const POP_KEY_SEAL: i64 = 70001;
 pub const POP_KEY_EVIDENCE_REF: i64 = 70002;
 pub const POP_KEY_ENTROPY: i64 = 70003;
@@ -217,7 +215,6 @@ pub struct EarAppraisal {
     #[serde(rename = "1003", default, skip_serializing_if = "Option::is_none")]
     pub ear_appraisal_policy_id: Option<String>,
 
-    // --- WritersLogic private-use extensions (70000+) ---
     /// WAR seal claims
     #[serde(rename = "70001", default, skip_serializing_if = "Option::is_none")]
     pub pop_seal: Option<SealClaims>,
@@ -291,8 +288,6 @@ impl EarToken {
         self.submods.get("pop")
     }
 }
-
-// --- Hex serde helpers for fixed-size byte arrays ---
 
 mod hex_bytes_32 {
     use serde::{self, Deserialize, Deserializer, Serializer};

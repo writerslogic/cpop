@@ -185,7 +185,6 @@ pub fn ffi_revoke_voice_consent() -> FfiResult {
 pub fn ffi_reset_fingerprint() -> FfiResult {
     match with_manager(|mgr| {
         mgr.reset_session();
-        // Delete all stored profiles
         let profiles = mgr
             .list_profiles()
             .map_err(|e| format!("Failed to list profiles: {e}"))?;

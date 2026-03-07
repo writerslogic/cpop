@@ -8,7 +8,6 @@ fn main() {
     let secret = [42u8; 32];
     let engine = PureJitter::default();
 
-    // Build an evidence chain
     let inputs: Vec<&[u8]> = vec![b"key1", b"key2", b"key3", b"key4", b"key5"];
     let mut chain = EvidenceChain::with_secret(secret);
 
@@ -23,7 +22,6 @@ fn main() {
         );
     }
 
-    // Verify chain integrity
     println!("\nVerifying chain integrity...");
     let integrity_ok = chain.verify_integrity(&secret);
     println!(
@@ -31,14 +29,12 @@ fn main() {
         if integrity_ok { "PASSED" } else { "FAILED" }
     );
 
-    // Verify against original inputs
     let chain_ok = chain.verify_chain(&secret, &inputs, &engine);
     println!(
         "  Chain verification: {}",
         if chain_ok { "PASSED" } else { "FAILED" }
     );
 
-    // Try with wrong inputs
     let wrong_inputs: Vec<&[u8]> = vec![b"wrong1", b"wrong2", b"wrong3", b"wrong4", b"wrong5"];
     let wrong_ok = chain.verify_chain(&secret, &wrong_inputs, &engine);
     println!(
@@ -50,7 +46,6 @@ fn main() {
         }
     );
 
-    // Tamper detection demo
     println!("\nTamper detection demo...");
     let mut tampered_chain = chain.clone();
     if let Some(Evidence::Pure { jitter, .. }) = tampered_chain.records.get_mut(2) {

@@ -131,7 +131,7 @@ fn test_evaluate_basic_policy() {
         checkpoint_interval_cov: 0.4,
         monotonic_growth_ratio: 0.95,
         behavioral_entropy: 0.7,
-        attestation_tier_level: 3, // HardwareBound
+        attestation_tier_level: 3,
         chain_verified: true,
         checkpoint_count: 10,
     };
@@ -189,12 +189,12 @@ fn test_evaluate_threshold_checking() {
     };
 
     let evaluated = policy.evaluate(&metrics);
-    assert!(evaluated.check_thresholds()); // 1.0 >= 0.5
+    assert!(evaluated.check_thresholds());
 
     let metrics_bad = EvidenceMetrics {
         chain_verified: false,
         ..Default::default()
     };
     let evaluated_bad = policy.evaluate(&metrics_bad);
-    assert!(!evaluated_bad.check_thresholds()); // 0.0 < 0.5
+    assert!(!evaluated_bad.check_thresholds());
 }

@@ -346,7 +346,6 @@ impl Session {
 
     /// Post-deserialization integrity checks to detect tampered session files.
     fn verify_loaded_integrity(&self) -> crate::error::Result<()> {
-        // Hash chain: each sample's hash matches recomputation, chain links valid
         self.verify_chain()?;
 
         // Temporal: started_at must precede ended_at
@@ -367,7 +366,6 @@ impl Session {
             }
         }
 
-        // Sample-level monotonicity: timestamps and keystroke counts must increase
         for (i, sample) in self.samples.iter().enumerate() {
             if i > 0 {
                 let prev = &self.samples[i - 1];
@@ -389,7 +387,6 @@ impl Session {
             }
         }
 
-        // keystroke_count field must be >= the last sample's count
         if let Some(last) = self.samples.last() {
             if self.keystroke_count < last.keystroke_count {
                 return Err(Error::validation(

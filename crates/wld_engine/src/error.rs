@@ -200,7 +200,6 @@ impl Error {
     }
 }
 
-// Legacy code migration: String <-> Error conversions
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Error::Legacy(s)

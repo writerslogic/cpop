@@ -51,7 +51,6 @@ impl LinuxWindowProvider {
         if let Ok(term) = std::env::var("TERM") {
             return term;
         }
-        // Fallback: parent process name from /proc
         if let Ok(ppid_status) = std::fs::read_to_string("/proc/self/status") {
             for line in ppid_status.lines() {
                 if let Some(ppid) = line.strip_prefix("PPid:\t") {
@@ -71,7 +70,6 @@ impl WindowProvider for LinuxWindowProvider {
     fn get_active_window(&self) -> Option<WindowInfo> {
         let app_name = Self::detect_terminal_app();
 
-        // Use cwd as a basic "document" hint
         let cwd = std::env::current_dir()
             .ok()
             .map(|p| p.to_string_lossy().into_owned());
@@ -91,7 +89,6 @@ impl WindowProvider for LinuxWindowProvider {
 
 impl SentinelFocusTracker for StubSentinelFocusTracker {
     fn start(&self) -> Result<()> {
-        // Degraded mode: witnessing works without precise window focus tracking
         log::info!("Starting degraded focus monitor (no X11/Wayland integration)");
         log::info!("Witnessing will work but without precise window focus tracking");
         Ok(())

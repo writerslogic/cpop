@@ -20,8 +20,6 @@ extern "C" {
 pub fn harden_process() {
     #[cfg(target_os = "macos")]
     disable_debugging_macos();
-
-    // Linux and Windows hardening could be added here
 }
 
 /// Prevents debuggers from attaching to this process on macOS.
@@ -31,8 +29,6 @@ pub fn harden_process() {
 #[cfg(target_os = "macos")]
 fn disable_debugging_macos() {
     unsafe {
-        // PT_DENY_ATTACH = 31
-        // pid 0 means current process
         let ret = ptrace(PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0);
         if ret != 0 {
             log::warn!(

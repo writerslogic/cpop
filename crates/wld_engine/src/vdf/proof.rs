@@ -172,7 +172,6 @@ mod tests {
         let input = [5u8; 32];
         let mut proof = VdfProof::compute_iterations(input, 100);
 
-        // Tamper with output
         proof.output[0] ^= 0xFF;
 
         assert!(!proof.verify());
@@ -183,11 +182,10 @@ mod tests {
         let input = [5u8; 32];
         let proof = VdfProof::compute_iterations(input, 100);
 
-        // Create a proof with wrong iterations but same output
         let tampered = VdfProof {
             input: proof.input,
             output: proof.output,
-            iterations: 99, // Wrong!
+            iterations: 99,
             duration: proof.duration,
         };
 
@@ -199,9 +197,8 @@ mod tests {
         let input = [5u8; 32];
         let proof = VdfProof::compute_iterations(input, 100);
 
-        // Create a proof with wrong input
         let tampered = VdfProof {
-            input: [6u8; 32], // Wrong!
+            input: [6u8; 32],
             output: proof.output,
             iterations: proof.iterations,
             duration: proof.duration,
@@ -219,7 +216,6 @@ mod tests {
         };
         let input = [1u8; 32];
 
-        // Very short duration should still use min_iterations
         let proof = VdfProof::compute(input, Duration::from_nanos(1), params).expect("compute");
         assert!(proof.iterations >= params.min_iterations);
         assert!(proof.verify());
@@ -234,14 +230,13 @@ mod tests {
         };
         let input = [1u8; 32];
 
-        // Very long duration should fail due to max_iterations
         let err = VdfProof::compute(input, Duration::from_secs(1000), params).unwrap_err();
         assert!(err.contains("exceeds maximum"));
     }
 
     #[test]
     fn test_decode_too_short() {
-        let short_data = vec![0u8; 50]; // Should be at least 80
+        let short_data = vec![0u8; 50];
         let err = VdfProof::decode(&short_data).unwrap_err();
         assert!(err.contains("too short"));
     }
@@ -262,7 +257,6 @@ mod tests {
         };
 
         let min_time = proof.min_elapsed_time(params);
-        // 5000 iterations at 1000/sec = 5 seconds
         assert_eq!(min_time, Duration::from_secs(5));
     }
 
@@ -278,7 +272,6 @@ mod tests {
 
         assert!(valid);
         assert!(!progress_updates.is_empty());
-        // Last update should be 100%
         assert!(progress_updates.last().map(|&p| p >= 0.99).unwrap_or(false));
     }
 
@@ -296,7 +289,6 @@ mod tests {
         let input = [0u8; 32];
         let proof = VdfProof::compute_iterations(input, 0);
 
-        // Zero iterations means output equals input
         assert_eq!(proof.input, proof.output);
         assert!(proof.verify());
     }
@@ -306,7 +298,6 @@ mod tests {
         let input = [42u8; 32];
         let proof = VdfProof::compute_iterations(input, 1);
 
-        // One iteration is just one hash
         let expected_output: [u8; 32] = Sha256::digest(&input).into();
         assert_eq!(proof.output, expected_output);
         assert!(proof.verify());
@@ -352,13 +343,11 @@ mod tests {
         let proof = VdfProof::compute_iterations([0u8; 32], 100);
         let encoded = proof.encode();
 
-        // 32 (input) + 32 (output) + 8 (iterations) + 8 (duration) = 80
         assert_eq!(encoded.len(), 80);
     }
 
     #[test]
     fn test_sequential_verification() {
-        // Verify that doing iterations 0..50 then 50..100 equals 0..100
         let input = [7u8; 32];
         let half = compute_chain(input, 50);
         let full_via_half = compute_chain(half, 50);
@@ -375,8 +364,7 @@ mod tests {
             max_iterations: 10_000,
         };
 
-        // Duration that would give exactly max_iterations
-        let duration = Duration::from_secs(10); // 1000 iter/sec * 10 sec = 10000
+        let duration = Duration::from_secs(10);
         let input = [1u8; 32];
 
         let proof = VdfProof::compute(input, duration, params).expect("compute");

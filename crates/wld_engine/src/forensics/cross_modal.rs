@@ -188,7 +188,6 @@ fn check_content_growth_rate(input: &CrossModalInput<'_>) -> CrossModalCheck {
     let chars_per_sec = input.document_length as f64 / input.session_duration_sec;
     let passed = chars_per_sec <= MAX_SUSTAINED_CHARS_PER_SEC;
 
-    // Smooth scoring: 1.0 at 0 cps, drops linearly above threshold
     let score = if chars_per_sec <= MAX_SUSTAINED_CHARS_PER_SEC {
         1.0
     } else {
@@ -223,7 +222,6 @@ fn check_edit_checkpoint_ratio(input: &CrossModalInput<'_>) -> CrossModalCheck {
 
     let events_per_checkpoint = input.events.len() as f64 / input.checkpoint_count as f64;
 
-    // Expect roughly 1-100 events per checkpoint; outside this range is suspicious
     let passed =
         (EVENTS_PER_CHECKPOINT_MIN..=EVENTS_PER_CHECKPOINT_MAX).contains(&events_per_checkpoint);
     let score = if passed { 1.0 } else { FAILED_CHECK_SCORE };
@@ -357,18 +355,13 @@ fn check_jitter_content_entanglement(
         document_length
     };
 
-    // Keystrokes should be >= document_length (because of edits, deletions, nav keys)
-    // and jitter samples should track keystroke count.
-    // Ratio of keystrokes to content: typically 1.1x to 3.0x for normal editing
     let ks_content_ratio = keystroke_source as f64 / document_length as f64;
-    // Ratio of jitter to keystrokes: should be close to 1.0
     let jitter_ks_ratio = if keystroke_source > 0 {
         jitter_count as f64 / keystroke_source as f64
     } else {
         0.0
     };
 
-    // Content with no keystrokes at all = highly suspicious
     let passed = ks_content_ratio >= KS_CONTENT_MIN && jitter_ks_ratio >= JITTER_KS_MIN;
 
     let score = if ks_content_ratio >= KS_CONTENT_OPTIMAL && jitter_ks_ratio >= JITTER_KS_OPTIMAL {
@@ -471,7 +464,6 @@ mod tests {
         };
 
         let result = analyze_cross_modal(&input);
-        // High jitter count with few edits is suspicious
         assert!(result.score < 0.9);
     }
 

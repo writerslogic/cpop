@@ -144,7 +144,6 @@ impl BatchVerifier {
             let semaphore = Arc::clone(&semaphore);
 
             let handle = thread::spawn(move || {
-                // Acquire a worker slot, blocking until one is available
                 {
                     let (lock, cvar) = &*semaphore;
                     let mut count = cvar
@@ -169,7 +168,6 @@ impl BatchVerifier {
 
                 let mut res = results.lock_recover();
                 res[index] = outcome;
-                // Release the worker slot and notify a waiting thread
                 let (lock, cvar) = &*semaphore;
                 let mut count = lock.lock_recover();
                 *count += 1;
@@ -225,7 +223,6 @@ mod tests {
 
     #[test]
     fn test_chain_input_entangled_differs_from_legacy() {
-        // Entangled and legacy chain inputs should produce different results
         let legacy = chain_input([1u8; 32], [2u8; 32], 7);
         let entangled = chain_input_entangled([2u8; 32], [3u8; 32], [1u8; 32], 7);
         assert_ne!(legacy, entangled);
@@ -233,7 +230,6 @@ mod tests {
 
     #[test]
     fn test_chain_input_entangled_sensitive_to_vdf_output() {
-        // Changing the previous VDF output changes the result
         let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
         let input2 = chain_input_entangled([4u8; 32], [2u8; 32], [3u8; 32], 7);
         assert_ne!(input1, input2);
@@ -241,7 +237,6 @@ mod tests {
 
     #[test]
     fn test_chain_input_entangled_sensitive_to_jitter() {
-        // Changing the jitter hash changes the result
         let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
         let input2 = chain_input_entangled([1u8; 32], [5u8; 32], [3u8; 32], 7);
         assert_ne!(input1, input2);
@@ -249,7 +244,6 @@ mod tests {
 
     #[test]
     fn test_chain_input_entangled_sensitive_to_content() {
-        // Changing the content hash changes the result
         let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
         let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [6u8; 32], 7);
         assert_ne!(input1, input2);
@@ -257,7 +251,6 @@ mod tests {
 
     #[test]
     fn test_chain_input_entangled_sensitive_to_ordinal() {
-        // Changing the ordinal changes the result
         let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
         let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 8);
         assert_ne!(input1, input2);

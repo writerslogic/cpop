@@ -55,7 +55,6 @@ impl SealedIdentityStore {
             }
         }
 
-        // Derive the master seed from PUF
         let identity = derive_master_identity(puf)?;
         let challenge = Sha256::digest(format!("{}-challenge", "witnessd-identity-v1").as_bytes());
         let puf_response = puf.get_response(&challenge)?;
@@ -65,7 +64,6 @@ impl SealedIdentityStore {
             b"master-seed",
         )?;
 
-        // Seal the seed with TPM
         let caps = self.provider.capabilities();
         let sealed_seed = if caps.supports_sealing {
             self.provider
@@ -325,12 +323,10 @@ impl SealedIdentityStore {
     fn software_wrap(&self, seed: &[u8]) -> Result<Vec<u8>, SealedIdentityError> {
         let machine_salt = self.machine_salt();
 
-        // Generate random salt for HKDF
         let mut random_salt = [0u8; 32];
         getrandom::getrandom(&mut random_salt)
             .map_err(|e| SealedIdentityError::SealFailed(format!("rng: {e}")))?;
 
-        // Derive key via HKDF(ikm=machine_salt, salt=random_salt, info=domain)
         let hk = Hkdf::<Sha256>::new(Some(&random_salt), &machine_salt);
         let mut key = [0u8; 32];
         hk.expand(b"witnessd-software-wrap-v2", &mut key)
@@ -339,7 +335,6 @@ impl SealedIdentityStore {
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
             .map_err(|e| SealedIdentityError::SealFailed(format!("AEAD init: {e}")))?;
 
-        // Generate random 12-byte nonce for AEAD
         let mut nonce_bytes = [0u8; 12];
         getrandom::getrandom(&mut nonce_bytes)
             .map_err(|e| SealedIdentityError::SealFailed(format!("rng: {e}")))?;

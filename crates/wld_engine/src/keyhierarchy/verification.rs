@@ -52,7 +52,6 @@ pub fn verify_checkpoint_signatures(
             .verify(&sig.checkpoint_hash, &signature)
             .map_err(|_| KeyHierarchyError::SignatureFailed)?;
 
-        // Validate hardware counter monotonicity
         if let Some(current) = sig.counter_value {
             if let Some(prev) = prev_counter {
                 if current < prev {
@@ -61,7 +60,6 @@ pub fn verify_checkpoint_signatures(
                         sig.ordinal, current, prev,
                     )));
                 }
-                // Validate delta matches actual difference
                 if let Some(delta) = sig.counter_delta {
                     if delta != current - prev {
                         return Err(KeyHierarchyError::Crypto(format!(
@@ -91,7 +89,6 @@ pub fn verify_session_binding(
         warnings: Vec::new(),
     };
 
-    // Check counter progression
     if let (Some(start), Some(end)) = (cert.start_counter, cert.end_counter) {
         if end < start {
             return Err(KeyHierarchyError::Crypto(format!(
@@ -102,7 +99,6 @@ pub fn verify_session_binding(
         report.counter_delta = Some(end - start);
     }
 
-    // Check for reboot mid-session (reset_count changed)
     if let (Some(start_rc), Some(end_rc)) = (cert.start_reset_count, cert.end_reset_count) {
         if end_rc != start_rc {
             report.reboot_detected = true;
@@ -113,7 +109,6 @@ pub fn verify_session_binding(
         }
     }
 
-    // Check for restart mid-session (restart_count changed)
     if let (Some(start_rst), Some(end_rst)) = (cert.start_restart_count, cert.end_restart_count) {
         if end_rst != start_rst {
             report.restart_detected = true;

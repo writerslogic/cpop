@@ -26,7 +26,6 @@ pub mod time_evidence;
 pub mod vdf;
 pub mod wire_types;
 
-// Re-export commonly used types
 pub use biology::{
     BiologyInvariantClaim, BiologyMeasurements, BiologyScoringParameters, ValidationStatus,
 };

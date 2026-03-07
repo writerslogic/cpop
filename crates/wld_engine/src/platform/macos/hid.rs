@@ -23,7 +23,6 @@ pub fn enumerate_hid_keyboards() -> Result<Vec<HIDDeviceInfo>> {
             return Err(anyhow!("Failed to create HID manager"));
         }
 
-        // Create matching dictionary for keyboards
         let match_dict = CFDictionaryCreateMutable(
             kCFAllocatorDefault,
             0,
@@ -73,14 +72,12 @@ pub fn enumerate_hid_keyboards() -> Result<Vec<HIDDeviceInfo>> {
             CFRelease(match_dict as *mut std::ffi::c_void);
         }
 
-        // Open manager
         let result = IOHIDManagerOpen(manager, K_IO_HID_OPTIONS_TYPE_NONE);
         if result != 0 {
             CFRelease(manager);
             return Err(anyhow!("Failed to open HID manager: {}", result));
         }
 
-        // Get devices
         let devices_set = IOHIDManagerCopyDevices(manager);
         if devices_set.is_null() {
             IOHIDManagerClose(manager, K_IO_HID_OPTIONS_TYPE_NONE);
@@ -140,7 +137,6 @@ unsafe fn get_device_int_property(device: *mut std::ffi::c_void, key: &str) -> O
         return None;
     }
 
-    // Verify the value is actually a CFNumber before casting
     if CFGetTypeID(value) != CFNumberGetTypeID() {
         return None;
     }
@@ -156,7 +152,6 @@ unsafe fn get_device_string_property(device: *mut std::ffi::c_void, key: &str) -
         return None;
     }
 
-    // Verify the value is actually a CFString before casting
     if CFGetTypeID(value) != CFStringGetTypeID() {
         return None;
     }

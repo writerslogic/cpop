@@ -10,7 +10,6 @@ use tempfile::TempDir;
 
 fn temp_document() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("create temp dir");
-    // Canonicalize path to handle macOS /var -> /private/var symlink
     let canonical_dir = dir.path().canonicalize().expect("canonicalize temp dir");
     let path = canonical_dir.join("test_document.txt");
     fs::write(&path, b"initial content").expect("write initial content");
@@ -70,7 +69,7 @@ fn test_single_commit() {
     assert_eq!(checkpoint.ordinal, 0);
     assert_eq!(checkpoint.previous_hash, [0u8; 32]);
     assert_eq!(checkpoint.message, Some("first commit".to_string()));
-    assert!(checkpoint.vdf.is_none()); // First commit has no VDF
+    assert!(checkpoint.vdf.is_none());
     assert_ne!(checkpoint.content_hash, [0u8; 32]);
     assert_ne!(checkpoint.hash, [0u8; 32]);
 }

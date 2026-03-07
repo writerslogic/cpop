@@ -195,12 +195,10 @@ mod tests {
             data: vec![5, 6, 7],
         };
 
-        // Test CBOR auto-detection
         let cbor_encoded = encode(&original, Format::Cbor).unwrap();
         let cbor_decoded: TestStruct = decode_auto(&cbor_encoded).unwrap();
         assert_eq!(original, cbor_decoded);
 
-        // Test JSON auto-detection
         let json_encoded = encode(&original, Format::Json).unwrap();
         let json_decoded: TestStruct = decode_auto(&json_encoded).unwrap();
         assert_eq!(original, json_decoded);

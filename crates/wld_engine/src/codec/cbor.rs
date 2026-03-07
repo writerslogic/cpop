@@ -49,15 +49,12 @@ pub fn encode_compact_ref<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 
 /// Encode a value with a semantic tag.
 pub fn encode_tagged<T: Serialize>(value: &T, tag: u64) -> Result<Vec<u8>> {
-    // First encode the value to get the CBOR representation
     let inner = encode(value)?;
     let inner_value: Value =
         ciborium::from_reader(&inner[..]).map_err(|e| CodecError::CborDecode(e.to_string()))?;
 
-    // Wrap in semantic tag
     let tagged = Value::Tag(tag, Box::new(inner_value));
 
-    // Encode the tagged value
     let mut buffer = Vec::new();
     ciborium::into_writer(&tagged, &mut buffer)
         .map_err(|e| CodecError::CborEncode(e.to_string()))?;
@@ -79,7 +76,6 @@ pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Res
                 });
             }
 
-            // Re-encode inner value and decode as T
             let mut inner_bytes = Vec::new();
             ciborium::into_writer(&*inner, &mut inner_bytes)
                 .map_err(|e| CodecError::CborEncode(e.to_string()))?;
@@ -244,7 +240,6 @@ mod tests {
         let encoded = encode_ppp(&packet).unwrap();
         assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_PPP));
 
-        // Untagged value
         let untagged = encode(&packet).unwrap();
         assert_eq!(extract_tag(&untagged), None);
     }

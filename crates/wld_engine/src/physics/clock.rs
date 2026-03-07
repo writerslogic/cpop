@@ -15,20 +15,17 @@ impl ClockSkew {
                 let start_tsc = std::arch::x86_64::_rdtsc();
                 let start_wall = Instant::now();
 
-                // Active wait for a tiny fraction to measure drift
-                // This is a "Silent Physics" measurement
                 let mut current = start_wall;
                 while current.duration_since(start_wall) < Duration::from_micros(100) {
                     current = Instant::now();
                 }
 
                 let end_tsc = std::arch::x86_64::_rdtsc();
-                end_tsc - start_tsc // Returns cycles per ~100us
+                end_tsc - start_tsc
             }
         }
         #[cfg(target_arch = "aarch64")]
         {
-            // Apple Silicon / ARM64 equivalent using CNTPCT_EL0
             let mut cnt: u64;
             unsafe {
                 std::arch::asm!("mrs {}, cntpct_el0", out(reg) cnt);

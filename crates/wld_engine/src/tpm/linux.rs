@@ -30,7 +30,6 @@ use tss_esapi::traits::{Marshall, UnMarshall};
 use tss_esapi::tss2_esys::TPMT_TK_HASHCHECK;
 use tss_esapi::Context;
 
-// TPM2 constants for creating null tickets
 const TPM2_RH_NULL: u32 = 0x40000007;
 const TPM2_ST_HASHCHECK: u16 = 0x8024;
 
@@ -49,13 +48,9 @@ pub struct LinuxTpmProvider {
 }
 
 pub fn try_init() -> Option<LinuxTpmProvider> {
-    // Try /dev/tpmrm0 first (resource manager), fall back to /dev/tpm0
     let tcti = TctiNameConf::Device("/dev/tpmrm0".parse().unwrap_or_default());
     let context = Context::new(tcti)
-        .or_else(|_| {
-            // Fall back to default device (/dev/tpm0)
-            Context::new(TctiNameConf::Device(DeviceConfig::default()))
-        })
+        .or_else(|_| Context::new(TctiNameConf::Device(DeviceConfig::default())))
         .ok()?;
 
     let mut state = LinuxState {
@@ -217,7 +212,6 @@ impl Provider for LinuxTpmProvider {
 
         let data_hash = Sha256::digest(data).to_vec();
 
-        // Create a null hashcheck ticket
         let null_ticket = HashcheckTicket::try_from(TPMT_TK_HASHCHECK {
             tag: TPM2_ST_HASHCHECK,
             hierarchy: TPM2_RH_NULL,
@@ -253,7 +247,6 @@ impl Provider for LinuxTpmProvider {
 
         let session = create_policy_session(&mut state, &pcrs)?;
 
-        // Create a sealing object public template
         let sealing_public = create_sealing_public()?;
 
         let result = state
@@ -275,7 +268,6 @@ impl Provider for LinuxTpmProvider {
             .out_public
             .marshall()
             .map_err(|_| TPMError::Sealing("public".into()))?;
-        // Private is a buffer type - use value() to get bytes
         let priv_bytes = result.out_private.value().to_vec();
 
         let mut sealed = Vec::with_capacity(8 + pub_bytes.len() + priv_bytes.len());
@@ -317,7 +309,6 @@ impl Provider for LinuxTpmProvider {
 
         let public =
             Public::unmarshall(pub_bytes).map_err(|_| TPMError::Unsealing("public".into()))?;
-        // Private is a buffer type - use try_from to create from bytes
         let private =
             Private::try_from(priv_bytes).map_err(|_| TPMError::Unsealing("private".into()))?;
 
@@ -330,7 +321,6 @@ impl Provider for LinuxTpmProvider {
 
         let session = create_policy_session(&mut state, &default_pcr_selection())?;
 
-        // Set the policy session on the context
         state.context.set_sessions((Some(session), None, None));
 
         let unsealed = state
@@ -338,7 +328,6 @@ impl Provider for LinuxTpmProvider {
             .unseal(load_handle.into())
             .map_err(|_| TPMError::Unsealing("unseal".into()))?;
 
-        // Clear sessions
         state.context.clear_sessions();
 
         if let Err(e) = state.context.flush_context(load_handle.into()) {

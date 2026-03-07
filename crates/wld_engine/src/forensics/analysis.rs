@@ -150,7 +150,6 @@ pub fn analyze_forensics_ext(
     if let Some(samples) = jitter_samples {
         metrics.cadence = analyze_cadence(samples);
 
-        // Hurst exponent from inter-keystroke intervals (R/S method)
         let iki_intervals: Vec<f64> = samples
             .windows(2)
             .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64)
@@ -162,7 +161,6 @@ pub fn analyze_forensics_ext(
             }
         }
 
-        // Biological cadence steadiness
         metrics.biological_cadence_score =
             crate::physics::biological::BiologicalCadence::analyze(samples);
 
@@ -184,7 +182,7 @@ pub fn analyze_forensics_ext(
             STEG_PENALTY
         };
 
-        // "Perfect Replay" detection: steg looks valid but behavioral is suspicious
+        // Steg looks valid but behavioral is suspicious — likely a perfect replay attack
         if forgery.is_suspicious && metrics.steg_confidence > STEG_ALERT_THRESHOLD {
             metrics.anomaly_count += 1;
         }
@@ -197,8 +195,7 @@ pub fn analyze_forensics_ext(
     let anomalies = detect_anomalies(events, regions, &metrics.primary);
     metrics.anomaly_count += anomalies.len();
 
-    // Cross-modal consistency analysis
-    // Skip when context is clearly default/unpopulated to avoid false positives
+    // Skip cross-modal when context is default/unpopulated to avoid false positives
     let skip_cross_modal = context.checkpoint_count == 0 && context.document_length == 0;
 
     if !skip_cross_modal {
@@ -212,7 +209,6 @@ pub fn analyze_forensics_ext(
         };
         let cm_result = super::cross_modal::analyze_cross_modal(&cm_input);
 
-        // Penalize assessment if cross-modal checks fail
         let cm_penalty = match cm_result.verdict {
             super::cross_modal::CrossModalVerdict::Inconsistent => 2,
             super::cross_modal::CrossModalVerdict::Marginal => 1,

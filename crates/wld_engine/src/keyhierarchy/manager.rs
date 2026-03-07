@@ -49,7 +49,6 @@ impl SessionManager {
         puf: Box<dyn PUFProvider>,
         document_path: impl Into<String>,
     ) -> Result<Self, KeyHierarchyError> {
-        // Get identity from sealed store (public data, no unseal needed)
         let identity = sealed
             .public_identity()
             .map_err(|e| KeyHierarchyError::Crypto(format!("sealed identity error: {}", e)))?;
@@ -57,12 +56,10 @@ impl SessionManager {
         let document_path = document_path.into();
         let doc_hash = crate::crypto::hash_file(Path::new(&document_path))?;
 
-        // Unseal the master key — this is TPM-protected
         let master_key = sealed
             .unseal_master_key()
             .map_err(|e| KeyHierarchyError::Crypto(format!("unseal master key: {}", e)))?;
 
-        // Start session using the unsealed key directly
         let session = start_session_with_key(&master_key, doc_hash)?;
 
         Ok(Self {
@@ -120,7 +117,6 @@ impl ChainSigner {
         self.chain
             .commit(message)
             .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))?;
-        // Sign the checkpoint stored in the chain so verify_detailed sees signed data.
         let cp = self
             .chain
             .checkpoints
@@ -138,7 +134,6 @@ impl ChainSigner {
         self.chain
             .commit_with_vdf_duration(message, vdf_duration)
             .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))?;
-        // Sign the checkpoint stored in the chain so verify_detailed sees signed data.
         let cp = self
             .chain
             .checkpoints

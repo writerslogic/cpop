@@ -41,7 +41,6 @@ pub(crate) fn cmd_init() -> Result<()> {
         seed.zeroize();
         let pub_key = priv_key.verifying_key();
 
-        // Write key with restrictive permissions atomically on Unix
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -63,7 +62,6 @@ pub(crate) fn cmd_init() -> Result<()> {
         priv_key = load_signing_key(dir)?;
     }
 
-    // Initialize master identity from PUF (key hierarchy)
     let puf_seed_path = dir.join("puf_seed");
     if !puf_seed_path.exists() {
         println!("Initializing master identity from PUF...");
@@ -73,7 +71,6 @@ pub(crate) fn cmd_init() -> Result<()> {
         let identity = derive_master_identity(&puf)
             .map_err(|e| anyhow!("Failed to derive master identity: {}", e))?;
 
-        // Save identity public key
         let identity_path = dir.join("identity.json");
         let identity_data = serde_json::json!({
             "version": 1,
@@ -96,7 +93,6 @@ pub(crate) fn cmd_init() -> Result<()> {
         println!("  Existing Master Identity: {}", identity.fingerprint);
     }
 
-    // Create secure SQLite database
     let db_path = dir.join("events.db");
     if !db_path.exists() {
         println!("Creating secure event database...");

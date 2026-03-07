@@ -76,7 +76,6 @@ pub fn ffi_get_forensics(path: String) -> FfiForensicResult {
 
     let profile = crate::forensics::ForensicEngine::evaluate_authorship(&path, &events);
 
-    // Run full forensic analysis to get the real assessment_score
     let event_data: Vec<crate::forensics::EventData> = events
         .iter()
         .map(|e| crate::forensics::EventData {

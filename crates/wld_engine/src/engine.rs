@@ -261,13 +261,11 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
     let (forensic_score, is_paste) = {
         let mut session = inner.jitter_session.lock_recover();
         if session.samples.is_empty() {
-            // No keystrokes: automatic save or background modification
             (1.0, false)
         } else {
             let cadence = crate::forensics::analyze_cadence(&session.samples);
             let score = crate::forensics::calculate_cadence_score(&cadence);
 
-            // Paste heuristic: size delta >> keystroke count
             let keystroke_count = session.samples.len() as i64;
             let is_paste = i64::from(size_delta) > (keystroke_count * 5) && size_delta > 50;
 
@@ -317,7 +315,6 @@ fn load_or_create_device_identity(data_dir: &Path) -> Result<([u8; 16], String)>
         return Ok(identity);
     }
 
-    // Fallback: legacy file-based identity
     if path.exists() {
         let content = fs::read_to_string(&path)?;
         let value: serde_json::Value = serde_json::from_str(&content)?;
@@ -371,7 +368,6 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
         return Ok(key.to_vec());
     }
 
-    // Fallback: legacy file-based key
     if path.exists() {
         let key = fs::read(&path)?;
         if key.len() == 32 {

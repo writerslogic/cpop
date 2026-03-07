@@ -109,7 +109,6 @@ pub fn to_verifiable_credential(ear: &EarToken, author_did: &str) -> Result<Veri
 
     let document_ref = appr.pop_evidence_ref.as_ref().map(hex::encode);
 
-    // ISO 8601 duration from seconds
     let chain_duration = appr.pop_chain_duration.map(|secs| {
         let hours = secs / 3600;
         let minutes = (secs % 3600) / 60;

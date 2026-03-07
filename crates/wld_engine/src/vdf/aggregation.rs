@@ -264,7 +264,6 @@ impl MerkleVdfBuilder {
             return hex::encode(digest);
         }
 
-        // Hash each leaf string into a 32-byte SHA-256 digest
         let mut level: Vec<[u8; 32]> = self
             .leaf_hashes
             .iter()
@@ -354,7 +353,6 @@ mod tests {
         assert_eq!(proof.checkpoint_count, 3);
         assert_eq!(proof.total_iterations, 6000);
         assert!(!proof.root_hash.is_empty());
-        // Root hash must be valid 64-char lowercase hex (SHA-256)
         assert_eq!(proof.root_hash.len(), 64);
         assert!(proof.root_hash.chars().all(|c| c.is_ascii_hexdigit()));
     }

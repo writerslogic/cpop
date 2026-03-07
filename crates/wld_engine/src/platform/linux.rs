@@ -68,7 +68,6 @@ fn check_input_device_access() -> bool {
                 let path = entry.path();
                 if path.to_string_lossy().contains("event") {
                     if let Ok(device) = Device::open(&path) {
-                        // Check if it's a keyboard
                         if device
                             .supported_keys()
                             .is_some_and(|keys| keys.contains(Key::KEY_A))
@@ -165,7 +164,6 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
             Err(_) => continue,
         };
 
-        // Check if it's a keyboard (has KEY_A)
         let is_keyboard = device
             .supported_keys()
             .is_some_and(|keys| keys.contains(Key::KEY_A));
@@ -202,7 +200,6 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
 fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
     let name_lower = name.to_lowercase();
 
-    // Known virtual device indicators in name
     if name_lower.contains("uinput")
         || name_lower.contains("virtual")
         || name_lower.contains("xtest")
@@ -213,13 +210,10 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
         return true;
     }
 
-    // Empty or missing phys path indicates virtual
     if phys.is_none_or(|p| p.is_empty()) {
         return true;
     }
 
-    // Zero VID:PID is suspicious (though some embedded keyboards have this)
-    // Check if name looks like a real keyboard
     if vendor_id == 0
         && product_id == 0
         && !name_lower.contains("keyboard")
@@ -236,23 +230,17 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
 /// Get information about the currently focused application and document.
 /// This uses various methods depending on the display server.
 pub fn get_active_focus() -> Result<FocusInfo> {
-    // Try X11 first (most common)
     #[cfg(feature = "x11")]
     if let Ok(focus) = get_x11_focus() {
         return Ok(focus);
     }
 
-    // Fallback: try reading from /proc
     get_focus_from_proc()
 }
 
 /// Get focus info by examining /proc.
 /// This is a fallback method that may not work in all cases.
 fn get_focus_from_proc() -> Result<FocusInfo> {
-    // This is a simplified implementation
-    // A full implementation would use X11 or D-Bus
-
-    // Try to find the active terminal or text editor
     let entries = fs::read_dir("/proc")?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -303,13 +291,11 @@ fn get_x11_focus() -> Result<FocusInfo> {
     let (conn, screen_num) = x11rb::connect(None)?;
     let screen = &conn.setup().roots[screen_num];
 
-    // Get _NET_ACTIVE_WINDOW atom
     let active_window_atom = conn
         .intern_atom(false, b"_NET_ACTIVE_WINDOW")?
         .reply()?
         .atom;
 
-    // Get the active window
     let reply = conn
         .get_property(
             false,
@@ -327,7 +313,6 @@ fn get_x11_focus() -> Result<FocusInfo> {
 
     let window_id = u32::from_ne_bytes(reply.value[0..4].try_into()?);
 
-    // Get WM_NAME
     let wm_name_atom = conn.intern_atom(false, b"_NET_WM_NAME")?.reply()?.atom;
     let utf8_string_atom = conn.intern_atom(false, b"UTF8_STRING")?.reply()?.atom;
 
@@ -341,7 +326,6 @@ fn get_x11_focus() -> Result<FocusInfo> {
         None
     };
 
-    // Get _NET_WM_PID
     let pid_atom = conn.intern_atom(false, b"_NET_WM_PID")?.reply()?.atom;
     let pid_reply = conn
         .get_property(false, window_id, pid_atom, AtomEnum::CARDINAL, 0, 1)?
@@ -353,7 +337,6 @@ fn get_x11_focus() -> Result<FocusInfo> {
         0
     };
 
-    // Get process name from /proc
     let app_name = if pid > 0 {
         fs::read_to_string(format!("/proc/{}/comm", pid))
             .unwrap_or_default()
@@ -521,7 +504,6 @@ impl LinuxKeystrokeCapture {
                             continue;
                         }
 
-                        // Only process key-down events (value = 1)
                         if event.value() != 1 {
                             continue;
                         }
@@ -540,7 +522,6 @@ impl LinuxKeystrokeCapture {
                             }
                         }
 
-                        // In strict mode, reject virtual device events
                         if !is_physical && strict {
                             continue;
                         }
@@ -561,7 +542,6 @@ impl LinuxKeystrokeCapture {
                         };
 
                         if tx.send(keystroke).is_err() {
-                            // Receiver dropped, exit thread
                             return;
                         }
                     }
@@ -753,7 +733,6 @@ pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
             Err(_) => continue,
         };
 
-        // Check if it's a mouse (has REL_X and REL_Y)
         let is_mouse = device.supported_relative_axes().is_some_and(|axes| {
             axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
         });
@@ -790,7 +769,6 @@ pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
 fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
     let name_lower = name.to_lowercase();
 
-    // Known virtual mouse indicators in name
     if name_lower.contains("uinput")
         || name_lower.contains("virtual")
         || name_lower.contains("xtest")
@@ -798,17 +776,14 @@ fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: 
         || name_lower.contains("py-evdev")
         || name_lower.contains("synthetic")
         || name_lower.contains("wacom")
-    // Exclude tablet devices
     {
         return true;
     }
 
-    // Empty or missing phys path indicates virtual
     if phys.is_none_or(|p| p.is_empty()) {
         return true;
     }
 
-    // Zero VID:PID is suspicious
     if vendor_id == 0
         && product_id == 0
         && !name_lower.contains("mouse")
@@ -897,7 +872,6 @@ impl LinuxMouseCapture {
                 Ok(events) => {
                     for event in events {
                         if event.event_type() != EventType::RELATIVE {
-                            // SYN event indicates end of batch - emit accumulated movement
                             if event.event_type() == EventType::SYNCHRONIZATION
                                 && (pending_dx != 0.0 || pending_dy != 0.0)
                             {
@@ -910,10 +884,9 @@ impl LinuxMouseCapture {
                                     (pos.0, pos.1)
                                 };
 
-                                // Check if this is a micro-movement (idle jitter)
                                 let magnitude =
                                     (pending_dx * pending_dx + pending_dy * pending_dy).sqrt();
-                                let is_micro = magnitude < 5.0; // < 5 pixels
+                                let is_micro = magnitude < 5.0;
 
                                 let mouse_event = MouseEvent {
                                     timestamp_ns: now,
@@ -952,7 +925,7 @@ impl LinuxMouseCapture {
                                 RelativeAxisType::REL_Y => {
                                     pending_dy += event.value() as f64;
                                 }
-                                _ => {} // Ignore wheel, etc.
+                                _ => {}
                             }
                         }
                     }
@@ -1076,15 +1049,14 @@ mod tests {
 
     #[test]
     fn test_linux_keycode_to_zone() {
-        // Test some known key mappings
-        assert_eq!(linux_keycode_to_zone(30), 0); // A - left pinky
-        assert_eq!(linux_keycode_to_zone(31), 1); // S - left ring
-        assert_eq!(linux_keycode_to_zone(32), 2); // D - left middle
-        assert_eq!(linux_keycode_to_zone(33), 3); // F - left index
-        assert_eq!(linux_keycode_to_zone(36), 4); // J - right index
-        assert_eq!(linux_keycode_to_zone(37), 5); // K - right middle
-        assert_eq!(linux_keycode_to_zone(38), 6); // L - right ring
-        assert_eq!(linux_keycode_to_zone(28), 7); // ENTER - right pinky
+        assert_eq!(linux_keycode_to_zone(30), 0);
+        assert_eq!(linux_keycode_to_zone(31), 1);
+        assert_eq!(linux_keycode_to_zone(32), 2);
+        assert_eq!(linux_keycode_to_zone(33), 3);
+        assert_eq!(linux_keycode_to_zone(36), 4);
+        assert_eq!(linux_keycode_to_zone(37), 5);
+        assert_eq!(linux_keycode_to_zone(38), 6);
+        assert_eq!(linux_keycode_to_zone(28), 7);
     }
 
     #[test]
@@ -1114,7 +1086,6 @@ mod tests {
 
     #[test]
     fn test_is_virtual_mouse() {
-        // Virtual mice
         assert!(is_virtual_mouse("uinput mouse", None, 0, 0));
         assert!(is_virtual_mouse("Virtual Mouse", Some(""), 0, 0));
         assert!(is_virtual_mouse(
@@ -1130,7 +1101,6 @@ mod tests {
             0
         ));
 
-        // Physical mice
         assert!(!is_virtual_mouse(
             "Logitech USB Mouse",
             Some("usb-0000:00:1d.0-1.4/input0"),

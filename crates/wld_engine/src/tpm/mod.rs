@@ -93,14 +93,11 @@ pub fn generate_attestation_report(
     attestation_nonce: &[u8],
     evidence_hash: [u8; 32],
 ) -> Result<AttestationReport, TPMError> {
-    // 1. Combine nonces and hash for the quote
     let mut quote_payload = Vec::new();
     quote_payload.extend_from_slice(verifier_nonce);
     quote_payload.extend_from_slice(attestation_nonce);
     quote_payload.extend_from_slice(&evidence_hash);
 
-    // 2. Request hardware quote (using the combined payload as the nonce for the TPM quote)
-    // In TPM terms, we often hash this payload to fit in the nonce field (usually 32 bytes).
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(&quote_payload);
@@ -108,14 +105,13 @@ pub fn generate_attestation_report(
 
     let quote = provider.quote(&quote_nonce, DEFAULT_QUOTE_PCRS)?;
 
-    // 3. Create the report
     Ok(AttestationReport {
         report_id: uuid::Uuid::new_v4().to_string(),
         verifier_nonce: verifier_nonce.to_vec(),
         attestation_nonce: attestation_nonce.to_vec(),
         evidence_hash,
         hardware_quote: quote,
-        signature: Vec::new(), // The quote itself contains the hardware signature
+        signature: Vec::new(),
     })
 }
 

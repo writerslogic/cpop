@@ -55,7 +55,6 @@ impl Sentinel {
         let shadow = ShadowManager::new(&config.shadow_dir)?;
         let (session_events_tx, _) = broadcast::channel(100);
 
-        // Temporary seed; replaced when signing key is set
         let mut mouse_stego_seed = [0u8; 32];
         use rand::RngCore;
         rand::rng().fill_bytes(&mut mouse_stego_seed);
@@ -247,7 +246,6 @@ impl Sentinel {
         if let Ok(mut keystroke_capture) = keystroke_capture_result {
             if let Ok(sync_rx) = keystroke_capture.start() {
                 let sync_rx: std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent> = sync_rx;
-                // Bridge std::sync::mpsc -> tokio::mpsc on a dedicated thread
                 let handle = std::thread::spawn(move || {
                     while keystroke_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
@@ -279,7 +277,6 @@ impl Sentinel {
         if let Ok(mut mouse_capture) = mouse_capture_result {
             if let Ok(sync_rx) = mouse_capture.start() {
                 let sync_rx: std::sync::mpsc::Receiver<crate::platform::MouseEvent> = sync_rx;
-                // Bridge std::sync::mpsc -> tokio::mpsc on a dedicated thread
                 let handle = std::thread::spawn(move || {
                     while mouse_running.load(Ordering::SeqCst) {
                         match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
@@ -332,13 +329,11 @@ impl Sentinel {
                     }
 
                     Some(event) = mouse_rx.recv() => {
-                        // Record micro-movements only during active typing (idle jitter)
                         let is_during_typing = last_keystroke_time.elapsed() < Duration::from_secs(2);
                         if is_during_typing && event.is_micro_movement() {
                             mouse_idle_stats.write_recover().record(&event);
                         }
 
-                        // Advance stego jitter chain for evidence binding
                         if let Ok(mut engine) = mouse_stego_engine.write() {
                             engine.next_jitter();
                         }
@@ -414,7 +409,6 @@ impl Sentinel {
             let _ = tx.send(()).await;
         }
 
-        // Join bridge threads (they exit once `running` is false)
         let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
         for handle in handles {
             let _ = handle.join();
@@ -512,13 +506,11 @@ impl Sentinel {
             ObfuscatedString::new(&path_str),
         );
 
-        // Initial content hash for change detection
         if let Ok(hash) = compute_file_hash(&path_str) {
             session.initial_hash = Some(hash.clone());
             session.current_hash = Some(hash);
         }
 
-        // Open WAL for this session
         let wal_path = self
             .config
             .wal_dir

@@ -35,7 +35,6 @@ pub enum DetectedFormat {
 
 /// Detect the format version from raw data.
 pub fn detect_version(data: &[u8]) -> Result<DetectedFormat> {
-    // Check for ASCII armor
     if let Ok(text) = std::str::from_utf8(data) {
         if text.contains("BEGIN WITNESSD AUTHORSHIP RECORD") {
             if text.contains("Version: WAR/2.0") {
@@ -48,7 +47,6 @@ pub fn detect_version(data: &[u8]) -> Result<DetectedFormat> {
         }
     }
 
-    // Check for CBOR tag
     if codec::cbor::has_tag(data, codec::CBOR_TAG_WAR) {
         return Ok(DetectedFormat::EarCbor);
     }

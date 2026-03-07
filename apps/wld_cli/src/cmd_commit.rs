@@ -127,7 +127,6 @@ pub(crate) fn cmd_commit(file_path: &PathBuf, message: Option<String>) -> Result
 pub(crate) fn cmd_commit_smart(file: Option<PathBuf>, message: Option<String>) -> Result<()> {
     let dir = writerslogic_dir()?;
 
-    // Auto-init if not initialized
     if !crate::smart_defaults::is_initialized(&dir) {
         println!("WitnessD is not initialized.");
         if crate::smart_defaults::ask_confirmation("Initialize now?", true)? {
@@ -138,11 +137,9 @@ pub(crate) fn cmd_commit_smart(file: Option<PathBuf>, message: Option<String>) -
         }
     }
 
-    // Warn about VDF calibration
     let config = ensure_dirs()?;
     crate::smart_defaults::ensure_vdf_calibrated_with_warning(config.vdf.iterations_per_second);
 
-    // Determine file to commit
     let file_path = match file {
         Some(f) => {
             let path_str = f.to_string_lossy();
@@ -164,7 +161,6 @@ pub(crate) fn cmd_commit_smart(file: Option<PathBuf>, message: Option<String>) -
 fn select_file_for_commit() -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
 
-    // First check for tracked files in current directory
     if let Ok(db) = open_secure_store() {
         let tracked = db.list_files()?;
         let cwd_str = cwd.to_string_lossy();
@@ -191,7 +187,6 @@ fn select_file_for_commit() -> Result<PathBuf> {
         }
     }
 
-    // Fall back to recently modified files
     let recent = crate::smart_defaults::get_recently_modified_files(&cwd, 10);
     if recent.is_empty() {
         return Err(anyhow!(
