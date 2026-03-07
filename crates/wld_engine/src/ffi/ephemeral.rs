@@ -29,8 +29,7 @@ const MAX_CONTENT_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 const MAX_STATEMENT_LEN: usize = 1000;
 /// Max content snapshots per session (30s interval × ~8.3 hours).
 const MAX_SNAPSHOTS: usize = 1000;
-/// Max jitter intervals stored per session.
-const MAX_JITTER_INTERVALS: usize = 100_000;
+use crate::rfc::wire_types::components::MAX_JITTER_INTERVALS;
 /// Sessions expire after 30 minutes of inactivity.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 

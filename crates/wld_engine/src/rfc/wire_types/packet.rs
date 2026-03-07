@@ -97,8 +97,7 @@ const MAX_CHECKPOINTS: usize = 10_000;
 const MAX_LIMITATIONS: usize = 100;
 /// Maximum number of presence challenges.
 const MAX_PRESENCE_CHALLENGES: usize = 100;
-/// Maximum length of any single string field (profile_uri, limitation text).
-const MAX_STRING_LEN: usize = 4096;
+use super::MAX_STRING_LEN;
 
 impl EvidencePacketWire {
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {

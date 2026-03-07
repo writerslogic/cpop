@@ -259,8 +259,7 @@ pub struct AttestationResultWire {
 const MAX_ABSENCE_CLAIMS: usize = 100;
 /// Max warnings.
 const MAX_WARNINGS: usize = 100;
-/// Max string length for warnings/claims.
-const MAX_STRING_LEN: usize = 4096;
+use super::MAX_STRING_LEN;
 /// Max forensic flags.
 const MAX_FORENSIC_FLAGS: usize = 200;
 

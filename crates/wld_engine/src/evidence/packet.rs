@@ -159,10 +159,10 @@ impl Packet {
             if let Some(digest) = &bv.digest {
                 if let Some(sig) = &bv.digest_signature {
                     let public_key_bytes = self.signing_public_key.ok_or_else(|| {
-                        Error::Signature("missing signing public key for baseline".into())
+                        Error::signature("missing signing public key for baseline")
                     })?;
                     let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-                        .map_err(|e| Error::Signature(format!("invalid public key: {e}")))?;
+                        .map_err(|e| Error::signature(format!("invalid public key: {e}")))?;
 
                     let signature = Signature::from_bytes(
                         sig.as_slice()
@@ -174,13 +174,13 @@ impl Packet {
                         .map_err(|e| Error::evidence(format!("digest serialize failed: {e}")))?;
 
                     public_key.verify(&digest_cbor, &signature).map_err(|e| {
-                        Error::Signature(format!("baseline digest signature invalid: {e}"))
+                        Error::signature(format!("baseline digest signature invalid: {e}"))
                     })?;
                 }
 
                 let public_key_bytes = self
                     .signing_public_key
-                    .ok_or_else(|| Error::Signature("missing signing public key".into()))?;
+                    .ok_or_else(|| Error::signature("missing signing public key"))?;
                 let mut hasher = Sha256::new();
                 hasher.update(public_key_bytes);
                 let actual_fp = hasher.finalize();
@@ -356,13 +356,11 @@ impl Packet {
         match (expected_nonce, &self.verifier_nonce) {
             (Some(expected), Some(actual)) => {
                 if expected != actual {
-                    return Err(Error::Signature("verifier nonce mismatch".into()));
+                    return Err(Error::signature("verifier nonce mismatch"));
                 }
             }
             (Some(_), None) => {
-                return Err(Error::Signature(
-                    "expected verifier nonce but none present".into(),
-                ));
+                return Err(Error::signature("expected verifier nonce but none present"));
             }
             // Nonce present but not expected is fine -- signature still binds to it
             (None, Some(_)) => {}
@@ -371,20 +369,20 @@ impl Packet {
 
         let signature_bytes = self
             .packet_signature
-            .ok_or_else(|| Error::Signature("packet not signed".into()))?;
+            .ok_or_else(|| Error::signature("packet not signed"))?;
         let public_key_bytes = self
             .signing_public_key
-            .ok_or_else(|| Error::Signature("missing signing public key".into()))?;
+            .ok_or_else(|| Error::signature("missing signing public key"))?;
 
         let public_key = VerifyingKey::from_bytes(&public_key_bytes)
-            .map_err(|e| Error::Signature(format!("invalid public key: {e}")))?;
+            .map_err(|e| Error::signature(format!("invalid public key: {e}")))?;
 
         let signature = Signature::from_bytes(&signature_bytes);
 
         let payload = self.signing_payload();
         public_key
             .verify(&payload, &signature)
-            .map_err(|e| Error::Signature(format!("signature verification failed: {e}")))?;
+            .map_err(|e| Error::signature(format!("signature verification failed: {e}")))?;
 
         Ok(())
     }

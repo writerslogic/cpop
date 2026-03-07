@@ -12,7 +12,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
-use crate::keyhierarchy::{derive_master_identity, MasterIdentity, PUFProvider};
+use crate::keyhierarchy::{
+    crypto::IDENTITY_DOMAIN, derive_master_identity, MasterIdentity, PUFProvider,
+};
 use crate::rfc::wire_types::AttestationTier;
 use crate::tpm::{ClockInfo, ProviderHandle};
 
@@ -56,11 +58,11 @@ impl SealedIdentityStore {
         }
 
         let identity = derive_master_identity(puf)?;
-        let challenge = Sha256::digest(format!("{}-challenge", "witnessd-identity-v1").as_bytes());
+        let challenge = Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
         let puf_response = puf.get_response(&challenge)?;
         let mut seed = crate::keyhierarchy::hkdf_expand(
             &puf_response,
-            b"witnessd-identity-v1",
+            IDENTITY_DOMAIN.as_bytes(),
             b"master-seed",
         )?;
 
@@ -231,11 +233,11 @@ impl SealedIdentityStore {
                 Ok(s) => s,
                 Err(_) => {
                     let challenge =
-                        Sha256::digest(format!("{}-challenge", "witnessd-identity-v1").as_bytes());
+                        Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
                     let puf_response = puf.get_response(&challenge)?;
                     let seed = crate::keyhierarchy::hkdf_expand(
                         &puf_response,
-                        b"witnessd-identity-v1",
+                        IDENTITY_DOMAIN.as_bytes(),
                         b"master-seed",
                     )?;
                     seed.to_vec()

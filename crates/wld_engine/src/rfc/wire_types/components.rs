@@ -177,7 +177,7 @@ const MAX_MERKLE_DEPTH: usize = 64;
 /// Max hash digest length in bytes.
 const MAX_DIGEST_LEN: usize = 64;
 /// Max jitter intervals per binding.
-const MAX_JITTER_INTERVALS: usize = 100_000;
+pub(crate) const MAX_JITTER_INTERVALS: usize = 100_000;
 
 impl ProcessProof {
     /// Returns `true` if `claimed_duration` falls within the IETF-mandated

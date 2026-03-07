@@ -81,10 +81,6 @@ pub enum Error {
     #[error("not found: {0}")]
     NotFound(String),
 
-    /// Operation not permitted
-    #[error("not permitted: {0}")]
-    NotPermitted(String),
-
     /// Invalid state for operation
     #[error("invalid state: {0}")]
     InvalidState(String),
@@ -180,6 +176,10 @@ impl Error {
 
     pub fn rfc(msg: impl Into<String>) -> Self {
         Error::Rfc(msg.into())
+    }
+
+    pub fn signature(msg: impl Into<String>) -> Self {
+        Error::Signature(msg.into())
     }
 
     pub fn internal(msg: impl Into<String>) -> Self {

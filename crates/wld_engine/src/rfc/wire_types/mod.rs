@@ -42,6 +42,9 @@ use crate::codec::{CBOR_TAG_PPP, CBOR_TAG_WAR};
 pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_PPP;
 pub const CBOR_TAG_ATTESTATION_RESULT: u64 = CBOR_TAG_WAR;
 
+/// Maximum length of any single string field in wire types.
+pub(super) const MAX_STRING_LEN: usize = 4096;
+
 pub use attestation::{
     AbsenceClaim, AttestationResultWire, EntropyReport, ForensicFlag, ForensicSummary,
     ForgeryCostEstimate,

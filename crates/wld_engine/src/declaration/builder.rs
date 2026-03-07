@@ -97,7 +97,7 @@ impl Builder {
 
     pub fn sign(mut self, signer: &dyn PoPSigner) -> crate::error::Result<Declaration> {
         if let Some(err) = self.err.take() {
-            return Err(Error::Validation(err));
+            return Err(Error::validation(err));
         }
 
         self.validate()?;

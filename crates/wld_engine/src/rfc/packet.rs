@@ -33,7 +33,7 @@ use super::serde_helpers::{hex_bytes_vec, hex_bytes_vec_opt};
 
 /// CBOR semantic tag for evidence packets.
 /// Per draft-condrey-rats-pop CDDL and IANA CBOR tag registry.
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = 1347571280;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = crate::codec::CBOR_TAG_PPP;
 
 /// RFC-compliant evidence packet structure.
 ///
@@ -212,7 +212,7 @@ impl Default for CorrelationProof {
     fn default() -> Self {
         Self {
             rho: RhoMillibits::new(0),
-            threshold: 700, // 0.7 scaled
+            threshold: 700,
         }
     }
 }
