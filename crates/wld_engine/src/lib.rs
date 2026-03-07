@@ -34,6 +34,7 @@ pub mod physics;
 pub mod platform;
 pub mod presence;
 pub mod provenance;
+pub mod report;
 pub mod research;
 pub mod rfc;
 pub mod sealed_chain;

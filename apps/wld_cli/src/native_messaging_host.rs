@@ -258,7 +258,7 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
     // Initial commitment = H(session_id || session_nonce || "genesis")
     let mut genesis_hasher = Sha256::new();
     genesis_hasher.update(session_id.as_bytes());
-    genesis_hasher.update(&session_nonce);
+    genesis_hasher.update(session_nonce);
     genesis_hasher.update(b"genesis");
     let genesis: [u8; 32] = genesis_hasher.finalize().into();
 
