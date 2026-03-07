@@ -112,7 +112,7 @@ pub fn open_secure_store() -> Result<SecureStore> {
     let db_path = dir.join("events.db");
 
     if let Ok(Some(hmac_key)) = wld_engine::identity::SecureStorage::load_hmac_key() {
-        return SecureStore::open(&db_path, hmac_key).map_err(|e| {
+        return SecureStore::open(&db_path, hmac_key.to_vec()).map_err(|e| {
             anyhow!(
                 "Database error: {}\n\n\
                  If this persists, check if another process is using the database.",

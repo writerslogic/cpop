@@ -102,7 +102,7 @@ pub(crate) fn cmd_init() -> Result<()> {
         println!("Creating secure event database...");
 
         let hmac_key = if let Ok(Some(key)) = SecureStorage::load_hmac_key() {
-            key
+            key.to_vec()
         } else {
             derive_hmac_key(&priv_key.to_bytes())
         };
