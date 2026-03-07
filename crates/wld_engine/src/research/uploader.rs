@@ -53,14 +53,15 @@ impl ResearchUploader {
                     match guard.upload().await {
                         Ok(result) => {
                             if result.sessions_uploaded > 0 {
-                                eprintln!(
+                                log::info!(
                                     "[research] Uploaded {} sessions ({} samples)",
-                                    result.sessions_uploaded, result.samples_uploaded
+                                    result.sessions_uploaded,
+                                    result.samples_uploaded
                                 );
                             }
                         }
                         Err(e) => {
-                            eprintln!("[research] Upload failed: {}", e);
+                            log::error!("[research] Upload failed: {}", e);
                             let _ = guard.save();
                         }
                     }

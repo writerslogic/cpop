@@ -119,16 +119,14 @@ impl Sentinel {
     /// Snapshot the current activity fingerprint.
     pub fn current_activity_fingerprint(&self) -> crate::fingerprint::ActivityFingerprint {
         self.activity_accumulator
-            .read()
-            .unwrap()
+            .read_recover()
             .current_fingerprint()
     }
 
     /// Snapshot the current voice fingerprint, if enabled.
     pub fn current_voice_fingerprint(&self) -> Option<crate::fingerprint::VoiceFingerprint> {
         self.voice_collector
-            .read()
-            .unwrap()
+            .read_recover()
             .as_ref()
             .map(|c| c.current_fingerprint())
     }
@@ -429,8 +427,7 @@ impl Sentinel {
 
     pub fn session(&self, path: &str) -> Result<DocumentSession> {
         self.sessions
-            .read()
-            .unwrap()
+            .read_recover()
             .get(path)
             .cloned()
             .ok_or_else(|| SentinelError::SessionNotFound(path.to_string()))
@@ -606,8 +603,7 @@ impl Sentinel {
     pub fn update_baseline(&self) -> anyhow::Result<()> {
         let summary = self
             .activity_accumulator
-            .read()
-            .unwrap()
+            .read_recover()
             .to_session_summary();
         if summary.keystroke_count < 10 {
             return Ok(()); // Need at least 10 keystrokes for meaningful baseline

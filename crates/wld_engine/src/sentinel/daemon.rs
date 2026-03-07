@@ -297,7 +297,7 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
             .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
             .await
         {
-            eprintln!("IPC server error: {}", e);
+            log::error!("IPC server error: {}", e);
         }
     });
 
@@ -365,7 +365,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
             .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
             .await
         {
-            eprintln!("IPC server error: {}", e);
+            log::error!("IPC server error: {}", e);
         }
     });
 
@@ -378,10 +378,10 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
 
         tokio::select! {
             _ = sigterm.recv() => {
-                println!("Received SIGTERM, shutting down...");
+                log::info!("Received SIGTERM, shutting down...");
             }
             _ = sigint.recv() => {
-                println!("Received SIGINT, shutting down...");
+                log::info!("Received SIGINT, shutting down...");
             }
         }
     }
@@ -391,7 +391,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to install Ctrl+C handler");
-        println!("Received shutdown signal, shutting down...");
+        log::info!("Received shutdown signal, shutting down...");
     }
 
     let _ = ipc_shutdown_tx.send(()).await;
@@ -449,9 +449,9 @@ pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     match response {
         IpcMessage::Ok { message } => {
             if let Some(msg) = message {
-                println!("{}", msg);
+                log::info!("{}", msg);
             } else {
-                println!("Now tracking: {}", abs_path.display());
+                log::info!("Now tracking: {}", abs_path.display());
             }
             Ok(())
         }
@@ -461,7 +461,7 @@ pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
                 abs_path.display()
             ))),
             IpcErrorCode::AlreadyTracking => {
-                println!("Already tracking: {}", abs_path.display());
+                log::info!("Already tracking: {}", abs_path.display());
                 Ok(())
             }
             IpcErrorCode::PermissionDenied => Err(SentinelError::Ipc(format!(
@@ -502,9 +502,9 @@ pub fn cmd_untrack(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     match response {
         IpcMessage::Ok { message } => {
             if let Some(msg) = message {
-                println!("{}", msg);
+                log::info!("{}", msg);
             } else {
-                println!("Stopped tracking: {}", abs_path.display());
+                log::info!("Stopped tracking: {}", abs_path.display());
             }
             Ok(())
         }
@@ -514,7 +514,7 @@ pub fn cmd_untrack(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
                 abs_path.display()
             ))),
             IpcErrorCode::NotTracking => {
-                println!("Not currently tracking: {}", abs_path.display());
+                log::info!("Not currently tracking: {}", abs_path.display());
                 Ok(())
             }
             IpcErrorCode::PermissionDenied => Err(SentinelError::Ipc(format!(

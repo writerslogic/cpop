@@ -71,10 +71,7 @@ impl SoftwarePUF {
             let mut data = Zeroizing::new(data);
             if data.len() == 32 {
                 if let Err(e) = crate::identity::SecureStorage::save_seed(&data) {
-                    eprintln!(
-                        "Warning: Failed to migrate PUF seed to secure storage: {}",
-                        e
-                    );
+                    log::warn!("Failed to migrate PUF seed to secure storage: {e}");
                 } else {
                     let _ = fs::remove_file(&self.seed_path);
                 }
@@ -87,10 +84,7 @@ impl SoftwarePUF {
         let seed = self.generate_seed()?;
 
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
-            eprintln!(
-                "Warning: Secure storage unavailable ({}), using file-based storage",
-                e
-            );
+            log::warn!("Secure storage unavailable ({e}), using file-based storage");
             if let Some(parent) = self.seed_path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -175,18 +169,13 @@ impl SoftwarePUF {
         };
 
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
-            eprintln!(
-                "Warning: Secure storage unavailable ({}), using file-based storage",
-                e
-            );
+            log::warn!("Secure storage unavailable ({e}), using file-based storage");
             if let Some(parent) = seed_path.parent() {
                 fs::create_dir_all(parent)?;
             }
             fs::write(seed_path, &seed)?;
-        } else {
-            if seed_path.exists() {
-                let _ = fs::remove_file(seed_path);
-            }
+        } else if seed_path.exists() {
+            let _ = fs::remove_file(seed_path);
         }
 
         Self::new_with_path(seed_path)

@@ -222,7 +222,7 @@ fn start_file_watcher(inner: &Arc<EngineInner>, watch_dirs: Vec<PathBuf>) -> Res
                         if let Err(err) = process_file_event(&inner_clone, &path) {
                             let mut status = inner_clone.status.lock_recover();
                             status.last_event_timestamp_ns = Some(now_ns());
-                            eprintln!("WritersLogic: file event error: {err}");
+                            log::error!("file event error: {err}");
                         }
                     }
                 }
@@ -296,11 +296,7 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
         hardware_counter: None,
     };
 
-    inner
-        .store
-        .lock()
-        .unwrap()
-        .insert_secure_event(&mut event)?;
+    inner.store.lock_recover().insert_secure_event(&mut event)?;
 
     let mut status = inner.status.lock_recover();
     status.events_written += 1;
@@ -326,10 +322,7 @@ fn load_or_create_device_identity(data_dir: &Path) -> Result<([u8; 16], String)>
             .map_err(|_| crate::error::Error::validation("device_id must be exactly 16 bytes"))?;
 
         if let Err(e) = SecureStorage::save_device_identity(&device_id, &machine_id) {
-            eprintln!(
-                "Warning: Failed to migrate device identity to secure storage: {}",
-                e
-            );
+            log::warn!("Failed to migrate device identity to secure storage: {e}");
         } else {
             let _ = fs::remove_file(&path);
         }
@@ -342,10 +335,7 @@ fn load_or_create_device_identity(data_dir: &Path) -> Result<([u8; 16], String)>
     let machine_id = sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
 
     if let Err(e) = SecureStorage::save_device_identity(&device_id, &machine_id) {
-        eprintln!(
-            "Warning: Secure storage unavailable ({}), using file-based storage",
-            e
-        );
+        log::warn!("Secure storage unavailable ({e}), using file-based storage");
         let payload = serde_json::json!({
             "device_id": hex::encode(device_id),
             "machine_id": machine_id,
@@ -372,10 +362,7 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
         let key = fs::read(&path)?;
         if key.len() == 32 {
             if let Err(e) = SecureStorage::save_hmac_key(&key) {
-                eprintln!(
-                    "Warning: Failed to migrate HMAC key to secure storage: {}",
-                    e
-                );
+                log::warn!("Failed to migrate HMAC key to secure storage: {e}");
             } else {
                 let _ = fs::remove_file(&path);
             }
@@ -387,10 +374,7 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
     rand::rng().fill_bytes(&mut key);
 
     if let Err(e) = SecureStorage::save_hmac_key(&key) {
-        eprintln!(
-            "Warning: Secure storage unavailable ({}), using file-based storage",
-            e
-        );
+        log::warn!("Secure storage unavailable ({e}), using file-based storage");
         fs::write(&path, &key)?;
         #[cfg(unix)]
         {

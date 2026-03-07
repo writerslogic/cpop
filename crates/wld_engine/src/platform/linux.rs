@@ -99,15 +99,15 @@ pub fn get_permission_status() -> PermissionStatus {
 pub fn request_all_permissions() -> PermissionStatus {
     let status = get_permission_status();
     if !status.input_devices {
-        eprintln!("Input device access not available.");
-        eprintln!("To grant access, either:");
-        eprintln!("  1. Run as root (not recommended for production)");
-        eprintln!("  2. Add your user to the 'input' group:");
-        eprintln!("     sudo usermod -aG input $USER");
-        eprintln!("     Then log out and back in");
-        eprintln!("  3. Set up a udev rule:");
-        eprintln!("     echo 'KERNEL==\"event*\", SUBSYSTEM==\"input\", TAG+=\"uaccess\"' | sudo tee /etc/udev/rules.d/99-writerslogic.rules");
-        eprintln!("     sudo udevadm control --reload-rules && sudo udevadm trigger");
+        log::warn!("Input device access not available.");
+        log::info!("To grant access, either:");
+        log::info!("  1. Run as root (not recommended for production)");
+        log::info!("  2. Add your user to the 'input' group:");
+        log::info!("     sudo usermod -aG input $USER");
+        log::info!("     Then log out and back in");
+        log::info!("  3. Set up a udev rule:");
+        log::info!("     echo 'KERNEL==\"event*\", SUBSYSTEM==\"input\", TAG+=\"uaccess\"' | sudo tee /etc/udev/rules.d/99-writerslogic.rules");
+        log::info!("     sudo udevadm control --reload-rules && sudo udevadm trigger");
     }
     status
 }
@@ -482,7 +482,7 @@ impl LinuxKeystrokeCapture {
         let mut device = match Device::open(&path) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("Failed to open device {:?}: {}", path, e);
+                log::error!("Failed to open device {:?}: {}", path, e);
                 return;
             }
         };
@@ -548,7 +548,7 @@ impl LinuxKeystrokeCapture {
                 }
                 Err(e) => {
                     if running.load(Ordering::SeqCst) {
-                        eprintln!("Error reading from device {:?}: {}", path, e);
+                        log::error!("Error reading from device {:?}: {}", path, e);
                     }
                     break;
                 }
@@ -853,7 +853,7 @@ impl LinuxMouseCapture {
         let mut device = match Device::open(&path) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("Failed to open mouse device {:?}: {}", path, e);
+                log::error!("Failed to open mouse device {:?}: {}", path, e);
                 return;
             }
         };
@@ -932,7 +932,7 @@ impl LinuxMouseCapture {
                 }
                 Err(e) => {
                     if running.load(Ordering::SeqCst) {
-                        eprintln!("Error reading from mouse device {:?}: {}", path, e);
+                        log::error!("Error reading from mouse device {:?}: {}", path, e);
                     }
                     break;
                 }
@@ -962,7 +962,7 @@ impl MouseCapture for LinuxMouseCapture {
         let physical_paths = self.enumerate_physical_devices()?;
         if physical_paths.is_empty() {
             // Not an error - mice may not be connected
-            eprintln!("Warning: No physical mouse devices found");
+            log::warn!("No physical mouse devices found");
         }
 
         let stats = Arc::clone(&self.stats);
