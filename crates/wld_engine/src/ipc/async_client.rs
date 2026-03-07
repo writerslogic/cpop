@@ -126,7 +126,6 @@ impl AsyncIpcClient {
             .as_mut()
             .ok_or(AsyncIpcClientError::NotConnected)?;
 
-        // 1. Send "WS" magic + version 1
         let mut magic_packet = Vec::with_capacity(3);
         magic_packet.extend_from_slice(&SECURE_JSON_PROTOCOL_MAGIC);
         magic_packet.push(1u8);
@@ -139,12 +138,10 @@ impl AsyncIpcClient {
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
 
-        // 2. Generate ephemeral P-256 keypair
         let client_secret = EphemeralSecret::random(&mut OsRng);
         let client_pubkey_point = client_secret.public_key().to_encoded_point(false);
         let client_pubkey_bytes = client_pubkey_point.as_bytes();
 
-        // 3. Send client public key (65 bytes)
         stream
             .write_all(client_pubkey_bytes)
             .await
@@ -154,7 +151,6 @@ impl AsyncIpcClient {
             .await
             .map_err(AsyncIpcClientError::SendFailed)?;
 
-        // 4. Read server public key (65 bytes)
         let mut server_pubkey_bytes = [0u8; 65];
         stream
             .read_exact(&mut server_pubkey_bytes)
@@ -165,10 +161,8 @@ impl AsyncIpcClient {
             AsyncIpcClientError::ProtocolError(format!("Invalid server public key: {}", e))
         })?;
 
-        // 5. Compute ECDH shared secret
         let shared_secret = client_secret.diffie_hellman(&server_pubkey);
 
-        // 6. Derive session key (is_server = false)
         let session = SecureSession::from_shared_secret(
             shared_secret.raw_secret_bytes().as_slice(),
             client_pubkey_bytes,
@@ -177,8 +171,6 @@ impl AsyncIpcClient {
         )
         .map_err(|e| AsyncIpcClientError::ProtocolError(format!("Key derivation failed: {}", e)))?;
 
-        // 7. Receive and verify server's confirmation token
-        // Server sends: [4-byte len][encrypted_token]
         let mut len_buf = [0u8; 4];
         stream
             .read_exact(&mut len_buf)
@@ -206,7 +198,6 @@ impl AsyncIpcClient {
             ));
         }
 
-        // 8. Send client's confirmation token
         let client_confirm_encrypted = session.encrypt(KEY_CONFIRM_PLAINTEXT).map_err(|e| {
             AsyncIpcClientError::ProtocolError(format!("Client confirmation encrypt failed: {}", e))
         })?;
@@ -242,7 +233,6 @@ impl AsyncIpcClient {
             .as_mut()
             .ok_or(AsyncIpcClientError::NotConnected)?;
 
-        // Secure session uses JSON, legacy uses Bincode
         let encoded = if self.secure_session.is_some() {
             encode_message_json(msg)
                 .map_err(|e| AsyncIpcClientError::SerializationFailed(e.to_string()))?
@@ -266,7 +256,6 @@ impl AsyncIpcClient {
             ));
         }
 
-        // Write length prefix (4 bytes, little-endian) followed by payload
         let len = payload.len() as u32;
         stream
             .write_all(&len.to_le_bytes())
@@ -295,7 +284,6 @@ impl AsyncIpcClient {
             .as_mut()
             .ok_or(AsyncIpcClientError::NotConnected)?;
 
-        // Read length prefix (4 bytes, little-endian)
         let mut len_buf = [0u8; 4];
         match stream.read_exact(&mut len_buf).await {
             Ok(_) => {}
@@ -325,7 +313,6 @@ impl AsyncIpcClient {
             buffer
         };
 
-        // Secure session uses JSON, legacy uses Bincode
         let msg = if self.secure_session.is_some() {
             decode_message_json(&plaintext)
                 .map_err(|e| AsyncIpcClientError::DeserializationFailed(e.to_string()))?
@@ -355,7 +342,6 @@ impl AsyncIpcClient {
     #[cfg(unix)]
     pub async fn disconnect(&mut self) {
         if let Some(stream) = self.stream.take() {
-            // Attempt graceful shutdown, ignore errors
             let _ = stream.into_std();
         }
     }

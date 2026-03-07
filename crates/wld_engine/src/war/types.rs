@@ -79,7 +79,6 @@ pub struct Seal {
     pub public_key: [u8; 32],
 }
 
-// Custom Serialize/Deserialize for Seal using hex encoding
 impl Serialize for Seal {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

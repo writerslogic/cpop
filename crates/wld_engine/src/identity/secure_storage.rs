@@ -16,7 +16,6 @@ const DEVICE_ID_ACCOUNT: &str = "device_id";
 const MACHINE_ID_ACCOUNT: &str = "machine_id";
 const FINGERPRINT_KEY_ACCOUNT: &str = "fingerprint_key";
 
-// Caches to prevent repeated keychain access
 static SEED_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static HMAC_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static FINGERPRINT_KEY_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
@@ -98,7 +97,6 @@ impl SecureStorage {
         };
         use security_framework_sys::keychain_item::SecItemAdd;
 
-        // Ensure clean slate for new policy
         let _ = Self::delete_macos(account);
 
         let encoded = general_purpose::STANDARD.encode(data);
@@ -106,8 +104,6 @@ impl SecureStorage {
         let service_cf = CFString::new(SERVICE_NAME);
         let account_cf = CFString::new(account);
 
-        // Access policy attribute keys and values
-        // Use raw strings for keys that might be missing in some versions of security-framework-sys
         let k_sec_attr_accessible = CFString::new("pdmn");
         let v_sec_attr_accessible = unsafe {
             core_foundation::base::CFType::wrap_under_get_rule(
@@ -162,10 +158,7 @@ impl SecureStorage {
         let service_cf = CFString::new(SERVICE_NAME);
         let account_cf = CFString::new(account);
 
-        // Use raw strings for keys/values that might be missing in some crate versions
         let k_sec_match_limit = unsafe { CFString::wrap_under_get_rule(kSecMatchLimit as _) };
-        // Actually kSecMatchLimitOne is a constant pointing to a value.
-        // Let's use CFNumber(1) which is also supported for kSecMatchLimit
         let v_sec_match_limit_one = core_foundation::number::CFNumber::from(1).as_CFType();
 
         let k_sec_return_data = CFString::new("r_Data");
@@ -202,7 +195,6 @@ impl SecureStorage {
             encoded.zeroize();
             Ok(Some(Zeroizing::new(decoded)))
         } else if status == -25300 {
-            // errSecItemNotFound
             Ok(None)
         } else {
             Err(anyhow!("Keychain search failed with status: {}", status))
@@ -326,12 +318,10 @@ impl SecureStorage {
             ];
 
             for account in accounts {
-                // Use keyring to read old item (may prompt once)
                 if let Ok(entry) = Entry::new(SERVICE_NAME, account) {
                     if let Ok(encoded) = entry.get_password() {
                         if let Ok(data) = general_purpose::STANDARD.decode(&encoded) {
                             let data = Zeroizing::new(data);
-                            // Re-save with hardened policy
                             if Self::save_macos(account, &data).is_ok() {
                                 let _ = entry.delete_password();
                             }

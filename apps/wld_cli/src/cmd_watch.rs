@@ -234,7 +234,6 @@ struct WatcherState {
 async fn run_watcher(config: &WatchConfig) -> Result<()> {
     let (tx, rx) = std_mpsc::channel();
 
-    // Cache config, device id, machine id, and DB handle at startup
     let engine_config = ensure_dirs()?;
     let cached_vdf_params = load_vdf_params(&engine_config);
     let mut state = WatcherState {

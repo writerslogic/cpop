@@ -589,7 +589,6 @@ impl Builder {
             None
         };
 
-        // Entropy commitment: domain-separated SHA-256 over timestamps
         let mut hasher = sha2::Sha256::new();
         hasher.update(b"witnessd-jitter-entropy-v1");
         for s in &keystroke.samples {

@@ -165,7 +165,6 @@ impl EvidencePacketWire {
             )));
         }
 
-        // Validate collection sizes
         if let Some(ref lims) = self.limitations {
             if lims.len() > MAX_LIMITATIONS {
                 return Err(CodecError::Validation(format!(
@@ -195,7 +194,6 @@ impl EvidencePacketWire {
             }
         }
 
-        // Validate hash digest lengths in document ref and checkpoints.
         self.document
             .content_hash
             .validate_digest_length()

@@ -380,7 +380,7 @@ mod tests {
         let mut timestamp = 0i64;
 
         for &(gap_ms, event_type, _) in pattern {
-            timestamp += gap_ms * 1_000_000; // Convert to ns
+            timestamp += gap_ms * 1_000_000;
             events.push(TopologyEvent {
                 timestamp_ns: timestamp,
                 event_type,

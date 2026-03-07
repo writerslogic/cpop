@@ -218,8 +218,7 @@ mod tests {
         let section = ContinuationSection::new_series();
         let context = section.generate_vdf_context(b"test_content_hash");
 
-        // Should include content hash, series ID, and sequence
-        assert!(context.len() > 16); // At least series ID size
+        assert!(context.len() > 16);
     }
 
     #[test]

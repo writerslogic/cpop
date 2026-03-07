@@ -53,14 +53,12 @@ extern "C" {
     pub fn IOHIDElementGetUsage(element: *mut std::ffi::c_void) -> u32;
 }
 
-// IOKit HID constants
 pub const K_HID_PAGE_GENERIC_DESKTOP: i32 = 0x01;
 #[allow(dead_code)]
 pub const K_HID_PAGE_KEYBOARD_OR_KEYPAD: u32 = 0x07;
 pub const K_HID_USAGE_GD_KEYBOARD: i32 = 0x06;
 pub const K_IO_HID_OPTIONS_TYPE_NONE: u32 = 0;
 
-// IOKit property keys
 pub const K_IO_HID_DEVICE_USAGE_PAGE_KEY: &str = "DeviceUsagePage";
 pub const K_IO_HID_DEVICE_USAGE_KEY: &str = "DeviceUsage";
 pub const K_IO_HID_VENDOR_ID_KEY: &str = "VendorID";
@@ -90,10 +88,8 @@ extern "C" {
     ) -> i32;
 }
 
-// AXError codes
 pub const K_AX_ERROR_SUCCESS: i32 = 0;
 
-// AX attribute names
 pub const K_AX_FOCUSED_WINDOW_ATTRIBUTE: &str = "AXFocusedWindow";
 pub const K_AX_DOCUMENT_ATTRIBUTE: &str = "AXDocument";
 pub const K_AX_TITLE_ATTRIBUTE: &str = "AXTitle";
@@ -109,7 +105,6 @@ pub const K_CG_EVENT_SOURCE_UNIX_PROCESS_ID: u32 = 41;
 #[allow(dead_code)]
 pub const K_CG_KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
 
-// CGEventSourceStateID values
 pub const K_CG_EVENT_SOURCE_STATE_PRIVATE: i64 = -1;
 #[allow(dead_code)]
 pub const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION: i64 = 0;

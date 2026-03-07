@@ -157,8 +157,7 @@ fn test_verify_checkpoint_signatures_ordinal_mismatch() {
     session.sign_checkpoint([2u8; 32]).expect("sign");
 
     let mut sigs = session.signatures();
-    // Tamper with ordinal
-    sigs[1].ordinal = 5; // Should be 1
+    sigs[1].ordinal = 5;
 
     let err = verify_checkpoint_signatures(&sigs).unwrap_err();
     assert!(matches!(err, KeyHierarchyError::OrdinalMismatch));
@@ -171,7 +170,6 @@ fn test_verify_checkpoint_signatures_invalid_signature() {
     session.sign_checkpoint([1u8; 32]).expect("sign");
 
     let mut sigs = session.signatures();
-    // Tamper with signature
     sigs[0].signature[0] ^= 0xFF;
 
     let err = verify_checkpoint_signatures(&sigs).unwrap_err();
@@ -210,7 +208,7 @@ fn test_verify_ratchet_signature_invalid_signature_size() {
 fn test_fingerprint_for_public_key() {
     let pubkey = [0xABu8; 32];
     let fingerprint = fingerprint_for_public_key(&pubkey);
-    assert_eq!(fingerprint.len(), 16); // hex encoding of 8 bytes
+    assert_eq!(fingerprint.len(), 16);
 }
 
 #[test]
@@ -259,7 +257,6 @@ fn test_verify_key_hierarchy_invalid_cert() {
     session.sign_checkpoint([1u8; 32]).expect("sign");
 
     let mut evidence = session.export(&identity);
-    // Tamper with session certificate signature
     evidence.session_certificate.as_mut().unwrap().signature[0] ^= 0xFF;
 
     let err = verify_key_hierarchy(&evidence).unwrap_err();
@@ -274,7 +271,6 @@ fn test_verify_key_hierarchy_fingerprint_mismatch() {
     session.sign_checkpoint([1u8; 32]).expect("sign");
 
     let mut evidence = session.export(&identity);
-    // Tamper with fingerprint
     evidence.master_fingerprint = "wrong_fingerprint".to_string();
 
     let err = verify_key_hierarchy(&evidence).unwrap_err();
@@ -289,7 +285,6 @@ fn test_verify_key_hierarchy_ratchet_count_mismatch() {
     session.sign_checkpoint([1u8; 32]).expect("sign");
 
     let mut evidence = session.export(&identity);
-    // Tamper with ratchet count
     evidence.ratchet_count = 999;
 
     let err = verify_key_hierarchy(&evidence).unwrap_err();
@@ -306,7 +301,6 @@ fn test_software_puf_new_with_path() {
     assert!(!puf.device_id().is_empty());
     assert_eq!(puf.seed_path(), seed_path);
 
-    // Reopen should get same seed
     let puf2 = SoftwarePUF::new_with_path(&seed_path).expect("reopen puf");
     assert_eq!(puf.seed(), puf2.seed());
     assert_eq!(puf.device_id(), puf2.device_id());
@@ -326,7 +320,6 @@ fn test_software_puf_get_response() {
     assert_eq!(response2.len(), 32);
     assert_ne!(response1, response2);
 
-    // Same challenge should produce same response
     let response1_again = puf.get_response(challenge1).expect("response 1 again");
     assert_eq!(response1, response1_again);
 }
@@ -349,7 +342,7 @@ fn test_session_recovery_no_data() {
     let puf = test_puf();
     let recovery = SessionRecoveryState {
         certificate: SessionCertificate {
-            session_id: [0u8; 32], // Empty session ID
+            session_id: [0u8; 32],
             session_pubkey: vec![],
             created_at: chrono::Utc::now(),
             document_hash: [0u8; 32],
@@ -425,7 +418,7 @@ fn test_legacy_migration_verification() {
 #[test]
 fn test_legacy_migration_invalid_sizes() {
     let migration = LegacyKeyMigration {
-        legacy_public_key: vec![0u8; 16], // Should be 32
+        legacy_public_key: vec![0u8; 16],
         new_master_public_key: vec![0u8; 32],
         migration_timestamp: chrono::Utc::now(),
         transition_signature: [0u8; 64],
@@ -452,7 +445,7 @@ fn test_start_session_from_legacy_key() {
 fn test_legacy_key_64_bytes() {
     let dir = TempDir::new().expect("create temp dir");
     let legacy_path = dir.path().join("legacy_key_64");
-    let key_data = [42u8; 64]; // 64 bytes (seed + public key format)
+    let key_data = [42u8; 64];
     std::fs::write(&legacy_path, &key_data).expect("write 64 byte key");
 
     let session =
@@ -493,7 +486,6 @@ fn test_session_binding_no_quotes() {
 fn test_session_binding_reboot_detected() {
     let puf = test_puf();
     let mut session = start_session(&puf, [1u8; 32]).expect("start");
-    // Simulate TPM binding with reboot mid-session
     session.certificate.start_reset_count = Some(5);
     session.certificate.end_reset_count = Some(6);
     session.certificate.start_restart_count = Some(10);
@@ -513,7 +505,7 @@ fn test_session_binding_counter_rollback() {
     let puf = test_puf();
     let mut session = start_session(&puf, [1u8; 32]).expect("start");
     session.certificate.start_counter = Some(100);
-    session.certificate.end_counter = Some(50); // Rollback!
+    session.certificate.end_counter = Some(50);
 
     let err = verify_session_binding(&session.certificate).unwrap_err();
     assert!(matches!(err, KeyHierarchyError::Crypto(_)));
@@ -529,7 +521,6 @@ fn test_entangled_nonce_deterministic() {
     let nonce2 = compute_entangled_nonce(&session_id, &data_hash, &mmr_root);
     assert_eq!(nonce1, nonce2);
 
-    // Different inputs produce different nonces
     let nonce3 = compute_entangled_nonce(&session_id, &data_hash, &[4u8; 32]);
     assert_ne!(nonce1, nonce3);
 }
@@ -545,7 +536,6 @@ fn test_session_bind_start_quote_with_software_provider() {
     let provider = SoftwareProvider::new();
     session.bind_start_quote(&provider, &mmr_root);
 
-    // Software provider still generates quotes (software-backed)
     assert!(session.certificate.start_quote.is_some());
     assert!(session.certificate.start_reset_count.is_some());
     assert!(session.certificate.start_restart_count.is_some());
@@ -568,7 +558,6 @@ fn test_session_end_with_provider() {
     assert!(session.certificate.end_reset_count.is_some());
     assert!(session.certificate.end_restart_count.is_some());
 
-    // Verify no reboot detected (same provider throughout)
     let report = verify_session_binding(&session.certificate).expect("verify");
     assert!(!report.reboot_detected);
     assert!(!report.restart_detected);

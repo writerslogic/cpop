@@ -23,8 +23,6 @@ impl SentinelIpcHandler {
         }
     }
 
-    // ── Shared helpers ─────────────────────────────────────────────────
-
     fn open_db(&self) -> Result<crate::store::SecureStore, String> {
         let db_path = self.sentinel.config.writerslogic_dir.join("events.db");
         let key_bytes = self.sentinel.signing_key.read_recover().to_bytes();
@@ -95,8 +93,6 @@ impl SentinelIpcHandler {
         );
         Ok((events, metrics))
     }
-
-    // ── Handler methods ────────────────────────────────────────────────
 
     fn handle_export_with_nonce(
         &self,
@@ -192,7 +188,6 @@ impl SentinelIpcHandler {
         let writerslogic_dir = &self.sentinel.config.writerslogic_dir;
         let vdf_params = crate::vdf::default_parameters();
 
-        // path is already canonical from validate_path above
         let path_hash = Sha256::digest(path.to_string_lossy().as_bytes());
         let doc_id = hex::encode(&path_hash[0..8]);
         let chain_path = writerslogic_dir
@@ -209,12 +204,10 @@ impl SentinelIpcHandler {
 
         let checkpoint =
             if chain.entanglement_mode == crate::checkpoint::EntanglementMode::Entangled {
-                // Gather jitter + physics data for entangled commit
                 let accumulator = self.sentinel.activity_accumulator.read_recover();
                 let samples = accumulator.samples();
                 let keystroke_count = samples.len() as u64;
 
-                // Compute jitter hash from timing samples
                 let mut jitter_hasher = Sha256::new();
                 jitter_hasher.update(b"witnessd-checkpoint-jitter-v1");
                 jitter_hasher.update(keystroke_count.to_be_bytes());
@@ -223,7 +216,6 @@ impl SentinelIpcHandler {
                 }
                 let jitter_hash: [u8; 32] = jitter_hasher.finalize().into();
 
-                // Find session ID for this document
                 let session_id = self
                     .sentinel
                     .sessions
@@ -284,7 +276,6 @@ impl SentinelIpcHandler {
     fn handle_export_file(&self, path: PathBuf, output: PathBuf) -> Result<IpcMessage, String> {
         let writerslogic_dir = &self.sentinel.config.writerslogic_dir;
 
-        // Validate both paths (source validation ensures it's an allowed location)
         let _ = super::helpers::validate_path(&path)
             .map_err(|e| format!("Invalid source path: {e}"))?;
         let validated_output = super::helpers::validate_path(&output)
@@ -320,7 +311,6 @@ impl SentinelIpcHandler {
         .map_err(|e| format!("Declaration signing failed: {e}"))?;
         builder = builder.with_declaration(&decl);
 
-        // Baseline verification data
         let summary = self
             .sentinel
             .activity_accumulator
@@ -354,7 +344,6 @@ impl SentinelIpcHandler {
         }
         builder = builder.with_baseline_verification(bv);
 
-        // Capture physical context from hardware sensors + behavioral samples
         let jitter_samples = self.sentinel.activity_accumulator.read_recover().samples();
         let physics = crate::physics::PhysicalContext::capture(&jitter_samples);
         builder = builder.with_physical_context(&physics);
@@ -399,7 +388,6 @@ impl SentinelIpcHandler {
     fn handle_process_score(&self, path: PathBuf) -> Result<IpcMessage, String> {
         let (events, metrics) = self.analyze_file(&path)?;
 
-        // PS = 0.3*R + 0.3*S + 0.4*B
         let residency = if events.len() >= 5 {
             1.0
         } else {
@@ -420,8 +408,6 @@ impl SentinelIpcHandler {
         })
     }
 }
-
-// ── Trait implementation ───────────────────────────────────────────────
 
 impl IpcMessageHandler for SentinelIpcHandler {
     fn handle(&self, msg: IpcMessage) -> IpcMessage {
@@ -576,7 +562,6 @@ impl IpcMessageHandler for SentinelIpcHandler {
                     error: Some(e),
                 }),
 
-            // Response messages should not be received by the server
             IpcMessage::Ok { .. }
             | IpcMessage::Error { .. }
             | IpcMessage::HandshakeAck { .. }

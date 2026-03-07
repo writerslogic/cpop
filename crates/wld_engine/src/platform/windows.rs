@@ -124,15 +124,8 @@ fn get_process_path(pid: u32) -> Result<String> {
 fn extract_doc_path_from_title(title: Option<&str>) -> Option<String> {
     let title = title?;
 
-    // Common patterns:
-    // "filename.ext - Application Name"
-    // "Application Name - filename.ext"
-    // "filename.ext"
-
-    // Check for common separators
     for sep in [" - ", " \u{2014} ", " | "] {
         if let Some(parts) = title.split_once(sep) {
-            // Check if either part looks like a file path
             for part in [parts.0, parts.1] {
                 if looks_like_path(part) {
                     return Some(part.to_string());
@@ -141,7 +134,6 @@ fn extract_doc_path_from_title(title: Option<&str>) -> Option<String> {
         }
     }
 
-    // Check if the whole title looks like a path
     if looks_like_path(title) {
         return Some(title.to_string());
     }
@@ -150,7 +142,6 @@ fn extract_doc_path_from_title(title: Option<&str>) -> Option<String> {
 }
 
 fn looks_like_path(s: &str) -> bool {
-    // Check for drive letter or UNC path
     (s.len() > 2 && s.chars().nth(1) == Some(':'))
         || s.starts_with("\\\\")
         || s.contains('\\')
@@ -212,7 +203,6 @@ pub struct WindowsKeystrokeCapture {
     stats: Arc<RwLock<SyntheticStats>>,
 }
 
-// Thread-safe global state for hook callbacks
 static GLOBAL_SENDER: Mutex<Option<mpsc::Sender<KeystrokeEvent>>> = Mutex::new(None);
 static GLOBAL_STATS: Mutex<Option<Arc<RwLock<SyntheticStats>>>> = Mutex::new(None);
 static GLOBAL_STRICT_MODE: AtomicBool = AtomicBool::new(true);
@@ -250,15 +240,12 @@ impl KeystrokeCapture for WindowsKeystrokeCapture {
             self.hook = Some(HookHandle(hook));
         }
 
-        // Start message pump in a separate thread
         let running = Arc::clone(&self.running);
         std::thread::spawn(move || {
             let mut msg = MSG::default();
             while running.load(Ordering::SeqCst) {
                 unsafe {
-                    if GetMessageW(&mut msg, None, 0, 0).into() {
-                        // Process messages
-                    } else {
+                    if !GetMessageW(&mut msg, None, 0, 0).into() {
                         break;
                     }
                 }
@@ -308,7 +295,6 @@ impl Drop for WindowsKeystrokeCapture {
     }
 }
 
-/// Hook callback for keystroke capture.
 unsafe extern "system" fn keystroke_capture_hook(
     code: i32,
     wparam: WPARAM,
@@ -436,7 +422,6 @@ impl FocusMonitor for WindowsFocusMonitor {
     }
 }
 
-// Thread-safe global state for the mouse hook callback
 static MOUSE_GLOBAL_SENDER: Mutex<Option<mpsc::Sender<MouseEvent>>> = Mutex::new(None);
 static MOUSE_GLOBAL_IDLE_STATS: Mutex<Option<Arc<RwLock<MouseIdleStats>>>> = Mutex::new(None);
 static MOUSE_LAST_POSITION: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
@@ -500,15 +485,12 @@ impl MouseCapture for WindowsMouseCapture {
             self.hook = Some(HookHandle(hook));
         }
 
-        // Start message pump in a separate thread
         let running = Arc::clone(&self.running);
         std::thread::spawn(move || {
             let mut msg = MSG::default();
             while running.load(Ordering::SeqCst) {
                 unsafe {
-                    if GetMessageW(&mut msg, None, 0, 0).into() {
-                        // Process messages
-                    } else {
+                    if !GetMessageW(&mut msg, None, 0, 0).into() {
                         break;
                     }
                 }
@@ -570,7 +552,6 @@ impl Drop for WindowsMouseCapture {
     }
 }
 
-/// Hook callback for mouse capture.
 unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && wparam.0 as u32 == WM_MOUSEMOVE {
         let kb_active = MOUSE_KEYBOARD_ACTIVE.load(Ordering::SeqCst);
@@ -604,7 +585,7 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             dx,
             dy,
             is_idle: kb_active,
-            is_hardware: true, // WH_MOUSE_LL can detect injected events via flags if needed
+            is_hardware: true,
             device_id: None,
         };
 
@@ -622,7 +603,6 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             let _ = sender.send(event);
         }
 
-        // Reset keyboard active after processing (will be set again by next keystroke)
         MOUSE_KEYBOARD_ACTIVE.store(false, Ordering::SeqCst);
     }
 

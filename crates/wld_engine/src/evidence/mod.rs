@@ -10,7 +10,6 @@ mod serde_helpers;
 mod tests;
 mod types;
 
-// Re-export public types
 pub use self::types::{
     AccessControlInfo, AnchorProof, BehavioralEvidence, BlockchainAnchorInfo, CheckpointProof,
     CheckpointSignature, Claim, ClaimType, ContextPeriod, DocumentInfo, EditRegion,

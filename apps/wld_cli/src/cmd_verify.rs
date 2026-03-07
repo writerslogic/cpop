@@ -200,7 +200,6 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
                 anyhow!("Failed to read signing key: {}", e)
             }
         })?);
-        // CLI-M3: Reject key files shorter than 32 bytes
         if key_data.len() < 32 {
             anyhow::bail!(
                 "Invalid signing key: expected at least 32 bytes, got {}",

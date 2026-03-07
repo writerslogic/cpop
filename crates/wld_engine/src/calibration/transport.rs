@@ -106,11 +106,9 @@ mod tests {
     fn test_calibrator_basic() {
         let mut cal = TransportCalibrator::new(5, 100);
 
-        // Not enough samples yet
         assert!(!cal.is_calibrated(TransportType::Usb));
         assert!(cal.get_calibration(TransportType::Usb).is_none());
 
-        // Add samples
         for interval in [10000, 15000, 12000, 11000, 13000] {
             cal.record_sample(TransportType::Usb, interval);
         }
@@ -119,19 +117,17 @@ mod tests {
         let calib = cal.get_calibration(TransportType::Usb).unwrap();
 
         assert_eq!(calib.transport, "usb");
-        assert_eq!(calib.baseline_latency_us, 10000); // Minimum
+        assert_eq!(calib.baseline_latency_us, 10000);
     }
 
     #[test]
     fn test_calibrator_multiple_transports() {
         let mut cal = TransportCalibrator::new(3, 100);
 
-        // USB samples
         for interval in [10000, 11000, 12000] {
             cal.record_sample(TransportType::Usb, interval);
         }
 
-        // Bluetooth samples (typically higher latency)
         for interval in [20000, 22000, 21000] {
             cal.record_sample(TransportType::Bluetooth, interval);
         }
@@ -142,7 +138,6 @@ mod tests {
         assert_eq!(usb_cal.baseline_latency_us, 10000);
         assert_eq!(bt_cal.baseline_latency_us, 20000);
 
-        // Bluetooth should have higher baseline
         assert!(bt_cal.baseline_latency_us > usb_cal.baseline_latency_us);
     }
 
@@ -150,15 +145,12 @@ mod tests {
     fn test_calibrator_rolling_window() {
         let mut cal = TransportCalibrator::new(2, 5);
 
-        // Add 10 samples
         for i in 0..10 {
             cal.record_sample(TransportType::Internal, i * 1000);
         }
 
-        // Should only retain last 5
         assert_eq!(cal.sample_count(TransportType::Internal), 5);
 
-        // Baseline should be from the retained samples (5000-9000)
         let calib = cal.get_calibration(TransportType::Internal).unwrap();
         assert_eq!(calib.baseline_latency_us, 5000);
     }

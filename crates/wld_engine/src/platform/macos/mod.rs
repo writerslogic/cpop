@@ -17,13 +17,11 @@ mod synthetic;
 #[cfg(test)]
 mod tests;
 
-// Re-export types from parent module
 pub use super::{
     DualLayerValidation, EventVerificationResult, FocusInfo, HIDDeviceInfo, KeystrokeEvent,
     PermissionStatus, SyntheticStats, TransportType,
 };
 
-// Re-export all public items from submodules
 pub use focus::{get_active_focus, MacOSFocusMonitor};
 pub use hid::enumerate_hid_keyboards;
 pub use keystroke::{

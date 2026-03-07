@@ -11,7 +11,6 @@ use zeroize::Zeroize;
 static ROLLING_KEY: AtomicU64 = AtomicU64::new(0xDEADBEEF_CAFEBABE);
 
 fn next_key() -> u64 {
-    // Simple LFSR-style rotation
     let current = ROLLING_KEY.load(Ordering::Relaxed);
     let next = current.rotate_left(7) ^ current.wrapping_mul(0x5851F42D4C957F2D);
     ROLLING_KEY.store(next, Ordering::Relaxed);
@@ -26,14 +25,12 @@ pub struct Obfuscated<T> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-// Any type that can be serialized/deserialized can be obfuscated
 impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     pub fn new(value: &T) -> Self {
         let serialized = bincode::serde::encode_to_vec(value, bincode::config::standard())
             .expect("serialization failed");
         let mask_key = next_key();
 
-        // XOR mask the data
         Self {
             masked_data: Self::xor_data(&serialized, mask_key),
             mask_key,
@@ -48,7 +45,6 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
             bincode::serde::decode_from_slice(&unmasked, bincode::config::standard())
                 .expect("deserialization failed");
 
-        // Zeroize temporary buffer
         unmasked.zeroize();
 
         value
@@ -76,14 +72,12 @@ impl<T> Drop for Obfuscated<T> {
     }
 }
 
-// Debug implementation that doesn't reveal
 impl<T> std::fmt::Debug for Obfuscated<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "***OBFUSCATED***")
     }
 }
 
-// Default implementation
 impl<T: Default + Serialize + for<'de> Deserialize<'de>> Default for Obfuscated<T> {
     fn default() -> Self {
         Self::new(&T::default())

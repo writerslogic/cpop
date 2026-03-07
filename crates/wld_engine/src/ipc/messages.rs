@@ -60,7 +60,6 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let s = path.to_string_lossy();
-        // Normalize to lowercase for case-insensitive Windows paths
         let lower = s.to_lowercase();
         const BLOCKED_WIN: &[&str] = &[
             r"c:\windows\",
@@ -103,7 +102,6 @@ pub enum IpcMessage {
         expected_nonce: Option<[u8; 32]>,
     },
 
-    // Push events (Brain → Face)
     Pulse(SimpleJitterSample),
     CheckpointCreated {
         id: i64,
@@ -116,7 +114,6 @@ pub enum IpcMessage {
 
     Heartbeat,
 
-    // Responses
     Ok {
         message: Option<String>,
     },
@@ -159,7 +156,6 @@ pub enum IpcMessage {
         errors: Vec<String>,
     },
 
-    // Crypto ops (Windows IPC; macOS uses FFI)
     VerifyFile {
         path: PathBuf,
     },
@@ -253,7 +249,6 @@ impl IpcMessage {
             IpcMessage::CreateFileCheckpoint { path, .. } => {
                 validate_ipc_path(path)?;
             }
-            // Variants with no PathBuf fields
             _ => {}
         }
         Ok(())

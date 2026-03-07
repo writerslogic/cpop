@@ -27,14 +27,13 @@ impl PhysicalContext {
         let ambient = AmbientSensing::capture();
 
         let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-physics-v2"); // Versioned
+        hasher.update(b"witnessd-physics-v2");
         hasher.update(skew.to_be_bytes());
         hasher.update(thermal.to_be_bytes());
         hasher.update(puf);
         hasher.update(io_latency.to_be_bytes());
         hasher.update(ambient.hash);
 
-        // Bind the biological signature
         for sample in biological_cadence.iter().take(10) {
             hasher.update(sample.duration_since_last_ns.to_be_bytes());
         }
@@ -53,14 +52,11 @@ impl PhysicalContext {
 
 fn measure_io_latency() -> u64 {
     let start = std::time::Instant::now();
-    // Perform a tiny, non-destructive read from a system file to measure bus latency
     let _ = std::fs::metadata("/etc/hosts").map(|m| m.len());
     start.elapsed().as_nanos().min(u64::MAX as u128) as u64
 }
 
 fn measure_thermal_proxy() -> u32 {
-    // Measure how many TSC cycles occur in exactly 1ms of wall time.
-    // Variations in this number (jitter) correlate with CPU thermal throttling and phonon noise.
     let start_wall = std::time::Instant::now();
     let start_tsc = ClockSkew::measure();
 

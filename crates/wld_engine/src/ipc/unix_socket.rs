@@ -46,7 +46,6 @@ fn get_peer_creds(stream: &UnixStream) -> Result<PeerCreds, IpcError> {
 #[cfg(target_os = "macos")]
 fn get_peer_creds(stream: &UnixStream) -> Result<PeerCreds, IpcError> {
     use nix::sys::socket::sockopt::{LocalPeerCred, LocalPeerPid};
-    // On macOS, we get UID from LocalPeerCred and PID from LocalPeerPid
     let creds = getsockopt(&stream.as_fd(), LocalPeerCred)?;
     let pid = getsockopt(&stream.as_fd(), LocalPeerPid).unwrap_or_else(|e| {
         log::warn!("Failed to get peer PID: {:?}", e);
@@ -63,8 +62,6 @@ fn get_peer_creds(stream: &UnixStream) -> Result<PeerCreds, IpcError> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn get_peer_creds(_stream: &UnixStream) -> Result<PeerCreds, IpcError> {
-    // On other platforms, we can't verify peer credentials
-    // Return current user's credentials as fallback
     let uid = nix::unistd::getuid().as_raw();
     Ok(PeerCreds { uid, pid: 0 })
 }
@@ -76,14 +73,12 @@ pub struct SecureUnixSocket {
 
 impl SecureUnixSocket {
     pub fn bind(path: &Path) -> Result<Self, IpcError> {
-        // Remove existing socket
         if path.exists() {
             let _ = std::fs::remove_file(path);
         }
 
         let listener = UnixListener::bind(path)?;
 
-        // Set restrictive permissions (owner only)
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
 
@@ -98,7 +93,6 @@ impl SecureUnixSocket {
     pub fn accept(&self) -> Result<VerifiedConnection, IpcError> {
         let (stream, _addr) = self.listener.accept()?;
 
-        // Verify peer credentials
         let creds = get_peer_creds(&stream)?;
 
         if creds.uid != self.allowed_uid {

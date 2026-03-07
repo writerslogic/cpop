@@ -92,7 +92,6 @@ impl Block {
 
         let mut ear = appraisal::appraise(packet, policy)?;
 
-        // Embed the signed seal into the EAR appraisal
         if let Some(appr) = ear.submods.get_mut("pop") {
             appr.pop_seal = Some(SealClaims {
                 h1: block.seal.h1,

@@ -86,7 +86,6 @@ fn generate_session_id(label: &str) -> String {
     hasher.update(now_ns().to_le_bytes());
     let mut random_bytes = [0u8; 16];
     if getrandom::getrandom(&mut random_bytes).is_err() {
-        // Fallback: use Instant-based entropy if getrandom fails
         let fallback = Instant::now().elapsed().as_nanos().to_le_bytes();
         random_bytes[..16.min(fallback.len())].copy_from_slice(&fallback[..16.min(fallback.len())]);
     }
@@ -117,7 +116,6 @@ fn evict_stale_sessions() {
 /// Start a new ephemeral witnessing session.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSessionResult {
-    // Validate input bounds
     if context_label.len() > MAX_CONTEXT_LABEL_LEN {
         return FfiEphemeralSessionResult {
             success: false,
@@ -129,7 +127,6 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
         };
     }
 
-    // Evict stale sessions on every start to prevent unbounded growth
     evict_stale_sessions();
 
     let now = Instant::now();
@@ -216,7 +213,6 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     });
     entry.checkpoint_count += 1;
 
-    // Also persist to the store if available (for crash recovery / verification).
     let ephemeral_path = format!("ephemeral://{session_id}");
     if let Ok(mut store) = open_store() {
         let mut event = crate::store::SecureEvent {
@@ -245,7 +241,6 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
         let _ = store.insert_secure_event(&mut event);
     }
 
-    // Flush session state to disk for crash recovery.
     flush_session_state(&session_id, &entry);
 
     FfiResult {
@@ -273,7 +268,6 @@ pub fn ffi_ephemeral_inject_jitter(session_id: String, intervals: Vec<u64>) -> F
         }
     };
 
-    // Filter to valid range: 10ms..10s in microseconds
     let valid: Vec<u64> = intervals
         .into_iter()
         .filter(|i| (10_000..=10_000_000).contains(i))
@@ -344,7 +338,6 @@ pub fn ffi_ephemeral_finalize(
         }
     }
 
-    // Validation passed — now remove the session for finalization
     let (_, session) = match sessions().remove(&session_id) {
         Some(pair) => pair,
         None => {
@@ -357,14 +350,12 @@ pub fn ffi_ephemeral_finalize(
         }
     };
 
-    // Final content hash
     let final_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
     let final_hash_hex = hex::encode(final_hash);
     let _char_count = content.len() as u64;
 
     let checkpoint_count = session.content_snapshots.len();
 
-    // Build WAR block from the session data
     let war_block_str = match build_war_block(&final_hash_hex, &statement, &session) {
         Ok(s) => s,
         Err(e) => {
@@ -377,14 +368,12 @@ pub fn ffi_ephemeral_finalize(
         }
     };
 
-    // Compact reference
     let compact_ref = format!(
         "pop-ref:writerslogic:{}:{}",
         &final_hash_hex[..final_hash_hex.len().min(12)],
         checkpoint_count
     );
 
-    // Clean up crash-recovery file
     cleanup_session_state(&session_id);
 
     FfiEphemeralFinalizeResult {
@@ -506,7 +495,6 @@ mod tests {
         assert!(!result.session_id.is_empty());
         assert!(result.error_message.is_none());
 
-        // Clean up
         sessions().remove(&result.session_id);
     }
 

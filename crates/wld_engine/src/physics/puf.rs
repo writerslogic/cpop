@@ -14,19 +14,15 @@ impl SiliconPUF {
         let mut hasher = sha2::Sha256::new();
         let mut sys = System::new_all();
 
-        // Refresh only what we need
-        sys.refresh_cpu_usage(); // In 0.33, this is refresh_cpu_usage or refresh_cpu_all
+        sys.refresh_cpu_usage();
         sys.refresh_all();
 
-        // 1. CPU Brand info (e.g., "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz")
         for cpu in sys.cpus() {
             sha2::Digest::update(&mut hasher, cpu.brand().as_bytes());
         }
 
-        // 2. CPU Count (stable for a machine)
         sha2::Digest::update(&mut hasher, sys.cpus().len().to_be_bytes());
 
-        // 3. System info
         if let Some(name) = System::name() {
             sha2::Digest::update(&mut hasher, name.as_bytes());
         }
@@ -34,7 +30,6 @@ impl SiliconPUF {
             sha2::Digest::update(&mut hasher, version.as_bytes());
         }
 
-        // 4. Platform specific stable IDs
         #[cfg(target_os = "macos")]
         {
             if let Ok(hostname) = hostname::get() {
@@ -69,8 +64,6 @@ mod tests {
         let fp1 = SiliconPUF::generate_fingerprint();
         let fp2 = SiliconPUF::generate_fingerprint();
 
-        // With the new stable implementation, fingerprints must be identical
-        // on the same machine.
         assert_eq!(
             fp1, fp2,
             "PUF should generate stable fingerprints on the same machine"

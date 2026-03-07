@@ -255,7 +255,6 @@ mod tests {
         broadcaster.broadcast(TestEvent { value: 1 });
 
         assert_eq!(rx2.recv().await.unwrap().value, 1);
-        // Dropped rx1 should have been pruned
         assert_eq!(broadcaster.subscriber_count(), 1);
         assert_eq!(broadcaster.failed_sends(), 1);
 

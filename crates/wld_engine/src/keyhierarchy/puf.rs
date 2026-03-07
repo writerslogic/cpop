@@ -58,7 +58,6 @@ impl SoftwarePUF {
     }
 
     fn load_or_create_seed(&mut self) -> Result<(), KeyHierarchyError> {
-        // 1. Try loading from secure storage
         if let Ok(Some(seed)) = crate::identity::SecureStorage::load_seed() {
             let mut seed = Zeroizing::new(seed);
             if seed.len() == 32 {
@@ -68,18 +67,15 @@ impl SoftwarePUF {
             }
         }
 
-        // 2. Check for legacy file-based storage
         if let Ok(data) = fs::read(&self.seed_path) {
             let mut data = Zeroizing::new(data);
             if data.len() == 32 {
-                // Try to migrate to secure storage
                 if let Err(e) = crate::identity::SecureStorage::save_seed(&data) {
                     eprintln!(
                         "Warning: Failed to migrate PUF seed to secure storage: {}",
                         e
                     );
                 } else {
-                    // Delete file after successful migration
                     let _ = fs::remove_file(&self.seed_path);
                 }
                 self.seed = std::mem::take(&mut *data);
@@ -88,10 +84,8 @@ impl SoftwarePUF {
             }
         }
 
-        // 3. Generate new seed
         let seed = self.generate_seed()?;
 
-        // Try to save to secure storage, fall back to file if unavailable
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
             eprintln!(
                 "Warning: Secure storage unavailable ({}), using file-based storage",
@@ -174,14 +168,12 @@ impl SoftwarePUF {
             return Err(KeyHierarchyError::Crypto("Invalid entropy length".into()));
         }
 
-        // Standardize on 32-byte seed for SoftwarePUF
         let seed = if entropy.len() == 32 {
             entropy
         } else {
             Sha256::digest(&entropy).to_vec()
         };
 
-        // Try to save to secure storage, fallback to file
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
             eprintln!(
                 "Warning: Secure storage unavailable ({}), using file-based storage",
@@ -192,7 +184,6 @@ impl SoftwarePUF {
             }
             fs::write(seed_path, &seed)?;
         } else {
-            // Ensure any legacy file is removed if we saved to secure storage
             if seed_path.exists() {
                 let _ = fs::remove_file(seed_path);
             }
@@ -226,8 +217,6 @@ impl PUFProvider for SoftwarePUF {
 /// Hardware PUF derives identity from stable hardware identifiers (CPU, system info),
 /// providing deterministic machine identity without persistent state.
 pub fn get_or_create_puf() -> Result<Box<dyn PUFProvider>, KeyHierarchyError> {
-    // HardwarePUF is always available (uses sysinfo), so it's the primary provider.
-    // SoftwarePUF is available via SoftwarePUF::new() for tests or explicit use.
     Ok(Box::new(HardwarePUF::new()?))
 }
 

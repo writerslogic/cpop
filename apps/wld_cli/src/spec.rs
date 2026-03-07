@@ -19,11 +19,11 @@ pub const MIN_CHECKPOINTS_PER_PACKET: usize = 3;
 ///   maximum  -> maximum (3)
 pub fn content_tier_from_cli(tier: &str) -> u8 {
     match tier.to_lowercase().as_str() {
-        "basic" => 1,    // core
-        "standard" => 1, // core (with VDF)
-        "enhanced" => 2, // enhanced
-        "maximum" => 3,  // maximum
-        _ => 1,          // default to core
+        "basic" => 1,
+        "standard" => 1,
+        "enhanced" => 2,
+        "maximum" => 3,
+        _ => 1,
     }
 }
 
@@ -43,11 +43,10 @@ pub fn profile_uri_from_cli(_tier: &str) -> &'static str {
 ///   )
 pub fn attestation_tier_value(has_tpm: bool, tpm_hardware_backed: bool) -> u8 {
     if tpm_hardware_backed {
-        // Hardware-backed attestation: T3 or T4 depending on features
-        3 // hardware-bound (T3)
+        3
     } else if has_tpm {
-        2 // attested-software (T2)
+        2
     } else {
-        1 // software-only (T1)
+        1
     }
 }

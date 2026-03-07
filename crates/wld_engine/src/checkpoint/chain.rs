@@ -185,7 +185,6 @@ impl Chain {
             .map(|v| v.output)
             .unwrap_or([0u8; 32]);
 
-        // Derive physics seed if physical context is available
         let physics_seed = physics
             .map(|ctx| crate::physics::entanglement::Entanglement::create_seed(content_hash, ctx));
 
@@ -198,7 +197,6 @@ impl Chain {
             physics_seed,
         });
 
-        // Compute entangled VDF input, mixing in physics seed when available
         let base_input =
             vdf::chain_input_entangled(previous_vdf_output, jitter_hash, content_hash, ordinal);
         let vdf_input = mix_physics_seed(base_input, physics_seed);
@@ -237,7 +235,6 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = last_cp.map(|cp| cp.hash).unwrap_or([0u8; 32]);
 
-        // Derive physics seed for entangled mode when physical context is available
         let physics_seed = if self.entanglement_mode == EntanglementMode::Entangled {
             physics.map(|ctx| {
                 crate::physics::entanglement::Entanglement::create_seed(content_hash, ctx)
@@ -592,7 +589,6 @@ impl Chain {
                 None => continue,
             };
 
-            // Verify the VDF input was derived correctly from the chain state
             let expected_input = match self.entanglement_mode {
                 EntanglementMode::Legacy => vdf::chain_input(
                     checkpoint.content_hash,

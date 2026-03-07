@@ -115,7 +115,6 @@ impl Wal {
 
         let mut file = state.file.try_clone()?;
 
-        // Read header to get last_checkpoint_seq for truncated WALs
         file.seek(SeekFrom::Start(0))?;
         let mut header_buf = vec![0u8; HEADER_SIZE];
         file.read_exact(&mut header_buf)?;
@@ -232,7 +231,6 @@ impl Wal {
 
     pub fn truncate(&self, before_seq: u64) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
-        // Read all entries, verify hash chain linkage, then re-write retained entries.
         let mut all_entries = Vec::new();
         let mut file = state.file.try_clone()?;
         file.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
@@ -255,7 +253,6 @@ impl Wal {
             all_entries.push(entry);
         }
 
-        // Verify prev_hash chain linkage before re-signing
         let mut expected_prev = [0u8; 32];
         for entry in &all_entries {
             if entry.prev_hash.ct_eq(&expected_prev).unwrap_u8() == 0 {

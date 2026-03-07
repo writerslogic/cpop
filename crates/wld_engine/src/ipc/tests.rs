@@ -73,7 +73,6 @@ fn test_json_message_serialization_roundtrip() {
     for msg in messages {
         let encoded = encode_message_json(&msg).expect("JSON encode failed");
         let decoded = decode_message_json(&encoded).expect("JSON decode failed");
-        // Re-serialize and compare JSON bytes
         let re_encoded = encode_message_json(&decoded).expect("JSON re-encode failed");
         assert_eq!(encoded, re_encoded, "JSON roundtrip failed for {:?}", msg);
     }
@@ -85,17 +84,14 @@ fn test_protocol_dispatch() {
 
     let msg = IpcMessage::Heartbeat;
 
-    // Bincode roundtrip via protocol dispatch
     let bc_bytes = encode_for_protocol(&msg, WireProtocol::Bincode).unwrap();
     let bc_decoded = decode_for_protocol(&bc_bytes, WireProtocol::Bincode).unwrap();
     assert!(matches!(bc_decoded, IpcMessage::Heartbeat));
 
-    // JSON roundtrip via protocol dispatch
     let json_bytes = encode_for_protocol(&msg, WireProtocol::Json).unwrap();
     let json_decoded = decode_for_protocol(&json_bytes, WireProtocol::Json).unwrap();
     assert!(matches!(json_decoded, IpcMessage::Heartbeat));
 
-    // Verify formats are different
     assert_ne!(bc_bytes, json_bytes);
 }
 
@@ -103,7 +99,6 @@ fn test_protocol_dispatch() {
 fn test_json_protocol_magic_detection() {
     use crypto::JSON_PROTOCOL_MAGIC;
 
-    // Verify the magic bytes are correct ASCII "WJ"
     assert_eq!(JSON_PROTOCOL_MAGIC, [0x57, 0x4A]);
     assert_eq!(&JSON_PROTOCOL_MAGIC, b"WJ");
 }
@@ -158,7 +153,6 @@ fn test_message_serialization_roundtrip() {
     for msg in messages {
         let encoded = encode_message(&msg).expect("encode failed");
         let decoded = decode_message(&encoded).expect("decode failed");
-        // Check that they are the same by re-serializing and comparing
         let re_encoded = encode_message(&decoded).expect("re-encode failed");
         assert_eq!(encoded, re_encoded, "Roundtrip failed for {:?}", msg);
     }
@@ -185,10 +179,8 @@ async fn test_ipc_server_client_interaction() {
             .expect("server run failed");
     });
 
-    // Give server a moment to start
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Use AsyncIpcClient
     let mut client = AsyncIpcClient::connect(&server_path)
         .await
         .expect("client connect failed");
@@ -210,7 +202,6 @@ async fn test_ipc_server_client_interaction() {
         .await
         .expect("start_witnessing failed");
 
-    // Shutdown server
     shutdown_tx.send(()).await.unwrap();
     server_handle.await.unwrap();
 }
@@ -220,7 +211,6 @@ fn test_encode_all_message_variants() {
     use crate::jitter::SimpleJitterSample;
     use crypto::encode_message;
 
-    // Test that all message variants can be encoded
     let variants: Vec<IpcMessage> = vec![
         IpcMessage::Handshake {
             version: "test".to_string(),
@@ -279,7 +269,6 @@ fn test_encode_all_message_variants() {
 fn test_decode_truncated_message() {
     use crypto::{decode_message, encode_message};
 
-    // Create a valid message, then truncate it
     let msg = IpcMessage::StatusResponse {
         running: true,
         tracked_files: vec!["file1.txt".to_string(), "file2.txt".to_string()],
@@ -287,14 +276,11 @@ fn test_decode_truncated_message() {
     };
     let full_bytes = encode_message(&msg).unwrap();
 
-    // Truncate to less than half
     let truncated = &full_bytes[..full_bytes.len() / 3];
     let result = decode_message(truncated);
-    // Should either fail or not decode to the same message
     match result {
-        Err(_) => {} // Expected failure
+        Err(_) => {}
         Ok(decoded) => {
-            // If it somehow decoded, it shouldn't match original
             let re_encoded = encode_message(&decoded).unwrap();
             assert_ne!(
                 re_encoded, full_bytes,
@@ -315,15 +301,12 @@ fn test_decode_empty_message() {
 fn test_decode_corrupted_message() {
     use crypto::{decode_message, encode_message};
 
-    // Create a valid message then corrupt it
     let msg = IpcMessage::Heartbeat;
     let mut bytes = encode_message(&msg).unwrap();
-    // Corrupt some bytes
     if bytes.len() > 2 {
         bytes[1] = 0xFF;
         bytes[2] = 0xFF;
     }
-    // May or may not decode to something valid, but shouldn't panic
     let _ = decode_message(&bytes);
 }
 
@@ -364,7 +347,6 @@ fn test_all_error_codes() {
 fn test_message_handler_trait() {
     let handler = TestHandler;
 
-    // Test handshake handling
     let response = handler.handle(IpcMessage::Handshake {
         version: "1.0".to_string(),
     });
@@ -375,7 +357,6 @@ fn test_message_handler_trait() {
         _ => panic!("Expected HandshakeAck"),
     }
 
-    // Test status handling
     let response = handler.handle(IpcMessage::GetStatus);
     match response {
         IpcMessage::StatusResponse { running, .. } => {
@@ -384,7 +365,6 @@ fn test_message_handler_trait() {
         _ => panic!("Expected StatusResponse"),
     }
 
-    // Test heartbeat handling
     let response = handler.handle(IpcMessage::Heartbeat);
     match response {
         IpcMessage::HeartbeatAck { timestamp_ns } => {
@@ -393,7 +373,6 @@ fn test_message_handler_trait() {
         _ => panic!("Expected HeartbeatAck"),
     }
 
-    // Test other message handling (falls through to Ok)
     let response = handler.handle(IpcMessage::StopWitnessing { file_path: None });
     match response {
         IpcMessage::Ok { message } => {
@@ -509,7 +488,6 @@ fn test_validate_paths_accepts_normal_paths() {
 
 #[test]
 fn test_validate_paths_checks_both_export_file_paths() {
-    // Good source, traversal in output
     let msg = IpcMessage::ExportFile {
         path: PathBuf::from("/home/user/doc.txt"),
         tier: "gold".to_string(),
@@ -517,7 +495,6 @@ fn test_validate_paths_checks_both_export_file_paths() {
     };
     assert!(msg.validate_paths().is_err());
 
-    // Traversal in source, good output
     let msg = IpcMessage::ExportFile {
         path: PathBuf::from("/tmp/../etc/shadow"),
         tier: "gold".to_string(),
@@ -576,11 +553,9 @@ fn test_secure_channel_nonce_overflow_rejected() {
     use super::secure_channel::SecureChannel;
 
     let (tx, _rx) = SecureChannel::<u64>::new_pair();
-    // Simulate near-overflow by setting counter close to max
     tx.nonce_counter
         .store(u64::MAX - 1, std::sync::atomic::Ordering::SeqCst);
 
-    // First send at MAX-1 should fail (>= NONCE_COUNTER_MAX)
     assert!(tx.send(42u64).is_err());
 }
 

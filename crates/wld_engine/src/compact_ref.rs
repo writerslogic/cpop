@@ -249,7 +249,6 @@ mod tests {
     fn test_estimated_size() {
         let compact = sample_ref();
         let size = compact.estimated_size();
-        // Should be reasonable for embedding
         assert!(size < 1000);
     }
 

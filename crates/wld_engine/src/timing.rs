@@ -202,7 +202,6 @@ impl CheckpointTrigger {
     }
 
     fn accumulate_entropy(&mut self, jitter_micros: u32) {
-        // Mix jitter into entropy hash
         let mut hasher = Sha256::new();
         hasher.update(self.entropy_hash);
         hasher.update(jitter_micros.to_be_bytes());
@@ -227,13 +226,9 @@ impl Default for CheckpointTrigger {
 /// This is a simplified model based on the jitter range.
 /// Real implementations might use more sophisticated entropy estimation.
 fn estimate_jitter_entropy(jitter_micros: u32) -> f64 {
-    // Conservative estimate: ~4 bits per keystroke from timing jitter
-    // The actual entropy depends on the jitter distribution and hardware
     if jitter_micros == 0 {
         0.0
     } else {
-        // Log2 of jitter range gives approximate entropy
-        // Clamp to reasonable range
         let entropy = (jitter_micros as f64).log2();
         entropy.clamp(0.5, 8.0)
     }
@@ -256,13 +251,12 @@ mod tests {
         let config = Config {
             min_keystroke_interval: 5,
             max_keystroke_interval: 10,
-            entropy_threshold_bits: 10000.0, // High to avoid entropy trigger
-            size_delta_threshold: 10000,     // High to avoid size trigger
+            entropy_threshold_bits: 10000.0,
+            size_delta_threshold: 10000,
             ..Default::default()
         };
         let mut trigger = CheckpointTrigger::with_config(config);
 
-        // Record keystrokes up to max (use low jitter to minimize entropy)
         for i in 0..9 {
             let result = trigger.record_keystroke(10, 100);
             assert!(
@@ -284,12 +278,11 @@ mod tests {
         let config = Config {
             min_keystroke_interval: 5,
             max_keystroke_interval: 1000,
-            entropy_threshold_bits: 20.0, // Low threshold for testing
+            entropy_threshold_bits: 20.0,
             ..Default::default()
         };
         let mut trigger = CheckpointTrigger::with_config(config);
 
-        // Record keystrokes with high jitter (high entropy)
         for _ in 0..10 {
             let result = trigger.record_keystroke(50000, 100); // High jitter = more entropy
             if let Some(event) = result {
@@ -298,7 +291,6 @@ mod tests {
             }
         }
 
-        // Should have triggered by entropy
         assert!(
             trigger.accumulated_entropy() >= 20.0,
             "Expected entropy >= 20, got {}",
@@ -312,12 +304,11 @@ mod tests {
             min_keystroke_interval: 5,
             max_keystroke_interval: 1000,
             size_delta_threshold: 100,
-            entropy_threshold_bits: 10000.0, // High to avoid entropy trigger
+            entropy_threshold_bits: 10000.0,
             ..Default::default()
         };
         let mut trigger = CheckpointTrigger::with_config(config);
 
-        // Record keystrokes with very slowly increasing doc size (use low jitter)
         for i in 0..10 {
             let result = trigger.record_keystroke(10, i * 5); // Size grows slowly, low jitter
             assert!(

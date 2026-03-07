@@ -87,7 +87,6 @@ impl FingerprintStorage {
             }
         }
 
-        // Remove entries for files that no longer exist on disk.
         let stale_ids: Vec<ProfileId> = self
             .profile_index
             .iter()
@@ -103,7 +102,6 @@ impl FingerprintStorage {
         self.file_mtimes
             .retain(|path, _| current_paths.contains_key(path));
 
-        // Decrypt only new or modified files.
         for (path, mtime) in &current_paths {
             let needs_decrypt = match self.file_mtimes.get(path) {
                 Some(cached_mtime) => cached_mtime != mtime,
@@ -132,7 +130,6 @@ impl FingerprintStorage {
         let ciphertext = self.encrypt(&plaintext)?;
         fs::write(&path, &ciphertext)?;
 
-        // Record mtime so refresh_index won't re-decrypt this file.
         let mtime = fs::metadata(&path)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -321,7 +318,6 @@ impl Drop for FingerprintStorage {
 
 /// Load fingerprint encryption key from OS keychain, migrating from legacy file if needed.
 fn load_or_create_fingerprint_key(storage_dir: &Path) -> Result<[u8; KEY_SIZE]> {
-    // 1. Try keychain first
     if let Ok(Some(mut key_vec)) = SecureStorage::load_fingerprint_key() {
         if key_vec.len() == KEY_SIZE {
             let mut key = [0u8; KEY_SIZE];
@@ -332,12 +328,10 @@ fn load_or_create_fingerprint_key(storage_dir: &Path) -> Result<[u8; KEY_SIZE]> 
         key_vec.zeroize();
     }
 
-    // 2. Migrate legacy .storage_key file if present
     let key_file = storage_dir.join(".storage_key");
     if key_file.exists() {
         let key = hkdf_derive_from_file(&key_file)?;
 
-        // Store the derived key in the keychain
         if let Err(e) = SecureStorage::save_fingerprint_key(&key) {
             log::warn!("Failed to migrate fingerprint key to secure storage: {}", e);
         } else {
@@ -347,7 +341,6 @@ fn load_or_create_fingerprint_key(storage_dir: &Path) -> Result<[u8; KEY_SIZE]> 
         return Ok(key);
     }
 
-    // 3. Generate new key, save to keychain (file fallback if keychain unavailable)
     let mut key = [0u8; KEY_SIZE];
     getrandom::getrandom(&mut key)
         .map_err(|e| anyhow!("Failed to generate key material: {}", e))?;
@@ -494,23 +487,19 @@ mod tests {
         let dir = tempdir().unwrap();
         let key_file = dir.path().join(".storage_key");
 
-        // Write raw material (same as old derive_storage_key would have)
         let mut material = vec![0u8; 32];
         getrandom::getrandom(&mut material).unwrap();
         fs::write(&key_file, &material).unwrap();
 
-        // Derive via the old inline HKDF logic
         let salt = b"witnessd-fingerprint-storage-v1";
         let info = b"fingerprint-encryption-key";
         let hk = Hkdf::<Sha256>::new(Some(salt), &material);
         let mut expected_key = [0u8; KEY_SIZE];
         hk.expand(info, &mut expected_key).unwrap();
 
-        // Derive via the new helper — must match
         let actual_key = super::hkdf_derive_from_file(&key_file).unwrap();
         assert_eq!(expected_key, actual_key);
 
-        // Verify the derived key can encrypt/decrypt (sanity check)
         let cipher = ChaCha20Poly1305::new_from_slice(&actual_key).unwrap();
         let mut nonce_bytes = [0u8; NONCE_SIZE];
         getrandom::getrandom(&mut nonce_bytes).unwrap();
@@ -520,7 +509,6 @@ mod tests {
         let pt = cipher.decrypt(nonce, ct.as_ref()).unwrap();
         assert_eq!(plaintext.to_vec(), pt);
 
-        // Verify secure_delete_file removes the file
         assert!(key_file.exists());
         super::secure_delete_file(&key_file);
         assert!(!key_file.exists());

@@ -47,7 +47,6 @@ impl WindowProvider for WindowsFocusMonitor {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
 
-            // Get window title
             let mut title_buf = [0u16; 512];
             let len = GetWindowTextW(hwnd, &mut title_buf);
             let title = String::from_utf16_lossy(&title_buf[..len as usize]);

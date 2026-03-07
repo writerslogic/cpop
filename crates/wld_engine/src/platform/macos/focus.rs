@@ -44,7 +44,6 @@ pub fn get_active_focus() -> Result<FocusInfo> {
         let app_name = nsstring_to_string(name);
         let bundle_id_str = nsstring_to_string(bundle_id);
 
-        // Try to get document info via Accessibility API
         let (doc_path, doc_title, window_title) = get_document_info_for_pid(pid);
 
         Ok(FocusInfo {
@@ -70,7 +69,6 @@ fn get_document_info_for_pid(pid: i32) -> (Option<String>, Option<String>, Optio
             return (None, None, None);
         }
 
-        // Get focused window
         let mut window_value: CFTypeRef = null_mut();
         let window_attr = CFString::new(K_AX_FOCUSED_WINDOW_ATTRIBUTE);
         let result = AXUIElementCopyAttributeValue(
@@ -86,14 +84,11 @@ fn get_document_info_for_pid(pid: i32) -> (Option<String>, Option<String>, Optio
 
         let window_element = window_value as *mut std::ffi::c_void;
 
-        // Try to get document path
         let doc_path = get_ax_string_attribute(window_element, K_AX_DOCUMENT_ATTRIBUTE)
             .or_else(|| get_ax_url_as_path(window_element));
 
-        // Get window title
         let window_title = get_ax_string_attribute(window_element, K_AX_TITLE_ATTRIBUTE);
 
-        // Try to get document title (some apps expose this)
         let doc_title = get_ax_string_attribute(window_element, K_AX_DESCRIPTION_ATTRIBUTE)
             .or_else(|| get_ax_string_attribute(window_element, K_AX_FILENAME_ATTRIBUTE));
 
@@ -117,7 +112,6 @@ unsafe fn get_ax_string_attribute(
         return None;
     }
 
-    // Verify the value is actually a CFString before casting
     if CFGetTypeID(value) != CFStringGetTypeID() {
         CFRelease(value as *mut std::ffi::c_void);
         return None;
@@ -143,13 +137,11 @@ unsafe fn get_ax_url_as_path(element: *mut std::ffi::c_void) -> Option<String> {
         return None;
     }
 
-    // Verify the value is actually a CFURL before using it
     if CFGetTypeID(value) != CFURLGetTypeID() {
         CFRelease(value as *mut std::ffi::c_void);
         return None;
     }
 
-    // URL is a CFURL, convert to file path if it's a file:// URL
     extern "C" {
         fn CFURLCopyFileSystemPath(
             url: CFTypeRef,
@@ -243,7 +235,6 @@ impl FocusMonitor for MacOSFocusMonitor {
     fn stop_monitoring(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
-        // Join the polling thread (exits within ~100ms when running is false)
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }

@@ -16,7 +16,6 @@ mod topology;
 pub mod types;
 mod velocity;
 
-// Re-export public items
 pub use analysis::*;
 pub use assessment::*;
 pub use cadence::*;

@@ -35,7 +35,6 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
     pub fn new_pair() -> (SecureSender<T>, SecureReceiver<T>) {
         let (tx, rx) = mpsc::channel();
 
-        // Ephemeral session key -- zeroized immediately after cipher init
         let mut key = ChaCha20Poly1305::generate_key(&mut OsRng);
         let cipher = ChaCha20Poly1305::new(&key);
         key.as_mut_slice().zeroize();
@@ -60,7 +59,6 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
 pub struct SecureSender<T> {
     tx: Sender<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
-    // pub(super) for test access to simulate near-overflow
     pub(super) nonce_counter: AtomicU64,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -75,8 +73,6 @@ impl<T: serde::Serialize> SecureSender<T> {
                 })
             })?;
 
-        // Counter-based nonce; safe because the key is ephemeral.
-        // Guard against overflow to prevent nonce reuse.
         let counter = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
         if counter >= NONCE_COUNTER_MAX {
             return Err(SendError(EncryptedMessage {

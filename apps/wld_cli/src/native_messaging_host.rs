@@ -155,7 +155,6 @@ fn write_message(response: &Response) -> io::Result<()> {
 }
 
 fn handle_start_session(document_url: String, document_title: String) -> Response {
-    // Second layer of domain validation on top of the browser manifest
     let allowed_domains = [
         "docs.google.com",
         "www.overleaf.com",
@@ -251,11 +250,9 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         };
     }
 
-    // Generate session nonce for binding all subsequent messages
     let mut session_nonce = [0u8; 16];
     getrandom::getrandom(&mut session_nonce).expect("CSPRNG failure");
 
-    // Initial commitment = H(session_id || session_nonce || "genesis")
     let mut genesis_hasher = Sha256::new();
     genesis_hasher.update(session_id.as_bytes());
     genesis_hasher.update(session_nonce);
@@ -269,7 +266,6 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
 
     let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
 
-    // Finalize any previous session before starting a new one
     if let Some(prev) = session_lock.take() {
         eprintln!(
             "Finalizing previous session {} ('{}', {} checkpoints) before starting new session",
@@ -446,7 +442,6 @@ fn handle_checkpoint(
         };
     }
 
-    // Update commitment chain
     let new_commitment = compute_commitment(
         &session.prev_commitment,
         &content_hash,
@@ -553,7 +548,6 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
         return Response::JitterReceived { count: 0 };
     }
 
-    // Reject oversized batches (adversary trying to flood with synthetic jitter)
     if count > MAX_BATCH_SIZE {
         return Response::Error {
             message: format!("Batch too large: {} (max {})", count, MAX_BATCH_SIZE),
@@ -676,7 +670,6 @@ fn main() {
         let request = match read_message() {
             Ok(Some(req)) => req,
             Ok(None) => {
-                // EOF — browser closed the connection
                 eprintln!("Connection closed (EOF)");
                 break;
             }

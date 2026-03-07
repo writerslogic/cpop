@@ -139,7 +139,6 @@ impl PoPVerifier {
         let packet = decode_evidence(&payload)?;
         self.validate_structure(&packet)?;
 
-        // Causality chain verification uses constant-time comparisons
         let mut last_hash = hash_sha256(&packet.document.content_hash.digest);
 
         for (i, checkpoint) in packet.checkpoints.iter().enumerate() {

@@ -61,7 +61,6 @@ fn test_wal_reopen_after_close() {
     let session_id = [8u8; 32];
     let signing_key = test_signing_key();
 
-    // Create and populate WAL
     {
         let wal = Wal::open(&path, session_id, signing_key.clone()).expect("open wal");
         wal.append(EntryType::Heartbeat, vec![1, 2, 3])
@@ -71,7 +70,6 @@ fn test_wal_reopen_after_close() {
         wal.close().expect("close");
     }
 
-    // Reopen and verify
     {
         let wal = Wal::open(&path, session_id, signing_key).expect("reopen wal");
         let verification = wal.verify().expect("verify");
@@ -92,7 +90,6 @@ fn test_wal_append_to_closed() {
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
     wal.close().expect("close");
 
-    // Appending to closed WAL should fail
     let result = wal.append(EntryType::Heartbeat, vec![1, 2, 3]);
     assert!(result.is_err());
     match result {
@@ -112,7 +109,6 @@ fn test_wal_all_entry_types() {
 
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
 
-    // Append all entry types
     wal.append(EntryType::Heartbeat, vec![1])
         .expect("append heartbeat");
     wal.append(EntryType::DocumentHash, vec![2])
@@ -145,7 +141,6 @@ fn test_wal_large_payload() {
 
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
 
-    // Append a large payload (1MB)
     let large_payload = vec![0xABu8; 1024 * 1024];
     wal.append(EntryType::KeystrokeBatch, large_payload.clone())
         .expect("append large payload");
@@ -154,7 +149,6 @@ fn test_wal_large_payload() {
     assert!(verification.valid);
     assert_eq!(verification.entries, 1);
 
-    // Check size is reasonable
     let size = wal.size();
     assert!(size > 1024 * 1024, "Size should be at least 1MB");
 
@@ -168,20 +162,16 @@ fn test_wal_exists() {
     let session_id = [12u8; 32];
     let signing_key = test_signing_key();
 
-    // Should not exist yet
     assert!(!Wal::exists(&path));
 
-    // Create WAL
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
     wal.append(EntryType::Heartbeat, vec![1]).expect("append");
     wal.close().expect("close");
 
-    // Should exist now
     assert!(Wal::exists(&path));
 
     let _ = fs::remove_file(&path);
 
-    // Should not exist after deletion
     assert!(!Wal::exists(&path));
 }
 
@@ -218,15 +208,12 @@ fn test_wal_last_sequence() {
 
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
 
-    // Fresh WAL with no entries should have last_sequence 0
     assert_eq!(wal.last_sequence(), 0);
 
     wal.append(EntryType::Heartbeat, vec![1]).expect("append 1");
-    // After first append (sequence 0), last_sequence should be 0
     assert_eq!(wal.last_sequence(), 0);
 
     wal.append(EntryType::Heartbeat, vec![2]).expect("append 2");
-    // After second append (sequence 1), last_sequence should be 1
     assert_eq!(wal.last_sequence(), 1);
 
     wal.append(EntryType::Heartbeat, vec![3]).expect("append 3");
@@ -247,19 +234,16 @@ fn test_wal_truncate_race_condition() {
 
     let wal = Arc::new(Wal::open(&path, session_id, signing_key).expect("open wal"));
 
-    // Add initial entries
     wal.append(EntryType::Heartbeat, vec![1]).unwrap();
     wal.append(EntryType::Heartbeat, vec![2]).unwrap();
 
     let wal_clone = Arc::clone(&wal);
     let handle = thread::spawn(move || {
-        // Spend some time appending to increase chance of hitting the race
         for i in 0..50 {
             let _ = wal_clone.append(EntryType::Heartbeat, vec![i as u8 + 10]);
         }
     });
 
-    // Call truncate multiple times to hit the race
     for _ in 0..5 {
         let _ = wal.truncate(1);
     }
@@ -301,7 +285,6 @@ fn test_wal_truncate_empty() {
 
     let wal = Wal::open(&path, session_id, signing_key).expect("open wal");
 
-    // Truncate empty WAL should succeed without error
     wal.truncate(0).expect("truncate empty");
 
     let verification = wal.verify().expect("verify");

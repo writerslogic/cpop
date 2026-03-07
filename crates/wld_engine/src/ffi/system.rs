@@ -144,10 +144,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
         let profile = crate::forensics::ForensicEngine::evaluate_authorship(&path, &events);
 
         let _score = profile.metrics.edit_entropy;
-        // Wait, AuthorshipProfile has assessment: Assessment
-        // I need a numerical score and a string risk level.
 
-        // Let's use analyze_forensics for now as it gives a composite score
         let event_data = crate::ffi::helpers::events_to_forensic_data(&events);
         let regions = std::collections::HashMap::new();
         let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);

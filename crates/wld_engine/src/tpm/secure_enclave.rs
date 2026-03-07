@@ -41,9 +41,6 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 use zeroize::Zeroize;
 
-// Note: We use command-line tools (sysctl, ioreg) instead of direct IOKit FFI
-// for safer hardware detection that won't crash on edge cases.
-
 const SE_KEY_TAG: &str = "com.writerslogic.secureenclave.signing";
 const SE_ATTESTATION_KEY_TAG: &str = "com.writerslogic.secureenclave.attestation";
 #[allow(dead_code)]
@@ -163,10 +160,8 @@ fn init_state(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
 
     load_or_create_key(state)?;
 
-    // Optionally create an attestation key (separate from signing for key attestation)
     if let Err(e) = load_or_create_attestation_key(state) {
         log::warn!("Could not create attestation key: {}", e);
-        // Non-fatal - attestation will use signing key
     }
 
     load_counter(state)?;
@@ -309,9 +304,6 @@ fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TPMError
     let mut error: CFErrorRef = null_mut();
     let key_ref = unsafe { SecKeyCreateRandomKey(key_attrs.as_concrete_TypeRef(), &mut error) };
 
-    // Note: Do NOT call CFRelease on `access` here - it was passed to wrap_under_create_rule
-    // which took ownership and will release it when private_attrs is dropped
-
     if key_ref.is_null() {
         return Err(TPMError::KeyGeneration(format!(
             "Secure Enclave key generation failed for tag {tag_str}"
@@ -408,7 +400,6 @@ impl SecureEnclaveProvider {
         state: &SecureEnclaveState,
         sealed: &[u8],
     ) -> Result<Vec<u8>, TPMError> {
-        // v4 format: version(1) || nonce(32) || xor_ciphertext
         if sealed.len() < 34 {
             return Err(TPMError::SealedDataTooShort);
         }
@@ -429,10 +420,8 @@ impl SecureEnclaveProvider {
         state: &SecureEnclaveState,
         sealed: &[u8],
     ) -> Result<Vec<u8>, TPMError> {
-        // v5 format: version(1) || seal_nonce(32) || aead_nonce(12) || ciphertext+tag
         const HEADER_LEN: usize = 1 + 32 + 12; // 45
         if sealed.len() < HEADER_LEN + 16 {
-            // At minimum: header + 16-byte auth tag
             return Err(TPMError::SealedDataTooShort);
         }
         let seal_nonce = &sealed[1..33];
@@ -542,7 +531,6 @@ impl Provider for SecureEnclaveProvider {
     fn seal(&self, data: &[u8], _policy: &[u8]) -> Result<Vec<u8>, TPMError> {
         let state = self.state.lock_recover();
 
-        // Deterministic nonce: SE signs this to derive the encryption key
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-seal-nonce-v2");
         hasher.update(data);
@@ -565,9 +553,8 @@ impl Provider for SecureEnclaveProvider {
 
         key_material.zeroize();
 
-        // Format: version(1) || seal_nonce(32) || aead_nonce(12) || ciphertext+tag
         let mut sealed = Vec::with_capacity(1 + 32 + 12 + ciphertext.len());
-        sealed.push(5); // version 5 = AEAD
+        sealed.push(5);
         sealed.extend_from_slice(&seal_nonce);
         sealed.extend_from_slice(&nonce_bytes);
         sealed.extend_from_slice(&ciphertext);
@@ -588,8 +575,6 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn clock_info(&self) -> Result<super::ClockInfo, TPMError> {
-        // Secure Enclave doesn't expose reboot counters.
-        // macOS trust is established via code signing + notarization instead.
         let state = self.state.lock_recover();
         let elapsed = state.start_time.elapsed().unwrap_or_default().as_millis() as u64;
         Ok(super::ClockInfo {
@@ -825,7 +810,6 @@ fn verify_ecdsa_signature(
         static kSecAttrKeyClassPublic: CFTypeRef;
     }
 
-    // Public key should be in X9.62 uncompressed format (65 bytes for P-256)
     if public_key.is_empty() {
         return Err(TPMError::UnsupportedPublicKey);
     }
@@ -877,7 +861,6 @@ fn is_secure_enclave_available() -> bool {
         return false;
     }
 
-    // Apple Silicon and T2 Macs both have Secure Enclave
     use std::process::Command;
 
     let output = match Command::new("sysctl")
@@ -897,14 +880,11 @@ fn is_secure_enclave_available() -> bool {
     let has_apple_silicon = cpu_brand.contains("Apple");
 
     if !has_apple_silicon {
-        // In CI environments, skip T2 detection entirely - CI runners typically
-        // don't have T2 chips and even if they did, we lack the entitlements
         if std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok() {
             log::info!("Skipping T2 detection in CI environment");
             return false;
         }
 
-        // Targeted query (-c class, -d1 depth) avoids hanging on large IOKit registries
         let t2_check = Command::new("ioreg")
             .args(["-l", "-d1", "-c", "AppleT2Controller"])
             .output();
@@ -913,17 +893,14 @@ fn is_secure_enclave_available() -> bool {
             if out.status.success() {
                 let ioreg_output = String::from_utf8_lossy(&out.stdout);
                 if !ioreg_output.contains("AppleT2Controller") {
-                    // No T2 chip, no Secure Enclave
                     return false;
                 }
             }
         } else {
-            // ioreg command failed, assume no T2
             return false;
         }
     }
 
-    // Verify Security framework is functional before attempting SE operations
     let security_check = Command::new("security").args(["list-keychains"]).output();
 
     match security_check {
@@ -958,7 +935,6 @@ fn hardware_uuid() -> Option<String> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
             if line.contains("IOPlatformUUID") {
-                // Format: "IOPlatformUUID" = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
                 if let Some(start) = line.rfind('"') {
                     let before_last = &line[..start];
                     if let Some(uuid_start) = before_last.rfind('"') {
@@ -972,7 +948,6 @@ fn hardware_uuid() -> Option<String> {
         }
     }
 
-    // Fallback: try sysctl for kern.uuid
     let output = Command::new("sysctl")
         .arg("-n")
         .arg("kern.uuid")
@@ -1018,8 +993,6 @@ mod tests {
             return;
         }
 
-        // We might fail here if the test runner isn't signed/entitled,
-        // but it's better to try than not test at all.
         let provider = match try_init() {
             Some(p) => p,
             None => {
@@ -1030,7 +1003,6 @@ mod tests {
             }
         };
 
-        // 1. Basic properties
         let caps = provider.capabilities();
         assert!(caps.hardware_backed);
         assert!(caps.secure_clock);
@@ -1043,23 +1015,19 @@ mod tests {
         let pub_key = provider.public_key();
         assert!(!pub_key.is_empty());
 
-        // 2. Binding (Sign)
         let data = b"test-binding-data";
         let binding = provider.bind(data).expect("Bind failed");
 
         assert_eq!(binding.provider_type, "secure-enclave");
         assert_eq!(binding.device_id, device_id);
 
-        // 3. Verify
         provider.verify(&binding).expect("Verification failed");
 
-        // 4. Quote
         let nonce = b"test-nonce";
         let quote = provider.quote(nonce, &[]).expect("Quote failed");
         assert_eq!(quote.nonce, nonce);
         crate::tpm::verify_quote(&quote).expect("Quote verification failed");
 
-        // 5. Seal/Unseal (Encryption)
         let secret = b"my-secret-data";
         let sealed = provider.seal(secret, &[]).expect("Seal failed");
         assert_ne!(sealed, secret);
@@ -1067,10 +1035,7 @@ mod tests {
         let unsealed = provider.unseal(&sealed).expect("Unseal failed");
         assert_eq!(unsealed, secret);
 
-        // 6. Key Attestation
         let challenge = b"attestation-challenge";
-        // This might fail if the key wasn't generated with attestation capabilities
-        // or if the test env restricts it, so we handle it gracefully-ish
         if let Ok(attestation) = provider.generate_key_attestation(challenge) {
             let verified = provider
                 .verify_key_attestation(&attestation, challenge)
@@ -1080,7 +1045,6 @@ mod tests {
             println!("Key attestation generation failed (expected in some test environments)");
         }
 
-        // 7. Counter
         let count1 = provider.get_counter();
         let count2 = provider.increment_counter();
         assert_eq!(count2, count1 + 1);

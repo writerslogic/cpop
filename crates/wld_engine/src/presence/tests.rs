@@ -74,14 +74,12 @@ fn test_challenge_lifecycle_simple_math() {
     let _session = verifier.start_session().expect("start session");
     let challenge = verifier.issue_challenge().expect("issue challenge");
 
-    // Parse the math problem
     let prompt = challenge
         .prompt
         .strip_prefix("Solve: ")
         .expect("prompt format");
     let prompt = prompt.strip_suffix(" = ?").expect("prompt suffix");
 
-    // Parse operands and operator
     let parts: Vec<&str> = prompt.split_whitespace().collect();
     assert_eq!(parts.len(), 3);
     let a: i32 = parts[0].parse().expect("first operand");
@@ -239,7 +237,6 @@ fn test_verification_rate_calculation() {
 
     verifier.start_session().expect("start session");
 
-    // Pass 2 challenges
     for _ in 0..2 {
         let challenge = verifier.issue_challenge().expect("issue");
         let word = challenge
@@ -251,7 +248,6 @@ fn test_verification_rate_calculation() {
             .expect("respond");
     }
 
-    // Fail 2 challenges
     for _ in 0..2 {
         let challenge = verifier.issue_challenge().expect("issue");
         verifier
@@ -440,7 +436,6 @@ fn test_empty_enabled_challenges_falls_back() {
     verifier.start_session().expect("start session");
     let challenge = verifier.issue_challenge().expect("issue challenge");
 
-    // Should fall back to TypePhrase
     assert!(challenge.prompt.starts_with("Type the phrase:"));
 }
 
@@ -561,7 +556,6 @@ fn test_all_challenge_types_verifiable() {
         verifier.start_session().expect("start session");
         let challenge = verifier.issue_challenge().expect("issue");
 
-        // Verify challenge has expected format
         match challenge_type {
             ChallengeType::TypePhrase => {
                 assert!(challenge.prompt.starts_with("Type the phrase:"))

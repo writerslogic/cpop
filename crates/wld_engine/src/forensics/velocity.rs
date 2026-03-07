@@ -82,7 +82,6 @@ pub fn detect_sessions(events: &[EventData], gap_threshold_sec: f64) -> Vec<Vec<
     let mut sorted = events.to_vec();
     sorted.sort_by_key(|e| e.timestamp_ns);
 
-    // Find split points, then split_off to move data without cloning again.
     let mut split_at: Vec<usize> = Vec::new();
     for i in 1..sorted.len() {
         let delta_ns = sorted[i].timestamp_ns - sorted[i - 1].timestamp_ns;
@@ -114,7 +113,6 @@ pub fn compute_session_stats(events: &[EventData]) -> SessionStats {
 
     let mut total_duration = 0.0;
     for session in &sessions {
-        // Sessions are already sorted by timestamp_ns.
         if session.len() >= 2 {
             let first = session.first().unwrap().timestamp_ns;
             let last = session.last().unwrap().timestamp_ns;

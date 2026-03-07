@@ -153,7 +153,6 @@ impl TranscriptionTimingStats {
         let min = *intervals.iter().min()?;
         let max = *intervals.iter().max()?;
 
-        // Words per minute: 60s * 1M us/s / mean_interval_us
         let wpm = if mean > 0.0 { 60_000_000.0 / mean } else { 0.0 };
 
         Some(Self {
@@ -174,8 +173,7 @@ mod tests {
     fn test_collector_basic() {
         let mut collector = TranscriptionCollector::new("whisper");
 
-        // Simulate word boundaries
-        collector.record_word_interval(200_000); // 200ms
+        collector.record_word_interval(200_000);
         collector.record_word_interval(150_000);
         collector.record_word_interval(180_000);
         collector.record_confidence(0.95);

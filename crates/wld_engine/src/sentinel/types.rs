@@ -268,7 +268,7 @@ pub fn hash_string(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
     let result = hasher.finalize();
-    hex::encode(&result[..8]) // Truncated to 8 bytes for compact keys
+    hex::encode(&result[..8])
 }
 
 pub fn parse_url_parts(url: &str) -> (String, String) {
@@ -337,19 +337,16 @@ fn looks_like_file_path(s: &str) -> bool {
         return false;
     }
 
-    // Windows: C:\..., D:\...
     if s.len() >= 3
         && s.as_bytes().get(1) == Some(&b':')
         && matches!(s.as_bytes().get(2), Some(&b'\\') | Some(&b'/'))
     {
         return true;
     }
-    // Unix: /...
     if s.starts_with('/') && s.len() > 1 {
         return true;
     }
 
-    // Known file extensions
     let lower = s.to_lowercase();
     for ext in DOC_EXTENSIONS {
         if lower.ends_with(ext) {

@@ -14,7 +14,6 @@ pub(crate) fn cmd_attest(
     output: Option<PathBuf>,
     non_interactive: bool,
 ) -> Result<()> {
-    // Initialize the engine
     let init = ffi::ffi_init();
     if !init.success {
         return Err(anyhow!(
@@ -23,7 +22,6 @@ pub(crate) fn cmd_attest(
         ));
     }
 
-    // Read content from file or stdin
     let content = if let Some(path) = &input {
         std::fs::read_to_string(path).map_err(|e| anyhow!("Failed to read input file: {e}"))?
     } else {
@@ -41,7 +39,6 @@ pub(crate) fn cmd_attest(
         return Err(anyhow!("No content to attest"));
     }
 
-    // Derive context label from input file name or "stdin"
     let context_label = input
         .as_ref()
         .and_then(|p| p.file_name())
@@ -49,7 +46,6 @@ pub(crate) fn cmd_attest(
         .unwrap_or("stdin")
         .to_string();
 
-    // Start ephemeral session
     let start = ffi::ffi_start_ephemeral_session(context_label);
     if !start.success {
         return Err(anyhow!(
@@ -59,7 +55,6 @@ pub(crate) fn cmd_attest(
     }
     let session_id = start.session_id;
 
-    // Create checkpoint with the full content
     let cp = ffi::ffi_ephemeral_checkpoint(
         session_id.clone(),
         content.clone(),
@@ -72,7 +67,6 @@ pub(crate) fn cmd_attest(
         ));
     }
 
-    // Collect declaration statement
     let statement = if non_interactive {
         "I authored this text.".to_string()
     } else {
@@ -88,7 +82,6 @@ pub(crate) fn cmd_attest(
         }
     };
 
-    // Finalize — produces WAR block + compact ref
     let result = ffi::ffi_ephemeral_finalize(session_id, content, statement);
     if !result.success {
         return Err(anyhow!(
@@ -97,14 +90,12 @@ pub(crate) fn cmd_attest(
         ));
     }
 
-    // Select output format
     let proof = match format.to_lowercase().as_str() {
         "compact" => result.compact_ref.clone(),
         "both" => format!("{}\n{}", result.war_block, result.compact_ref),
         _ => result.war_block.clone(), // "war" is default
     };
 
-    // Write output
     if let Some(out_path) = output {
         std::fs::write(&out_path, &proof).map_err(|e| anyhow!("Failed to write output: {e}"))?;
         eprintln!("Proof written to: {}", out_path.display());

@@ -227,10 +227,6 @@ mod tests {
 
     #[test]
     fn test_bitcoin_provider_from_env_missing() {
-        // Ensure it returns error when env vars are missing
-        // This assumes the test environment doesn't have them set, or we unset them.
-        // Rust tests run in parallel, so modifying env vars is risky.
-        // We'll verify that IF they are missing, it errors.
         if std::env::var("BITCOIN_RPC_URL").is_err() {
             assert!(BitcoinProvider::from_env().is_err());
         }

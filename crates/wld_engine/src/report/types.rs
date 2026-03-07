@@ -237,21 +237,18 @@ pub struct ForgeryComponent {
 /// The complete WAR report data structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WarReport {
-    // Header
     pub report_id: String,
     pub algorithm_version: String,
     pub generated_at: DateTime<Utc>,
     pub schema_version: String,
     pub is_sample: bool,
 
-    // Verdict
     pub score: u32,
     pub verdict: Verdict,
     pub verdict_description: String,
     pub likelihood_ratio: f64,
     pub enfsi_tier: EnfsiTier,
 
-    // Chain of custody
     pub document_hash: String,
     pub signing_key_fingerprint: String,
     pub document_words: Option<u64>,
@@ -265,34 +262,25 @@ pub struct WarReport {
     pub device_attestation: String,
     pub blockchain_anchor: Option<String>,
 
-    // Checkpoints
     pub checkpoints: Vec<ReportCheckpoint>,
 
-    // Sessions
     pub sessions: Vec<ReportSession>,
 
-    // Process evidence
     pub process: ProcessEvidence,
 
-    // Flags
     pub flags: Vec<ReportFlag>,
 
-    // Forgery resistance
     pub forgery: ForgeryInfo,
 
-    // Stylometric dimensions (optional — populated when NLP analysis available)
+    // Populated when NLP analysis is available
     pub dimensions: Vec<DimensionScore>,
 
-    // Writing flow visualization data (optional)
     pub writing_flow: Vec<FlowDataPoint>,
 
-    // Statistical methodology (optional)
     pub methodology: Option<StatisticalMethodology>,
 
-    // Scope
     pub limitations: Vec<String>,
 
-    // Analyzed text
     pub analyzed_text: Option<String>,
 }
 
