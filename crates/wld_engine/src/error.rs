@@ -283,6 +283,7 @@ mod tests {
         assert!(matches!(Error::identity("test"), Error::Identity(_)));
         assert!(matches!(Error::physics("test"), Error::Physics(_)));
         assert!(matches!(Error::rfc("test"), Error::Rfc(_)));
+        assert!(matches!(Error::signature("test"), Error::Signature(_)));
         assert!(matches!(Error::internal("test"), Error::Internal(_)));
     }
 }

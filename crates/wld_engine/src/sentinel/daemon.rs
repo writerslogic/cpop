@@ -449,9 +449,9 @@ pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     match response {
         IpcMessage::Ok { message } => {
             if let Some(msg) = message {
-                log::info!("{}", msg);
+                println!("{}", msg);
             } else {
-                log::info!("Now tracking: {}", abs_path.display());
+                println!("Now tracking: {}", abs_path.display());
             }
             Ok(())
         }
@@ -461,7 +461,7 @@ pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
                 abs_path.display()
             ))),
             IpcErrorCode::AlreadyTracking => {
-                log::info!("Already tracking: {}", abs_path.display());
+                println!("Already tracking: {}", abs_path.display());
                 Ok(())
             }
             IpcErrorCode::PermissionDenied => Err(SentinelError::Ipc(format!(
@@ -502,9 +502,9 @@ pub fn cmd_untrack(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     match response {
         IpcMessage::Ok { message } => {
             if let Some(msg) = message {
-                log::info!("{}", msg);
+                println!("{}", msg);
             } else {
-                log::info!("Stopped tracking: {}", abs_path.display());
+                println!("Stopped tracking: {}", abs_path.display());
             }
             Ok(())
         }
@@ -514,7 +514,7 @@ pub fn cmd_untrack(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
                 abs_path.display()
             ))),
             IpcErrorCode::NotTracking => {
-                log::info!("Not currently tracking: {}", abs_path.display());
+                println!("Not currently tracking: {}", abs_path.display());
                 Ok(())
             }
             IpcErrorCode::PermissionDenied => Err(SentinelError::Ipc(format!(
