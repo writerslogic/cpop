@@ -34,6 +34,7 @@ fn create_mock_packet(checkpoint_count: usize) -> EvidencePacket {
         },
         checkpoints,
         attestation_tier: None,
+        baseline_verification: None,
     }
 }
 
