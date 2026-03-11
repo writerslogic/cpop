@@ -5,11 +5,10 @@
 //! This module provides keystroke capture via the low-level keyboard hook
 //! and focus tracking via GetForegroundWindow.
 
-use super::types::{
-    FocusInfo, KeystrokeEvent, MouseEvent, MouseIdleStats, MouseStegoParams, PermissionStatus,
-    SyntheticStats,
+use super::{
+    FocusInfo, FocusMonitor, KeystrokeCapture, KeystrokeEvent, MouseCapture, MouseEvent,
+    MouseIdleStats, MouseStegoParams, PermissionStatus, SyntheticStats,
 };
-use super::{FocusMonitor, KeystrokeCapture, MouseCapture};
 use crate::DateTimeNanosExt;
 use crate::{MutexRecover, RwLockRecover};
 use anyhow::{anyhow, Result};
