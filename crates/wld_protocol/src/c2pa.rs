@@ -3,12 +3,13 @@
 //! C2PA (Coalition for Content Provenance and Authenticity) manifest generation.
 //!
 //! Produces sidecar `.c2pa` manifests containing PoP evidence assertions
-//! per C2PA 2.0 specification. The manifest uses JUMBF (ISO 19566-5) box
-//! format with COSE_Sign1 signatures.
+//! per C2PA 2.2 specification (2025-05-01). The manifest uses JUMBF
+//! (ISO 19566-5) box format with COSE_Sign1 signatures.
 
 use crate::crypto::PoPSigner;
 use crate::error::{Error, Result};
 use crate::rfc::EvidencePacket;
+use coset::{CborSerializable, CoseSign1Builder, HeaderBuilder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -56,13 +57,9 @@ impl PoPAssertion {
             jitter_seals,
         }
     }
-
-    pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self).map_err(|e| Error::Serialization(e.to_string()))
-    }
 }
 
-/// Standard C2PA action assertion.
+/// Standard C2PA actions assertion (§12.1, CBOR map).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionsAssertion {
     pub actions: Vec<Action>,
@@ -74,9 +71,17 @@ pub struct Action {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub when: Option<String>,
     #[serde(rename = "softwareAgent", skip_serializing_if = "Option::is_none")]
-    pub software_agent: Option<String>,
+    pub software_agent: Option<SoftwareAgent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<ActionParameters>,
+}
+
+/// Software agent can be a string or a structured claim-generator-info map (§12.1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SoftwareAgent {
+    Simple(String),
+    Info(ClaimGeneratorInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,50 +90,80 @@ pub struct ActionParameters {
     pub description: Option<String>,
 }
 
-/// C2PA hash-data assertion binding manifest to the asset.
+/// C2PA hash-data assertion binding manifest to the asset (§9.1, CBOR map).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashDataAssertion {
+    /// Asset filename.
     pub name: String,
-    /// SHA-256 of the document content.
-    pub hash: String,
+    /// SHA-256 of the asset content.
+    #[serde(with = "serde_bytes")]
+    pub hash: Vec<u8>,
+    /// Hash algorithm identifier per C2PA §15.4.
+    #[serde(rename = "alg")]
     pub algorithm: String,
-    /// Byte length of the asset.
+    /// Byte exclusion ranges (empty for sidecar manifests).
+    #[serde(default)]
+    pub exclusions: Vec<ExclusionRange>,
+}
+
+/// Byte range exclusion for embedded manifests (§9.1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusionRange {
+    pub start: u64,
     pub length: u64,
 }
 
 // ---------------------------------------------------------------------------
-// C2PA claim
+// C2PA claim v2 (§10, CBOR map)
 // ---------------------------------------------------------------------------
 
-/// C2PA claim referencing assertions within the manifest.
+/// C2PA claim v2 per §10 and §15.6. All field names match the CDDL schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct C2paClaim {
-    /// Claim generator identifier.
+    /// Claim generator string (§10.5).
     pub claim_generator: String,
-    /// Claim generator version info.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub claim_generator_info: Option<Vec<ClaimGeneratorInfo>>,
-    /// Title of the asset.
+
+    /// Structured claim generator info (§10.5, required in v2).
+    pub claim_generator_info: Vec<ClaimGeneratorInfo>,
+
+    /// XMP instance ID (§10.3, required).
+    #[serde(rename = "instanceID")]
+    pub instance_id: String,
+
+    /// JUMBF URI to the signature box (§10.7, required).
+    pub signature: String,
+
+    /// Hashed references to assertions created by this claim (§10.6).
+    pub created_assertions: Vec<HashedUri>,
+
+    /// Optional asset title.
     #[serde(rename = "dc:title", skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// ISO-8601 creation timestamp.
-    pub instance_id: String,
-    /// References to assertions in the assertion store.
-    pub assertions: Vec<AssertionRef>,
+
+    /// Optional asset format MIME type.
+    #[serde(rename = "dc:format", skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
+/// Claim generator info map (§10.5).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaimGeneratorInfo {
     pub name: String,
-    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
-/// Reference to an assertion within the JUMBF assertion store.
+/// Hashed URI reference per §8.4.2 and §15.10.3.
+/// The hash is binary (CBOR bstr), computed over the JUMBF superbox
+/// contents (description + content boxes, excluding the 8-byte superbox header)
+/// per §8.4.2.3.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssertionRef {
+pub struct HashedUri {
     pub url: String,
-    pub hash: String,
-    pub algorithm: String,
+    #[serde(with = "serde_bytes")]
+    pub hash: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alg: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,21 +171,26 @@ pub struct AssertionRef {
 // ---------------------------------------------------------------------------
 
 /// A complete C2PA manifest ready for JUMBF serialization.
+///
+/// Assertion JUMBF bytes are pre-built and stored here to guarantee the
+/// hashes in `claim.created_assertions` match the actual bytes written
+/// into the JUMBF output (no double-serialization risk).
 #[derive(Debug, Clone)]
 pub struct C2paManifest {
     pub claim: C2paClaim,
-    pub pop_assertion: PoPAssertion,
-    pub actions_assertion: ActionsAssertion,
-    pub hash_data_assertion: HashDataAssertion,
+    /// JUMBF label for the manifest superbox (must match assertion URL paths).
+    pub manifest_label: String,
+    /// Pre-built assertion JUMBF superboxes (hash.data, actions, pop).
+    pub assertion_boxes: Vec<Vec<u8>>,
     /// COSE_Sign1 signature bytes over the claim.
     pub signature: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
-// JUMBF constants
+// JUMBF constants (ISO 19566-5 / C2PA 2.2 §8)
 // ---------------------------------------------------------------------------
 
-/// C2PA manifest store superbox UUID (per C2PA 2.0 §8.1).
+/// C2PA manifest store superbox UUID (C2PA 2.2 §8.1).
 const C2PA_MANIFEST_STORE_UUID: [u8; 16] = [
     0x63, 0x32, 0x70, 0x61, // "c2pa"
     0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
@@ -180,23 +220,15 @@ const C2PA_SIGNATURE_UUID: [u8; 16] = [
     0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
-/// CBOR content box UUID (JUMBF).
-#[allow(dead_code)]
+/// CBOR content type UUID (ISO 19566-5).
 const JUMBF_CBOR_UUID: [u8; 16] = [
     0x63, 0x62, 0x6F, 0x72, // "cbor"
     0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
-/// JSON content box UUID (JUMBF).
+/// JSON content type UUID (ISO 19566-5).
 const JUMBF_JSON_UUID: [u8; 16] = [
     0x6A, 0x73, 0x6F, 0x6E, // "json"
-    0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
-];
-
-/// COSE_Sign1 content box UUID (JUMBF).
-#[allow(dead_code)]
-const JUMBF_COSE_SIGN1_UUID: [u8; 16] = [
-    0x63, 0x6F, 0x73, 0x65, // "cose"
     0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
@@ -211,11 +243,15 @@ pub const ASSERTION_LABEL_HASH_DATA: &str = "c2pa.hash.data";
 
 const CLAIM_GENERATOR: &str = "WritersLogic/0.3.0 wld_protocol/0.1.0";
 
+/// COSE header label for embedding a raw public key (COSE_Key).
+/// Uses the IANA-registered label for COSE_Key in unprotected headers.
+const COSE_HEADER_LABEL_COSE_KEY: i64 = -1;
+
 // ---------------------------------------------------------------------------
-// JUMBF box writer
+// JUMBF box writer (ISO 19566-5)
 // ---------------------------------------------------------------------------
 
-/// Minimal JUMBF (ISO 19566-5) box writer for C2PA manifests.
+/// Minimal JUMBF box writer for C2PA manifests.
 struct JumbfWriter {
     buf: Vec<u8>,
 }
@@ -230,7 +266,6 @@ impl JumbfWriter {
     /// Write a JUMBF description box ("jumd").
     fn write_description(&mut self, uuid: &[u8; 16], label: Option<&str>, toggles: u8) {
         let label_bytes = label.map(|l| l.as_bytes());
-        // jumd box: 8 (header) + 16 (UUID) + 1 (toggles) + label + NUL
         let label_len = label_bytes.map_or(0, |b| b.len() + 1); // +1 for NUL
         let box_len = 8 + 16 + 1 + label_len;
         self.write_box_header(box_len as u32, b"jumd");
@@ -242,37 +277,33 @@ impl JumbfWriter {
         }
     }
 
-    /// Write a JUMBF content box ("jcbr" for CBOR content).
+    /// Write a CBOR content box.
     fn write_content_cbor(&mut self, data: &[u8]) {
         let box_len = (8 + data.len()) as u32;
-        self.write_box_header(box_len, b"jcbr");
+        self.write_box_header(box_len, b"cbor");
         self.buf.extend_from_slice(data);
     }
 
-    /// Write a JUMBF content box ("json" for JSON content).
+    /// Write a JSON content box.
     fn write_content_json(&mut self, data: &[u8]) {
         let box_len = (8 + data.len()) as u32;
         self.write_box_header(box_len, b"json");
         self.buf.extend_from_slice(data);
     }
 
-    /// Write a JUMBF content box for COSE_Sign1 data.
-    fn write_content_cose(&mut self, data: &[u8]) {
-        let box_len = (8 + data.len()) as u32;
-        self.write_box_header(box_len, b"cose");
+    /// Embed pre-built bytes directly (for pre-serialized assertion boxes).
+    fn write_raw(&mut self, data: &[u8]) {
         self.buf.extend_from_slice(data);
     }
 
-    /// Write a JUMBF superbox ("jumb") wrapping nested content.
-    /// Returns the offset where the box length was written, for back-patching.
+    /// Begin a JUMBF superbox ("jumb"). Returns offset for back-patching length.
     fn begin_superbox(&mut self) -> usize {
         let offset = self.buf.len();
-        // Placeholder length; patched by end_superbox
         self.write_box_header(0, b"jumb");
         offset
     }
 
-    /// Patch the superbox length after all children are written.
+    /// Patch superbox length after all children are written.
     fn end_superbox(&mut self, offset: usize) {
         let total_len = (self.buf.len() - offset) as u32;
         self.buf[offset..offset + 4].copy_from_slice(&total_len.to_be_bytes());
@@ -292,14 +323,14 @@ impl JumbfWriter {
 // Manifest builder
 // ---------------------------------------------------------------------------
 
-/// Builds a C2PA sidecar manifest from PoP evidence.
+/// Builds a C2PA 2.2 sidecar manifest from PoP evidence.
 pub struct C2paManifestBuilder {
     document_hash: [u8; 32],
     document_filename: Option<String>,
-    document_byte_length: u64,
     evidence_bytes: Vec<u8>,
     evidence_packet: EvidencePacket,
     title: Option<String>,
+    manifest_label: String,
 }
 
 impl C2paManifestBuilder {
@@ -308,15 +339,18 @@ impl C2paManifestBuilder {
         evidence_packet: EvidencePacket,
         evidence_bytes: Vec<u8>,
         document_hash: [u8; 32],
-        document_byte_length: u64,
     ) -> Self {
+        let manifest_label = format!(
+            "urn:writerslogic:{}",
+            hex::encode(&evidence_packet.packet_id)
+        );
         Self {
             document_hash,
             document_filename: None,
-            document_byte_length,
             evidence_bytes,
             evidence_packet,
             title: None,
+            manifest_label,
         }
     }
 
@@ -346,8 +380,11 @@ impl C2paManifestBuilder {
         let actions_assertion = ActionsAssertion {
             actions: vec![Action {
                 action: "c2pa.created".to_string(),
-                when: Some(now.clone()),
-                software_agent: Some(CLAIM_GENERATOR.to_string()),
+                when: Some(now),
+                software_agent: Some(SoftwareAgent::Info(ClaimGeneratorInfo {
+                    name: "WritersLogic".to_string(),
+                    version: Some("0.3.0".to_string()),
+                })),
                 parameters: Some(ActionParameters {
                     description: Some(
                         "Document authored with WritersLogic Proof-of-Process witnessing"
@@ -362,72 +399,145 @@ impl C2paManifestBuilder {
                 .document_filename
                 .clone()
                 .unwrap_or_else(|| "document".to_string()),
-            hash: hex::encode(self.document_hash),
+            hash: self.document_hash.to_vec(),
             algorithm: "sha256".to_string(),
-            length: self.document_byte_length,
+            exclusions: vec![], // No exclusions for sidecar manifests
         };
 
-        // Serialize assertions for hashing
-        let pop_json =
-            serde_json::to_vec(&pop_assertion).map_err(|e| Error::Serialization(e.to_string()))?;
-        let actions_json = serde_json::to_vec(&actions_assertion)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-        let hash_data_json = serde_json::to_vec(&hash_data_assertion)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        // Build assertion JUMBF boxes ONCE. These exact bytes are hashed
+        // for the claim and later embedded verbatim in encode_jumbf —
+        // eliminating any double-serialization mismatch risk.
+        let hash_data_box =
+            build_assertion_jumbf_cbor(ASSERTION_LABEL_HASH_DATA, &hash_data_assertion)?;
+        let actions_box = build_assertion_jumbf_cbor(ASSERTION_LABEL_ACTIONS, &actions_assertion)?;
+        let pop_box = build_assertion_jumbf_json(ASSERTION_LABEL_POP, &pop_assertion)?;
 
-        // Build assertion references with hashes
-        let assertion_refs = vec![
-            AssertionRef {
-                url: format!("self#jumbf=/c2pa/urn:writerslogic:manifest/c2pa.assertions/{ASSERTION_LABEL_POP}"),
-                hash: hex::encode(Sha256::digest(&pop_json)),
-                algorithm: "sha256".to_string(),
+        // Hash over superbox contents (skip 8-byte jumb header) per §8.4.2.3
+        let hash_data_hash = Sha256::digest(&hash_data_box[8..]);
+        let actions_hash = Sha256::digest(&actions_box[8..]);
+        let pop_hash = Sha256::digest(&pop_box[8..]);
+
+        let manifest_label = &self.manifest_label;
+
+        let sig_url = format!("self#jumbf=/c2pa/{manifest_label}/c2pa.signature");
+
+        let created_assertions = vec![
+            HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_HASH_DATA}"
+                ),
+                hash: hash_data_hash.to_vec(),
+                alg: Some("sha256".to_string()),
             },
-            AssertionRef {
-                url: format!("self#jumbf=/c2pa/urn:writerslogic:manifest/c2pa.assertions/{ASSERTION_LABEL_ACTIONS}"),
-                hash: hex::encode(Sha256::digest(&actions_json)),
-                algorithm: "sha256".to_string(),
+            HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_ACTIONS}"
+                ),
+                hash: actions_hash.to_vec(),
+                alg: Some("sha256".to_string()),
             },
-            AssertionRef {
-                url: format!("self#jumbf=/c2pa/urn:writerslogic:manifest/c2pa.assertions/{ASSERTION_LABEL_HASH_DATA}"),
-                hash: hex::encode(Sha256::digest(&hash_data_json)),
-                algorithm: "sha256".to_string(),
+            HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_POP}"
+                ),
+                hash: pop_hash.to_vec(),
+                alg: Some("sha256".to_string()),
             },
         ];
 
-        let instance_id = format!(
-            "urn:writerslogic:{}",
-            hex::encode(&self.evidence_packet.packet_id)
-        );
-
         let claim = C2paClaim {
             claim_generator: CLAIM_GENERATOR.to_string(),
-            claim_generator_info: Some(vec![
+            claim_generator_info: vec![
                 ClaimGeneratorInfo {
                     name: "WritersLogic".to_string(),
-                    version: "0.3.0".to_string(),
+                    version: Some("0.3.0".to_string()),
                 },
                 ClaimGeneratorInfo {
                     name: "wld_protocol".to_string(),
-                    version: "0.1.0".to_string(),
+                    version: Some("0.1.0".to_string()),
                 },
-            ]),
+            ],
+            instance_id: format!("xmp:iid:{}", hex::encode(&self.evidence_packet.packet_id)),
+            signature: sig_url,
+            created_assertions,
             title: self.title,
-            instance_id,
-            assertions: assertion_refs,
+            format: None,
         };
 
-        // Sign the claim with COSE_Sign1
+        // Sign the CBOR-encoded claim with COSE_Sign1, including the
+        // signer's public key in the unprotected header (§13.2).
         let claim_cbor = ciborium_to_vec(&claim)?;
-        let signature = crate::crypto::sign_evidence_cose(&claim_cbor, signer)?;
+        let signature = sign_c2pa_claim(&claim_cbor, signer)?;
 
         Ok(C2paManifest {
             claim,
-            pop_assertion,
-            actions_assertion,
-            hash_data_assertion,
+            manifest_label: self.manifest_label.clone(),
+            assertion_boxes: vec![hash_data_box, actions_box, pop_box],
             signature,
         })
     }
+}
+
+/// Sign a C2PA claim with COSE_Sign1, embedding the signer's public key
+/// in the unprotected header per §13.2.
+fn sign_c2pa_claim(claim_cbor: &[u8], signer: &dyn PoPSigner) -> Result<Vec<u8>> {
+    let protected = HeaderBuilder::new().algorithm(signer.algorithm()).build();
+
+    let mut unprotected = coset::Header::default();
+    unprotected.rest.push((
+        coset::Label::Int(COSE_HEADER_LABEL_COSE_KEY),
+        ciborium::Value::Bytes(signer.public_key()),
+    ));
+
+    let mut sign_error: Option<Error> = None;
+    let sign1 = CoseSign1Builder::new()
+        .protected(protected)
+        .unprotected(unprotected)
+        .payload(claim_cbor.to_vec())
+        .create_signature(&[], |sig_data| match signer.sign(sig_data) {
+            Ok(sig) => sig,
+            Err(e) => {
+                sign_error = Some(e);
+                Vec::new()
+            }
+        })
+        .build();
+
+    if let Some(e) = sign_error {
+        return Err(e);
+    }
+
+    if sign1.signature.is_empty() {
+        return Err(Error::Crypto(
+            "COSE signing produced empty signature".to_string(),
+        ));
+    }
+
+    sign1
+        .to_vec()
+        .map_err(|e| Error::Crypto(format!("COSE encoding error: {e}")))
+}
+
+/// Build a single assertion JUMBF superbox with JSON content.
+fn build_assertion_jumbf_json<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>> {
+    let json_bytes = serde_json::to_vec(value).map_err(|e| Error::Serialization(e.to_string()))?;
+    let mut w = JumbfWriter::new();
+    let off = w.begin_superbox();
+    w.write_description(&JUMBF_JSON_UUID, Some(label), 0x03);
+    w.write_content_json(&json_bytes);
+    w.end_superbox(off);
+    Ok(w.finish())
+}
+
+/// Build a single assertion JUMBF superbox with CBOR content.
+fn build_assertion_jumbf_cbor<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>> {
+    let cbor_bytes = ciborium_to_vec(value)?;
+    let mut w = JumbfWriter::new();
+    let off = w.begin_superbox();
+    w.write_description(&JUMBF_CBOR_UUID, Some(label), 0x03);
+    w.write_content_cbor(&cbor_bytes);
+    w.end_superbox(off);
+    Ok(w.finish())
 }
 
 /// Serialize a value to CBOR bytes via ciborium.
@@ -443,24 +553,24 @@ fn ciborium_to_vec<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 /// Encode a C2PA manifest as JUMBF binary suitable for a `.c2pa` sidecar file.
+///
+/// Assertion boxes are embedded verbatim from `manifest.assertion_boxes`
+/// (the same bytes that were hashed for the claim), guaranteeing hash
+/// consistency without re-serialization.
 pub fn encode_jumbf(manifest: &C2paManifest) -> Result<Vec<u8>> {
     let mut w = JumbfWriter::new();
 
     // Manifest store superbox
     let store_off = w.begin_superbox();
-    w.write_description(
-        &C2PA_MANIFEST_STORE_UUID,
-        Some("c2pa"),
-        0x03, // requestable + label present
-    );
+    w.write_description(&C2PA_MANIFEST_STORE_UUID, Some("c2pa"), 0x03);
 
-    // Manifest superbox
+    // Manifest superbox — label must match assertion URL paths
     let manifest_off = w.begin_superbox();
-    w.write_description(&C2PA_MANIFEST_UUID, Some("urn:writerslogic:manifest"), 0x03);
+    w.write_description(&C2PA_MANIFEST_UUID, Some(&manifest.manifest_label), 0x03);
 
-    // --- Claim box ---
+    // --- Claim box (CBOR, label "c2pa.claim.v2" per §15.6) ---
     let claim_off = w.begin_superbox();
-    w.write_description(&C2PA_CLAIM_UUID, Some("c2pa.claim"), 0x03);
+    w.write_description(&C2PA_CLAIM_UUID, Some("c2pa.claim.v2"), 0x03);
     let claim_cbor = ciborium_to_vec(&manifest.claim)?;
     w.write_content_cbor(&claim_cbor);
     w.end_superbox(claim_off);
@@ -469,36 +579,17 @@ pub fn encode_jumbf(manifest: &C2paManifest) -> Result<Vec<u8>> {
     let astore_off = w.begin_superbox();
     w.write_description(&C2PA_ASSERTION_STORE_UUID, Some("c2pa.assertions"), 0x03);
 
-    // PoP assertion (JSON content box)
-    let pop_off = w.begin_superbox();
-    w.write_description(&JUMBF_JSON_UUID, Some(ASSERTION_LABEL_POP), 0x03);
-    let pop_json = serde_json::to_vec(&manifest.pop_assertion)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
-    w.write_content_json(&pop_json);
-    w.end_superbox(pop_off);
-
-    // Actions assertion (JSON content box)
-    let actions_off = w.begin_superbox();
-    w.write_description(&JUMBF_JSON_UUID, Some(ASSERTION_LABEL_ACTIONS), 0x03);
-    let actions_json = serde_json::to_vec(&manifest.actions_assertion)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
-    w.write_content_json(&actions_json);
-    w.end_superbox(actions_off);
-
-    // Hash-data assertion (JSON content box)
-    let hash_off = w.begin_superbox();
-    w.write_description(&JUMBF_JSON_UUID, Some(ASSERTION_LABEL_HASH_DATA), 0x03);
-    let hash_json = serde_json::to_vec(&manifest.hash_data_assertion)
-        .map_err(|e| Error::Serialization(e.to_string()))?;
-    w.write_content_json(&hash_json);
-    w.end_superbox(hash_off);
+    // Embed pre-built assertion JUMBF boxes verbatim (same bytes as hashed)
+    for assertion_box in &manifest.assertion_boxes {
+        w.write_raw(assertion_box);
+    }
 
     w.end_superbox(astore_off); // end assertion store
 
-    // --- Signature box (COSE_Sign1) ---
+    // --- Signature box (COSE_Sign1 in CBOR content box) ---
     let sig_off = w.begin_superbox();
     w.write_description(&C2PA_SIGNATURE_UUID, Some("c2pa.signature"), 0x03);
-    w.write_content_cose(&manifest.signature);
+    w.write_content_cbor(&manifest.signature);
     w.end_superbox(sig_off);
 
     w.end_superbox(manifest_off); // end manifest
@@ -507,18 +598,158 @@ pub fn encode_jumbf(manifest: &C2paManifest) -> Result<Vec<u8>> {
     Ok(w.finish())
 }
 
+// ---------------------------------------------------------------------------
+// Validation (§15)
+// ---------------------------------------------------------------------------
+
+/// Structural validation errors for a C2PA manifest.
+#[derive(Debug)]
+pub struct ValidationResult {
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+impl ValidationResult {
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+/// Validate a C2PA manifest against §15.10.1.2 standard manifest rules.
+pub fn validate_manifest(manifest: &C2paManifest) -> ValidationResult {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    // §15.10.1.2: Exactly one hard binding assertion
+    let hard_binding_count = manifest
+        .claim
+        .created_assertions
+        .iter()
+        .filter(|a| a.url.contains(ASSERTION_LABEL_HASH_DATA))
+        .count();
+    if hard_binding_count != 1 {
+        errors.push(format!(
+            "Standard manifest requires exactly 1 hard binding, found {hard_binding_count}"
+        ));
+    }
+
+    // §15.10.1.2: Exactly one actions assertion with c2pa.created or c2pa.opened
+    let actions_count = manifest
+        .claim
+        .created_assertions
+        .iter()
+        .filter(|a| a.url.contains(ASSERTION_LABEL_ACTIONS))
+        .count();
+    if actions_count != 1 {
+        errors.push(format!(
+            "Standard manifest requires exactly 1 actions assertion, found {actions_count}"
+        ));
+    }
+
+    // Verify assertion URL paths match the manifest label
+    for (i, assertion) in manifest.claim.created_assertions.iter().enumerate() {
+        if !assertion.url.contains(&manifest.manifest_label) {
+            errors.push(format!(
+                "created_assertions[{i}].url does not contain manifest label '{}'",
+                manifest.manifest_label
+            ));
+        }
+    }
+
+    // Verify signature URI matches the manifest label
+    if !manifest.claim.signature.contains(&manifest.manifest_label) {
+        errors.push(format!(
+            "signature URI does not contain manifest label '{}'",
+            manifest.manifest_label
+        ));
+    }
+
+    // §15.6: claim_generator_info must have at least one entry with `name`
+    if manifest.claim.claim_generator_info.is_empty() {
+        errors.push("claim_generator_info must have at least one entry".to_string());
+    } else if manifest.claim.claim_generator_info[0].name.is_empty() {
+        errors.push("claim_generator_info[0].name must not be empty".to_string());
+    }
+
+    // §15.6: instanceID required
+    if manifest.claim.instance_id.is_empty() {
+        errors.push("instanceID must not be empty".to_string());
+    }
+
+    // §15.6: signature URI required
+    if manifest.claim.signature.is_empty() {
+        errors.push("signature URI must not be empty".to_string());
+    }
+
+    // Verify assertion hashes are non-empty and correct length
+    for (i, assertion) in manifest.claim.created_assertions.iter().enumerate() {
+        if assertion.hash.len() != 32 {
+            errors.push(format!(
+                "created_assertions[{i}] hash length {} != 32",
+                assertion.hash.len()
+            ));
+        }
+        if assertion.url.is_empty() {
+            errors.push(format!("created_assertions[{i}] has empty URL"));
+        }
+    }
+
+    // Verify assertion box count matches claim references
+    if manifest.assertion_boxes.len() != manifest.claim.created_assertions.len() {
+        errors.push(format!(
+            "assertion_boxes count ({}) != created_assertions count ({})",
+            manifest.assertion_boxes.len(),
+            manifest.claim.created_assertions.len()
+        ));
+    }
+
+    // Verify each assertion box hash matches the claim reference
+    for (i, (assertion_ref, box_bytes)) in manifest
+        .claim
+        .created_assertions
+        .iter()
+        .zip(manifest.assertion_boxes.iter())
+        .enumerate()
+    {
+        if box_bytes.len() < 8 {
+            errors.push(format!("assertion_boxes[{i}] too short"));
+            continue;
+        }
+        let computed_hash = Sha256::digest(&box_bytes[8..]);
+        if assertion_ref.hash != computed_hash.as_slice() {
+            errors.push(format!(
+                "created_assertions[{i}] hash mismatch: claim has {}, box hashes to {}",
+                hex::encode(&assertion_ref.hash),
+                hex::encode(computed_hash)
+            ));
+        }
+    }
+
+    // Signature must not be empty
+    if manifest.signature.is_empty() {
+        errors.push("COSE_Sign1 signature is empty".to_string());
+    }
+
+    if manifest.manifest_label.is_empty() {
+        warnings.push("manifest_label is empty".to_string());
+    }
+
+    ValidationResult { errors, warnings }
+}
+
 /// Verify basic structural integrity of a C2PA JUMBF sidecar.
-/// Returns the claim JSON if valid.
-pub fn verify_jumbf_structure(data: &[u8]) -> Result<()> {
+pub fn verify_jumbf_structure(data: &[u8]) -> Result<JumbfInfo> {
     if data.len() < 8 {
         return Err(Error::Validation("JUMBF data too short".to_string()));
     }
+
     let box_len = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
     if box_len > data.len() {
         return Err(Error::Validation(
             "JUMBF box length exceeds data".to_string(),
         ));
     }
+
     let box_type = &data[4..8];
     if box_type != b"jumb" {
         return Err(Error::Validation(format!(
@@ -526,7 +757,49 @@ pub fn verify_jumbf_structure(data: &[u8]) -> Result<()> {
             String::from_utf8_lossy(box_type)
         )));
     }
-    Ok(())
+
+    // Walk child boxes
+    let mut offset = 8;
+    let mut found_jumd = false;
+    let mut child_count = 0u32;
+
+    while offset + 8 <= box_len {
+        let child_len = u32::from_be_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
+        if child_len < 8 || offset + child_len > box_len {
+            return Err(Error::Validation(format!(
+                "Invalid child box length {child_len} at offset {offset}"
+            )));
+        }
+        let child_type = &data[offset + 4..offset + 8];
+        if child_type == b"jumd" {
+            found_jumd = true;
+        }
+        child_count += 1;
+        offset += child_len;
+    }
+
+    if !found_jumd {
+        return Err(Error::Validation(
+            "Manifest store missing description box".to_string(),
+        ));
+    }
+
+    Ok(JumbfInfo {
+        total_size: box_len,
+        child_boxes: child_count,
+    })
+}
+
+/// Basic info extracted from JUMBF structural validation.
+#[derive(Debug)]
+pub struct JumbfInfo {
+    pub total_size: usize,
+    pub child_boxes: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -543,7 +816,7 @@ mod tests {
         EvidencePacket {
             version: 1,
             profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
-            packet_id: vec![0u8; 16],
+            packet_id: vec![0xAA; 16],
             created: 1710000000000,
             document: DocumentRef {
                 content_hash: HashValue {
@@ -586,6 +859,23 @@ mod tests {
         }
     }
 
+    fn test_signing_key() -> SigningKey {
+        SigningKey::from_bytes(&[1u8; 32])
+    }
+
+    fn build_test_manifest() -> C2paManifest {
+        let packet = test_evidence_packet();
+        let evidence_bytes = b"fake evidence cbor".to_vec();
+        let doc_hash = [0xABu8; 32];
+        let key = test_signing_key();
+
+        C2paManifestBuilder::new(packet, evidence_bytes, doc_hash)
+            .document_filename("test.txt")
+            .title("Test Document")
+            .build_manifest(&key)
+            .unwrap()
+    }
+
     #[test]
     fn pop_assertion_from_evidence() {
         let packet = test_evidence_packet();
@@ -599,58 +889,275 @@ mod tests {
     }
 
     #[test]
-    fn build_manifest_and_jumbf() {
-        let packet = test_evidence_packet();
-        let evidence_bytes = b"fake evidence cbor".to_vec();
-        let doc_hash = [0xABu8; 32];
+    fn claim_v2_required_fields() {
+        let manifest = build_test_manifest();
 
-        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        assert!(
+            !manifest.claim.instance_id.is_empty(),
+            "instanceID required"
+        );
+        assert!(
+            manifest.claim.instance_id.starts_with("xmp:iid:"),
+            "instanceID should use XMP format"
+        );
+        assert!(
+            !manifest.claim.signature.is_empty(),
+            "signature URI required"
+        );
+        assert!(
+            manifest.claim.signature.contains("c2pa.signature"),
+            "signature should reference signature box"
+        );
+        assert!(
+            !manifest.claim.claim_generator_info.is_empty(),
+            "claim_generator_info required"
+        );
+        assert!(
+            !manifest.claim.claim_generator_info[0].name.is_empty(),
+            "first entry must have name"
+        );
+        assert_eq!(manifest.claim.created_assertions.len(), 3);
+    }
 
-        let builder = C2paManifestBuilder::new(packet, evidence_bytes, doc_hash, 1024)
-            .document_filename("test.txt")
-            .title("Test Document");
+    #[test]
+    fn manifest_label_consistent_in_urls() {
+        let manifest = build_test_manifest();
 
-        let manifest = builder.build_manifest(&signing_key).unwrap();
+        // All assertion URLs must contain the manifest label
+        for assertion in &manifest.claim.created_assertions {
+            assert!(
+                assertion.url.contains(&manifest.manifest_label),
+                "Assertion URL '{}' must contain manifest label '{}'",
+                assertion.url,
+                manifest.manifest_label
+            );
+        }
 
-        assert_eq!(manifest.claim.claim_generator, CLAIM_GENERATOR);
-        assert_eq!(manifest.claim.assertions.len(), 3);
-        assert!(!manifest.signature.is_empty());
-        assert_eq!(manifest.pop_assertion.jitter_seals.len(), 3);
+        // Signature URL must also match
+        assert!(
+            manifest.claim.signature.contains(&manifest.manifest_label),
+            "Signature URL must contain manifest label"
+        );
+    }
+
+    #[test]
+    fn assertion_hashes_match_stored_boxes() {
+        let manifest = build_test_manifest();
+
+        assert_eq!(
+            manifest.assertion_boxes.len(),
+            manifest.claim.created_assertions.len()
+        );
+
+        for (assertion_ref, box_bytes) in manifest
+            .claim
+            .created_assertions
+            .iter()
+            .zip(manifest.assertion_boxes.iter())
+        {
+            let computed = Sha256::digest(&box_bytes[8..]);
+            assert_eq!(
+                assertion_ref.hash,
+                computed.to_vec(),
+                "Stored box hash must match claim reference"
+            );
+        }
+    }
+
+    #[test]
+    fn hashed_uri_uses_binary_hash() {
+        let manifest = build_test_manifest();
+        for assertion_ref in &manifest.claim.created_assertions {
+            assert_eq!(assertion_ref.hash.len(), 32, "SHA-256 = 32 raw bytes");
+        }
+    }
+
+    #[test]
+    fn signature_contains_public_key() {
+        let manifest = build_test_manifest();
+
+        // Decode the COSE_Sign1 to verify the public key is in the
+        // unprotected header
+        let sign1 = coset::CoseSign1::from_slice(&manifest.signature).expect("valid COSE_Sign1");
+        let pk_entry = sign1
+            .unprotected
+            .rest
+            .iter()
+            .find(|(label, _)| *label == coset::Label::Int(COSE_HEADER_LABEL_COSE_KEY));
+        assert!(
+            pk_entry.is_some(),
+            "Public key must be in unprotected header"
+        );
+
+        if let Some((_, ciborium::Value::Bytes(pk_bytes))) = pk_entry {
+            let key = test_signing_key();
+            assert_eq!(
+                pk_bytes,
+                &key.verifying_key().to_bytes().to_vec(),
+                "Embedded key must match signer"
+            );
+        } else {
+            panic!("Public key header value must be bytes");
+        }
+    }
+
+    #[test]
+    fn standard_manifest_validation_passes() {
+        let manifest = build_test_manifest();
+        let result = validate_manifest(&manifest);
+        assert!(
+            result.is_valid(),
+            "Valid manifest should pass: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validation_catches_label_mismatch() {
+        let mut manifest = build_test_manifest();
+        // Corrupt the manifest label so it diverges from assertion URLs
+        manifest.manifest_label = "urn:wrong:label".to_string();
+        let result = validate_manifest(&manifest);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.contains("manifest label")),
+            "Should catch label mismatch: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validation_catches_hash_mismatch() {
+        let mut manifest = build_test_manifest();
+        // Corrupt an assertion box so its hash won't match
+        if let Some(first_box) = manifest.assertion_boxes.first_mut() {
+            if first_box.len() > 10 {
+                first_box[10] ^= 0xFF;
+            }
+        }
+        let result = validate_manifest(&manifest);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.contains("hash mismatch")),
+            "Should catch hash mismatch: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn validation_catches_missing_hard_binding() {
+        let mut manifest = build_test_manifest();
+        manifest
+            .claim
+            .created_assertions
+            .retain(|a| !a.url.contains(ASSERTION_LABEL_HASH_DATA));
+        manifest.assertion_boxes.remove(0); // hash.data is first
+        let result = validate_manifest(&manifest);
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.contains("hard binding")));
+    }
+
+    #[test]
+    fn validation_catches_missing_actions() {
+        let mut manifest = build_test_manifest();
+        manifest
+            .claim
+            .created_assertions
+            .retain(|a| !a.url.contains(ASSERTION_LABEL_ACTIONS));
+        manifest.assertion_boxes.remove(1); // actions is second
+        let result = validate_manifest(&manifest);
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.contains("actions")));
     }
 
     #[test]
     fn encode_jumbf_roundtrip() {
-        let packet = test_evidence_packet();
-        let evidence_bytes = b"fake evidence cbor".to_vec();
-        let doc_hash = [0xABu8; 32];
+        let manifest = build_test_manifest();
+        let jumbf = encode_jumbf(&manifest).unwrap();
 
-        let signing_key = SigningKey::from_bytes(&[2u8; 32]);
-
-        let builder = C2paManifestBuilder::new(packet, evidence_bytes, doc_hash, 1024)
-            .document_filename("test.txt");
-
-        let jumbf = builder.build_jumbf(&signing_key).unwrap();
-
-        // Validate JUMBF structure
         assert!(jumbf.len() > 100);
-        verify_jumbf_structure(&jumbf).unwrap();
-
-        // First box must be "jumb"
+        let info = verify_jumbf_structure(&jumbf).unwrap();
+        assert!(info.child_boxes >= 2);
         assert_eq!(&jumbf[4..8], b"jumb");
 
-        // Box length matches total data
         let box_len = u32::from_be_bytes([jumbf[0], jumbf[1], jumbf[2], jumbf[3]]) as usize;
         assert_eq!(box_len, jumbf.len());
     }
 
     #[test]
-    fn jumbf_structure_validation() {
+    fn jumbf_contains_manifest_label() {
+        let manifest = build_test_manifest();
+        let jumbf = encode_jumbf(&manifest).unwrap();
+        let jumbf_str = String::from_utf8_lossy(&jumbf);
+
+        assert!(
+            jumbf_str.contains(&manifest.manifest_label),
+            "JUMBF must contain the manifest label as the box label"
+        );
+        assert!(
+            jumbf_str.contains("c2pa.claim.v2"),
+            "JUMBF must contain c2pa.claim.v2 label"
+        );
+    }
+
+    #[test]
+    fn jumbf_contains_cbor_content() {
+        let manifest = build_test_manifest();
+        let jumbf = encode_jumbf(&manifest).unwrap();
+        let has_cbor_box = jumbf.windows(4).any(|w| w == b"cbor");
+        assert!(has_cbor_box, "JUMBF should contain cbor content boxes");
+    }
+
+    #[test]
+    fn jumbf_structure_validation_errors() {
         assert!(verify_jumbf_structure(&[]).is_err());
         assert!(verify_jumbf_structure(&[0; 4]).is_err());
-        // Wrong box type
+
         let mut bad = vec![0, 0, 0, 16];
         bad.extend_from_slice(b"xxxx");
         bad.extend_from_slice(&[0; 8]);
         assert!(verify_jumbf_structure(&bad).is_err());
+    }
+
+    #[test]
+    fn unique_packet_id_produces_unique_manifest() {
+        let mut p1 = test_evidence_packet();
+        let mut p2 = test_evidence_packet();
+        p1.packet_id = vec![0x01; 16];
+        p2.packet_id = vec![0x02; 16];
+        let key = test_signing_key();
+
+        let m1 = C2paManifestBuilder::new(p1, b"ev1".to_vec(), [0xAA; 32])
+            .build_manifest(&key)
+            .unwrap();
+        let m2 = C2paManifestBuilder::new(p2, b"ev2".to_vec(), [0xBB; 32])
+            .build_manifest(&key)
+            .unwrap();
+
+        assert_ne!(m1.manifest_label, m2.manifest_label);
+        assert_ne!(m1.claim.instance_id, m2.claim.instance_id);
+    }
+
+    #[test]
+    fn full_pipeline_build_validate_encode() {
+        let packet = test_evidence_packet();
+        let evidence_bytes = b"fake evidence cbor".to_vec();
+        let doc_hash = [0xABu8; 32];
+        let key = test_signing_key();
+
+        let builder = C2paManifestBuilder::new(packet, evidence_bytes, doc_hash)
+            .document_filename("test.txt")
+            .title("Test Document");
+
+        let manifest = builder.build_manifest(&key).unwrap();
+
+        let validation = validate_manifest(&manifest);
+        assert!(validation.is_valid(), "Errors: {:?}", validation.errors);
+
+        let jumbf = encode_jumbf(&manifest).unwrap();
+        assert!(jumbf.len() > 200);
+
+        let info = verify_jumbf_structure(&jumbf).unwrap();
+        assert_eq!(info.total_size, jumbf.len());
     }
 }

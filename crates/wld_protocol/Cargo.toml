@@ -33,7 +33,7 @@ getrandom = { version = "0.2", features = ["js"], optional = true }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", optional = true }
+serde_json = "1.0"
 
 # CBOR encoding (RFC 8949 compliance for Proof-of-Process packets)
 ciborium = "0.2"
@@ -62,7 +62,7 @@ tempfile = "3"
 [features]
 default = ["std"]
 std = ["sha2/std", "hmac/std", "serde/std", "zeroize/std"]
-full = ["std", "serde_json"]
+full = ["std"]
 apple-secure-enclave = []
 wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:getrandom"]
 
