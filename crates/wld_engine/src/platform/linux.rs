@@ -12,7 +12,7 @@
 //! - Membership in the `input` group
 //! - Appropriate udev rules
 
-use super::types::{
+use super::{
     FocusInfo, HIDDeviceInfo, KeystrokeEvent, MouseEvent, MouseIdleStats, MouseStegoParams,
     PermissionStatus, SyntheticStats, TransportType,
 };

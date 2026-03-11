@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::error::{Result, SentinelError};
+use super::error::Result;
 use super::focus::{PollingSentinelFocusTracker, SentinelFocusTracker, WindowProvider};
 use super::types::*;
 use crate::config::SentinelConfig;

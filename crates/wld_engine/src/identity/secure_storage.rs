@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use keyring::Entry;
 use std::sync::{Once, OnceLock};
+#[cfg_attr(target_os = "linux", allow(unused_imports))]
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::ProtectedBuf;
