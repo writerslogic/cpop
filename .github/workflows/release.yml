@@ -62,10 +62,10 @@ jobs:
           fi
 
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --workspace
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
   build:
     name: Build (${{ matrix.target }})
