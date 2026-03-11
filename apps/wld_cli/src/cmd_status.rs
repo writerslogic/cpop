@@ -126,7 +126,13 @@ pub(crate) fn cmd_status() -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    println!("Database: ERROR ({})", e);
+                    let err_str = format!("{}", e);
+                    if err_str.contains("Permission denied") {
+                        eprintln!("Error: Permission denied reading WritersLogic data.");
+                        eprintln!("Check permissions on ~/.writerslogic/");
+                    } else {
+                        println!("Database: ERROR ({})", e);
+                    }
                 }
             }
         } else {

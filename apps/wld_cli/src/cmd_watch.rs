@@ -10,7 +10,9 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc as std_mpsc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use wld_engine::vdf;
@@ -56,7 +58,7 @@ fn save_watch_config(config: &WatchConfig) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn cmd_watch(action: Option<WatchAction>) -> Result<()> {
+async fn cmd_watch(action: Option<WatchAction>) -> Result<()> {
     let action = action.ok_or_else(|| anyhow!("No watch action specified"))?;
     match action {
         WatchAction::Add { path, patterns } => {
@@ -234,6 +236,15 @@ struct WatcherState {
 async fn run_watcher(config: &WatchConfig) -> Result<()> {
     let (tx, rx) = std_mpsc::channel();
 
+    // Use an atomic flag so Ctrl+C breaks the loop promptly (within 250ms)
+    // instead of waiting for the full recv_timeout duration.
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .ok(); // Best-effort — default Ctrl+C handler still works if this fails
+
     let engine_config = ensure_dirs()?;
     let cached_vdf_params = load_vdf_params(&engine_config);
     let mut state = WatcherState {
@@ -277,7 +288,13 @@ async fn run_watcher(config: &WatchConfig) -> Result<()> {
     let debounce_duration = Duration::from_secs(5);
 
     loop {
-        match rx.recv_timeout(Duration::from_secs(1)) {
+        if !running.load(Ordering::SeqCst) {
+            println!();
+            println!("Watch stopped.");
+            break;
+        }
+
+        match rx.recv_timeout(Duration::from_millis(250)) {
             Ok(event) => match event.kind {
                 EventKind::Modify(_) | EventKind::Create(_) => {
                     for path in event.paths {
@@ -300,7 +317,25 @@ async fn run_watcher(config: &WatchConfig) -> Result<()> {
                                         );
                                     }
                                     Err(e) => {
-                                        eprintln!("Checkpoint error for {}: {}", path.display(), e);
+                                        let err_str = format!("{}", e);
+                                        if err_str.contains("database is locked")
+                                            || err_str.contains("SQLITE_BUSY")
+                                        {
+                                            // DB locked by another process — skip, next save retries
+                                            eprintln!(
+                                                "[{}] Skipped (database busy): {}",
+                                                Utc::now().format("%H:%M:%S"),
+                                                path.file_name()
+                                                    .unwrap_or_default()
+                                                    .to_string_lossy()
+                                            );
+                                        } else {
+                                            eprintln!(
+                                                "Checkpoint error for {}: {}",
+                                                path.display(),
+                                                e
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -356,7 +391,14 @@ fn should_checkpoint(path: &Path, folder_patterns: &[(PathBuf, Vec<Pattern>)]) -
 fn auto_checkpoint(file_path: &Path, state: &mut WatcherState) -> Result<()> {
     let abs_path = fs::canonicalize(file_path)?;
     let abs_path_str = abs_path.to_string_lossy().to_string();
+    let metadata = fs::metadata(&abs_path)?;
+    if metadata.len() > 500_000_000 {
+        return Ok(()); // Skip very large files in watch mode
+    }
     let content = fs::read(&abs_path)?;
+    if content.is_empty() {
+        return Ok(()); // Skip empty files — likely mid-write
+    }
     let content_hash: [u8; 32] = Sha256::digest(&content).into();
     let file_size = content.len() as i64;
     let events = state.db.get_events_for_file(&abs_path_str)?;

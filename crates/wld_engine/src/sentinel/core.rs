@@ -29,7 +29,7 @@ pub struct Sentinel {
     pub(crate) shadow: Arc<ShadowManager>,
     pub(crate) current_focus: Arc<RwLock<Option<String>>>,
     pub(crate) running: Arc<AtomicBool>,
-    pub(crate) signing_key: Arc<RwLock<SigningKey>>,
+    pub(crate) signing_key: Arc<RwLock<Option<SigningKey>>>,
     /// Accumulates keystroke timing for authorship fingerprinting
     pub(crate) activity_accumulator:
         Arc<RwLock<crate::fingerprint::ActivityFingerprintAccumulator>>,
@@ -65,8 +65,8 @@ impl Sentinel {
             shadow: Arc::new(shadow),
             current_focus: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
-            // Placeholder — replaced when identity is loaded via set_hmac_key()
-            signing_key: Arc::new(RwLock::new(SigningKey::from_bytes(&[0u8; 32]))),
+            // None until identity is loaded via set_signing_key() / set_hmac_key()
+            signing_key: Arc::new(RwLock::new(None)),
             session_events_tx,
             shutdown_tx: Arc::new(Mutex::new(None)),
             activity_accumulator: Arc::new(RwLock::new(
@@ -148,17 +148,19 @@ impl Sentinel {
 
     /// Re-derive the mouse steganography seed from the current signing key.
     fn update_mouse_stego_seed(&self) {
-        let key = self.signing_key.read_recover();
-        let mut seed = key.to_bytes();
-        let mut engine = self.mouse_stego_engine.write_recover();
-        engine.reset();
-        *engine = crate::platform::MouseStegoEngine::new(seed);
-        seed.zeroize();
+        let guard = self.signing_key.read_recover();
+        if let Some(key) = guard.as_ref() {
+            let mut seed = key.to_bytes();
+            let mut engine = self.mouse_stego_engine.write_recover();
+            engine.reset();
+            *engine = crate::platform::MouseStegoEngine::new(seed);
+            seed.zeroize();
+        }
     }
 
     /// Set the signing key (also re-seeds mouse steganography).
     pub fn set_signing_key(&self, key: SigningKey) {
-        *self.signing_key.write_recover() = key;
+        *self.signing_key.write_recover() = Some(key);
         self.update_mouse_stego_seed();
     }
 
@@ -172,7 +174,7 @@ impl Sentinel {
                     return;
                 }
             };
-            *self.signing_key.write_recover() = SigningKey::from_bytes(&bytes);
+            *self.signing_key.write_recover() = Some(SigningKey::from_bytes(&bytes));
             bytes.zeroize();
             self.update_mouse_stego_seed();
         } else {
@@ -515,16 +517,22 @@ impl Sentinel {
         let mut session_id_bytes = [0u8; 32];
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-            let key = self.signing_key.read_recover().clone();
-            if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
-                let payload = create_session_start_payload(&session);
-                if let Err(e) = wal.append(EntryType::SessionStart, payload) {
-                    log::warn!(
-                        "WAL append failed for session {}: {}",
-                        session.session_id,
-                        e
-                    );
+            if let Some(key) = self.signing_key.read_recover().clone() {
+                if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
+                    let payload = create_session_start_payload(&session);
+                    if let Err(e) = wal.append(EntryType::SessionStart, payload) {
+                        log::warn!(
+                            "WAL append failed for session {}: {}",
+                            session.session_id,
+                            e
+                        );
+                    }
                 }
+            } else {
+                log::warn!(
+                    "Signing key not initialized, skipping WAL for session {}",
+                    session.session_id
+                );
             }
         } else {
             log::warn!(
@@ -609,7 +617,10 @@ impl Sentinel {
             return Ok(()); // Need at least 10 keystrokes for meaningful baseline
         }
 
-        let signing_key = self.signing_key.read_recover();
+        let guard = self.signing_key.read_recover();
+        let signing_key = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("signing key not initialized"))?;
         let public_key = signing_key.verifying_key().to_bytes();
         let mut hasher = sha2::Sha256::new();
         hasher.update(public_key);

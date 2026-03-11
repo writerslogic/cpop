@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 use crate::rfc::{self, TimeEvidence, VdfProofRfc};
-use crate::vdf::VdfProof;
+use crate::vdf::{Argon2SwfProof, VdfProof};
 use crate::DateTimeNanosExt;
 
 /// Entanglement mode for checkpoint chain computation.
@@ -116,6 +116,10 @@ pub struct Checkpoint {
     /// Serialized `InclusionProof` for anti-deletion verification
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmr_inclusion_proof: Option<Vec<u8>>,
+
+    /// Argon2id-based SWF proof (draft-condrey-rats-pop, algorithm=20)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argon2_swf: Option<Argon2SwfProof>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,6 +171,7 @@ impl Checkpoint {
             rfc_jitter: None,
             time_evidence: None,
             mmr_inclusion_proof: None,
+            argon2_swf: None,
         }
     }
 
@@ -192,8 +197,13 @@ impl Checkpoint {
 
     pub(super) fn compute_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        // Domain separator: v3 (RFC fields), v2 (jitter), v1 (legacy)
-        if self.rfc_vdf.is_some() || self.rfc_jitter.is_some() || self.time_evidence.is_some() {
+        // Domain separator: v4 (Argon2id SWF), v3 (RFC fields), v2 (jitter), v1 (legacy)
+        if self.argon2_swf.is_some() {
+            hasher.update(b"witnessd-checkpoint-v4");
+        } else if self.rfc_vdf.is_some()
+            || self.rfc_jitter.is_some()
+            || self.time_evidence.is_some()
+        {
             hasher.update(b"witnessd-checkpoint-v3");
         } else if self.jitter_binding.is_some() {
             hasher.update(b"witnessd-checkpoint-v2");
@@ -241,6 +251,16 @@ impl Checkpoint {
         if let Some(time_ev) = &self.time_evidence {
             hasher.update([time_ev.tier as u8]);
             hasher.update(time_ev.timestamp_ms.to_be_bytes());
+        }
+
+        if let Some(swf) = &self.argon2_swf {
+            hasher.update(swf.input);
+            hasher.update(swf.merkle_root);
+            hasher.update(swf.params.iterations.to_be_bytes());
+            hasher.update(swf.params.time_cost.to_be_bytes());
+            hasher.update(swf.params.memory_cost.to_be_bytes());
+            hasher.update(swf.params.parallelism.to_be_bytes());
+            hasher.update(swf.challenge);
         }
 
         hasher.finalize().into()

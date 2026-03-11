@@ -3,7 +3,7 @@
 //! Encrypted channel wrapper for inter-component communication
 
 use chacha20poly1305::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{rand_core::RngCore, Aead, KeyInit, OsRng},
     ChaCha20Poly1305, Nonce,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,10 +39,16 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
         let cipher = ChaCha20Poly1305::new(&key);
         key.as_mut_slice().zeroize();
 
+        // Generate a random 4-byte nonce prefix to fill nonce bytes [0..4],
+        // preventing the first 4 bytes from always being zero.
+        let mut nonce_prefix = [0u8; 4];
+        OsRng.fill_bytes(&mut nonce_prefix);
+
         let sender = SecureSender {
             tx,
             cipher: cipher.clone(),
             nonce_counter: AtomicU64::new(0),
+            nonce_prefix,
             _phantom: std::marker::PhantomData,
         };
 
@@ -60,6 +66,8 @@ pub struct SecureSender<T> {
     tx: Sender<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
     pub(super) nonce_counter: AtomicU64,
+    /// Random prefix for nonce bytes [0..4], generated once at channel creation.
+    nonce_prefix: [u8; 4],
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -81,6 +89,7 @@ impl<T: serde::Serialize> SecureSender<T> {
             }));
         }
         let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
         nonce_bytes[4..].copy_from_slice(&counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 

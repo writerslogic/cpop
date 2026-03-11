@@ -201,6 +201,10 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Clean path by removing trailing slashes and collapsing duplicates.
+/// Note: Uses string operations via `to_string_lossy()` — non-UTF8 path
+/// components will be replaced with U+FFFD, which is acceptable for
+/// display and comparison purposes.
 fn clean_path(path: &Path) -> PathBuf {
     let path_str = path.to_string_lossy();
     let trimmed = path_str.trim_end_matches('/');
@@ -238,7 +242,7 @@ pub fn show_quick_status(
     iterations_per_second: u64,
     tracked_files: &[(String, i64, i64)],
 ) {
-    println!("=== WitnessD Status ===");
+    println!("=== WritersLogic Status ===");
     println!();
 
     if !is_initialized(writerslogic_dir) {
@@ -282,7 +286,8 @@ pub fn show_quick_status(
         }
 
         println!();
-        println!("Commands: commit, log, export, watch");
+        println!("Commands: commit, log, export, verify");
+        println!("Shortcuts: wld <file> (track), wld <folder> (watch)");
     }
 }
 

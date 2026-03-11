@@ -193,7 +193,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                         time_cost: 0,
                         memory_cost: 0,
                         parallelism: 1,
-                        iterations: ev.vdf_iterations,
+                        steps: ev.vdf_iterations,
                     },
                     input: vdf_input_bytes,
                     merkle_root,
@@ -203,7 +203,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 jitter_binding: None,
                 physical_state: None,
                 entangled_mac: None,
-                self_receipts: None,
+                receipts: None,
                 active_probes: None,
             })
         })

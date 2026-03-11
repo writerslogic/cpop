@@ -179,9 +179,38 @@ pub struct ForensicSummary {
     pub flags: Option<Vec<ForensicFlag>>,
 }
 
+/// Human-to-tool effort attribution for attestation results per CDDL `effort-attribution`.
+///
+/// ```cddl
+/// effort-attribution = {
+///     1 => float32,
+///     2 => uint,
+///     3 => uint,
+///     ? 4 => uint,
+///     ? 5 => uint,
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffortAttribution {
+    #[serde(rename = "1")]
+    pub human_fraction: f32,
+
+    #[serde(rename = "2")]
+    pub human_checkpoints: u64,
+
+    #[serde(rename = "3")]
+    pub receipt_checkpoints: u64,
+
+    #[serde(rename = "4", skip_serializing_if = "Option::is_none")]
+    pub tool_attributed_chars: Option<u64>,
+
+    #[serde(rename = "5", skip_serializing_if = "Option::is_none")]
+    pub total_chars: Option<u64>,
+}
+
 /// Wire-format attestation result per CDDL `attestation-result`.
 ///
-/// Wrapped with CBOR tag 1463894560 for transmission.
+/// Wrapped with CBOR tag 1129791826 (CWAR) for transmission.
 ///
 /// ```cddl
 /// attestation-result = {
@@ -198,6 +227,7 @@ pub struct ForensicSummary {
 ///     11 => bstr,                   ; verifier-signature
 ///     12 => pop-timestamp,          ; created
 ///     ? 13 => forensic-summary,
+///     ? 15 => effort-attribution,
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,6 +283,10 @@ pub struct AttestationResultWire {
     /// Forensic summary
     #[serde(rename = "13", default, skip_serializing_if = "Option::is_none")]
     pub forensic_summary: Option<ForensicSummary>,
+
+    /// Effort attribution
+    #[serde(rename = "15", default, skip_serializing_if = "Option::is_none")]
+    pub effort_attribution: Option<EffortAttribution>,
 }
 
 /// Max absence claims.
@@ -264,7 +298,7 @@ use super::MAX_STRING_LEN;
 const MAX_FORENSIC_FLAGS: usize = 200;
 
 impl AttestationResultWire {
-    /// Encode to tagged CBOR (tag 1463894560).
+    /// Encode to tagged CBOR (tag 1129791826 CWAR).
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {
         codec::cbor::encode_tagged(self, CBOR_TAG_ATTESTATION_RESULT)
     }

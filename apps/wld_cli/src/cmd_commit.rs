@@ -37,6 +37,23 @@ pub(crate) fn cmd_commit(file_path: &PathBuf, message: Option<String>) -> Result
     })?;
     let abs_path_str = abs_path.to_string_lossy().to_string();
 
+    let metadata =
+        fs::metadata(&abs_path).map_err(|e| anyhow!("Cannot read file metadata: {}", e))?;
+    if metadata.len() > 500_000_000 {
+        return Err(anyhow!(
+            "File is too large ({:.0} MB).\n\n\
+             WritersLogic is designed for text documents, not binary files.\n\
+             Maximum file size: 500 MB",
+            metadata.len() as f64 / 1_000_000.0
+        ));
+    }
+    if metadata.len() > 50_000_000 {
+        eprintln!(
+            "Warning: Large file ({:.0} MB). Checkpoint may take longer than usual.",
+            metadata.len() as f64 / 1_000_000.0
+        );
+    }
+
     let mut db = open_secure_store()?;
 
     let content = fs::read(&abs_path).map_err(|e| {
@@ -50,6 +67,9 @@ pub(crate) fn cmd_commit(file_path: &PathBuf, message: Option<String>) -> Result
             anyhow!("Failed to read file {}: {}", abs_path.display(), e)
         }
     })?;
+    if content.is_empty() {
+        eprintln!("Warning: File is empty. Checkpoint will record a zero-byte snapshot.");
+    }
     let content_hash: [u8; 32] = Sha256::digest(&content).into();
     let file_size = content.len() as i64;
 
@@ -91,8 +111,8 @@ pub(crate) fn cmd_commit(file_path: &PathBuf, message: Option<String>) -> Result
         size_delta,
         previous_hash: [0u8; 32], // Will be set by insert_secure_event
         event_hash: [0u8; 32],    // Will be computed by insert_secure_event
-        context_type: message.clone(),
-        context_note: None,
+        context_type: Some("manual".to_string()),
+        context_note: message.clone(),
         vdf_input: Some(vdf_input),
         vdf_output: Some(vdf_proof.output),
         vdf_iterations: vdf_proof.iterations,
@@ -124,11 +144,15 @@ pub(crate) fn cmd_commit(file_path: &PathBuf, message: Option<String>) -> Result
 }
 
 /// Smart commit — handles auto-init and file selection.
-pub(crate) fn cmd_commit_smart(file: Option<PathBuf>, message: Option<String>) -> Result<()> {
+pub(crate) async fn cmd_commit_smart(
+    file: Option<PathBuf>,
+    message: Option<String>,
+    anchor: bool,
+) -> Result<()> {
     let dir = writerslogic_dir()?;
 
     if !crate::smart_defaults::is_initialized(&dir) {
-        println!("WitnessD is not initialized.");
+        println!("WritersLogic is not initialized.");
         if crate::smart_defaults::ask_confirmation("Initialize now?", true)? {
             crate::cmd_init::cmd_init()?;
             println!();
@@ -154,7 +178,70 @@ pub(crate) fn cmd_commit_smart(file: Option<PathBuf>, message: Option<String>) -
 
     let msg = message.or_else(|| Some(crate::smart_defaults::default_commit_message()));
 
-    cmd_commit(&file_path, msg)
+    cmd_commit(&file_path, msg)?;
+
+    if anchor {
+        cmd_anchor(&file_path).await?;
+    }
+
+    Ok(())
+}
+
+/// Anchor the latest evidence hash in the WritersProof transparency log.
+async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
+    use wld_engine::writersproof::{AnchorMetadata, AnchorRequest, WritersProofClient};
+
+    let abs_path = fs::canonicalize(file_path)?;
+    let abs_path_str = abs_path.to_string_lossy().to_string();
+
+    let db = open_secure_store()?;
+    let events = db.get_events_for_file(&abs_path_str)?;
+    let latest = events
+        .last()
+        .ok_or_else(|| anyhow!("No events found for anchoring"))?;
+
+    let evidence_hash = hex::encode(latest.event_hash);
+
+    // Load signing key for the anchor signature
+    let config = ensure_dirs()?;
+    let dir = &config.data_dir;
+    let signing_key = crate::util::load_signing_key(dir)?;
+    let signature = {
+        use ed25519_dalek::Signer;
+        hex::encode(signing_key.sign(latest.event_hash.as_slice()).to_bytes())
+    };
+    let did = crate::util::load_did(dir).unwrap_or_else(|_| "unknown".into());
+
+    let api_key = crate::util::load_api_key(dir)?;
+    let client = WritersProofClient::new("https://api.writersproof.com").with_jwt(api_key);
+
+    print!("Anchoring to transparency log...");
+    io::stdout().flush()?;
+
+    let resp = client
+        .anchor(AnchorRequest {
+            evidence_hash,
+            author_did: did,
+            signature,
+            metadata: Some(AnchorMetadata {
+                document_name: file_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string()),
+                tier: Some("anchored".into()),
+            }),
+        })
+        .await?;
+
+    println!(" done");
+    println!("  Anchor ID: {}", resp.anchor_id);
+    println!("  Timestamp: {}", resp.timestamp);
+    println!("  Log index: {}", resp.log_index);
+    println!(
+        "  Verify at: https://writersproof.com/verify/{}",
+        resp.anchor_id
+    );
+
+    Ok(())
 }
 
 /// Select a file for commit interactively.

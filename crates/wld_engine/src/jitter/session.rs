@@ -16,7 +16,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 use subtle::ConstantTimeEq;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::timestamp_nanos_u64;
 
@@ -284,8 +284,9 @@ impl Session {
             last_jitter: self.last_jitter,
         };
 
-        let mut bytes =
-            serde_json::to_vec_pretty(&data).map_err(|e| Error::validation(e.to_string()))?;
+        let bytes = Zeroizing::new(
+            serde_json::to_vec_pretty(&data).map_err(|e| Error::validation(e.to_string()))?,
+        );
         data.seed.zeroize();
 
         if let Some(parent) = path.as_ref().parent() {
@@ -294,9 +295,7 @@ impl Session {
 
         // Atomic write: write to .tmp then rename for crash safety
         let tmp_path = path.as_ref().with_extension("tmp");
-        let write_result = fs::write(&tmp_path, &bytes);
-        bytes.zeroize();
-        write_result.map_err(|e| Error::validation(e.to_string()))?;
+        fs::write(&tmp_path, &*bytes).map_err(|e| Error::validation(e.to_string()))?;
 
         #[cfg(unix)]
         {
@@ -311,7 +310,7 @@ impl Session {
     }
 
     pub fn load(path: impl AsRef<Path>) -> crate::error::Result<Self> {
-        let bytes = fs::read(path).map_err(|e| Error::validation(e.to_string()))?;
+        let bytes = Zeroizing::new(fs::read(path).map_err(|e| Error::validation(e.to_string()))?);
         let mut data: SessionData =
             serde_json::from_slice(&bytes).map_err(|e| Error::validation(e.to_string()))?;
         let mut seed_bytes =

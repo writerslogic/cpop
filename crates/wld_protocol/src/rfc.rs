@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = 1347571280;
-pub const CBOR_TAG_ATTESTATION_RESULT: u64 = 1463894560;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = 1129336656;
+pub const CBOR_TAG_ATTESTATION_RESULT: u64 = 1129791826;
 
 /// IANA Private Enterprise Number for WritersLogic Inc.
 /// Registered under SMI Network Management Private Enterprise Codes.

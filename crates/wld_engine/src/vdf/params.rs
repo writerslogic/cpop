@@ -110,6 +110,51 @@ pub fn chain_input_entangled(
     hasher.finalize().into()
 }
 
+// --- Spec-conformant SWF seed derivation (draft-condrey-rats-pop) ---
+
+/// Domain separation tag for SWF seed derivation per spec.
+const SWF_SEED_DST: &[u8] = b"PoP-SWF-Seed-v1";
+
+/// Genesis (first-checkpoint) SWF seed per spec:
+/// `H("PoP-SWF-Seed-v1" || CBOR-encode(document-ref) || initial-jitter-sample)`.
+///
+/// When no jitter sample is available (CORE tier), `jitter_sample` should be
+/// a 32-byte local nonce.
+pub fn swf_seed_genesis(doc_ref_cbor: &[u8], jitter_or_nonce: &[u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SWF_SEED_DST);
+    hasher.update(doc_ref_cbor);
+    hasher.update(jitter_or_nonce);
+    hasher.finalize().into()
+}
+
+/// ENHANCED+ SWF seed per spec:
+/// `H("PoP-SWF-Seed-v1" || prev-hash || CBOR-encode(jitter-binding.intervals) || CBOR-encode(physical-state))`.
+///
+/// `physical_state_cbor` may be empty if no physical state is available.
+pub fn swf_seed_enhanced(
+    prev_hash: &[u8; 32],
+    jitter_intervals_cbor: &[u8],
+    physical_state_cbor: &[u8],
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SWF_SEED_DST);
+    hasher.update(prev_hash);
+    hasher.update(jitter_intervals_cbor);
+    hasher.update(physical_state_cbor);
+    hasher.finalize().into()
+}
+
+/// CORE fallback SWF seed per spec:
+/// `H("PoP-SWF-Seed-v1" || prev-hash || local-nonce)`.
+pub fn swf_seed_core(prev_hash: &[u8; 32], local_nonce: &[u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SWF_SEED_DST);
+    hasher.update(prev_hash);
+    hasher.update(local_nonce);
+    hasher.finalize().into()
+}
+
 pub struct BatchVerifier {
     workers: usize,
 }
@@ -254,5 +299,51 @@ mod tests {
         let input1 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 7);
         let input2 = chain_input_entangled([1u8; 32], [2u8; 32], [3u8; 32], 8);
         assert_ne!(input1, input2);
+    }
+
+    #[test]
+    fn test_swf_seed_genesis_deterministic() {
+        let doc_cbor = b"fake-cbor-doc-ref";
+        let nonce = [0xAA; 32];
+        let s1 = swf_seed_genesis(doc_cbor, &nonce);
+        let s2 = swf_seed_genesis(doc_cbor, &nonce);
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_swf_seed_genesis_sensitive_to_nonce() {
+        let doc_cbor = b"fake-cbor";
+        let s1 = swf_seed_genesis(doc_cbor, &[1u8; 32]);
+        let s2 = swf_seed_genesis(doc_cbor, &[2u8; 32]);
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_swf_seed_enhanced_includes_all_fields() {
+        let prev = [1u8; 32];
+        let intervals = b"intervals-cbor";
+        let phys = b"phys-cbor";
+        let s1 = swf_seed_enhanced(&prev, intervals, phys);
+        let s2 = swf_seed_enhanced(&prev, intervals, b"different-phys");
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_swf_seed_core_deterministic() {
+        let prev = [3u8; 32];
+        let nonce = [4u8; 32];
+        let s1 = swf_seed_core(&prev, &nonce);
+        let s2 = swf_seed_core(&prev, &nonce);
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_swf_seed_genesis_differs_from_core_with_different_structure() {
+        // Genesis uses variable-length doc_cbor; core uses fixed 32-byte prev_hash.
+        // With structurally different inputs they must diverge.
+        let nonce = [5u8; 32];
+        let genesis = swf_seed_genesis(b"short-cbor", &nonce);
+        let core = swf_seed_core(&nonce, &nonce);
+        assert_ne!(genesis, core);
     }
 }

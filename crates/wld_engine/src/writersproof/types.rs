@@ -50,6 +50,123 @@ pub struct AttestResponse {
     pub chain_position: u64,
 }
 
+/// Request body for `POST /v1/anchor`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnchorRequest {
+    /// SHA-256 hash of the evidence packet (hex-encoded).
+    pub evidence_hash: String,
+    /// Author DID (e.g. `did:wld:...`).
+    pub author_did: String,
+    /// Ed25519 signature over the evidence hash (hex-encoded).
+    pub signature: String,
+    /// Optional metadata about the anchored document.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AnchorMetadata>,
+}
+
+/// Metadata attached to an anchor request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnchorMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+}
+
+/// Response from `POST /v1/anchor`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnchorResponse {
+    pub anchor_id: String,
+    pub timestamp: String,
+    pub log_index: u64,
+    pub inclusion_proof: Vec<String>,
+    pub signed_tree_head: SignedTreeHead,
+}
+
+/// Signed Tree Head from the transparency log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedTreeHead {
+    pub tree_size: u64,
+    pub root_hash: String,
+    pub signature: String,
+}
+
+/// Response from `POST /v1/verify`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyResponse {
+    pub verdict: String,
+    pub confidence: f64,
+    pub tier: String,
+    pub anchored: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparency_log: Option<TransparencyLogInfo>,
+    pub evidence_summary: EvidenceSummary,
+    /// Base64-encoded WAR (CBOR EAT Attestation Result).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub war: Option<String>,
+}
+
+/// Transparency log inclusion info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransparencyLogInfo {
+    pub log_index: u64,
+    pub inclusion_verified: bool,
+}
+
+/// Summary of verified evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceSummary {
+    pub duration: String,
+    pub keystrokes: u64,
+    pub sessions: u64,
+    pub behavioral_plausibility: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross_modal_consistency: Option<String>,
+}
+
+/// Request body for `POST /v1/stego/sign`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StegoSignRequest {
+    /// MMR root hash (hex-encoded).
+    pub mmr_root: String,
+    /// SHA-256 of the document text (hex-encoded).
+    pub document_hash: String,
+    /// Author DID.
+    pub author_did: String,
+    /// Anchor ID from a prior `POST /v1/anchor` call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_id: Option<String>,
+}
+
+/// Response from `POST /v1/stego/sign`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StegoSignResponse {
+    /// HMAC-based watermark tag (base64).
+    pub watermark_bits: String,
+    /// PRNG seed for position computation (hex).
+    pub embedding_seed: String,
+    /// Number of ZWC characters to embed.
+    pub expected_zwc_count: usize,
+    /// Server signature over the watermark (base64).
+    pub signature: String,
+    /// Expiration of the signed watermark.
+    pub expires_at: String,
+}
+
+/// Response from `POST /v1/stego/verify`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StegoVerifyResponse {
+    pub valid: bool,
+    pub zwc_found: usize,
+    pub zwc_expected: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_timestamp: Option<String>,
+}
+
 /// Queued attestation for offline submission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueuedAttestation {

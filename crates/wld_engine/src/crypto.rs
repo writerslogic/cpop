@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -110,4 +111,92 @@ pub fn derive_hmac_key(priv_key_seed: &[u8]) -> Vec<u8> {
     hasher.update(b"witnessd-hmac-key-v1");
     hasher.update(priv_key_seed);
     hasher.finalize().to_vec()
+}
+
+/// Compute jitter-seal per draft-condrey-rats-pop section 5.6.
+///
+/// seal-key = HKDF-Expand(merkle-root, "PoP-jitter-seal", 32)
+/// jitter-seal = HMAC-SHA256(seal-key, CBOR-encode(intervals))
+pub fn compute_jitter_seal(merkle_root: &[u8], intervals_cbor: &[u8]) -> Vec<u8> {
+    let hk = Hkdf::<Sha256>::from_prk(merkle_root).expect("merkle root must be >= HashLen bytes");
+    let mut seal_key = [0u8; 32];
+    hk.expand(b"PoP-jitter-seal", &mut seal_key)
+        .expect("32 bytes is valid HKDF-Expand length");
+
+    let mut mac =
+        HmacSha256::new_from_slice(&seal_key).expect("32-byte key is valid for HMAC-SHA256");
+    mac.update(intervals_cbor);
+    mac.finalize().into_bytes().to_vec()
+}
+
+/// Compute entangled-mac per draft-condrey-rats-pop section 5.5.
+///
+/// mac-key = HKDF-Expand(merkle-root, "PoP-entangled-mac", 32)
+/// mac-input = prev-hash || content-hash || CBOR(jitter-binding) || CBOR(physical-state)
+/// entangled-mac = HMAC-SHA256(mac-key, mac-input)
+pub fn compute_entangled_mac(
+    merkle_root: &[u8],
+    prev_hash: &[u8],
+    content_hash: &[u8],
+    jitter_binding_cbor: &[u8],
+    physical_state_cbor: &[u8],
+) -> Vec<u8> {
+    let hk = Hkdf::<Sha256>::from_prk(merkle_root).expect("merkle root must be >= HashLen bytes");
+    let mut mac_key = [0u8; 32];
+    hk.expand(b"PoP-entangled-mac", &mut mac_key)
+        .expect("32 bytes is valid HKDF-Expand length");
+
+    let mut mac =
+        HmacSha256::new_from_slice(&mac_key).expect("32-byte key is valid for HMAC-SHA256");
+    mac.update(prev_hash);
+    mac.update(content_hash);
+    mac.update(jitter_binding_cbor);
+    mac.update(physical_state_cbor);
+    mac.finalize().into_bytes().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jitter_seal_deterministic() {
+        let root = [0xAA; 32];
+        let intervals = b"test-cbor-data";
+        let seal1 = compute_jitter_seal(&root, intervals);
+        let seal2 = compute_jitter_seal(&root, intervals);
+        assert_eq!(seal1, seal2);
+        assert_eq!(seal1.len(), 32);
+    }
+
+    #[test]
+    fn jitter_seal_varies_with_root() {
+        let intervals = b"test-cbor-data";
+        let seal_a = compute_jitter_seal(&[0xAA; 32], intervals);
+        let seal_b = compute_jitter_seal(&[0xBB; 32], intervals);
+        assert_ne!(seal_a, seal_b);
+    }
+
+    #[test]
+    fn entangled_mac_deterministic() {
+        let root = [0xCC; 32];
+        let prev = [0x01; 32];
+        let content = [0x02; 32];
+        let jb_cbor = b"jitter-binding";
+        let ps_cbor = b"physical-state";
+        let mac1 = compute_entangled_mac(&root, &prev, &content, jb_cbor, ps_cbor);
+        let mac2 = compute_entangled_mac(&root, &prev, &content, jb_cbor, ps_cbor);
+        assert_eq!(mac1, mac2);
+        assert_eq!(mac1.len(), 32);
+    }
+
+    #[test]
+    fn entangled_mac_varies_with_inputs() {
+        let root = [0xCC; 32];
+        let prev = [0x01; 32];
+        let content = [0x02; 32];
+        let mac_a = compute_entangled_mac(&root, &prev, &content, b"jb1", b"ps1");
+        let mac_b = compute_entangled_mac(&root, &prev, &content, b"jb2", b"ps1");
+        assert_ne!(mac_a, mac_b);
+    }
 }

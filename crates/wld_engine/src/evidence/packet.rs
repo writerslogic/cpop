@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 
-use crate::codec::{self, Format, CBOR_TAG_PPP};
+use crate::codec::{self, Format, CBOR_TAG_CPOP};
 use crate::error::Error;
 use crate::keyhierarchy;
 use crate::rfc;
@@ -51,8 +51,14 @@ impl Packet {
         let mut prev_hash = String::new();
         for (i, cp) in self.checkpoints.iter().enumerate() {
             if i == 0 {
-                if cp.previous_hash != hex::encode([0u8; 32]) {
-                    return Err(Error::evidence("checkpoint 0: non-zero previous hash"));
+                // Accept legacy all-zeros OR spec-correct H(CBOR(document-ref))
+                let is_legacy_zeros = cp.previous_hash == hex::encode([0u8; 32]);
+                let is_valid_hex = cp.previous_hash.len() == 64
+                    && cp.previous_hash.chars().all(|c| c.is_ascii_hexdigit());
+                if !is_legacy_zeros && !is_valid_hex {
+                    return Err(Error::evidence(
+                        "checkpoint 0: invalid genesis previous hash",
+                    ));
                 }
             } else if cp.previous_hash != prev_hash {
                 return Err(Error::evidence(format!(
@@ -214,13 +220,13 @@ impl Packet {
 
     /// Encode to CBOR with PPP semantic tag (RFC-compliant default).
     pub fn encode(&self) -> crate::error::Result<Vec<u8>> {
-        codec::cbor::encode_ppp(self).map_err(|e| Error::evidence(format!("encode failed: {e}")))
+        codec::cbor::encode_cpop(self).map_err(|e| Error::evidence(format!("encode failed: {e}")))
     }
 
     /// Encode in the specified format.
     pub fn encode_with_format(&self, format: Format) -> crate::error::Result<Vec<u8>> {
         match format {
-            Format::Cbor => codec::cbor::encode_ppp(self)
+            Format::Cbor => codec::cbor::encode_cpop(self)
                 .map_err(|e| Error::evidence(format!("encode failed: {e}"))),
             Format::Json => serde_json::to_vec_pretty(self)
                 .map_err(|e| Error::evidence(format!("encode failed: {e}"))),
@@ -234,10 +240,10 @@ impl Packet {
 
         match format {
             Format::Cbor => {
-                if !codec::cbor::has_tag(data, CBOR_TAG_PPP) {
+                if !codec::cbor::has_tag(data, CBOR_TAG_CPOP) {
                     return Err(Error::evidence("missing or invalid CBOR PPP tag"));
                 }
-                codec::cbor::decode_ppp(data)
+                codec::cbor::decode_cpop(data)
                     .map_err(|e| Error::evidence(format!("decode failed: {e}")))
             }
             Format::Json => serde_json::from_slice(data)
@@ -249,10 +255,10 @@ impl Packet {
     pub fn decode_with_format(data: &[u8], format: Format) -> crate::error::Result<Packet> {
         match format {
             Format::Cbor => {
-                if !codec::cbor::has_tag(data, CBOR_TAG_PPP) {
+                if !codec::cbor::has_tag(data, CBOR_TAG_CPOP) {
                     return Err(Error::evidence("missing or invalid CBOR PPP tag"));
                 }
-                codec::cbor::decode_ppp(data)
+                codec::cbor::decode_cpop(data)
                     .map_err(|e| Error::evidence(format!("decode failed: {e}")))
             }
             Format::Json => serde_json::from_slice(data)

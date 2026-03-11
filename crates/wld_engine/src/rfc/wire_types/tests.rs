@@ -33,7 +33,7 @@ mod tests {
                     time_cost: 3,
                     memory_cost: 65536,
                     parallelism: 1,
-                    iterations: 1000,
+                    steps: 1000,
                 },
                 input: vec![0x11; 32],
                 merkle_root: vec![0x22; 32],
@@ -47,7 +47,7 @@ mod tests {
             jitter_binding: None,
             physical_state: None,
             entangled_mac: None,
-            self_receipts: None,
+            receipts: None,
             active_probes: None,
         };
 
@@ -84,7 +84,7 @@ mod tests {
                     time_cost: 3,
                     memory_cost: 65536,
                     parallelism: 1,
-                    iterations: 1000,
+                    steps: 1000,
                 },
                 input: vec![0x11; 32],
                 merkle_root: vec![0x22; 32],
@@ -98,7 +98,7 @@ mod tests {
             jitter_binding: None,
             physical_state: None,
             entangled_mac: None,
-            self_receipts: None,
+            receipts: None,
             active_probes: None,
         };
 
@@ -175,6 +175,7 @@ mod tests {
                     total_windows: 9,
                 }]),
             }),
+            effort_attribution: None,
         }
     }
 
@@ -236,12 +237,12 @@ mod tests {
     #[test]
     fn test_correct_cbor_tag_values() {
         assert_eq!(
-            CBOR_TAG_EVIDENCE_PACKET, 1347571280,
-            "Evidence packet tag should be 1347571280 (IANA PPPP)"
+            CBOR_TAG_EVIDENCE_PACKET, 1129336656,
+            "Evidence packet tag should be 1129336656 (IANA CPOP)"
         );
         assert_eq!(
-            CBOR_TAG_ATTESTATION_RESULT, 1463894560,
-            "Attestation result tag should be 1463894560 (IANA WAR)"
+            CBOR_TAG_ATTESTATION_RESULT, 1129791826,
+            "Attestation result tag should be 1129791826 (IANA CWAR)"
         );
     }
 
@@ -435,19 +436,22 @@ mod tests {
     fn test_checkpoint_with_self_receipts() {
         let mut packet = create_test_evidence_packet();
 
-        packet.checkpoints[0].self_receipts = Some(vec![SelfReceipt {
+        packet.checkpoints[0].receipts = Some(vec![Receipt::SelfReceipt(SelfReceipt {
             tool_id: "vscode-writerslogic".to_string(),
             output_commit: HashValue::sha256(vec![0xAA; 32]),
             evidence_ref: HashValue::sha256(vec![0xBB; 32]),
             transfer_time: 1700000002000,
-        }]);
+        })]);
 
         let encoded = packet.encode_cbor().expect("encode");
         let decoded = EvidencePacketWire::decode_cbor(&encoded).expect("decode");
 
-        let receipts = decoded.checkpoints[0].self_receipts.as_ref().unwrap();
+        let receipts = decoded.checkpoints[0].receipts.as_ref().unwrap();
         assert_eq!(receipts.len(), 1);
-        assert_eq!(receipts[0].tool_id, "vscode-writerslogic");
+        match &receipts[0] {
+            Receipt::SelfReceipt(sr) => assert_eq!(sr.tool_id, "vscode-writerslogic"),
+            Receipt::Tool(_) => panic!("expected SelfReceipt"),
+        }
     }
 
     #[test]

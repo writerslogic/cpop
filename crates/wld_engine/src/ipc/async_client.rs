@@ -171,6 +171,12 @@ impl AsyncIpcClient {
         )
         .map_err(|e| AsyncIpcClientError::ProtocolError(format!("Key derivation failed: {}", e)))?;
 
+        // Zeroize ECDH ephemeral secrets now that session key is derived.
+        // Both types implement ZeroizeOnDrop, so explicit drop triggers cleanup.
+        drop(shared_secret);
+        drop(client_secret);
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+
         let mut len_buf = [0u8; 4];
         stream
             .read_exact(&mut len_buf)

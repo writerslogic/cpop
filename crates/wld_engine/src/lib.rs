@@ -40,6 +40,7 @@ pub mod rfc;
 pub mod sealed_chain;
 pub mod sealed_identity;
 pub mod sentinel;
+pub mod steganography;
 pub mod store;
 pub mod timing;
 pub mod tpm;
@@ -150,6 +151,8 @@ pub use crate::rfc::wire_types::{
 };
 
 pub use crate::error::{Error, Result};
+
+pub use crate::steganography::{ZwcBinding, ZwcEmbedder, ZwcExtractor, ZwcParams, ZwcVerification};
 
 #[cfg(feature = "wld_jitter")]
 pub use crate::wld_jitter_bridge::{

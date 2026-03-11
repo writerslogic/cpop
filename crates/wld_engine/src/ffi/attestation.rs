@@ -90,6 +90,10 @@ pub fn ffi_is_hardware_bound() -> bool {
 }
 
 /// Sign a server-issued attestation challenge with the device key.
+///
+/// Returns both the raw signature and a COSE_Sign1 envelope per
+/// draft-condrey-rats-pop §4.3 (device attestation uses COSE_Sign1 with the
+/// platform attestation object as payload).
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sign_attestation_challenge(challenge_b64: String) -> FfiAttestationResponse {
     let challenge = match base64::engine::general_purpose::STANDARD.decode(&challenge_b64) {
@@ -99,6 +103,7 @@ pub fn ffi_sign_attestation_challenge(challenge_b64: String) -> FfiAttestationRe
                 success: false,
                 signature_b64: String::new(),
                 public_key_b64: String::new(),
+                cose_sign1_b64: String::new(),
                 device_id: String::new(),
                 model: String::new(),
                 os_version: String::new(),
@@ -116,6 +121,7 @@ pub fn ffi_sign_attestation_challenge(challenge_b64: String) -> FfiAttestationRe
                 success: false,
                 signature_b64: String::new(),
                 public_key_b64: String::new(),
+                cose_sign1_b64: String::new(),
                 device_id: provider.device_id(),
                 model: get_model(),
                 os_version: get_os_version(),
@@ -127,10 +133,29 @@ pub fn ffi_sign_attestation_challenge(challenge_b64: String) -> FfiAttestationRe
     let public_key = provider.public_key();
     let b64 = &base64::engine::general_purpose::STANDARD;
 
+    // Build COSE_Sign1 envelope wrapping the challenge as payload.
+    let tpm_signer = crate::tpm::TpmSigner::new(provider.clone());
+    let cose_sign1_b64 = match wld_protocol::crypto::sign_evidence_cose(&challenge, &tpm_signer) {
+        Ok(cose_bytes) => b64.encode(&cose_bytes),
+        Err(e) => {
+            return FfiAttestationResponse {
+                success: false,
+                signature_b64: b64.encode(&signature),
+                public_key_b64: b64.encode(&public_key),
+                cose_sign1_b64: String::new(),
+                device_id: provider.device_id(),
+                model: get_model(),
+                os_version: get_os_version(),
+                error_message: Some(format!("COSE_Sign1 envelope creation failed: {e}")),
+            };
+        }
+    };
+
     FfiAttestationResponse {
         success: true,
         signature_b64: b64.encode(&signature),
         public_key_b64: b64.encode(&public_key),
+        cose_sign1_b64,
         device_id: provider.device_id(),
         model: get_model(),
         os_version: get_os_version(),

@@ -54,21 +54,37 @@ pub(crate) fn cmd_presence(action: PresenceAction) -> Result<()> {
             session.active = false;
             session.end_time = Some(chrono::Utc::now());
 
-            // CLI-M4: Reset counters before recalculating to avoid double-counting
-            session.challenges_issued = 0;
-            session.challenges_passed = 0;
-            session.challenges_failed = 0;
-            session.challenges_missed = 0;
-            for challenge in &session.challenges {
-                session.challenges_issued += 1;
-                match challenge.status {
-                    ChallengeStatus::Passed => session.challenges_passed += 1,
-                    ChallengeStatus::Failed => session.challenges_failed += 1,
-                    ChallengeStatus::Pending | ChallengeStatus::Expired => {
-                        session.challenges_missed += 1;
-                    }
-                }
-            }
+            // CLI-M4: Derive counters from the challenge list (single source of truth)
+            let total_count = session.challenges.len();
+            let passed_count = session
+                .challenges
+                .iter()
+                .filter(|c| matches!(c.status, ChallengeStatus::Passed))
+                .count();
+            let failed_count = session
+                .challenges
+                .iter()
+                .filter(|c| matches!(c.status, ChallengeStatus::Failed))
+                .count();
+            let missed_count = session
+                .challenges
+                .iter()
+                .filter(|c| {
+                    matches!(
+                        c.status,
+                        ChallengeStatus::Pending | ChallengeStatus::Expired
+                    )
+                })
+                .count();
+            debug_assert_eq!(
+                passed_count + failed_count + missed_count,
+                total_count,
+                "challenge counters must sum to total"
+            );
+            session.challenges_issued = total_count as i32;
+            session.challenges_passed = passed_count as i32;
+            session.challenges_failed = failed_count as i32;
+            session.challenges_missed = missed_count as i32;
             if session.challenges_issued > 0 {
                 session.verification_rate =
                     session.challenges_passed as f64 / session.challenges_issued as f64;

@@ -64,9 +64,14 @@ pub(crate) fn cmd_log(file_path: &PathBuf) -> Result<()> {
             let elapsed_dur = Duration::from_secs_f64(elapsed_secs);
             println!("    VDF:  >= {:.0?}", elapsed_dur);
         }
-        if let Some(ref msg) = ev.context_type {
-            if !msg.is_empty() {
-                println!("    Msg:  {}", msg);
+        if let Some(ref note) = ev.context_note {
+            if !note.is_empty() {
+                println!("    Msg:  {}", note);
+            }
+        } else if let Some(ref ctx) = ev.context_type {
+            // Fallback: older events stored message in context_type
+            if !ctx.is_empty() && ctx != "manual" && ctx != "auto" {
+                println!("    Msg:  {}", ctx);
             }
         }
         println!();
