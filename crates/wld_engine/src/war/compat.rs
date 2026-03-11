@@ -47,7 +47,7 @@ pub fn detect_version(data: &[u8]) -> Result<DetectedFormat> {
         }
     }
 
-    if codec::cbor::has_tag(data, codec::CBOR_TAG_WAR) {
+    if codec::cbor::has_tag(data, codec::CBOR_TAG_CWAR) {
         return Ok(DetectedFormat::EarCbor);
     }
 
@@ -65,7 +65,7 @@ pub fn decode_any(data: &[u8]) -> Result<Block> {
                 .map_err(|e| Error::validation(format!("ASCII decode failed: {e}")))
         }
         DetectedFormat::EarCbor => {
-            let ear: EarToken = codec::cbor::decode_war(data)
+            let ear: EarToken = codec::cbor::decode_cwar(data)
                 .map_err(|e| Error::validation(format!("EAR CBOR decode failed: {e}")))?;
             Ok(Block::from_ear(ear))
         }
@@ -245,6 +245,7 @@ impl EarToken {
             verifier_signature: Vec::new(),
             created: (self.iat as u64) * 1000,
             forensic_summary: appr.and_then(|a| a.pop_forensic_summary.clone()),
+            effort_attribution: None,
         }
     }
 }

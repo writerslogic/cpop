@@ -112,6 +112,87 @@ impl DaemonManager {
         Ok(())
     }
 
+    /// Write a specific PID to the PID file (used by the CLI for child PIDs).
+    pub fn write_pid_value(&self, pid: u32) -> Result<()> {
+        let parent = self.pid_file.parent().ok_or_else(|| {
+            SentinelError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "PID file path has no parent directory: {}",
+                    self.pid_file.display()
+                ),
+            ))
+        })?;
+        fs::create_dir_all(parent)?;
+        fs::write(&self.pid_file, pid.to_string())?;
+        Ok(())
+    }
+
+    /// Atomically acquire the PID file using O_CREAT | O_EXCL semantics.
+    ///
+    /// Returns `Ok(true)` if the file was created (we acquired the lock).
+    /// Returns `Ok(false)` if the file already exists and the PID is alive
+    /// (another daemon is running).
+    /// If the file exists but the PID is stale (process dead), removes the
+    /// stale file and retries once.
+    pub fn acquire_pid_file(&self, pid: u32) -> Result<bool> {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let parent = self.pid_file.parent().ok_or_else(|| {
+            SentinelError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "PID file path has no parent directory: {}",
+                    self.pid_file.display()
+                ),
+            ))
+        })?;
+        fs::create_dir_all(parent)?;
+
+        // First attempt: atomic create
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.pid_file)
+        {
+            Ok(mut f) => {
+                writeln!(f, "{}", pid)?;
+                return Ok(true);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Fall through to stale-check
+            }
+            Err(e) => return Err(SentinelError::Io(e)),
+        }
+
+        // PID file exists — check if the recorded process is alive
+        if let Ok(existing_pid) = self.read_pid() {
+            if is_process_running(existing_pid) {
+                // Another daemon is genuinely running
+                return Ok(false);
+            }
+        }
+        // Stale PID file (process dead or unreadable) — remove and retry once
+        let _ = fs::remove_file(&self.pid_file);
+
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.pid_file)
+        {
+            Ok(mut f) => {
+                writeln!(f, "{}", pid)?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Another process won the race on retry
+                Ok(false)
+            }
+            Err(e) => Err(SentinelError::Io(e)),
+        }
+    }
+
     /// Remove the PID file.
     pub fn remove_pid(&self) -> Result<()> {
         fs::remove_file(&self.pid_file)?;

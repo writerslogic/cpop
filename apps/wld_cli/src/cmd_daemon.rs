@@ -11,28 +11,59 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
     let config = ensure_dirs()?;
 
     let daemon_manager = DaemonManager::new(config.data_dir.clone());
-    let status = daemon_manager.status();
-
-    if status.running {
-        if let Some(pid) = status.pid {
-            println!("Daemon is already running (PID: {})", pid);
-        } else {
-            println!("Daemon is already running.");
-        }
-        println!();
-        println!("Use 'wld status' for details or 'wld stop' to stop.");
-        return Ok(());
-    }
 
     if foreground {
+        // CLI-H4: Atomic PID file acquisition for foreground mode.
+        // The engine's cmd_start_foreground also calls write_pid(), but we
+        // gate entry here to fail fast with a clear message.
+        let acquired = daemon_manager
+            .acquire_pid_file(std::process::id())
+            .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
+        if !acquired {
+            let status = daemon_manager.status();
+            if let Some(pid) = status.pid {
+                println!("Daemon is already running (PID: {}).", pid);
+            } else {
+                println!("Daemon is already running.");
+            }
+            println!();
+            println!("Use 'wld status' for details or 'wld stop' to stop.");
+            return Ok(());
+        }
+        // PID file acquired — if anything fails below, clean it up
         eprintln!("Starting WritersLogic daemon in foreground...");
         eprintln!("Press Ctrl+C to stop.");
         eprintln!();
 
-        wld_engine::sentinel::daemon::cmd_start_foreground(&config.data_dir)
+        let result = wld_engine::sentinel::daemon::cmd_start_foreground(&config.data_dir)
             .await
-            .map_err(|e| anyhow!("Daemon error: {}", e))?;
+            .map_err(|e| anyhow!("Daemon error: {}", e));
+        // cleanup() already called inside cmd_start_foreground on normal exit;
+        // on error, ensure we don't leave a stale PID file
+        if result.is_err() {
+            daemon_manager.cleanup();
+        }
+        result
     } else {
+        // CLI-H4: Atomic PID file acquisition prevents parallel `wld start`
+        // from spawning two daemons. We acquire first, spawn second.
+
+        // Use a placeholder PID (our own) during spawn; update after.
+        let acquired = daemon_manager
+            .acquire_pid_file(std::process::id())
+            .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
+        if !acquired {
+            let status = daemon_manager.status();
+            if let Some(pid) = status.pid {
+                println!("Daemon is already running (PID: {}).", pid);
+            } else {
+                println!("Daemon is already running.");
+            }
+            println!();
+            println!("Use 'wld status' for details or 'wld stop' to stop.");
+            return Ok(());
+        }
+
         eprintln!("Starting WritersLogic daemon...");
 
         let exe = std::env::current_exe().context("Failed to determine current executable path")?;
@@ -65,38 +96,36 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
             .stdin(std::process::Stdio::null());
 
         // CLI-M7: Create a new process group so the daemon survives terminal close
-        // (SIGHUP won't propagate to a different process group)
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             cmd.process_group(0);
         }
 
-        let child = cmd.spawn().context("Failed to spawn daemon process")?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                // Spawn failed — remove the PID file we acquired
+                daemon_manager.cleanup();
+                return Err(anyhow::anyhow!("Failed to spawn daemon process: {}", e));
+            }
+        };
 
         let pid = child.id();
 
-        // CLI-H1: Write the *child* PID (not the parent CLI PID) to the PID file
-        // so that DaemonManager::status() and stop correctly identify the daemon.
-        // The foreground daemon will also call write_pid() with its own process ID
-        // once it starts, but we need the child PID recorded immediately.
-        let sentinel_dir = config.data_dir.join("sentinel");
-        fs::create_dir_all(&sentinel_dir)?;
-        let pid_file = sentinel_dir.join("daemon.pid");
-        let tmp_pid_file = pid_file.with_extension("pid.tmp");
-        if let Err(e) = fs::write(&tmp_pid_file, pid.to_string())
-            .and_then(|()| fs::rename(&tmp_pid_file, &pid_file))
-        {
-            eprintln!("Warning: failed to write PID file: {e}");
+        // CLI-H1: Overwrite with the *child* PID so status/stop target the daemon.
+        // The foreground child will re-acquire its own PID file via write_pid().
+        if let Err(e) = daemon_manager.write_pid_value(pid) {
+            eprintln!("Warning: failed to update PID file with child PID: {e}");
         }
 
         eprintln!("Daemon started (PID: {})", pid);
         eprintln!("Log file: {}", log_path.display());
         eprintln!();
         eprintln!("Use 'wld status' for details or 'wld stop' to stop.");
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 pub(crate) fn cmd_stop() -> Result<()> {

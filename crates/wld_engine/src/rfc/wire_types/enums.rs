@@ -43,9 +43,11 @@ pub enum ContentTier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ProofAlgorithm {
-    /// Iterated SHA-256 sequential work function
+    /// swf-sha256 (10): Iterated SHA-256 sequential work function
     SwfSha256 = 10,
+    /// swf-argon2id (20): Argon2id + Merkle tree + Fiat-Shamir
     SwfArgon2id = 20,
+    /// swf-argon2id-entangled (21): Argon2id with jitter entanglement
     SwfArgon2idEntangled = 21,
 }
 

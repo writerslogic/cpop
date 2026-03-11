@@ -8,7 +8,7 @@ use ciborium::value::Value;
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
-use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_PPP, CBOR_TAG_WAR};
+use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CWAR};
 
 /// Encode a value to CBOR bytes.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
@@ -32,14 +32,14 @@ pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R) -> Result<T> {
     ciborium::from_reader(reader).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
-/// Encode a Proof-of-Process Packet with semantic tag.
-pub fn encode_ppp<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    encode_tagged(value, CBOR_TAG_PPP)
+/// Encode a CPOP evidence packet with semantic tag.
+pub fn encode_cpop<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    encode_tagged(value, CBOR_TAG_CPOP)
 }
 
-/// Encode a Writers Authenticity Report with semantic tag.
-pub fn encode_war<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    encode_tagged(value, CBOR_TAG_WAR)
+/// Encode a CWAR attestation result with semantic tag.
+pub fn encode_cwar<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    encode_tagged(value, CBOR_TAG_CWAR)
 }
 
 /// Encode a Compact Evidence Reference with semantic tag.
@@ -87,14 +87,14 @@ pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Res
     }
 }
 
-/// Decode a PPP packet, verifying the semantic tag.
-pub fn decode_ppp<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
-    decode_tagged(data, CBOR_TAG_PPP)
+/// Decode a CPOP evidence packet, verifying the semantic tag.
+pub fn decode_cpop<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
+    decode_tagged(data, CBOR_TAG_CPOP)
 }
 
-/// Decode a WAR packet, verifying the semantic tag.
-pub fn decode_war<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
-    decode_tagged(data, CBOR_TAG_WAR)
+/// Decode a CWAR attestation result, verifying the semantic tag.
+pub fn decode_cwar<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
+    decode_tagged(data, CBOR_TAG_CWAR)
 }
 
 /// Decode a Compact Evidence Reference, verifying the semantic tag.
@@ -207,8 +207,8 @@ mod tests {
             data: vec![1, 2, 3, 4, 5],
         };
 
-        let encoded = encode_ppp(&original).unwrap();
-        let decoded: TestPacket = decode_ppp(&encoded).unwrap();
+        let encoded = encode_cpop(&original).unwrap();
+        let decoded: TestPacket = decode_cpop(&encoded).unwrap();
 
         assert_eq!(original, decoded);
     }
@@ -220,14 +220,14 @@ mod tests {
             data: vec![],
         };
 
-        let ppp_encoded = encode_ppp(&packet).unwrap();
-        let war_encoded = encode_war(&packet).unwrap();
+        let cpop_encoded = encode_cpop(&packet).unwrap();
+        let cwar_encoded = encode_cwar(&packet).unwrap();
 
-        assert!(has_tag(&ppp_encoded, CBOR_TAG_PPP));
-        assert!(!has_tag(&ppp_encoded, CBOR_TAG_WAR));
+        assert!(has_tag(&cpop_encoded, CBOR_TAG_CPOP));
+        assert!(!has_tag(&cpop_encoded, CBOR_TAG_CWAR));
 
-        assert!(has_tag(&war_encoded, CBOR_TAG_WAR));
-        assert!(!has_tag(&war_encoded, CBOR_TAG_PPP));
+        assert!(has_tag(&cwar_encoded, CBOR_TAG_CWAR));
+        assert!(!has_tag(&cwar_encoded, CBOR_TAG_CPOP));
     }
 
     #[test]
@@ -237,8 +237,8 @@ mod tests {
             data: vec![],
         };
 
-        let encoded = encode_ppp(&packet).unwrap();
-        assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_PPP));
+        let encoded = encode_cpop(&packet).unwrap();
+        assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_CPOP));
 
         let untagged = encode(&packet).unwrap();
         assert_eq!(extract_tag(&untagged), None);
@@ -251,14 +251,14 @@ mod tests {
             data: vec![],
         };
 
-        let encoded = encode_ppp(&packet).unwrap();
-        let result: Result<TestPacket> = decode_war(&encoded);
+        let encoded = encode_cpop(&packet).unwrap();
+        let result: Result<TestPacket> = decode_cwar(&encoded);
 
         assert!(matches!(
             result,
             Err(CodecError::InvalidTag {
-                expected: CBOR_TAG_WAR,
-                actual: CBOR_TAG_PPP
+                expected: CBOR_TAG_CWAR,
+                actual: CBOR_TAG_CPOP
             })
         ));
     }

@@ -12,7 +12,7 @@ use zeroize::Zeroize;
 use crate::util::ensure_dirs;
 
 pub(crate) fn cmd_identity(
-    _fingerprint: bool,
+    fingerprint: bool,
     did: bool,
     mnemonic: bool,
     recover: bool,
@@ -53,9 +53,11 @@ pub(crate) fn cmd_identity(
             .map_err(|e| anyhow!("Failed to derive identity: {}", e))?;
 
         let identity_path = dir.join("identity.json");
+        let did = format!("did:key:z{}", hex::encode(&identity.public_key));
         let identity_data = serde_json::json!({
             "version": 1,
             "fingerprint": identity.fingerprint,
+            "did": did,
             "public_key": hex::encode(&identity.public_key),
             "device_id": identity.device_id,
             "created_at": identity.created_at.to_rfc3339(),
@@ -67,8 +69,19 @@ pub(crate) fn cmd_identity(
         let key_path = dir.join("signing_key");
 
         if key_path.exists() {
+            eprintln!("WARNING: This will replace your existing signing key.");
+            eprintln!("Your current key will be backed up, but checkpoints signed");
+            eprintln!("with the old key cannot be created with the new one.");
+            eprintln!();
+            if !crate::smart_defaults::ask_confirmation("Proceed with recovery?", false)? {
+                println!("Recovery cancelled.");
+                return Ok(());
+            }
+
             let backup_path = key_path.with_extension("bak");
-            fs::copy(&key_path, &backup_path)?;
+            let tmp_backup = backup_path.with_extension("tmp");
+            fs::copy(&key_path, &tmp_backup)?;
+            fs::rename(&tmp_backup, &backup_path)?;
         }
 
         let mut seed = puf.get_seed();
@@ -123,22 +136,30 @@ pub(crate) fn cmd_identity(
         .get("device_id")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
+    let pub_key = identity
+        .get("public_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let stored_did = identity
+        .get("did")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("did:key:z{}", pub_key));
 
     if json {
         let mut output = serde_json::json!({
             "fingerprint": fp,
+            "did": stored_did,
+            "public_key": pub_key,
             "device_id": dev_id,
         });
-
-        if did {
-            output["did"] = serde_json::Value::String(format!("did:writerslogic:{}", fp));
-        }
 
         if mnemonic {
             let puf_seed_path = dir.join("puf_seed");
             if puf_seed_path.exists() {
                 if !io::stdout().is_terminal() {
-                    eprintln!("Warning: mnemonic phrase is being output to a non-terminal. Ensure the output is not logged.");
+                    eprintln!("Note: Mnemonic phrase is being written to a non-terminal.");
+                    eprintln!("      Store it securely and delete the output when done.");
                 }
                 if let Ok(puf) = SoftwarePUF::new_with_path(&puf_seed_path) {
                     if let Ok(mut words) = puf.get_mnemonic() {
@@ -159,13 +180,14 @@ pub(crate) fn cmd_identity(
     }
 
     if did {
-        println!("DID: did:writerslogic:{}", fp);
+        println!("DID: {}", stored_did);
         return Ok(());
     }
 
     if mnemonic {
         if !io::stdout().is_terminal() {
-            eprintln!("Warning: mnemonic phrase is being output to a non-terminal. Ensure the output is not logged.");
+            eprintln!("Note: Mnemonic phrase is being written to a non-terminal.");
+            eprintln!("      Store it securely and delete the output when done.");
         }
         println!("=== RECOVERY PHRASE ===");
         println!("WARNING: Keep this secret! Anyone with these words can take your identity.");
@@ -185,6 +207,15 @@ pub(crate) fn cmd_identity(
         return Ok(());
     }
 
+    if fingerprint {
+        println!("Identity Fingerprint: {}", fp);
+        return Ok(());
+    }
+
+    // No specific flag set: show general identity info (not mnemonic)
     println!("Identity Fingerprint: {}", fp);
+    println!("DID: {}", stored_did);
+    println!("Public Key: {}", pub_key);
+    println!("Device ID: {}", dev_id);
     Ok(())
 }

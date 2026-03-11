@@ -38,30 +38,60 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let cli = Cli::parse();
-    let should_auto_start = !matches!(
-        &cli.command,
-        Some(Commands::Start { .. })
-            | Some(Commands::Stop)
-            | Some(Commands::Status)
-            | Some(Commands::Init { .. })
-            | Some(Commands::Calibrate)
-            | Some(Commands::Config { .. })
-            | None
-    );
+    let has_path_arg = cli.path.is_some();
+    let should_auto_start = has_path_arg
+        || !matches!(
+            &cli.command,
+            Some(Commands::Start { .. })
+                | Some(Commands::Stop)
+                | Some(Commands::Status)
+                | Some(Commands::Init { .. })
+                | Some(Commands::Calibrate)
+                | Some(Commands::Config { .. })
+                | None
+        );
 
     if should_auto_start {
         if let Ok(dir) = util::writerslogic_dir() {
             if let Ok(config) = wld_engine::config::WLDConfig::load_or_default(&dir) {
                 if config.sentinel.auto_start {
                     let daemon_manager = wld_engine::DaemonManager::new(config.data_dir.clone());
-                    let _status = daemon_manager.status();
+                    if !daemon_manager.is_running() {
+                        eprintln!("Starting WritersLogic daemon...");
+                        let _ = cmd_daemon::cmd_start(false).await;
+                    }
                 }
             }
         }
     }
 
+    let needs_init = matches!(
+        &cli.command,
+        Some(Commands::Log { .. })
+            | Some(Commands::Export { .. })
+            | Some(Commands::Verify { .. })
+            | Some(Commands::Track { .. })
+            | Some(Commands::Watch { .. })
+            | Some(Commands::Calibrate)
+            | Some(Commands::List)
+            | Some(Commands::Fingerprint { .. })
+            | Some(Commands::Session { .. })
+            | Some(Commands::Presence { .. })
+    ) || cli.path.is_some();
+
+    if needs_init {
+        if let Ok(dir) = util::writerslogic_dir() {
+            if !dir.join("signing_key").exists() {
+                eprintln!("WritersLogic is not initialized.");
+                eprintln!();
+                eprintln!("Run 'wld init' to get started.");
+                std::process::exit(1);
+            }
+        }
+    }
+
     match cli.command {
-        Some(Commands::Init { _path: _ }) => {
+        Some(Commands::Init {}) => {
             cmd_init::cmd_init()?;
         }
         Some(Commands::Identity {
@@ -73,8 +103,12 @@ async fn run() -> Result<()> {
         }) => {
             cmd_identity::cmd_identity(fingerprint, did, mnemonic, recover, json)?;
         }
-        Some(Commands::Commit { file, message }) => {
-            cmd_commit::cmd_commit_smart(file, message)?;
+        Some(Commands::Commit {
+            file,
+            message,
+            anchor,
+        }) => {
+            cmd_commit::cmd_commit_smart(file, message, anchor).await?;
         }
         Some(Commands::Log { file }) => {
             cmd_log::cmd_log_smart(file)?;
@@ -84,8 +118,9 @@ async fn run() -> Result<()> {
             tier,
             output,
             format,
+            stego,
         }) => {
-            cmd_export::cmd_export(&file, &tier, output, None, &format)?;
+            cmd_export::cmd_export(&file, &tier, output, &format, stego).await?;
         }
         Some(Commands::Verify { file, key }) => {
             cmd_verify::cmd_verify(&file, key)?;
@@ -93,8 +128,8 @@ async fn run() -> Result<()> {
         Some(Commands::Presence { action }) => {
             cmd_presence::cmd_presence(action)?;
         }
-        Some(Commands::Track { action }) => {
-            cmd_track::cmd_track(action)?;
+        Some(Commands::Track { action, file }) => {
+            cmd_track::cmd_track_smart(action, file)?;
         }
         Some(Commands::Calibrate) => {
             cmd_status::cmd_calibrate()?;
@@ -124,7 +159,18 @@ async fn run() -> Result<()> {
             cmd_config::cmd_config(action)?;
         }
         None => {
-            cmd_status::show_quick_status()?;
+            if let Some(path) = cli.path {
+                let resolved = smart_defaults::normalize_path(&path)?;
+                if resolved.is_dir() {
+                    // Add folder to watch config, then start watching
+                    cmd_watch::cmd_watch_smart(None, Some(resolved.clone())).await?;
+                    cmd_watch::cmd_watch_smart(Some(crate::cli::WatchAction::Start), None).await?;
+                } else {
+                    cmd_track::cmd_track_smart(None, Some(resolved))?;
+                }
+            } else {
+                cmd_status::show_quick_status()?;
+            }
         }
     }
 

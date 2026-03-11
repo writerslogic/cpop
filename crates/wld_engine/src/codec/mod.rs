@@ -11,19 +11,19 @@ pub mod json;
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
-/// CBOR semantic tag for Proof-of-Process Packet (PPP).
-/// Tag value: 1347571280 (0x50505050 = "PPPP" in ASCII)
+/// CBOR semantic tag for Compact Proof-of-Process (CPOP) evidence packet.
+/// Tag value: 1129336656 (0x43504F50 = "CPOP" in ASCII)
 /// Per draft-condrey-rats-pop CDDL and IANA CBOR tag registry.
-pub const CBOR_TAG_PPP: u64 = 1347571280;
+pub const CBOR_TAG_CPOP: u64 = 1129336656;
 
-/// CBOR semantic tag for Writers Authenticity Report (WAR).
-/// Tag value: 1463894560 (0x57415220 = "WAR " in ASCII)
+/// CBOR semantic tag for Compact Writers Attestation Result (CWAR).
+/// Tag value: 1129791826 (0x43574152 = "CWAR" in ASCII)
 /// Per draft-condrey-rats-pop CDDL and IANA CBOR tag registry.
-pub const CBOR_TAG_WAR: u64 = 1463894560;
+pub const CBOR_TAG_CWAR: u64 = 1129791826;
 
 /// CBOR semantic tag for Compact Evidence Reference.
-/// Tag value: 1347571281 (0x50505021)
-pub const CBOR_TAG_COMPACT_REF: u64 = 1347571281;
+/// Tag value: 1129336657 (0x43504F51 = "CPOQ")
+pub const CBOR_TAG_COMPACT_REF: u64 = 1129336657;
 
 /// IANA Private Enterprise Number for WritersLogic Inc.
 pub const IANA_PEN: u32 = 65074;
@@ -42,7 +42,7 @@ impl Format {
     /// Returns the MIME type for this format.
     pub fn mime_type(&self) -> &'static str {
         match self {
-            Format::Cbor => "application/vnd.writerslogic-pop+cbor",
+            Format::Cbor => "application/cpop+cbor",
             Format::Json => "application/json",
         }
     }
@@ -50,7 +50,7 @@ impl Format {
     /// Returns the file extension for this format.
     pub fn extension(&self) -> &'static str {
         match self {
-            Format::Cbor => "pop",
+            Format::Cbor => "cpop",
             Format::Json => "json",
         }
     }

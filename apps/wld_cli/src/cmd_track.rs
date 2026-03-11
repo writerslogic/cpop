@@ -16,12 +16,27 @@ fn cmd_track_start(
     current_file: &Path,
     use_wld_jitter: bool,
 ) -> Result<()> {
-    let abs_path =
-        fs::canonicalize(file).with_context(|| format!("Error resolving path: {:?}", file))?;
-
-    if !abs_path.exists() {
-        return Err(anyhow!("File not found: {:?}", file));
+    if !file.exists() {
+        return Err(anyhow!(
+            "File not found: {}\n\n\
+             Check that the file exists and the path is correct.",
+            file.display()
+        ));
     }
+
+    // Reject special files (devices, sockets, etc.)
+    let metadata = fs::metadata(file)
+        .with_context(|| format!("Cannot read file metadata: {}", file.display()))?;
+    if !metadata.is_file() {
+        return Err(anyhow!(
+            "Not a regular file: {}\n\n\
+             Only regular files can be tracked.",
+            file.display()
+        ));
+    }
+
+    let abs_path = fs::canonicalize(file)
+        .with_context(|| format!("Cannot resolve path: {}", file.display()))?;
 
     if current_file.exists() {
         return Err(anyhow!(
@@ -56,7 +71,9 @@ fn cmd_track_start(
         println!("Document: {}", abs_path.display());
         println!();
         println!("Hardware entropy: enabled (with automatic fallback)");
-        println!("PRIVACY NOTE: Only keystroke counts are recorded, NOT key values.");
+        println!(
+            "PRIVACY: Captures timing intervals and keystroke counts — NOT key values or content."
+        );
         println!();
         println!("Run 'wld track status' to check progress.");
         println!("Run 'wld track stop' when done.");
@@ -85,9 +102,11 @@ fn cmd_track_start(
 
     println!("Keystroke tracking started.");
     println!("Session ID: {}", session.id);
-    println!("Document: {:?}", abs_path);
+    println!("Document: {}", abs_path.display());
     println!();
-    println!("PRIVACY NOTE: Only keystroke counts are recorded, NOT key values.");
+    println!(
+        "PRIVACY: Captures timing intervals and keystroke counts — NOT key values or content."
+    );
     println!();
     println!("Run 'wld track status' to check progress.");
     println!("Run 'wld track stop' when done.");
@@ -95,11 +114,40 @@ fn cmd_track_start(
     Ok(())
 }
 
-pub(crate) fn cmd_track(action: TrackAction) -> Result<()> {
+/// Smart track — handles bare file arg as shorthand for `track start <file>`.
+pub(crate) fn cmd_track_smart(
+    action: Option<TrackAction>,
+    file: Option<std::path::PathBuf>,
+) -> Result<()> {
     let config = ensure_dirs()?;
     let dir = config.data_dir;
     let tracking_dir = dir.join("tracking");
     let current_file = tracking_dir.join("current_session.json");
+
+    // `wld track <file>` or `wld <file>` → start tracking
+    if let Some(f) = file {
+        return cmd_track_start(&f, &tracking_dir, &current_file, false);
+    }
+
+    let action = match action {
+        Some(a) => a,
+        None => {
+            // No action and no file — show status if session active, else usage
+            if current_file.exists() {
+                TrackAction::Status
+            } else {
+                println!("No active tracking session.");
+                println!();
+                println!("Usage:");
+                println!("  wld track <file>         Start tracking a file");
+                println!("  wld track stop           Stop active session");
+                println!("  wld track status         Check session status");
+                println!("  wld track list           List saved sessions");
+                println!("  wld track export <id>    Export session evidence");
+                return Ok(());
+            }
+        }
+    };
 
     match action {
         #[cfg(feature = "wld_jitter")]

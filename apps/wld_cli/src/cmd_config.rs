@@ -179,6 +179,16 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
 
             let (cmd, args) = parse_editor_value(&editor)?;
 
+            // Validate absolute editor paths exist before spawning
+            let editor_path = std::path::Path::new(&cmd);
+            if editor_path.is_absolute() && !editor_path.exists() {
+                return Err(anyhow!(
+                    "Editor not found: {}\n\n\
+                     Set a valid editor with: export EDITOR=vim",
+                    cmd
+                ));
+            }
+
             println!("Opening {} in {}...", config_path.display(), &cmd);
 
             let status = std::process::Command::new(&cmd)
@@ -188,9 +198,34 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                 .map_err(|e| anyhow!("Failed to open editor '{}': {}", cmd, e))?;
 
             if status.success() {
-                match WLDConfig::load_or_default(&dir) {
-                    Ok(_) => println!("Configuration saved."),
-                    Err(e) => println!("Warning: Configuration may be invalid: {}", e),
+                loop {
+                    match WLDConfig::load_or_default(&dir) {
+                        Ok(_) => {
+                            println!("Configuration saved.");
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Configuration is invalid: {}", e);
+                            if crate::smart_defaults::ask_confirmation("Reopen in editor?", true)? {
+                                let retry = std::process::Command::new(&cmd)
+                                    .args(&args)
+                                    .arg(&config_path)
+                                    .status()
+                                    .map_err(|err| {
+                                        anyhow!("Failed to reopen editor '{}': {}", cmd, err)
+                                    })?;
+                                if !retry.success() {
+                                    break;
+                                }
+                            } else {
+                                eprintln!(
+                                    "Configuration left as-is. \
+                                     It may be ignored on next run."
+                                );
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }

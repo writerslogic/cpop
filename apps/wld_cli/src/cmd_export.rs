@@ -3,8 +3,8 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use std::fs;
-use std::io::{self, BufRead, Write};
-use std::path::PathBuf;
+use std::io::{self, BufRead, IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use wld_engine::declaration::{self, AIExtent, AIPurpose, ModalityType};
@@ -23,12 +23,12 @@ use crate::util::{
     ensure_dirs, load_signing_key, load_vdf_params, open_secure_store, validate_session_id,
 };
 
-pub(crate) fn cmd_export(
+pub(crate) async fn cmd_export(
     file_path: &PathBuf,
     tier: &str,
     output: Option<PathBuf>,
-    session_id: Option<String>,
     format: &str,
+    stego: bool,
 ) -> Result<()> {
     let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
     let abs_path_str = abs_path.to_string_lossy().to_string();
@@ -94,7 +94,7 @@ pub(crate) fn cmd_export(
     let mut keystroke_evidence = serde_json::Value::Null;
     if tier.to_lowercase() == "enhanced" || tier.to_lowercase() == "maximum" {
         let tracking_dir = dir.join("tracking");
-        let mut session_to_load = session_id;
+        let mut session_to_load: Option<String> = None;
 
         if session_to_load.is_none() && tracking_dir.exists() {
             if let Ok(entries) = fs::read_dir(&tracking_dir) {
@@ -102,11 +102,14 @@ pub(crate) fn cmd_export(
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().is_some_and(|e| e == "json") {
-                        // Skip files >50MB to prevent OOM
-                        let too_large = fs::metadata(&path)
-                            .map(|m| m.len() > 50_000_000)
-                            .unwrap_or(true);
-                        if too_large {
+                        // Skip files >10MB to prevent excessive memory use
+                        let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(u64::MAX);
+                        if file_size > 10_000_000 {
+                            eprintln!(
+                                "Warning: Skipping oversized session file {:?} ({:.1} MB)",
+                                path.file_name().unwrap_or_default(),
+                                file_size as f64 / 1_000_000.0
+                            );
                             continue;
                         }
                         if let Ok(content) = fs::read_to_string(&path) {
@@ -140,7 +143,15 @@ pub(crate) fn cmd_export(
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                         let id = name.split('.').next().unwrap_or("").to_string();
                         if !id.is_empty() {
-                            session_to_load = Some(id);
+                            match validate_session_id(&id) {
+                                Ok(_) => session_to_load = Some(id),
+                                Err(e) => {
+                                    eprintln!(
+                                        "Warning: Skipping session with invalid ID {:?}: {}",
+                                        id, e
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -187,8 +198,25 @@ pub(crate) fn cmd_export(
 
             if keystroke_evidence != serde_json::Value::Null {
                 println!("Including keystroke evidence from session {}", id);
-            } else if session_path.exists() || hybrid_path.exists() {
-                println!("Warning: Could not load tracking session {}", id);
+            } else if hybrid_path.exists() {
+                #[cfg(not(feature = "wld_jitter"))]
+                eprintln!(
+                    "Warning: Could not load tracking session {}: \
+                     hybrid jitter requires the 'wld_jitter' feature",
+                    id
+                );
+                #[cfg(feature = "wld_jitter")]
+                eprintln!(
+                    "Warning: Could not load tracking session {}: \
+                     hybrid session file exists but produced no evidence",
+                    id
+                );
+            } else if session_path.exists() {
+                eprintln!(
+                    "Warning: Could not load tracking session {}: \
+                     session file exists but produced no evidence (see errors above)",
+                    id
+                );
             }
         } else {
             println!("No matching tracking session found for this document.");
@@ -196,20 +224,49 @@ pub(crate) fn cmd_export(
         }
     }
 
-    println!("=== Process Declaration ===");
-    println!("You must declare how this document was created.");
-    println!();
+    let title = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
 
-    let decl = collect_declaration(
-        latest.content_hash,
-        latest.event_hash,
-        file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        signer.as_ref(),
-    )?;
+    let decl = if tier.eq_ignore_ascii_case("basic") {
+        // Basic tier: generate a default declaration without interactive prompts
+        println!("Basic tier: using default declaration (no AI tools declared).");
+        declaration::no_ai_declaration(
+            latest.content_hash,
+            latest.event_hash,
+            &title,
+            "Basic-tier evidence: no declaration provided.",
+        )
+        .sign(signer.as_ref())
+        .map_err(|e| anyhow!("Failed to create declaration: {}", e))?
+    } else {
+        let is_tty = std::io::stdin().is_terminal();
+        if !is_tty {
+            // Non-interactive: use default declaration
+            println!("Non-interactive mode: using default declaration.");
+            declaration::no_ai_declaration(
+                latest.content_hash,
+                latest.event_hash,
+                &title,
+                "Automated export: no interactive declaration collected.",
+            )
+            .sign(signer.as_ref())
+            .map_err(|e| anyhow!("Failed to create declaration: {}", e))?
+        } else {
+            println!("=== Process Declaration ===");
+            println!("You must declare how this document was created.");
+            println!();
+
+            collect_declaration(
+                latest.content_hash,
+                latest.event_hash,
+                title,
+                signer.as_ref(),
+            )?
+        }
+    };
 
     let total_iterations: u64 = events.iter().map(|e| e.vdf_iterations).sum();
     let total_vdf_time =
@@ -266,7 +323,7 @@ pub(crate) fn cmd_export(
                     "chars_deleted": if ev.size_delta < 0 { (-(ev.size_delta as i64)) as u64 } else { 0u64 },
                     "op_count": 1u64
                 },
-                "message": ev.context_type,
+                "message": ev.context_note.as_deref().or(ev.context_type.as_deref()),
                 "vdf_input": ev.vdf_input.map(hex::encode),
                 "vdf_output": ev.vdf_output.map(hex::encode),
                 "vdf_iterations": ev.vdf_iterations,
@@ -300,8 +357,8 @@ pub(crate) fn cmd_export(
 
         // === RATS PoP Spec Fields (draft-condrey-rats-pop) ===
         "spec": {
-            "cbor_tag": CBOR_TAG_EVIDENCE_PACKET,        // IANA tag 1347571280 (PPPP)
-            "war_cbor_tag": CBOR_TAG_ATTESTATION_RESULT,  // IANA tag 1463894560 (WAR)
+            "cbor_tag": CBOR_TAG_EVIDENCE_PACKET,        // IANA tag 1129336656 (CPOP)
+            "war_cbor_tag": CBOR_TAG_ATTESTATION_RESULT,  // IANA tag 1129791826 (CWAR)
             "profile_uri": spec_profile_uri,              // CDDL key 2: profile-uri
             "packet_id": hex::encode(packet_id),          // CDDL key 3: packet-id (uuid)
             "content_tier": spec_content_tier,            // CDDL key 13: content-tier
@@ -366,6 +423,12 @@ pub(crate) fn cmd_export(
         }
     }
 
+    // Progress indicator for potentially slow exports
+    if !matches!(tier.to_lowercase().as_str(), "basic") {
+        print!("Building evidence packet...");
+        io::stdout().flush()?;
+    }
+
     let format_lower = format.to_lowercase();
     let out_path = output.unwrap_or_else(|| {
         let name = file_path
@@ -374,14 +437,37 @@ pub(crate) fn cmd_export(
             .to_string_lossy()
             .to_string();
         match format_lower.as_str() {
-            "war" => PathBuf::from(format!("{}.war", name)),
+            "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
+            "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
             "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
             _ => PathBuf::from(format!("{}.evidence.json", name)),
         }
     });
 
     match format_lower.as_str() {
-        "war" => {
+        "cpop" | "cbor" => {
+            // CDDL-conformant CBOR export using EvidencePacketWire
+            let cpop_config = ensure_dirs()?;
+            let chain = wld_engine::checkpoint::Chain::load(
+                wld_engine::checkpoint::Chain::find_chain(file_path, &cpop_config.data_dir)?,
+            )?;
+            let wire_packet = wld_engine::evidence::wire_conversion::chain_to_wire(&chain);
+            let cbor_data = wire_packet
+                .encode_cbor()
+                .map_err(|e| anyhow!("CBOR encode failed: {}", e))?;
+
+            let tmp_path = out_path.with_extension("tmp");
+            fs::write(&tmp_path, &cbor_data)?;
+            fs::rename(&tmp_path, &out_path)?;
+
+            println!();
+            println!("CPOP evidence exported to: {}", out_path.display());
+            println!("  Format: CBOR (CDDL-conformant, tagged)");
+            println!("  CBOR tag: {}", CBOR_TAG_EVIDENCE_PACKET);
+            println!("  Checkpoints: {}", chain.checkpoints.len());
+            println!("  Size: {} bytes", cbor_data.len());
+        }
+        "cwar" | "war" => {
             let evidence_packet: evidence::Packet = serde_json::from_value(packet.clone())
                 .context("Failed to create evidence packet")?;
 
@@ -459,6 +545,115 @@ pub(crate) fn cmd_export(
             println!("  Profile: {}", spec_profile_uri);
             println!("  Attestation tier: T{}", spec_attestation_tier);
             println!("  CBOR tag: {} (evidence packet)", CBOR_TAG_EVIDENCE_PACKET);
+        }
+    }
+
+    if !matches!(tier.to_lowercase().as_str(), "basic") {
+        println!(" done.");
+    }
+
+    if stego {
+        embed_steganographic_watermark(file_path, &abs_path_str, &events, dir).await?;
+    }
+
+    Ok(())
+}
+
+/// Embed a steganographic ZWC watermark into the source document.
+async fn embed_steganographic_watermark(
+    file_path: &Path,
+    abs_path_str: &str,
+    events: &[wld_engine::SecureEvent],
+    dir: &Path,
+) -> Result<()> {
+    use wld_engine::steganography::{ZwcEmbedder, ZwcParams};
+
+    let content = fs::read_to_string(abs_path_str).context(
+        "Cannot read document as UTF-8 for steganographic embedding. \
+         Stego is only supported for text files.",
+    )?;
+
+    let latest = events
+        .last()
+        .ok_or_else(|| anyhow!("No events for steganographic embedding"))?;
+
+    // Use the chain hash as the MMR root for watermark binding
+    let mmr_root = latest.event_hash;
+
+    // Derive the watermark HMAC key from the signing key
+    let signing_key = crate::util::load_signing_key(dir)?;
+    let hmac_key: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"witnessd-stego-key-v1");
+        hasher.update(signing_key.to_bytes());
+        hasher.finalize().into()
+    };
+
+    let embedder = ZwcEmbedder::new(ZwcParams::default());
+    let (watermarked, binding) = embedder.embed(&content, &mmr_root, &hmac_key)?;
+
+    // Write watermarked document
+    let stego_path = file_path.with_extension("stego.txt");
+    let tmp_path = stego_path.with_extension("tmp");
+    fs::write(&tmp_path, &watermarked)?;
+    fs::rename(&tmp_path, &stego_path)?;
+
+    // Save binding record
+    let binding_path = file_path.with_extension("stego.binding.json");
+    let binding_json = serde_json::to_string_pretty(&binding)?;
+    fs::write(&binding_path, binding_json)?;
+
+    println!();
+    println!("Steganographic watermark embedded:");
+    println!("  Watermarked document: {}", stego_path.display());
+    println!("  Binding record: {}", binding_path.display());
+    println!("  ZWC characters: {}", binding.zwc_count);
+    println!("  MMR root: {}...", &binding.mmr_root[..16]);
+    println!(
+        "  Tag: {}...",
+        &binding.tag_hex[..16.min(binding.tag_hex.len())]
+    );
+
+    // Optionally anchor the stego binding via WritersProof API
+    let api_key = crate::util::load_api_key(dir);
+    if let Ok(key) = api_key {
+        use wld_engine::writersproof::{StegoSignRequest, WritersProofClient};
+
+        let did = crate::util::load_did(dir).unwrap_or_else(|_| "unknown".into());
+        let client = WritersProofClient::new("https://api.writersproof.com").with_jwt(key);
+
+        print!("  Signing watermark via WritersProof...");
+        io::stdout().flush()?;
+
+        match client
+            .stego_sign(StegoSignRequest {
+                mmr_root: binding.mmr_root.clone(),
+                document_hash: binding.document_hash.clone(),
+                author_did: did,
+                anchor_id: None,
+            })
+            .await
+        {
+            Ok(resp) => {
+                println!(" done (expires: {})", resp.expires_at);
+            }
+            Err(e) => {
+                eprintln!();
+                eprintln!(
+                    "Warning: Steganographic watermark was embedded \
+                     but NOT signed by WritersProof."
+                );
+                eprintln!("  Reason: {}", e);
+                eprintln!(
+                    "  The watermark can only be verified locally, \
+                     not by third parties."
+                );
+                eprintln!(
+                    "  To sign it later: wld export {} --stego",
+                    file_path.display(),
+                );
+            }
         }
     }
 
@@ -740,7 +935,7 @@ pub(crate) fn collect_declaration(
     let stdin = io::stdin();
     let mut reader = stdin.lock();
 
-    println!("Did you use any AI tools in creating this document? (y/n)");
+    println!("Did you use any AI tools in creating this document? (y/n, press Enter for 'no')");
     print!("> ");
     io::stdout().flush()?;
 
@@ -749,17 +944,22 @@ pub(crate) fn collect_declaration(
     let used_ai = input.trim().to_lowercase().starts_with('y');
 
     println!();
-    println!("Enter your declaration statement (a brief description of how you created this):");
+    println!(
+        "Enter your declaration statement (press Enter for default: 'I authored this document'):"
+    );
     print!("> ");
     io::stdout().flush()?;
 
     input.clear();
     reader.read_line(&mut input)?;
-    let statement = input.trim().to_string();
-
-    if statement.is_empty() {
-        return Err(anyhow!("Declaration statement is required"));
-    }
+    let statement = {
+        let trimmed = input.trim().to_string();
+        if trimmed.is_empty() {
+            "I authored this document".to_string()
+        } else {
+            trimmed
+        }
+    };
 
     let decl = if used_ai {
         println!();

@@ -25,12 +25,9 @@ impl SentinelIpcHandler {
 
     fn open_db(&self) -> Result<crate::store::SecureStore, String> {
         let db_path = self.sentinel.config.writerslogic_dir.join("events.db");
-        let key_bytes = self.sentinel.signing_key.read_recover().to_bytes();
-        if key_bytes == [0u8; 32] {
-            return Err(
-                "Signing key is uninitialized (all zeros) — refusing to derive HMAC key".into(),
-            );
-        }
+        let guard = self.sentinel.signing_key.read_recover();
+        let signing_key = guard.as_ref().ok_or("Signing key not initialized")?;
+        let key_bytes = signing_key.to_bytes();
         let hmac_key = crate::crypto::derive_hmac_key(&key_bytes);
         crate::store::SecureStore::open(&db_path, hmac_key)
             .map_err(|e| format!("Database error: {e}"))
@@ -300,15 +297,19 @@ impl SentinelIpcHandler {
             .latest()
             .ok_or("Chain reported non-empty but latest() returned None")?;
 
-        let signing_key = self.sentinel.signing_key.read_recover();
+        let signing_key_guard = self.sentinel.signing_key.read_recover();
+        let signing_key = signing_key_guard
+            .as_ref()
+            .ok_or("Signing key not initialized")?;
         let decl = crate::declaration::no_ai_declaration(
             latest.content_hash,
             latest.hash,
             &title,
             "Exported via IPC",
         )
-        .sign(&*signing_key)
+        .sign(signing_key)
         .map_err(|e| format!("Declaration signing failed: {e}"))?;
+        drop(signing_key_guard);
         builder = builder.with_declaration(&decl);
 
         let summary = self
@@ -323,7 +324,8 @@ impl SentinelIpcHandler {
         };
 
         let (identity_fingerprint, hmac_key) = {
-            let key = self.sentinel.signing_key.read_recover();
+            let guard = self.sentinel.signing_key.read_recover();
+            let key = guard.as_ref().ok_or("Signing key not initialized")?;
             let mut hasher = Sha256::new();
             hasher.update(key.verifying_key().to_bytes());
             let fingerprint = hasher.finalize().to_vec();

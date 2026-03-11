@@ -15,6 +15,16 @@ pub(crate) fn cmd_init() -> Result<()> {
     let config = ensure_dirs()?;
     let dir = &config.data_dir;
 
+    let signing_key_path = dir.join("signing_key");
+    if signing_key_path.exists() && dir.join("puf_seed").exists() && dir.join("events.db").exists()
+    {
+        println!("WritersLogic is already initialized.");
+        println!("  Data directory: {}", dir.display());
+        println!();
+        println!("To start fresh, run: wld identity --recover");
+        return Ok(());
+    }
+
     let tpm_provider = tpm::detect_provider();
     let caps = tpm_provider.capabilities();
     if caps.hardware_backed {
@@ -72,9 +82,11 @@ pub(crate) fn cmd_init() -> Result<()> {
             .map_err(|e| anyhow!("Failed to derive master identity: {}", e))?;
 
         let identity_path = dir.join("identity.json");
+        let did = format!("did:key:z{}", hex::encode(&identity.public_key));
         let identity_data = serde_json::json!({
             "version": 1,
             "fingerprint": identity.fingerprint,
+            "did": did,
             "public_key": hex::encode(&identity.public_key),
             "device_id": identity.device_id,
             "created_at": identity.created_at.to_rfc3339(),
@@ -108,22 +120,15 @@ pub(crate) fn cmd_init() -> Result<()> {
 
     println!();
     println!("============================================================");
-    println!("  WitnessD initialized successfully!");
+    println!("  WritersLogic initialized successfully!");
     println!("============================================================");
     println!();
     println!("NEXT STEPS:");
-    println!();
-    println!("  1. CALIBRATE your machine (required, takes ~2 seconds):");
-    println!("     $ wld calibrate");
-    println!();
-    println!("  2. START CHECKPOINTING your work:");
-    println!("     $ wld commit myfile.txt -m \"First draft\"");
-    println!();
-    println!("  3. When ready, EXPORT your evidence:");
-    println!("     $ wld export myfile.txt -t standard");
-    println!();
-    println!("TIP: Checkpoint frequently while writing. Each checkpoint adds");
-    println!("     to your authorship evidence. Run 'wld --help' for more.");
+    println!("  1. Calibrate VDF:  wld calibrate");
+    println!("  2. Checkpoint:     wld commit <file> -m \"message\"");
+    println!("  3. Track writing:  wld <file>");
+    println!("  4. Watch folder:   wld <folder>");
+    println!("  5. Export proof:   wld export <file> -t standard");
 
     Ok(())
 }

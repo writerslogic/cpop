@@ -5,7 +5,10 @@
 use ed25519_dalek::{Signer, SigningKey};
 use reqwest::Client;
 
-use super::types::{AttestResponse, EnrollRequest, EnrollResponse, NonceResponse};
+use super::types::{
+    AnchorRequest, AnchorResponse, AttestResponse, EnrollRequest, EnrollResponse, NonceResponse,
+    StegoSignRequest, StegoSignResponse, StegoVerifyResponse, VerifyResponse,
+};
 use crate::error::{Error, Result};
 
 /// WritersProof API client.
@@ -184,6 +187,128 @@ impl WritersProofClient {
             .await
             .map(|b| b.to_vec())
             .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))
+    }
+
+    /// Anchor an evidence packet hash in the transparency log.
+    ///
+    /// `POST /v1/anchor`
+    pub async fn anchor(&self, req: AnchorRequest) -> Result<AnchorResponse> {
+        let url = format!("{}/v1/anchor", self.base_url);
+        let mut http_req = self.client.post(&url).json(&req);
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt);
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("anchor request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "anchor request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<AnchorResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("anchor response parse failed: {e}")))
+    }
+
+    /// Verify an evidence packet.
+    ///
+    /// `POST /v1/verify`
+    pub async fn verify(&self, evidence_cbor: &[u8]) -> Result<VerifyResponse> {
+        let url = format!("{}/v1/verify", self.base_url);
+        let mut req = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/vnd.writerslogic-pop+cbor")
+            .body(evidence_cbor.to_vec());
+
+        if let Some(ref jwt) = self.jwt {
+            req = req.bearer_auth(jwt);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("verify request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "verify request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<VerifyResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("verify response parse failed: {e}")))
+    }
+
+    /// Request a steganographic watermark signing from WritersProof.
+    ///
+    /// `POST /v1/stego/sign`
+    pub async fn stego_sign(&self, req: StegoSignRequest) -> Result<StegoSignResponse> {
+        let url = format!("{}/v1/stego/sign", self.base_url);
+        let mut http_req = self.client.post(&url).json(&req);
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt);
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("stego sign request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "stego sign request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<StegoSignResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("stego sign response parse failed: {e}")))
+    }
+
+    /// Verify a steganographic watermark via WritersProof.
+    ///
+    /// `POST /v1/stego/verify`
+    pub async fn stego_verify(
+        &self,
+        document_text: &str,
+        mmr_root: &str,
+    ) -> Result<StegoVerifyResponse> {
+        let url = format!("{}/v1/stego/verify", self.base_url);
+        let body = serde_json::json!({
+            "document_text": document_text,
+            "mmr_root": mmr_root,
+        });
+
+        let mut req = self.client.post(&url).json(&body);
+        if let Some(ref jwt) = self.jwt {
+            req = req.bearer_auth(jwt);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("stego verify request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "stego verify request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<StegoVerifyResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("stego verify response parse failed: {e}")))
     }
 
     /// Check if the WritersProof service is reachable.

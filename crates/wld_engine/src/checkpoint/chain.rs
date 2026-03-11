@@ -8,10 +8,40 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::error::{Error, Result};
+use crate::rfc::wire_types::components::DocumentRef;
+use crate::rfc::wire_types::hash::HashValue;
 use crate::rfc::{self, TimeEvidence, VdfProofRfc};
 use crate::vdf::{self, Parameters};
 
 use super::types::*;
+
+/// Compute the genesis checkpoint prev-hash per draft-condrey-rats-pop:
+/// `prev_hash = SHA-256(CBOR-encode(document-ref))`.
+///
+/// For the genesis (ordinal-0) checkpoint, instead of all-zeros the
+/// previous hash is bound to the initial document state.
+fn genesis_prev_hash(
+    content_hash: [u8; 32],
+    content_size: u64,
+    document_path: &str,
+) -> Result<[u8; 32]> {
+    let filename = std::path::Path::new(document_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string());
+
+    let doc_ref = DocumentRef {
+        content_hash: HashValue::sha256(content_hash.to_vec()),
+        filename,
+        byte_length: content_size,
+        char_count: content_size, // best-effort approximation
+        salt_mode: None,
+        salt_commitment: None,
+    };
+
+    let cbor_bytes = crate::codec::cbor::encode(&doc_ref)
+        .map_err(|e| Error::checkpoint(format!("genesis CBOR encode: {e}")))?;
+    Ok(Sha256::digest(&cbor_bytes).into())
+}
 
 /// Mix an optional physics seed into a base VDF input.
 ///
@@ -92,13 +122,13 @@ impl Chain {
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
         let ordinal = self.checkpoints.len() as u64;
 
-        let mut previous_hash = [0u8; 32];
+        let previous_hash;
         let mut last_timestamp = None;
-        if ordinal > 0 {
-            if let Some(prev) = self.checkpoints.last() {
-                previous_hash = prev.hash;
-                last_timestamp = Some(prev.timestamp);
-            }
+        if let Some(prev) = self.checkpoints.last() {
+            previous_hash = prev.hash;
+            last_timestamp = Some(prev.timestamp);
+        } else {
+            previous_hash = genesis_prev_hash(content_hash, content_size, &self.document_path)?;
         }
 
         let mut checkpoint =
@@ -130,11 +160,11 @@ impl Chain {
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
         let ordinal = self.checkpoints.len() as u64;
 
-        let previous_hash = self
-            .checkpoints
-            .last()
-            .map(|cp| cp.hash)
-            .unwrap_or([0u8; 32]);
+        let previous_hash = if let Some(prev) = self.checkpoints.last() {
+            prev.hash
+        } else {
+            genesis_prev_hash(content_hash, content_size, &self.document_path)?
+        };
 
         let mut checkpoint =
             Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
@@ -178,7 +208,10 @@ impl Chain {
         let ordinal = self.checkpoints.len() as u64;
 
         let last_cp = self.checkpoints.last();
-        let previous_hash = last_cp.map(|cp| cp.hash).unwrap_or([0u8; 32]);
+        let previous_hash = match last_cp {
+            Some(cp) => cp.hash,
+            None => genesis_prev_hash(content_hash, content_size, &self.document_path)?,
+        };
 
         let previous_vdf_output = last_cp
             .and_then(|cp| cp.vdf.as_ref())
@@ -233,7 +266,10 @@ impl Chain {
         let ordinal = self.checkpoints.len() as u64;
 
         let last_cp = self.checkpoints.last();
-        let previous_hash = last_cp.map(|cp| cp.hash).unwrap_or([0u8; 32]);
+        let previous_hash = match last_cp {
+            Some(cp) => cp.hash,
+            None => genesis_prev_hash(content_hash, content_size, &self.document_path)?,
+        };
 
         let physics_seed = if self.entanglement_mode == EntanglementMode::Entangled {
             physics.map(|ctx| {
@@ -292,6 +328,55 @@ impl Chain {
             physics_seed,
         });
 
+        // Derive spec-conformant SWF seed (draft-condrey-rats-pop)
+        let swf_seed = if ordinal == 0 {
+            // Genesis: H("PoP-SWF-Seed-v1" || CBOR(document-ref) || jitter-or-nonce)
+            let doc_ref = DocumentRef {
+                content_hash: HashValue::sha256(content_hash.to_vec()),
+                filename: std::path::Path::new(&self.document_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string()),
+                byte_length: content_size,
+                char_count: content_size,
+                salt_mode: None,
+                salt_commitment: None,
+            };
+            let doc_cbor = crate::codec::cbor::encode(&doc_ref)
+                .map_err(|e| Error::checkpoint(format!("genesis doc-ref CBOR: {e}")))?;
+            let jitter_or_nonce = rfc_jitter
+                .as_ref()
+                .map(|j| j.entropy_commitment.hash)
+                .unwrap_or_else(|| {
+                    // CORE fallback: use content_hash as local nonce
+                    content_hash
+                });
+            vdf::swf_seed_genesis(&doc_cbor, &jitter_or_nonce)
+        } else if let Some(ref jb) = rfc_jitter {
+            // ENHANCED+: H("PoP-SWF-Seed-v1" || prev-hash || CBOR(intervals) || CBOR(physical-state))
+            let intervals_cbor =
+                crate::codec::cbor::encode(&jb.summary.sample_count).unwrap_or_default();
+            // PhysicalContext isn't Serialize; encode combined_hash as stand-in
+            let phys_cbor = physics
+                .map(|p| crate::codec::cbor::encode(&p.combined_hash.to_vec()).unwrap_or_default())
+                .unwrap_or_default();
+            vdf::swf_seed_enhanced(&previous_hash, &intervals_cbor, &phys_cbor)
+        } else {
+            // CORE fallback: H("PoP-SWF-Seed-v1" || prev-hash || local-nonce)
+            vdf::swf_seed_core(&previous_hash, &content_hash)
+        };
+
+        // Compute Argon2id SWF proof (draft-condrey-rats-pop, algorithm=20)
+        let argon2_swf = {
+            let swf_params = vdf::swf_argon2::Argon2SwfParams {
+                iterations: self.vdf_params.min_iterations.max(3),
+                ..vdf::swf_argon2::Argon2SwfParams::default()
+            };
+            Some(
+                vdf::swf_argon2::compute(swf_seed, swf_params)
+                    .map_err(|e| Error::checkpoint(format!("Argon2id SWF: {e}")))?,
+            )
+        };
+
         let mut checkpoint =
             Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
         checkpoint.vdf = vdf_proof;
@@ -299,6 +384,7 @@ impl Chain {
         checkpoint.rfc_vdf = rfc_vdf;
         checkpoint.rfc_jitter = rfc_jitter;
         checkpoint.time_evidence = time_evidence;
+        checkpoint.argon2_swf = argon2_swf;
 
         checkpoint.validate_timestamp()?;
         checkpoint.hash = checkpoint.compute_hash();
@@ -330,8 +416,16 @@ impl Chain {
                 if cp.previous_hash != self.checkpoints[i - 1].hash {
                     return false;
                 }
-            } else if cp.previous_hash != [0u8; 32] {
-                return false;
+            } else {
+                // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
+                let is_legacy_zeros = cp.previous_hash == [0u8; 32];
+                let is_spec_genesis =
+                    genesis_prev_hash(cp.content_hash, cp.content_size, &self.document_path)
+                        .map(|h| cp.previous_hash == h)
+                        .unwrap_or(false);
+                if !is_legacy_zeros && !is_spec_genesis {
+                    return false;
+                }
             }
         }
         true
@@ -362,9 +456,20 @@ impl Chain {
                     report.fail(format!("checkpoint {i}: broken chain link"));
                     return report;
                 }
-            } else if checkpoint.previous_hash != [0u8; 32] {
-                report.fail("checkpoint 0: non-zero previous hash".into());
-                return report;
+            } else {
+                // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
+                let is_legacy_zeros = checkpoint.previous_hash == [0u8; 32];
+                let is_spec_genesis = genesis_prev_hash(
+                    checkpoint.content_hash,
+                    checkpoint.content_size,
+                    &self.document_path,
+                )
+                .map(|h| checkpoint.previous_hash == h)
+                .unwrap_or(false);
+                if !is_legacy_zeros && !is_spec_genesis {
+                    report.fail("checkpoint 0: invalid genesis prev-hash".into());
+                    return report;
+                }
             }
 
             match checkpoint.signature.as_ref() {
@@ -474,6 +579,23 @@ impl Chain {
                     }
                     if !vdf::verify(vdf) {
                         report.fail(format!("checkpoint {i}: VDF verification failed"));
+                        return report;
+                    }
+                }
+            }
+
+            // Verify Argon2id SWF proof if present
+            if let Some(swf) = &checkpoint.argon2_swf {
+                match vdf::swf_argon2::verify(swf) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        report.fail(format!(
+                            "checkpoint {i}: Argon2id SWF Merkle verification failed"
+                        ));
+                        return report;
+                    }
+                    Err(e) => {
+                        report.fail(format!("checkpoint {i}: Argon2id SWF error: {e}"));
                         return report;
                     }
                 }

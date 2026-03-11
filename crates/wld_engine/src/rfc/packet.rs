@@ -5,7 +5,7 @@
 //! Implements the evidence-packet CDDL structure from draft-condrey-rats-pop-schema-01:
 //!
 //! ```cddl
-//! tagged-evidence-packet = #6.1347571280(evidence-packet)
+//! tagged-evidence-packet = #6.1129336656(evidence-packet)
 //!
 //! evidence-packet = {
 //!     1 => uint,                      ; version (1)
@@ -23,7 +23,7 @@
 //! }
 //! ```
 //!
-//! CBOR Semantic Tag: 1347571280 (0x50505050, "PPPP" per IANA)
+//! CBOR Semantic Tag: 1129336656 (0x43504F50, "CPOP" per IANA)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ use super::serde_helpers::{hex_bytes_vec, hex_bytes_vec_opt};
 
 /// CBOR semantic tag for evidence packets.
 /// Per draft-condrey-rats-pop CDDL and IANA CBOR tag registry.
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = crate::codec::CBOR_TAG_PPP;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = crate::codec::CBOR_TAG_CPOP;
 
 /// RFC-compliant evidence packet structure.
 ///

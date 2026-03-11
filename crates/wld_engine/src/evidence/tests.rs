@@ -476,10 +476,10 @@ mod tests {
             .build()
             .expect("build");
 
-        packet.checkpoints[0].previous_hash = "nonzero".to_string();
+        packet.checkpoints[0].previous_hash = "not-valid-hex!".to_string();
 
         let err = packet.verify(chain.vdf_params).unwrap_err();
-        assert!(err.to_string().contains("non-zero previous hash"));
+        assert!(err.to_string().contains("invalid genesis previous hash"));
     }
 
     #[test]
@@ -1014,8 +1014,8 @@ mod tests {
         let encoded = packet.encode().expect("encode");
 
         assert!(
-            crate::codec::cbor::has_tag(&encoded, crate::codec::CBOR_TAG_PPP),
-            "encoded packet should have PPP semantic tag"
+            crate::codec::cbor::has_tag(&encoded, crate::codec::CBOR_TAG_CPOP),
+            "encoded packet should have CPOP semantic tag"
         );
 
         let format = crate::codec::Format::detect(&encoded);

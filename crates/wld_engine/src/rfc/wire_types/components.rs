@@ -95,7 +95,7 @@ pub struct EditDelta {
 ///     1 => uint,  ; time-cost
 ///     2 => uint,  ; memory-cost (KiB)
 ///     3 => uint,  ; parallelism
-///     4 => uint,  ; iterations
+///     4 => uint,  ; steps
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +111,7 @@ pub struct ProofParams {
     pub parallelism: u64,
 
     #[serde(rename = "4")]
-    pub iterations: u64,
+    pub steps: u64,
 }
 
 /// Merkle proof per CDDL `merkle-proof`.
@@ -349,13 +349,55 @@ pub struct PresenceChallenge {
     #[serde(rename = "1", with = "serde_bytes")]
     pub challenge_nonce: Vec<u8>,
 
-    /// `COSE_Sign1`
+    /// COSE_Sign1-wrapped device signature per draft-condrey-rats-pop §4.5.
+    /// Use `wrap_device_signature_cose` to produce this field.
     #[serde(rename = "2", with = "serde_bytes")]
     pub device_signature: Vec<u8>,
 
     /// Epoch ms
     #[serde(rename = "3")]
     pub response_time: u64,
+}
+
+impl PresenceChallenge {
+    /// Wrap a raw device signature + optional platform attestation blob in
+    /// COSE_Sign1 per draft-condrey-rats-pop.
+    ///
+    /// `payload` is the challenge nonce (or a serialized response).
+    /// `signer` provides Ed25519 signing. The platform attestation (if any)
+    /// MAY be carried as an unprotected header.
+    pub fn wrap_device_signature_cose(
+        payload: &[u8],
+        signing_key: &ed25519_dalek::SigningKey,
+        platform_attestation: Option<&[u8]>,
+    ) -> Vec<u8> {
+        use coset::{CborSerializable, CoseSign1Builder, HeaderBuilder};
+        use ed25519_dalek::Signer;
+
+        let protected = HeaderBuilder::new()
+            .algorithm(coset::iana::Algorithm::EdDSA)
+            .build();
+
+        let mut unprotected_builder = HeaderBuilder::new();
+        if let Some(att) = platform_attestation {
+            // Carry platform attestation as an unprotected header parameter.
+            // Label -1 (private use) holds the raw attestation object.
+            unprotected_builder = unprotected_builder
+                .text_value("att".to_string(), ciborium::Value::Bytes(att.to_vec()));
+        }
+        let unprotected = unprotected_builder.build();
+
+        CoseSign1Builder::new()
+            .protected(protected)
+            .unprotected(unprotected)
+            .payload(payload.to_vec())
+            .create_signature(&[], |sig_data| {
+                signing_key.sign(sig_data).to_bytes().to_vec()
+            })
+            .build()
+            .to_vec()
+            .expect("COSE_Sign1 serialization")
+    }
 }
 
 /// Channel binding per CDDL `channel-binding`.
@@ -400,6 +442,49 @@ pub struct SelfReceipt {
     /// Epoch ms
     #[serde(rename = "4")]
     pub transfer_time: u64,
+}
+
+/// AI tool output receipt with COSE_Sign1 signature per CDDL `tool-receipt`.
+///
+/// ```cddl
+/// tool-receipt = {
+///     1 => tstr,
+///     2 => hash-value,
+///     ? 3 => hash-value,
+///     4 => pop-timestamp,
+///     5 => bstr,           ; COSE_Sign1 bytes
+///     ? 6 => uint,
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolReceipt {
+    #[serde(rename = "1")]
+    pub tool_id: String,
+
+    #[serde(rename = "2")]
+    pub output_commit: HashValue,
+
+    #[serde(rename = "3", skip_serializing_if = "Option::is_none")]
+    pub input_ref: Option<HashValue>,
+
+    /// Epoch ms
+    #[serde(rename = "4")]
+    pub issued_at: u64,
+
+    /// COSE_Sign1 bytes
+    #[serde(rename = "5", with = "serde_bytes")]
+    pub tool_signature: Vec<u8>,
+
+    #[serde(rename = "6", skip_serializing_if = "Option::is_none")]
+    pub output_char_count: Option<u64>,
+}
+
+/// Receipt type discriminated by presence of tool-signature (key 5).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Receipt {
+    Tool(ToolReceipt),
+    SelfReceipt(SelfReceipt),
 }
 
 /// Active liveness probe per CDDL `active-probe`.

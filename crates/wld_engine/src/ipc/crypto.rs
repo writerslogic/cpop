@@ -8,6 +8,7 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 /// Protocol encoding mode negotiated per connection.
@@ -65,6 +66,9 @@ pub(crate) struct SecureSession {
     rx_sequence: AtomicU64,
     /// Copy of key bytes for zeroization on drop
     key_bytes: [u8; 32],
+    /// Nonce prefix for bytes [0..4], derived from shared secret via HKDF.
+    /// Prevents the first 4 bytes from always being zero.
+    nonce_prefix: [u8; 4],
 }
 
 impl SecureSession {
@@ -88,6 +92,12 @@ impl SecureSession {
         hk.expand(&info, &mut key_bytes)
             .map_err(|_| anyhow!("HKDF expand failed"))?;
 
+        // Derive a 4-byte nonce prefix from the same HKDF to fill nonce bytes [0..4].
+        // Both sides derive the same prefix deterministically.
+        let mut nonce_prefix = [0u8; 4];
+        hk.expand(b"nonce-prefix", &mut nonce_prefix)
+            .map_err(|_| anyhow!("HKDF expand for nonce prefix failed"))?;
+
         let cipher = Aes256Gcm::new_from_slice(&key_bytes)
             .map_err(|_| anyhow!("AES-GCM key init failed"))?;
 
@@ -99,6 +109,7 @@ impl SecureSession {
             tx_sequence: AtomicU64::new(tx_start),
             rx_sequence: AtomicU64::new(rx_start),
             key_bytes,
+            nonce_prefix,
         })
     }
 
@@ -106,6 +117,7 @@ impl SecureSession {
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let seq = self.tx_sequence.fetch_add(2, Ordering::SeqCst);
         let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
         nonce_bytes[4..].copy_from_slice(&seq.to_le_bytes());
         let nonce = AesNonce::from_slice(&nonce_bytes);
 
@@ -141,7 +153,12 @@ impl SecureSession {
         // Peek at expected sequence without advancing — only advance on full success.
         let expected_seq = self.rx_sequence.load(Ordering::SeqCst);
 
-        if seq != expected_seq {
+        if seq
+            .to_le_bytes()
+            .ct_eq(&expected_seq.to_le_bytes())
+            .unwrap_u8()
+            != 1
+        {
             return Err(anyhow!(
                 "Sequence number mismatch: expected {}, got {} (possible replay attack)",
                 expected_seq,
@@ -291,6 +308,12 @@ pub(crate) async fn secure_handshake_server<
             server_pubkey_bytes,
             true,
         )?;
+
+        // Zeroize ECDH ephemeral secrets now that session key is derived.
+        // Both types implement ZeroizeOnDrop, so explicit drop triggers cleanup.
+        drop(shared_secret);
+        drop(server_secret);
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 
         let confirm_encrypted = session.encrypt(KEY_CONFIRM_PLAINTEXT)?;
         let confirm_len = confirm_encrypted.len() as u32;

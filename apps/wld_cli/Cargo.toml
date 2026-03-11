@@ -16,10 +16,6 @@ documentation = "https://docs.rs/wld_cli"
 exclude = ["tests/", "browser-extension/"]
 
 [[bin]]
-name = "writerslogic"
-path = "src/main.rs"
-
-[[bin]]
 name = "wld"
 path = "src/main.rs"
 
@@ -51,3 +47,4 @@ tempfile = "3.10"
 url = "2.5"
 zeroize = { version = "1.8", features = ["derive"] }
 subtle = "2.6"
+ctrlc = "3.4"

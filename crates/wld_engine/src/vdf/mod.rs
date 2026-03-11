@@ -4,6 +4,7 @@ pub mod aggregation;
 pub mod params;
 pub mod proof;
 pub mod roughtime_client;
+pub mod swf_argon2;
 pub mod timekeeper;
 
 pub use aggregation::{
@@ -12,7 +13,7 @@ pub use aggregation::{
 };
 pub use params::{
     calibrate, chain_input, chain_input_entangled, compute, compute_iterations, default_parameters,
-    verify, verify_with_progress, Parameters,
+    swf_seed_core, swf_seed_enhanced, swf_seed_genesis, verify, verify_with_progress, Parameters,
 };
 pub use proof::VdfProof;
 
@@ -20,4 +21,5 @@ pub use proof::VdfProof;
 pub type SwfParameters = Parameters;
 pub type SwfProof = VdfProof;
 pub use roughtime_client::RoughtimeClient;
+pub use swf_argon2::{Argon2SwfParams, Argon2SwfProof};
 pub use timekeeper::{TimeAnchor, TimeKeeper};

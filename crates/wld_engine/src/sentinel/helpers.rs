@@ -19,7 +19,7 @@ pub fn handle_focus_event_sync(
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
     config: &SentinelConfig,
     shadow: &Arc<ShadowManager>,
-    signing_key: &Arc<RwLock<SigningKey>>,
+    signing_key: &Arc<RwLock<Option<SigningKey>>>,
     current_focus: &Arc<RwLock<Option<String>>>,
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
@@ -108,7 +108,7 @@ pub fn focus_document_sync(
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
     _config: &SentinelConfig,
     _shadow: &Arc<ShadowManager>,
-    signing_key: &Arc<RwLock<SigningKey>>,
+    signing_key: &Arc<RwLock<Option<SigningKey>>>,
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
@@ -132,15 +132,22 @@ pub fn focus_document_sync(
         let mut session_id_bytes = [0u8; 32];
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-            if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
-                let payload = create_session_start_payload(&session);
-                if let Err(e) = wal.append(EntryType::SessionStart, payload) {
-                    log::warn!(
-                        "WAL append failed for session {}: {}",
-                        session.session_id,
-                        e
-                    );
+            if let Some(key) = key {
+                if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
+                    let payload = create_session_start_payload(&session);
+                    if let Err(e) = wal.append(EntryType::SessionStart, payload) {
+                        log::warn!(
+                            "WAL append failed for session {}: {}",
+                            session.session_id,
+                            e
+                        );
+                    }
                 }
+            } else {
+                log::warn!(
+                    "Signing key not initialized, skipping WAL for session {}",
+                    session.session_id
+                );
             }
         } else {
             log::warn!("Invalid session ID hex: {}", session.session_id);
@@ -189,7 +196,7 @@ pub fn unfocus_document_sync(
 pub fn handle_change_event_sync(
     event: &ChangeEvent,
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
-    signing_key: &Arc<RwLock<SigningKey>>,
+    signing_key: &Arc<RwLock<Option<SigningKey>>>,
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
@@ -213,16 +220,23 @@ pub fn handle_change_event_sync(
                     let mut session_id_bytes = [0u8; 32];
                     let hex_str = &session.session_id[..64.min(session.session_id.len())];
                     if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-                        if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key.clone()) {
-                            let payload =
-                                create_document_hash_payload(&hash, event.size.unwrap_or(0));
-                            if let Err(e) = wal.append(EntryType::DocumentHash, payload) {
-                                log::warn!(
-                                    "WAL append failed for session {}: {}",
-                                    session.session_id,
-                                    e
-                                );
+                        if let Some(key) = key.clone() {
+                            if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
+                                let payload =
+                                    create_document_hash_payload(&hash, event.size.unwrap_or(0));
+                                if let Err(e) = wal.append(EntryType::DocumentHash, payload) {
+                                    log::warn!(
+                                        "WAL append failed for session {}: {}",
+                                        session.session_id,
+                                        e
+                                    );
+                                }
                             }
+                        } else {
+                            log::warn!(
+                                "Signing key not initialized, skipping WAL for session {}",
+                                session.session_id
+                            );
                         }
                     } else {
                         log::warn!("Invalid session ID hex: {}", session.session_id);

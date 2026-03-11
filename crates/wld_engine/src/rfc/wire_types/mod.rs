@@ -12,8 +12,8 @@
 //!
 //! # CBOR Tags
 //!
-//! - Evidence Packet: `#6.1347571280` (IANA "PPPP")
-//! - Attestation Result: `#6.1463894560` (IANA "WAR ")
+//! - Evidence Packet: `#6.1129336656` (IANA "CPOP")
+//! - Attestation Result: `#6.1129791826` (IANA "CWAR")
 //!
 //! # Module Organization
 //!
@@ -37,23 +37,24 @@ pub mod packet;
 #[cfg(test)]
 mod tests;
 
-use crate::codec::{CBOR_TAG_PPP, CBOR_TAG_WAR};
+use crate::codec::{CBOR_TAG_CPOP, CBOR_TAG_CWAR};
 
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_PPP;
-pub const CBOR_TAG_ATTESTATION_RESULT: u64 = CBOR_TAG_WAR;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_CPOP;
+pub const CBOR_TAG_ATTESTATION_RESULT: u64 = CBOR_TAG_CWAR;
 
 /// Maximum length of any single string field in wire types.
 pub(super) const MAX_STRING_LEN: usize = 4096;
 
 pub use attestation::{
-    AbsenceClaim, AttestationResultWire, EntropyReport, ForensicFlag, ForensicSummary,
-    ForgeryCostEstimate,
+    AbsenceClaim, AttestationResultWire, EffortAttribution, EntropyReport, ForensicFlag,
+    ForensicSummary, ForgeryCostEstimate,
 };
 pub use checkpoint::CheckpointWire;
 pub use components::{
     ActiveProbe, ChannelBinding, DocumentRef, EditDelta, JitterBindingWire, MerkleProof,
     PhysicalLiveness, PhysicalState, PresenceChallenge, ProcessProof, ProfileDeclarationWire,
-    ProofParams, SelfReceipt, SWF_MAX_DURATION_FACTOR, SWF_MIN_DURATION_FACTOR,
+    ProofParams, Receipt, SelfReceipt, ToolReceipt, SWF_MAX_DURATION_FACTOR,
+    SWF_MIN_DURATION_FACTOR,
 };
 pub use enums::{
     AbsenceType, AttestationTier, BindingType, ContentTier, CostUnit, FeatureId, HashAlgorithm,

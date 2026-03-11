@@ -66,7 +66,8 @@ fn test_single_commit() {
         .expect("commit");
 
     assert_eq!(checkpoint.ordinal, 0);
-    assert_eq!(checkpoint.previous_hash, [0u8; 32]);
+    // Genesis prev-hash is now H(CBOR(document-ref)), not all-zeros
+    assert_ne!(checkpoint.previous_hash, [0u8; 32]);
     assert_eq!(checkpoint.message, Some("first commit".to_string()));
     assert!(checkpoint.vdf.is_none());
     assert_ne!(checkpoint.content_hash, [0u8; 32]);
@@ -176,7 +177,7 @@ fn test_chain_verification_nonzero_first_previous_hash() {
     chain.checkpoints[0].hash = chain.checkpoints[0].compute_hash();
 
     let err = chain.verify().unwrap_err();
-    assert!(err.to_string().contains("non-zero previous hash"));
+    assert!(err.to_string().contains("invalid genesis prev-hash"));
     drop(dir);
 }
 

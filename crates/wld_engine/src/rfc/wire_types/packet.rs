@@ -16,7 +16,7 @@ use crate::codec::{self, CodecError};
 
 /// Wire-format evidence packet per CDDL `evidence-packet`.
 ///
-/// Wrapped with CBOR tag 1347571280 for transmission.
+/// Wrapped with CBOR tag 1129336656 (CPOP) for transmission.
 ///
 /// ```cddl
 /// evidence-packet = {

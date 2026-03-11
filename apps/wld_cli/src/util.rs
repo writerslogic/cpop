@@ -67,16 +67,19 @@ pub fn load_vdf_params(config: &WLDConfig) -> VdfParameters {
     VdfParameters::from(config.clone())
 }
 
+// Note: No advisory lock on signing key file. Concurrent CLI instances
+// may read simultaneously, which is safe (read-only). Key writes only
+// happen during init/recover, which are user-initiated and unlikely to race.
 pub fn load_signing_key(dir: &Path) -> Result<SigningKey> {
     let key_path = dir.join("signing_key");
     let mut key_data = fs::read(&key_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => anyhow!(
-            "WitnessD has not been initialized yet.\n\n\
-             Run 'wld init' to set up WitnessD for the first time."
+            "WritersLogic has not been initialized yet.\n\n\
+             Run 'wld init' to set up WritersLogic for the first time."
         ),
         std::io::ErrorKind::PermissionDenied => anyhow!(
             "Permission denied: {}\n\n\
-             Check that you have read access to the WitnessD data directory.",
+             Check that you have read access to the WritersLogic data directory.",
             key_path.display()
         ),
         _ => anyhow!("Failed to read signing key: {}", e),
@@ -171,4 +174,32 @@ pub fn get_machine_id() -> String {
     hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+/// Load the author DID from identity.json.
+pub fn load_did(dir: &Path) -> Result<String> {
+    let identity_path = dir.join("identity.json");
+    let data = fs::read_to_string(&identity_path)
+        .map_err(|_| anyhow!("No identity found. Run 'wld identity' to create one."))?;
+    let identity: serde_json::Value = serde_json::from_str(&data)?;
+    identity
+        .get("did")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("Identity file missing 'did' field"))
+}
+
+/// Load the WritersProof API key.
+pub fn load_api_key(dir: &Path) -> Result<String> {
+    let key_path = dir.join("api_key");
+    fs::read_to_string(&key_path)
+        .map(|s| s.trim().to_string())
+        .map_err(|_| {
+            anyhow!(
+                "No WritersProof API key found.\n\n\
+                 Save your API key to: {}\n\
+                 Get one at: https://writerslogic.com/dashboard/settings",
+                key_path.display()
+            )
+        })
 }

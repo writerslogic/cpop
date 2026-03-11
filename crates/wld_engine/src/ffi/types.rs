@@ -137,6 +137,10 @@ pub struct FfiAttestationResponse {
     pub success: bool,
     pub signature_b64: String,
     pub public_key_b64: String,
+    /// COSE_Sign1 envelope wrapping the attestation payload, base64-encoded.
+    /// Per draft-condrey-rats-pop, device attestation uses COSE_Sign1 as the
+    /// outer envelope with the platform attestation object as payload.
+    pub cose_sign1_b64: String,
     pub device_id: String,
     pub model: String,
     pub os_version: String,

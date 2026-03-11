@@ -2,7 +2,7 @@
 
 //! Verify command implementation for the WritersLogic CLI.
 //!
-//! Supports verification of evidence packets (JSON), WAR blocks (.war),
+//! Supports verification of evidence packets (JSON), CWAR blocks (.cwar),
 //! and secure database files.
 
 use anyhow::{anyhow, Context, Result};
@@ -132,9 +132,30 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
             }
             Err(e) => {
                 println!("[FAILED] Evidence packet INVALID: {}", e);
+                return Err(anyhow!("Verification failed"));
             }
         }
-    } else if ext == "war" {
+    } else if ext == "cpop" || ext == "cbor" {
+        let data = fs::read(file_path).context("Failed to read CPOP file")?;
+        match wld_engine::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(&data) {
+            Ok(packet) => {
+                println!("[OK] CPOP evidence packet VERIFIED");
+                println!("  Version: {}", packet.version);
+                println!("  Profile: {}", packet.profile_uri);
+                println!("  Checkpoints: {}", packet.checkpoints.len());
+                if let Some(tier) = &packet.attestation_tier {
+                    println!("  Attestation tier: {:?}", tier);
+                }
+                if let Some(ct) = &packet.content_tier {
+                    println!("  Content tier: {:?}", ct);
+                }
+            }
+            Err(e) => {
+                println!("[FAILED] CPOP evidence packet INVALID: {}", e);
+                return Err(anyhow!("Verification failed"));
+            }
+        }
+    } else if ext == "cwar" || ext == "war" {
         let data = fs::read_to_string(file_path).context("Failed to read WAR file")?;
         let war_block = war::Block::decode_ascii(&data)
             .map_err(|e| anyhow!("Failed to parse WAR block: {}", e))?;
@@ -180,7 +201,18 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
         if !report.valid {
             println!();
             println!("Summary: {}", report.summary);
+            return Err(anyhow!("Verification failed"));
         }
+    } else if !matches!(ext, "db" | "sqlite") {
+        return Err(anyhow!(
+            "Cannot determine file format: {}\n\n\
+             Supported formats:\n  \
+             .json      JSON evidence packet\n  \
+             .cwar      ASCII-armored CWAR block\n  \
+             .db        Local SQLite database\n\n\
+             Specify the correct file or check the extension.",
+            file_path.display()
+        ));
     } else {
         let key_path = match key {
             Some(k) => k,
@@ -210,7 +242,10 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
 
         match SecureStore::open(file_path, hmac_key) {
             Ok(_) => println!("[OK] Database integrity VERIFIED"),
-            Err(e) => println!("[FAILED] Database integrity FAILED: {}", e),
+            Err(e) => {
+                println!("[FAILED] Database integrity FAILED: {}", e);
+                return Err(anyhow!("Verification failed"));
+            }
         }
     }
 

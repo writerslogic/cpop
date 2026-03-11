@@ -5,6 +5,17 @@ use crate::ffi::types::{FfiCalibrationResult, FfiForensicResult, FfiProcessScore
 use std::time::Duration;
 
 /// Weights for composite process score (sum = 1.0).
+///
+/// Per draft-condrey-rats-pop §6.2 (informative), the process score is:
+///   PS = w_r * regularity + w_s * swf-strength + w_b * behavioral-consistency
+/// with configurable weights summing to 1.0. Our mapping:
+///   - WEIGHT_RESIDENCY (w_r=0.3): event regularity / minimum event count
+///   - WEIGHT_SEQUENCE  (w_s=0.3): edit entropy + non-monotonic ratio (SWF-strength proxy)
+///   - WEIGHT_BEHAVIORAL(w_b=0.4): forensic assessment consistency
+///
+/// Behavioral consistency receives the largest weight because the forensic
+/// engine's `Assessment::Consistent` verdict integrates the most evidence
+/// signals (anomaly detection, cross-modal coherence, cadence analysis).
 const WEIGHT_RESIDENCY: f64 = 0.3;
 const WEIGHT_SEQUENCE: f64 = 0.3;
 const WEIGHT_BEHAVIORAL: f64 = 0.4;

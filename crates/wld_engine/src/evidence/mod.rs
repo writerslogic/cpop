@@ -9,6 +9,7 @@ mod serde_helpers;
 #[cfg(test)]
 mod tests;
 mod types;
+pub mod wire_conversion;
 
 pub use self::types::{
     AccessControlInfo, AnchorProof, BehavioralEvidence, BlockchainAnchorInfo, CheckpointProof,
