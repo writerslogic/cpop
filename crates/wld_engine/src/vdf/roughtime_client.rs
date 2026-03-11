@@ -183,6 +183,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore] // Requires network access to Roughtime servers; flaky in CI
     fn test_get_verified_time_returns_reasonable_value() {
         // May fail if no Roughtime servers are reachable (offline CI).
         // When it succeeds, the timestamp must be reasonable.
