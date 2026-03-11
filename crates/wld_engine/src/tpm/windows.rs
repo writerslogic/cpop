@@ -873,6 +873,10 @@ impl Provider for WindowsTpmProvider {
         })
     }
 
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, TPMError> {
+        self.sign_payload(data)
+    }
+
     fn verify(&self, binding: &Binding) -> Result<(), TPMError> {
         super::verification::verify_binding(binding)
     }
