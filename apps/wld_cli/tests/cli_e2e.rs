@@ -5,7 +5,7 @@ use tempfile::tempdir;
 #[test]
 fn test_cli_full_workflow() {
     let dir = tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_writerslogic");
+    let bin = env!("CARGO_BIN_EXE_wld");
 
     let run = |args: &[&str], input: Option<&str>| {
         use std::io::Write;
@@ -108,7 +108,7 @@ impl CliTestEnv {
     fn new() -> Self {
         Self {
             dir: tempdir().unwrap(),
-            bin: env!("CARGO_BIN_EXE_writerslogic"),
+            bin: env!("CARGO_BIN_EXE_wld"),
         }
     }
 
