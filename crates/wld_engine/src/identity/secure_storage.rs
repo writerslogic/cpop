@@ -3,8 +3,9 @@
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use keyring::Entry;
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::sync::{Once, OnceLock};
-#[cfg_attr(target_os = "linux", allow(unused_imports))]
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::ProtectedBuf;
