@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     println!("[Attester] Starting evidence collection...");
     let mut builder = PoPBuilder::new(document, Box::new(signing_key))?;
 
-    let steps = vec![
+    let steps = [
         "Step 1: Research and initial draft.",
         "Step 2: Peer review and revisions.",
         "Step 3: Finalizing technical specifications.",
