@@ -210,7 +210,7 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
         return true;
     }
 
-    if phys.is_none_or(|p| p.is_empty()) {
+    if phys.as_ref().map_or(true, |p| p.is_empty()) {
         return true;
     }
 
@@ -780,7 +780,7 @@ fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: 
         return true;
     }
 
-    if phys.is_none_or(|p| p.is_empty()) {
+    if phys.as_ref().map_or(true, |p| p.is_empty()) {
         return true;
     }
 

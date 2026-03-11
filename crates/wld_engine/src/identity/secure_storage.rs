@@ -22,6 +22,7 @@ static HMAC_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static FINGERPRINT_KEY_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static MNEMONIC_CACHE: OnceLock<String> = OnceLock::new();
 static IDENTITY_CACHE: OnceLock<([u8; 16], String)> = OnceLock::new();
+#[cfg(target_os = "macos")]
 static MIGRATION_ONCE: Once = Once::new();
 
 pub struct SecureStorage;
