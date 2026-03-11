@@ -129,7 +129,7 @@ jobs:
 
       - name: Generate SHA-256 checksum
         shell: bash
-        run: shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
+        run: sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256" 2>/dev/null || shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -258,8 +258,8 @@ jobs:
         id: hashes
         run: |
           TAG=${{ needs.validate.outputs.tag }}
-          SHA_ARM=$(shasum -a 256 artifacts/writerslogic-${TAG}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          SHA_X86=$(shasum -a 256 artifacts/writerslogic-${TAG}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_ARM=$(sha256sum artifacts/writerslogic-${TAG}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_X86=$(sha256sum artifacts/writerslogic-${TAG}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
           echo "sha_arm=$SHA_ARM" >> $GITHUB_OUTPUT
           echo "sha_x86=$SHA_X86" >> $GITHUB_OUTPUT
 
@@ -292,7 +292,7 @@ jobs:
         id: hash
         run: |
           TAG=${{ needs.validate.outputs.tag }}
-          SHA_WIN=$(shasum -a 256 artifacts/writerslogic-${TAG}-x86_64-pc-windows-msvc.zip | awk '{print $1}')
+          SHA_WIN=$(sha256sum artifacts/writerslogic-${TAG}-x86_64-pc-windows-msvc.zip | awk '{print $1}')
           echo "sha_win=$SHA_WIN" >> $GITHUB_OUTPUT
       - name: Update Scoop manifest
         uses: peter-evans/repository-dispatch@v3
