@@ -266,7 +266,7 @@ jobs:
       - name: Update Homebrew formula
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           repository: writerslogic/homebrew-tap
           event-type: update-formula
           client-payload: |
@@ -299,7 +299,7 @@ jobs:
       - name: Update Scoop manifest
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           repository: writerslogic/scoop-bucket
           event-type: update-manifest
           client-payload: |
