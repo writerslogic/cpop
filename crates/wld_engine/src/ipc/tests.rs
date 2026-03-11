@@ -462,8 +462,13 @@ fn test_status_response_with_many_files() {
 
 #[test]
 fn test_validate_paths_rejects_traversal() {
+    let traversal_path = if cfg!(windows) {
+        PathBuf::from(r"C:\Users\user\..\..\..\Windows\System32\config")
+    } else {
+        PathBuf::from("/home/user/../../../etc/passwd")
+    };
     let msg = IpcMessage::StartWitnessing {
-        file_path: PathBuf::from("/home/user/../../../etc/passwd"),
+        file_path: traversal_path,
     };
     let result = msg.validate_paths();
     assert!(result.is_err());
@@ -480,25 +485,45 @@ fn test_validate_paths_rejects_relative_traversal() {
 
 #[test]
 fn test_validate_paths_accepts_normal_paths() {
+    let normal_path = if cfg!(windows) {
+        PathBuf::from(r"C:\Users\user\Documents\essay.txt")
+    } else {
+        PathBuf::from("/home/user/documents/essay.txt")
+    };
     let msg = IpcMessage::StartWitnessing {
-        file_path: PathBuf::from("/home/user/documents/essay.txt"),
+        file_path: normal_path,
     };
     assert!(msg.validate_paths().is_ok());
 }
 
 #[test]
 fn test_validate_paths_checks_both_export_file_paths() {
+    let (good_path, bad_output, bad_path, good_output) = if cfg!(windows) {
+        (
+            PathBuf::from(r"C:\Users\user\doc.txt"),
+            PathBuf::from(r"C:\Users\user\..\..\Windows\evil"),
+            PathBuf::from(r"C:\tmp\..\Windows\shadow"),
+            PathBuf::from(r"C:\Users\user\out.pop"),
+        )
+    } else {
+        (
+            PathBuf::from("/home/user/doc.txt"),
+            PathBuf::from("/home/user/../../etc/cron.d/evil"),
+            PathBuf::from("/tmp/../etc/shadow"),
+            PathBuf::from("/home/user/out.pop"),
+        )
+    };
     let msg = IpcMessage::ExportFile {
-        path: PathBuf::from("/home/user/doc.txt"),
+        path: good_path,
         tier: "gold".to_string(),
-        output: PathBuf::from("/home/user/../../etc/cron.d/evil"),
+        output: bad_output,
     };
     assert!(msg.validate_paths().is_err());
 
     let msg = IpcMessage::ExportFile {
-        path: PathBuf::from("/tmp/../etc/shadow"),
+        path: bad_path,
         tier: "gold".to_string(),
-        output: PathBuf::from("/home/user/out.pop"),
+        output: good_output,
     };
     assert!(msg.validate_paths().is_err());
 }
