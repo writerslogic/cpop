@@ -32,7 +32,7 @@ pub(crate) async fn cmd_export(
     stego: bool,
 ) -> Result<()> {
     let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
-    let abs_path_str = abs_path.to_string_lossy().to_string();
+    let abs_path_str = abs_path.to_string_lossy().into_owned();
 
     let db = open_secure_store()?;
     let events = db.get_events_for_file(&abs_path_str)?;
@@ -40,7 +40,7 @@ pub(crate) async fn cmd_export(
     if events.is_empty() {
         let file_name = file_path
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
+            .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file_path.display().to_string());
         return Err(anyhow!(
             "No checkpoints found for this file.\n\n\
@@ -49,11 +49,10 @@ pub(crate) async fn cmd_export(
         ));
     }
 
-    // CDDL: 6 => [3* checkpoint]
     if events.len() < MIN_CHECKPOINTS_PER_PACKET {
         let file_name = file_path
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
+            .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file_path.display().to_string());
         return Err(anyhow!(
             "Insufficient checkpoints for evidence export.\n\n\
@@ -92,8 +91,9 @@ pub(crate) async fn cmd_export(
         .last()
         .ok_or_else(|| anyhow!("No events found for this file"))?;
 
+    let tier_lower = tier.to_lowercase();
     let mut keystroke_evidence = serde_json::Value::Null;
-    if tier.to_lowercase() == "enhanced" || tier.to_lowercase() == "maximum" {
+    if tier_lower == "enhanced" || tier_lower == "maximum" {
         let tracking_dir = dir.join("tracking");
         let mut session_to_load: Option<String> = None;
 
@@ -103,7 +103,6 @@ pub(crate) async fn cmd_export(
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().is_some_and(|e| e == "json") {
-                        // Skip files >10MB to prevent excessive memory use
                         let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(u64::MAX);
                         if file_size > 10_000_000 {
                             eprintln!(
@@ -122,7 +121,6 @@ pub(crate) async fn cmd_export(
                                     .and_then(|v| v.as_str())
                                     .is_some_and(|dp| dp == abs_path_str)
                             } else {
-                                // Fallback: raw substring search if JSON parse fails
                                 content.contains(&abs_path_str)
                             };
                             if matches {
@@ -135,8 +133,7 @@ pub(crate) async fn cmd_export(
                         }
                     }
                 }
-                candidates.sort_by(|a, b| b.1.cmp(&a.1));
-                if let Some((path, _)) = candidates.first() {
+                if let Some((path, _)) = candidates.iter().max_by_key(|(_, t)| *t) {
                     println!(
                         "Found matching tracking session: {:?}",
                         path.file_name().unwrap_or_default()
@@ -229,10 +226,9 @@ pub(crate) async fn cmd_export(
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
-        .to_string();
+        .into_owned();
 
-    let decl = if tier.eq_ignore_ascii_case("basic") {
-        // Basic tier: generate a default declaration without interactive prompts
+    let decl = if tier_lower == "basic" {
         println!("Basic tier: using default declaration (no AI tools declared).");
         declaration::no_ai_declaration(
             latest.content_hash,
@@ -245,7 +241,6 @@ pub(crate) async fn cmd_export(
     } else {
         let is_tty = std::io::stdin().is_terminal();
         if !is_tty {
-            // Non-interactive: use default declaration
             println!("Non-interactive mode: using default declaration.");
             declaration::no_ai_declaration(
                 latest.content_hash,
@@ -273,7 +268,7 @@ pub(crate) async fn cmd_export(
     let total_vdf_time =
         Duration::from_secs_f64(total_iterations as f64 / vdf_params.iterations_per_second as f64);
 
-    let strength = match tier.to_lowercase().as_str() {
+    let strength = match tier_lower.as_str() {
         "basic" => "Basic",
         "standard" => "Standard",
         "enhanced" => "Enhanced",
@@ -281,22 +276,14 @@ pub(crate) async fn cmd_export(
         _ => "Basic",
     };
 
-    let spec_content_tier = content_tier_from_cli(tier);
-    let spec_profile_uri = profile_uri_from_cli(tier);
+    let spec_content_tier = content_tier_from_cli(&tier_lower);
+    let spec_profile_uri = profile_uri_from_cli(&tier_lower);
 
-    // §7.5: ENHANCED/MAXIMUM MUST use swf-argon2id-entangled (21) instead of (20)
+    // §7.5: entangled (21) for enhanced/maximum, standard (20) otherwise
     let proof_algorithm: u8 = if spec_content_tier >= 2 { 21 } else { 20 };
     let swf_params = wld_engine::vdf::params_for_tier(spec_content_tier);
 
-    let (has_tpm, tpm_hardware_backed) = match std::panic::catch_unwind(|| {
-        let provider = tpm::detect_provider();
-        let caps = provider.capabilities();
-        (true, caps.hardware_backed)
-    }) {
-        Ok((tpm, hw)) => (tpm, hw),
-        Err(_) => (false, false),
-    };
-    let spec_attestation_tier = attestation_tier_value(has_tpm, tpm_hardware_backed);
+    let spec_attestation_tier = attestation_tier_value(true, caps.hardware_backed);
 
     let mut packet_id = [0u8; 16];
     getrandom::getrandom(&mut packet_id)?;
@@ -310,21 +297,19 @@ pub(crate) async fn cmd_export(
             let elapsed_dur = Duration::from_secs_f64(elapsed_secs);
             let elapsed_ms = (elapsed_secs * 1000.0) as u64;
 
-            // Deterministic UUID from event hash for reproducibility
             let mut cp_id = [0u8; 16];
             cp_id.copy_from_slice(&ev.event_hash[..16]);
 
             serde_json::json!({
                 "ordinal": i as u64,
-                "sequence": (i + 1) as u64,         // CDDL key 1: monotonic sequence (1-based)
-                "checkpoint_id": hex::encode(cp_id), // CDDL key 2: uuid
+                "sequence": (i + 1) as u64,
+                "checkpoint_id": hex::encode(cp_id),
                 "timestamp": DateTime::from_timestamp_nanos(ev.timestamp_ns).to_rfc3339(),
-                "timestamp_ms": (ev.timestamp_ns / 1_000_000).max(0) as u64, // CDDL key 3: epoch milliseconds
-                "content_hash": hex::encode(ev.content_hash),   // CDDL key 4: hash-value
+                "timestamp_ms": (ev.timestamp_ns / 1_000_000).max(0) as u64,
+                "content_hash": hex::encode(ev.content_hash),
                 "content_size": ev.file_size,
-                // CDDL key 5: char-count (byte-size approximation for stored checkpoints)
                 "char_count": ev.file_size.max(0) as u64,
-                "delta": {                                      // CDDL key 6: edit-delta
+                "delta": {
                     "chars_added": if ev.size_delta > 0 { ev.size_delta as u64 } else { 0u64 },
                     "chars_deleted": if ev.size_delta < 0 { (-(ev.size_delta as i64)) as u64 } else { 0u64 },
                     "op_count": 1u64
@@ -333,15 +318,15 @@ pub(crate) async fn cmd_export(
                 "vdf_input": ev.vdf_input.map(hex::encode),
                 "vdf_output": ev.vdf_output.map(hex::encode),
                 "vdf_iterations": ev.vdf_iterations,
-                "claimed_duration_ms": elapsed_ms,              // CDDL key 6 of process-proof
+                "claimed_duration_ms": elapsed_ms,
                 "elapsed_time": {
                     "secs": elapsed_dur.as_secs(),
                     "nanos": elapsed_dur.subsec_nanos()
                 },
-                "previous_hash": hex::encode(ev.previous_hash), // CDDL key 7: prev-hash
-                "hash": hex::encode(ev.event_hash),              // CDDL key 8: checkpoint-hash
-                "process_proof": {                               // CDDL key 9: process-proof (SWF)
-                    "algorithm": proof_algorithm,                // swf-argon2id (20) or entangled (21)
+                "previous_hash": hex::encode(ev.previous_hash),
+                "hash": hex::encode(ev.event_hash),
+                "process_proof": {
+                    "algorithm": proof_algorithm,
                     "params": {
                         "time_cost": swf_params.time_cost,
                         "memory_cost": swf_params.memory_cost,
@@ -361,16 +346,15 @@ pub(crate) async fn cmd_export(
         "exported_at": Utc::now().to_rfc3339(),
         "strength": strength,
 
-        // === RATS PoP Spec Fields (draft-condrey-rats-pop) ===
         "spec": {
-            "cbor_tag": CBOR_TAG_EVIDENCE_PACKET,        // IANA tag 1129336656 (CPOP)
-            "war_cbor_tag": CBOR_TAG_ATTESTATION_RESULT,  // IANA tag 1129791826 (CWAR)
-            "profile_uri": spec_profile_uri,              // CDDL key 2: profile-uri
-            "packet_id": hex::encode(packet_id),          // CDDL key 3: packet-id (uuid)
-            "content_tier": spec_content_tier,            // CDDL key 13: content-tier
-            "attestation_tier": spec_attestation_tier,    // CDDL key 7: attestation-tier (T1-T4)
+            "cbor_tag": CBOR_TAG_EVIDENCE_PACKET,
+            "war_cbor_tag": CBOR_TAG_ATTESTATION_RESULT,
+            "profile_uri": spec_profile_uri,
+            "packet_id": hex::encode(packet_id),
+            "content_tier": spec_content_tier,
+            "attestation_tier": spec_attestation_tier,
             "min_checkpoints": MIN_CHECKPOINTS_PER_PACKET,
-            "hash_algorithm": "sha256",                   // hash-algorithm: sha256 (1)
+            "hash_algorithm": "sha256",
         },
 
         "provenance": null,
@@ -379,13 +363,11 @@ pub(crate) async fn cmd_export(
             "path": abs_path_str,
             "final_hash": hex::encode(latest.content_hash),
             "final_size": latest.file_size,
-            // CDDL document-ref fields
             "content_hash": {
                 "algorithm": 1,
                 "digest": hex::encode(latest.content_hash)
             },
             "byte_length": latest.file_size.max(0) as u64,
-            // Read file to count actual characters (UTF-8 codepoints), not bytes
             "char_count": fs::read_to_string(&abs_path_str)
                 .map(|s| s.chars().count() as u64)
                 .unwrap_or(latest.file_size.max(0) as u64),
@@ -397,8 +379,8 @@ pub(crate) async fn cmd_export(
             "max_iterations": vdf_params.max_iterations
         },
         "chain_hash": hex::encode(latest.event_hash),
-        "chain_length": events.len(),                    // CDDL attestation-result key 5
-        "chain_duration_secs": total_vdf_time.as_secs(), // CDDL attestation-result key 6
+        "chain_length": events.len(),
+        "chain_duration_secs": total_vdf_time.as_secs(),
         "declaration": decl,
         "presence": null,
         "hardware": null,
@@ -432,8 +414,7 @@ pub(crate) async fn cmd_export(
         }
     }
 
-    // Progress indicator for potentially slow exports
-    if !matches!(tier.to_lowercase().as_str(), "basic") {
+    if tier_lower != "basic" {
         print!("Building evidence packet...");
         io::stdout().flush()?;
     }
@@ -444,7 +425,7 @@ pub(crate) async fn cmd_export(
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
-            .to_string();
+            .into_owned();
         match format_lower.as_str() {
             "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
             "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
@@ -455,10 +436,8 @@ pub(crate) async fn cmd_export(
 
     match format_lower.as_str() {
         "cpop" | "cbor" => {
-            // CDDL-conformant CBOR export using EvidencePacketWire
-            let cpop_config = ensure_dirs()?;
             let chain = wld_engine::checkpoint::Chain::load(
-                wld_engine::checkpoint::Chain::find_chain(file_path, &cpop_config.data_dir)?,
+                wld_engine::checkpoint::Chain::find_chain(file_path, &config.data_dir)?,
             )?;
             let wire_packet = wld_engine::evidence::wire_conversion::chain_to_wire(&chain);
             let cbor_data = wire_packet
@@ -557,7 +536,7 @@ pub(crate) async fn cmd_export(
         }
     }
 
-    if !matches!(tier.to_lowercase().as_str(), "basic") {
+    if tier_lower != "basic" {
         println!(" done.");
     }
 
@@ -568,7 +547,6 @@ pub(crate) async fn cmd_export(
     Ok(())
 }
 
-/// Embed a steganographic ZWC watermark into the source document.
 async fn embed_steganographic_watermark(
     file_path: &Path,
     abs_path_str: &str,
@@ -586,10 +564,7 @@ async fn embed_steganographic_watermark(
         .last()
         .ok_or_else(|| anyhow!("No events for steganographic embedding"))?;
 
-    // Use the chain hash as the MMR root for watermark binding
     let mmr_root = latest.event_hash;
-
-    // Derive the watermark HMAC key from the signing key
     let signing_key = crate::util::load_signing_key(dir)?;
     let mut hmac_key: [u8; 32] = {
         use sha2::{Digest, Sha256};
@@ -604,13 +579,11 @@ async fn embed_steganographic_watermark(
     hmac_key.zeroize();
     let (watermarked, binding) = result?;
 
-    // Write watermarked document
     let stego_path = file_path.with_extension("stego.txt");
     let tmp_path = stego_path.with_extension("tmp");
     crate::util::write_restrictive(&tmp_path, watermarked.as_bytes())?;
     fs::rename(&tmp_path, &stego_path)?;
 
-    // Save binding record
     let binding_path = file_path.with_extension("stego.binding.json");
     let binding_json = serde_json::to_string_pretty(&binding)?;
     crate::util::write_restrictive(&binding_path, binding_json.as_bytes())?;
@@ -626,7 +599,6 @@ async fn embed_steganographic_watermark(
         &binding.tag_hex[..16.min(binding.tag_hex.len())]
     );
 
-    // Optionally anchor the stego binding via WritersProof API
     let api_key = crate::util::load_api_key(dir);
     if let Ok(key) = api_key {
         use wld_engine::writersproof::{StegoSignRequest, WritersProofClient};
@@ -680,7 +652,6 @@ async fn embed_steganographic_watermark(
     Ok(())
 }
 
-/// Build a WarReport from the available evidence data.
 #[allow(clippy::too_many_arguments)]
 fn build_war_report(
     events: &[wld_engine::store::SecureEvent],
@@ -877,10 +848,7 @@ fn build_war_report(
     }
 }
 
-/// Compute a likelihood ratio from the score (0-100).
 fn compute_likelihood_ratio(score: u32) -> f64 {
-    // Map score to LR using exponential scale
-    // 50 → 1.0, 60 → 10, 70 → 100, 80 → 1000, 90 → 10000, 100 → 100000
     if score <= 50 {
         (score as f64 / 50.0).max(0.01)
     } else {
@@ -888,7 +856,6 @@ fn compute_likelihood_ratio(score: u32) -> f64 {
     }
 }
 
-/// Detect sessions from events by grouping by 30-minute gaps.
 fn detect_sessions(events: &[wld_engine::store::SecureEvent]) -> Vec<report::ReportSession> {
     if events.is_empty() {
         return vec![];
@@ -945,7 +912,6 @@ fn make_session(
     }
 }
 
-/// Collect a declaration from the user
 fn collect_declaration(
     document_hash: [u8; 32],
     chain_hash: [u8; 32],

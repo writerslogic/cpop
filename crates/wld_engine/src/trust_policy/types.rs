@@ -16,31 +16,25 @@ pub enum TrustComputation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FactorType {
-    // Chain-verifiable (1-9)
     VdfDuration,
     CheckpointCount,
     JitterEntropy,
     ChainIntegrity,
     RevisionDepth,
 
-    // Presence (10-19)
     PresenceRate,
     PresenceResponseTime,
 
-    // Hardware (20-29)
     HardwareAttestation,
     CalibrationAttestation,
 
-    // Behavioral (30-39)
     EditEntropy,
     MonotonicRatio,
     TypingRateConsistency,
 
-    // External (40-49)
     AnchorConfirmation,
     AnchorCount,
 
-    // Collaboration (50-59)
     CollaboratorAttestations,
     ContributionConsistency,
 }
@@ -48,45 +42,34 @@ pub enum FactorType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThresholdType {
-    /// Overall score >= value
     MinimumScore,
-    /// Named factor >= value
     MinimumFactor,
-    /// Named factor must be present (score > 0)
     RequiredFactor,
-    /// Caveat count <= value
     MaximumCaveats,
 }
 
-/// Supporting evidence for a single factor score.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FactorEvidence {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_value: Option<f32>,
 
-    /// Normalization reference
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub threshold_value: Option<f32>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub computation_notes: Option<String>,
 
-    /// (start, end) checkpoint indices this factor covers
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_range: Option<(u32, u32)>,
 }
 
-/// Single scored factor in a trust computation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustFactor {
     pub factor_name: String,
     pub factor_type: FactorType,
-    /// 0.0..1.0
     pub weight: f32,
     pub observed_value: f32,
-    /// 0.0..1.0
     pub normalized_score: f32,
-    /// `weight * normalized_score`
     pub contribution: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<FactorEvidence>,
@@ -117,7 +100,6 @@ impl TrustFactor {
     }
 }
 
-/// Pass/fail threshold requirement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustThreshold {
     pub threshold_name: String,
@@ -164,7 +146,6 @@ pub struct PolicyMetadata {
     pub applicable_domains: Vec<String>,
 }
 
-/// Complete appraisal policy: factors, thresholds, and computation model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppraisalPolicy {
     pub policy_uri: String,

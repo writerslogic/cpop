@@ -23,7 +23,6 @@ use crate::util::{
     validate_session_id,
 };
 
-/// Auto-checkpoint a single file. Returns Ok(true) if a checkpoint was created.
 fn auto_checkpoint_file(
     file_path: &Path,
     db: &mut wld_engine::SecureStore,
@@ -31,8 +30,7 @@ fn auto_checkpoint_file(
     device_id: &[u8; 16],
     machine_id: &str,
 ) -> Result<bool> {
-    let abs_path_str = file_path.to_string_lossy().to_string();
-    // Skip files >500MB to prevent OOM
+    let abs_path_str = file_path.to_string_lossy().into_owned();
     let file_len = fs::metadata(file_path)?.len();
     if file_len > 500_000_000 {
         return Ok(false);
@@ -91,7 +89,6 @@ fn auto_checkpoint_file(
     Ok(true)
 }
 
-/// Long-running track command: captures keystrokes and auto-checkpoints on save.
 #[allow(unused_variables)]
 async fn cmd_track_start(
     file: &Path,
@@ -126,7 +123,6 @@ async fn cmd_track_start(
         ));
     }
 
-    // Auto-calibrate VDF if needed
     let mut config = ensure_dirs()?;
     if config.vdf.iterations_per_second == 0 {
         println!("Calibrating VDF (one-time)...");
@@ -144,14 +140,12 @@ async fn cmd_track_start(
     }
     let vdf_params = load_vdf_params(&config);
 
-    // Create jitter session
     let jitter_params = default_jitter_params();
     let session = JitterSession::new(&abs_path, jitter_params)
         .map_err(|e| anyhow!("Error creating session: {}", e))?;
     let session_id = session.id.clone();
     let session_path = tracking_dir.join(format!("{}.session.json", session_id));
 
-    // Save session marker
     let session_info = serde_json::json!({
         "id": session_id,
         "document_path": abs_path.to_string_lossy(),
@@ -162,15 +156,11 @@ async fn cmd_track_start(
     fs::write(&tmp_path, serde_json::to_string_pretty(&session_info)?)?;
     fs::rename(&tmp_path, current_file)?;
 
-    // Save initial session
     session
         .save(&session_path)
         .map_err(|e| anyhow!("Error saving session: {}", e))?;
 
-    // Wrap session for thread sharing
     let session = Arc::new(Mutex::new(session));
-
-    // Start keystroke capture
     let perms = wld_engine::platform::check_permissions();
     let mut capture_box: Option<Box<dyn wld_engine::platform::KeystrokeCapture>> = None;
 
@@ -217,7 +207,6 @@ async fn cmd_track_start(
         None
     };
 
-    // Set up file watcher
     let (watcher_tx, watcher_rx) = std_mpsc::channel();
     let file_parent = abs_path.parent().unwrap_or(&abs_path).to_path_buf();
     let mut watcher = RecommendedWatcher::new(
@@ -230,7 +219,6 @@ async fn cmd_track_start(
     )?;
     watcher.watch(&file_parent, RecursiveMode::NonRecursive)?;
 
-    // Create initial checkpoint
     let mut db = open_secure_store()?;
     let device_id = get_device_id()?;
     let machine_id = get_machine_id();
@@ -245,7 +233,6 @@ async fn cmd_track_start(
         Err(e) => eprintln!("Warning: initial checkpoint failed: {}", e),
     }
 
-    // Ctrl+C handler
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
@@ -276,7 +263,6 @@ async fn cmd_track_start(
             break;
         }
 
-        // Check if session marker was deleted (wld track stop from another terminal)
         if !current_file.exists() {
             break;
         }
@@ -309,9 +295,9 @@ async fn cmd_track_start(
                                             ks
                                         );
                                     }
-                                    Ok(false) => {} // content unchanged
+                                    Ok(false) => {}
                                     Err(e) => {
-                                        let msg = format!("{}", e);
+                                        let msg = e.to_string();
                                         if msg.contains("database is locked")
                                             || msg.contains("SQLITE_BUSY")
                                         {
@@ -333,7 +319,6 @@ async fn cmd_track_start(
             Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
         }
 
-        // Periodic session save so `wld track status` shows live data
         if last_save.elapsed() >= save_interval {
             if let Ok(s) = session.lock() {
                 if let Err(e) = s.save(&session_path) {
@@ -344,7 +329,6 @@ async fn cmd_track_start(
         }
     }
 
-    // Cleanup: stop keystroke capture
     if let Some(ref mut capture) = capture_box {
         let _ = capture.stop();
     }
@@ -352,7 +336,6 @@ async fn cmd_track_start(
         let _ = handle.join();
     }
 
-    // End and save session
     let (duration, keystroke_count, sample_count) = {
         let mut s = session
             .lock()
@@ -363,7 +346,6 @@ async fn cmd_track_start(
         (s.duration(), s.keystroke_count(), s.sample_count())
     };
 
-    // Remove session marker
     let _ = fs::remove_file(current_file);
 
     println!();
@@ -382,7 +364,6 @@ async fn cmd_track_start(
     Ok(())
 }
 
-/// Smart track — handles bare file arg as shorthand for `track start <file>`.
 pub(crate) async fn cmd_track_smart(
     action: Option<TrackAction>,
     file: Option<PathBuf>,
@@ -392,7 +373,6 @@ pub(crate) async fn cmd_track_smart(
     let tracking_dir = dir.join("tracking");
     let current_file = tracking_dir.join("current_session.json");
 
-    // `wld track <file>` or `wld <file>` → start tracking
     if let Some(f) = file {
         return cmd_track_start(&f, &tracking_dir, &current_file, false).await;
     }
@@ -442,10 +422,8 @@ pub(crate) async fn cmd_track_smart(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            // Signal the running track process to stop by removing the marker
             fs::remove_file(&current_file)?;
 
-            // Load and display the session (the running process saves periodically)
             #[cfg(feature = "wld_jitter")]
             if is_hybrid {
                 let session_path = tracking_dir.join(format!("{}.hybrid.json", session_id));

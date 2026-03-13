@@ -197,7 +197,7 @@ mod tests {
         let section = ContinuationSection {
             series_id: Uuid::new_v4(),
             packet_sequence: 1,
-            prev_packet_chain_hash: None, // Missing!
+            prev_packet_chain_hash: None,
             prev_packet_id: None,
             cumulative_summary: ContinuationSummary {
                 total_checkpoints: 0,

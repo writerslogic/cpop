@@ -6,7 +6,6 @@ use sha2::Sha256;
 use super::types::{ZwcBinding, ZwcParams, DST_POSITIONS, DST_WATERMARK, ZWC_ALPHABET};
 use crate::error::{Error, Result};
 
-/// Embeds zero-width character watermarks into document text.
 pub struct ZwcEmbedder {
     params: ZwcParams,
 }
@@ -16,12 +15,7 @@ impl ZwcEmbedder {
         Self { params }
     }
 
-    /// Embed a steganographic watermark into document text.
-    ///
-    /// Returns the watermarked text and a binding record. The `mmr_root` is
-    /// the Merkle Mountain Range root hash from the evidence chain. The `key`
-    /// is the HMAC key (typically derived from the author's signing key or
-    /// provided by WritersProof for third-party verifiability).
+    /// Embed a ZWC watermark into document text, returning watermarked text and binding.
     pub fn embed(
         &self,
         text: &str,
@@ -46,19 +40,16 @@ impl ZwcEmbedder {
             self.params.zwc_count,
         );
 
-        // Map positions to actual byte offsets and embed ZWCs
         let mut result = String::with_capacity(text.len() + self.params.zwc_count * 3);
         let mut tag_idx = 0;
         let mut boundary_idx = 0;
         let mut last_pos = 0;
 
-        // Sort position set for linear scan
         let mut sorted_positions: Vec<usize> = positions.clone();
         sorted_positions.sort_unstable();
         let mut pos_iter = sorted_positions.iter().peekable();
 
         for (byte_offset, _) in text.char_indices() {
-            // Check if this byte offset is a word boundary where we should inject
             while boundary_idx < word_boundaries.len()
                 && word_boundaries[boundary_idx] < byte_offset
             {
@@ -69,7 +60,6 @@ impl ZwcEmbedder {
             {
                 if let Some(&&pos) = pos_iter.peek() {
                     if pos == boundary_idx && tag_idx < tag.len() {
-                        // Append text up to this point, then inject ZWC
                         result.push_str(&text[last_pos..byte_offset]);
                         result.push(ZWC_ALPHABET[tag[tag_idx] as usize]);
                         last_pos = byte_offset;
@@ -93,8 +83,7 @@ impl ZwcEmbedder {
     }
 }
 
-/// Compute the watermark tag: HMAC-SHA256(key, DST || mmr_root || doc_hash),
-/// then extract 2 bits per ZWC character.
+/// HMAC-SHA256(key, DST || mmr_root || doc_hash), extracting 2 bits per ZWC.
 pub(super) fn compute_watermark_tag(
     key: &[u8; 32],
     mmr_root: &[u8; 32],
@@ -108,7 +97,6 @@ pub(super) fn compute_watermark_tag(
 
     let hash = mac.finalize().into_bytes();
 
-    // Extract 2 bits per ZWC from the HMAC output (cycling if needed)
     let mut tag = Vec::with_capacity(zwc_count);
     for i in 0..zwc_count {
         let byte_idx = (i / 4) % hash.len();
@@ -135,7 +123,6 @@ pub(super) fn compute_positions(
         return Vec::new();
     }
 
-    // Derive PRNG seed
     let mut mac =
         Hmac::<Sha256>::new_from_slice(doc_hash).expect("HMAC-SHA256 accepts any key length");
     mac.update(DST_POSITIONS);
@@ -144,7 +131,6 @@ pub(super) fn compute_positions(
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&initial);
 
-    // Fisher-Yates partial shuffle using seed bytes as entropy
     let mut indices: Vec<usize> = (0..num_boundaries).collect();
     let mut seed_offset = 0;
 
@@ -162,7 +148,6 @@ pub(super) fn compute_positions(
         indices.swap(i, j);
         seed_offset += 4;
 
-        // Re-derive seed when entropy is exhausted
         if seed_offset + 4 > 32 {
             let mut mac2 =
                 Hmac::<Sha256>::new_from_slice(&seed).expect("HMAC-SHA256 accepts any key length");
@@ -176,7 +161,7 @@ pub(super) fn compute_positions(
     indices[..count].to_vec()
 }
 
-/// Find byte offsets of word boundaries (positions just before each word start).
+/// Byte offsets just before each word start.
 pub(super) fn find_word_boundaries(text: &str) -> Vec<usize> {
     let mut boundaries = Vec::new();
     let mut in_word = false;

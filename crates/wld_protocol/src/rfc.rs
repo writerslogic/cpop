@@ -107,7 +107,7 @@ pub struct Checkpoint {
     #[serde(rename = "1")]
     pub sequence: u64,
     #[serde(rename = "2", with = "serde_bytes")]
-    pub checkpoint_id: Vec<u8>, // UUID (16 bytes)
+    pub checkpoint_id: Vec<u8>,
     #[serde(rename = "3")]
     pub timestamp: u64,
     #[serde(rename = "4")]
@@ -129,7 +129,7 @@ pub struct EvidencePacket {
     #[serde(rename = "2")]
     pub profile_uri: String,
     #[serde(rename = "3", with = "serde_bytes")]
-    pub packet_id: Vec<u8>, // UUID (16 bytes)
+    pub packet_id: Vec<u8>,
     #[serde(rename = "4")]
     pub created: u64,
     #[serde(rename = "5")]
@@ -155,7 +155,7 @@ pub struct AttestationResult {
     #[serde(rename = "5")]
     pub chain_length: u64,
     #[serde(rename = "6")]
-    pub chain_duration: u64, // seconds
+    pub chain_duration: u64,
     #[serde(rename = "12")]
     pub created: u64,
     /// None if no baseline verification was present in the evidence.

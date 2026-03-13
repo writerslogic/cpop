@@ -13,13 +13,11 @@ use crate::checkpoint::{Chain, ChainMetadata};
 use crate::error::{Error, Result};
 use crate::mmr::{FileStore, InclusionProof, MemoryStore, RangeProof, MMR};
 
-/// Per-chain MMR coordinator wrapping `MMR` with checkpoint-level operations.
 pub struct CheckpointMMR {
     mmr: MMR,
 }
 
 impl CheckpointMMR {
-    /// Open or create a file-backed MMR at `{mmr_dir}/{chain_id}.mmr`.
     pub fn open(mmr_dir: &Path, chain_id: &str) -> Result<Self> {
         std::fs::create_dir_all(mmr_dir)?;
         let store_path = mmr_dir.join(format!("{chain_id}.mmr"));
@@ -28,14 +26,12 @@ impl CheckpointMMR {
         Ok(Self { mmr })
     }
 
-    /// In-memory MMR for testing.
     pub fn in_memory() -> Result<Self> {
         let store = MemoryStore::new();
         let mmr = MMR::new(Box::new(store)).map_err(Error::from)?;
         Ok(Self { mmr })
     }
 
-    /// Append a checkpoint hash and return its inclusion proof.
     pub fn append_checkpoint(&self, checkpoint_hash: &[u8; 32]) -> Result<InclusionProof> {
         let leaf_index = self.mmr.append(checkpoint_hash).map_err(Error::from)?;
         // FileStore requires sync before proof generation
@@ -44,7 +40,6 @@ impl CheckpointMMR {
         Ok(proof)
     }
 
-    /// Verify that `checkpoint_hash` matches the MMR leaf at `leaf_ordinal`.
     pub fn verify_checkpoint(&self, checkpoint_hash: &[u8; 32], leaf_ordinal: u64) -> Result<bool> {
         let leaf_index = self.mmr.get_leaf_index(leaf_ordinal).map_err(Error::from)?;
         let proof = self.mmr.generate_proof(leaf_index).map_err(Error::from)?;
@@ -52,17 +47,14 @@ impl CheckpointMMR {
         Ok(proof.leaf_hash == expected_leaf_hash)
     }
 
-    /// Current MMR root hash.
     pub fn root(&self) -> Result<[u8; 32]> {
         self.mmr.get_root().map_err(Error::from)
     }
 
-    /// Current leaf count.
     pub fn leaf_count(&self) -> u64 {
         self.mmr.leaf_count()
     }
 
-    /// Range proof covering all checkpoints, or `None` if empty.
     pub fn range_proof(&self) -> Result<Option<RangeProof>> {
         let count = self.leaf_count();
         if count == 0 {
@@ -75,9 +67,6 @@ impl CheckpointMMR {
         Ok(Some(proof))
     }
 
-    /// Build unsigned `ChainMetadata` from current state.
-    ///
-    /// Call `sign_chain_metadata()` on the session to add a signature.
     pub fn build_metadata(&self) -> Result<ChainMetadata> {
         let count = self.leaf_count();
         let mmr_root = if count > 0 { self.root()? } else { [0u8; 32] };
@@ -91,7 +80,6 @@ impl CheckpointMMR {
         })
     }
 
-    /// Replay all checkpoint hashes into this MMR (migration helper).
     pub fn rebuild_from_chain(&self, chain: &Chain) -> Result<()> {
         for cp in &chain.checkpoints {
             self.mmr.append(&cp.hash).map_err(Error::from)?;
@@ -99,12 +87,10 @@ impl CheckpointMMR {
         Ok(())
     }
 
-    /// Flush to disk.
     pub fn sync(&self) -> Result<()> {
         self.mmr.sync().map_err(Error::from)
     }
 
-    /// Default MMR directory (`~/.writerslogic/mmr`).
     pub fn default_mmr_dir() -> Result<PathBuf> {
         let home = dirs::home_dir()
             .ok_or_else(|| Error::config("could not determine home directory for MMR storage"))?;
@@ -209,9 +195,6 @@ mod tests {
 
         let metadata = mmr.build_metadata().expect("build metadata");
         assert_eq!(metadata.checkpoint_count, 5);
-
-        // If someone deletes checkpoints from the chain but the metadata says 5,
-        // the chain verifier will detect the mismatch
     }
 
     #[test]

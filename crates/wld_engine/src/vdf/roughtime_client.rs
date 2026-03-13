@@ -12,7 +12,6 @@ pub struct RoughtimeServer {
     pub public_key_base64: &'static str,
 }
 
-// Active public Roughtime servers from the ecosystem registry.
 // Source: https://github.com/cloudflare/roughtime/blob/master/ecosystem.json
 const SERVERS: &[RoughtimeServer] = &[
     RoughtimeServer {
@@ -185,8 +184,6 @@ mod tests {
     #[test]
     #[ignore] // Requires network access to Roughtime servers; flaky in CI
     fn test_get_verified_time_returns_reasonable_value() {
-        // May fail if no Roughtime servers are reachable (offline CI).
-        // When it succeeds, the timestamp must be reasonable.
         if let Ok(ts) = RoughtimeClient::get_verified_time() {
             assert!(ts > 1_600_000_000_000_000);
         }

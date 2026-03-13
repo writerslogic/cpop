@@ -10,12 +10,9 @@ use crate::util::ensure_dirs;
 pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
     let config = ensure_dirs()?;
 
-    let daemon_manager = DaemonManager::new(config.data_dir.clone());
+    let daemon_manager = DaemonManager::new(&config.data_dir);
 
     if foreground {
-        // CLI-H4: Atomic PID file acquisition for foreground mode.
-        // The engine's cmd_start_foreground also calls write_pid(), but we
-        // gate entry here to fail fast with a clear message.
         let acquired = daemon_manager
             .acquire_pid_file(std::process::id())
             .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
@@ -30,7 +27,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
             println!("Use 'wld status' for details or 'wld stop' to stop.");
             return Ok(());
         }
-        // PID file acquired — if anything fails below, clean it up
         eprintln!("Starting WritersLogic daemon in foreground...");
         eprintln!("Press Ctrl+C to stop.");
         eprintln!();
@@ -38,17 +34,11 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         let result = wld_engine::sentinel::daemon::cmd_start_foreground(&config.data_dir)
             .await
             .map_err(|e| anyhow!("Daemon error: {}", e));
-        // cleanup() already called inside cmd_start_foreground on normal exit;
-        // on error, ensure we don't leave a stale PID file
         if result.is_err() {
             daemon_manager.cleanup();
         }
         result
     } else {
-        // CLI-H4: Atomic PID file acquisition prevents parallel `wld start`
-        // from spawning two daemons. We acquire first, spawn second.
-
-        // Use a placeholder PID (our own) during spawn; update after.
         let acquired = daemon_manager
             .acquire_pid_file(std::process::id())
             .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
@@ -70,7 +60,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
 
         let log_dir = config.data_dir.join("logs");
         fs::create_dir_all(&log_dir)?;
-        // CLI-L2: Restrict log directory permissions on Unix
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -78,7 +67,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         }
         let log_path = log_dir.join("daemon.log");
         let log_file = fs::File::create(&log_path).context("Failed to create daemon log file")?;
-        // CLI-L2: Restrict log file permissions on Unix
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -95,7 +83,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
             .stderr(stderr_file)
             .stdin(std::process::Stdio::null());
 
-        // CLI-M7: Create a new process group so the daemon survives terminal close
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -105,7 +92,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                // Spawn failed — remove the PID file we acquired
                 daemon_manager.cleanup();
                 return Err(anyhow::anyhow!("Failed to spawn daemon process: {}", e));
             }
@@ -113,8 +99,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
 
         let pid = child.id();
 
-        // CLI-H1: Overwrite with the *child* PID so status/stop target the daemon.
-        // The foreground child will re-acquire its own PID file via write_pid().
         if let Err(e) = daemon_manager.write_pid_value(pid) {
             eprintln!("Warning: failed to update PID file with child PID: {e}");
         }
@@ -131,14 +115,12 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
 pub(crate) fn cmd_stop() -> Result<()> {
     let config = ensure_dirs()?;
 
-    let daemon_manager = DaemonManager::new(config.data_dir.clone());
+    let daemon_manager = DaemonManager::new(&config.data_dir);
     let status = daemon_manager.status();
 
     if status.running {
         if let Some(pid) = status.pid {
-            // CLI-M8: Validate PID before use. A negative or zero PID passed to
-            // kill(1) could signal all processes in a group (PID 0) or an
-            // arbitrary group (negative PID), which is dangerous.
+            // Negative/zero PID would signal all processes in a group — reject it
             if pid <= 0 {
                 return Err(anyhow!(
                     "Invalid PID {} in PID file; refusing to signal. \

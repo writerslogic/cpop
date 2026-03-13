@@ -310,7 +310,6 @@ impl Builder {
         self
     }
 
-    /// Attach behavioral evidence with forgery detection analysis.
     pub fn with_behavioral_full(
         mut self,
         regions: Vec<EditRegion>,
@@ -444,7 +443,6 @@ impl Builder {
         self
     }
 
-    /// Attach provenance links for cross-document relationships.
     pub fn with_provenance_links(mut self, section: provenance::ProvenanceSection) -> Self {
         if section.parent_links.is_empty() {
             return self;
@@ -453,13 +451,11 @@ impl Builder {
         self
     }
 
-    /// Attach continuation section for multi-packet series.
     pub fn with_continuation(mut self, section: continuation::ContinuationSection) -> Self {
         self.packet.continuation = Some(section);
         self
     }
 
-    /// Attach collaboration section for multi-author attestations.
     pub fn with_collaboration(mut self, section: collaboration::CollaborationSection) -> Self {
         if section.participants.is_empty() {
             return self;
@@ -468,16 +464,11 @@ impl Builder {
         self
     }
 
-    /// Attach VDF aggregate proof for efficient batch verification.
     pub fn with_vdf_aggregate(mut self, proof: vdf::VdfAggregateProof) -> Self {
         self.packet.vdf_aggregate = Some(proof);
         self
     }
 
-    /// Attach RFC-compliant jitter binding for behavioral entropy evidence.
-    ///
-    /// Covers entropy commitment, statistical summary, active probes, and
-    /// labyrinth structure (phase space topology).
     pub fn with_jitter_binding(mut self, binding: JitterBinding) -> Self {
         self.packet.jitter_binding = Some(binding);
         if self.packet.strength < Strength::Enhanced {
@@ -486,7 +477,6 @@ impl Builder {
         self
     }
 
-    /// Attach RFC-compliant time evidence (TSA, blockchain, Roughtime).
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.packet.time_evidence = Some(evidence);
         if self.packet.strength < Strength::Enhanced {
@@ -690,14 +680,12 @@ impl Builder {
         self
     }
 
-    /// Attach MMR root and range proof for anti-deletion verification.
     pub fn with_mmr_proof(mut self, mmr_root: [u8; 32], range_proof: &[u8]) -> Self {
         self.packet.mmr_root = Some(hex::encode(mmr_root));
         self.packet.mmr_proof = Some(hex::encode(range_proof));
         self
     }
 
-    /// Attach baseline verification data.
     pub fn with_baseline_verification(
         mut self,
         bv: wld_protocol::baseline::BaselineVerification,
@@ -711,7 +699,6 @@ impl Builder {
         self
     }
 
-    /// Set WritersProof attestation certificate ID.
     pub fn with_writersproof_certificate(mut self, certificate_id: String) -> Self {
         self.packet.writersproof_certificate_id = Some(certificate_id);
         self

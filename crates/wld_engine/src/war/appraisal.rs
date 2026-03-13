@@ -35,10 +35,8 @@ const MAX_PLAUSIBLE_KEYSTROKES_PER_SEC: f64 = 20.0;
 
 /// Appraise an evidence packet and produce an EAR token.
 ///
-/// Runs the standard 4-check verification (signature, hash chain, VDF,
-/// declaration), maps results onto AR4SI trust vector components, then
-/// builds an EarToken with the "pop" submodule. Applies cross-validation
-/// and minimum thresholds to resist adversarial evidence.
+/// Maps 4-check verification (signature, hash chain, VDF, declaration)
+/// onto AR4SI trust vector components with cross-validation.
 pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     let declaration = packet
         .declaration
@@ -54,7 +52,6 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     let mut tv = TrustworthinessVector::default();
     let mut warnings: Vec<String> = Vec::new();
 
-    // 0. Minimum checkpoint count — reject trivially short evidence
     if packet.checkpoints.len() < MIN_CHECKPOINTS {
         warnings.push(format!(
             "Insufficient checkpoints: {} (minimum {} required)",
@@ -63,7 +60,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         ));
     }
 
-    // 1. Declaration signature → configuration claim
+    // AR4SI mapping: declaration signature → configuration
     let decl_check = verify_declaration(packet);
     tv.configuration = if decl_check.passed {
         Ar4siStatus::Affirming as i8
@@ -72,7 +69,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         Ar4siStatus::Contraindicated as i8
     };
 
-    // 2. Hash chain (H1/H2/H3) → file_system claim
+    // AR4SI mapping: hash chain (H1/H2/H3) → file_system
     let seal = compute_seal(packet, declaration)
         .map_err(|e| Error::evidence(format!("seal computation failed: {e}")))?;
     let chain_check = verify_hash_chain(&seal, packet, version);
@@ -83,9 +80,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         Ar4siStatus::Contraindicated as i8
     };
 
-    // 3. VDF proofs → runtime_opaque claim
-    //    Cross-validates elapsed time against minimum threshold and
-    //    plausibility relative to checkpoint count.
+    // AR4SI mapping: VDF proofs → runtime_opaque
     let vdf_check = verify_vdf_proofs(packet);
     tv.runtime_opaque = if vdf_check.passed {
         let elapsed = packet.total_elapsed_time();
@@ -102,7 +97,6 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
             ));
             Ar4siStatus::Warning as i8
         } else if cp_count > 1 && elapsed_secs / cp_count == 0 {
-            // Multiple checkpoints all within 1 second — suspiciously fast
             warnings.push(format!(
                 "Implausible timing: {} checkpoints in {}s",
                 cp_count, elapsed_secs
@@ -116,7 +110,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         Ar4siStatus::Contraindicated as i8
     };
 
-    // 4. Hardware attestation tier → instance_identity + hardware
+    // AR4SI mapping: hardware tier → instance_identity + hardware
     let hw_tier = packet
         .hardware
         .as_ref()
@@ -148,7 +142,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     tv.instance_identity = id_status;
     tv.hardware = hw_status;
 
-    // 5. Key hierarchy → storage_opaque (validate content, not just presence)
+    // AR4SI mapping: key hierarchy → storage_opaque
     tv.storage_opaque = match &packet.key_hierarchy {
         Some(kh) if !kh.session_certificate.is_empty() && !kh.master_public_key.is_empty() => {
             Ar4siStatus::Affirming as i8
@@ -162,7 +156,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         None => Ar4siStatus::None as i8,
     };
 
-    // 6. Binary attestation → executables
+    // AR4SI mapping: binary attestation → executables
     tv.executables = if packet
         .hardware
         .as_ref()
@@ -174,13 +168,12 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         Ar4siStatus::None as i8
     };
 
-    // 7. Jitter entropy + behavioral → sourced_data
-    //    Cross-validate behavioral quality, not just presence.
+    // AR4SI mapping: jitter + behavioral → sourced_data
     let has_jitter = declaration.has_jitter_seal();
-    let behavioral_quality = packet.behavioral.as_ref().map(|b| {
-        // Meaningful behavioral evidence requires non-empty edit topology
-        !b.edit_topology.is_empty()
-    });
+    let behavioral_quality = packet
+        .behavioral
+        .as_ref()
+        .map(|b| !b.edit_topology.is_empty());
     tv.sourced_data = match (has_jitter, behavioral_quality) {
         (true, Some(true)) => Ar4siStatus::Affirming as i8,
         (true, Some(false)) => {
@@ -195,7 +188,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         (false, None) => Ar4siStatus::None as i8,
     };
 
-    // 8. Cross-validation: keystroke rate plausibility
+    // Degrade sourced_data if keystroke rate exceeds human plausibility
     if let Some(ks) = &packet.keystroke {
         let elapsed_secs = packet.total_elapsed_time().as_secs_f64();
         if elapsed_secs > 0.0 {
@@ -205,7 +198,6 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
                     "Implausible keystroke rate: {:.1}/sec (max plausible: {:.0}/sec)",
                     rate, MAX_PLAUSIBLE_KEYSTROKES_PER_SEC
                 ));
-                // Degrade sourced_data if keystroke rate is superhuman
                 if tv.sourced_data > Ar4siStatus::Warning as i8
                     || tv.sourced_data == Ar4siStatus::Affirming as i8
                 {
@@ -257,7 +249,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     })
 }
 
-/// Compute SHA-256 of the packet's JSON encoding.
+/// SHA-256 of the packet's JSON encoding for the evidence reference.
 fn packet_hash(packet: &Packet) -> Result<[u8; 32]> {
     let data = serde_json::to_vec(packet)
         .map_err(|e| Error::evidence(format!("packet serialization failed: {e}")))?;

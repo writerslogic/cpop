@@ -3,7 +3,6 @@
 use super::context::TbsContext;
 use super::types::*;
 
-/// Read a big-endian u32 from a byte slice at the given offset.
 pub fn read_u32_be(data: &[u8], offset: usize) -> Result<u32, String> {
     data.get(offset..offset + 4)
         .and_then(|s| s.try_into().ok())
@@ -18,7 +17,7 @@ pub fn build_empty_auth_area(handle: u32) -> Vec<u8> {
 /// Build a TPM_RS_PW authorization area with the given password.
 pub fn build_auth_area_with_password(handle: u32, password: &[u8]) -> Vec<u8> {
     let mut auth = Vec::new();
-    auth.extend_from_slice(&0x40000009u32.to_be_bytes());
+    auth.extend_from_slice(&0x40000009u32.to_be_bytes()); // TPM_RS_PW
     auth.extend_from_slice(&0u16.to_be_bytes());
     auth.push(0x01);
     auth.extend_from_slice(&(password.len() as u16).to_be_bytes());
@@ -37,17 +36,16 @@ pub fn build_srk_public_ecc() -> Vec<u8> {
     let attrs: u32 = 0x00030472;
     public.extend_from_slice(&attrs.to_be_bytes());
 
-    public.extend_from_slice(&0u16.to_be_bytes());
-
+    public.extend_from_slice(&0u16.to_be_bytes()); // authPolicy (empty)
     public.extend_from_slice(&TPM2_ALG_AES.to_be_bytes());
     public.extend_from_slice(&128u16.to_be_bytes());
     public.extend_from_slice(&TPM2_ALG_CFB.to_be_bytes());
-    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes());
+    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes()); // scheme
     public.extend_from_slice(&TPM2_ECC_NIST_P256.to_be_bytes());
-    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes());
+    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes()); // kdf
 
-    public.extend_from_slice(&0u16.to_be_bytes());
-    public.extend_from_slice(&0u16.to_be_bytes());
+    public.extend_from_slice(&0u16.to_be_bytes()); // unique.x (empty)
+    public.extend_from_slice(&0u16.to_be_bytes()); // unique.y (empty)
 
     public
 }
@@ -62,16 +60,15 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     let auth_area = build_empty_auth_area(TPM2_RH_OWNER);
     body.extend_from_slice(&(auth_area.len() as u32).to_be_bytes());
     body.extend_from_slice(&auth_area);
-    // inSensitive: empty userAuth + empty data
+    // inSensitive: 4-byte header (empty userAuth + empty data)
     body.extend_from_slice(&4u16.to_be_bytes());
     body.extend_from_slice(&0u16.to_be_bytes());
     body.extend_from_slice(&0u16.to_be_bytes());
     let public_area = build_srk_public_ecc();
     body.extend_from_slice(&(public_area.len() as u16).to_be_bytes());
     body.extend_from_slice(&public_area);
-    // outsideInfo (empty) + creationPCR (none)
-    body.extend_from_slice(&0u16.to_be_bytes());
-    body.extend_from_slice(&0u32.to_be_bytes());
+    body.extend_from_slice(&0u16.to_be_bytes()); // outsideInfo (empty)
+    body.extend_from_slice(&0u32.to_be_bytes()); // creationPCR (none)
 
     let mut cmd = Vec::with_capacity(10 + body.len());
     let command_size = (10 + body.len()) as u32;
@@ -93,12 +90,14 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     }
     let handle = read_u32_be(&response, 10)?;
 
+    // Walk the TPMT_PUBLIC structure to reach the ECC point at the end.
+    // Field sizes are per TPM 2.0 Part 2, Section 12.2.4.
     let mut offset = 18;
     if offset + 2 > response.len() {
         return Err("Missing outPublic size".into());
     }
-    offset += 2;
-    offset += 2 + 2 + 4;
+    offset += 2; // outPublic size
+    offset += 2 + 2 + 4; // type + nameAlg + objectAttributes
 
     if offset + 2 > response.len() {
         return Err("Missing authPolicy".into());
@@ -112,7 +111,7 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     let sym_alg = u16::from_be_bytes([response[offset], response[offset + 1]]);
     offset += 2;
     if sym_alg != TPM2_ALG_NULL {
-        offset += 2 + 2;
+        offset += 2 + 2; // keyBits + mode
     }
     if offset + 2 > response.len() {
         return Err("Missing scheme".into());
@@ -120,10 +119,9 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     let scheme_alg = u16::from_be_bytes([response[offset], response[offset + 1]]);
     offset += 2;
     if scheme_alg != TPM2_ALG_NULL {
-        offset += 2; // hashAlg
+        offset += 2;
     }
     offset += 2; // curveID
-                 // kdf
     if offset + 2 > response.len() {
         return Err("Missing kdf".into());
     }
@@ -133,7 +131,7 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
         offset += 2;
     }
 
-    // TPMS_ECC_POINT: x = TPM2B(size + data), y = TPM2B(size + data)
+    // TPMS_ECC_POINT: TPM2B_ECC_PARAMETER(size + data) for x and y
     if offset + 2 > response.len() {
         return Err("Missing x size".into());
     }
@@ -155,7 +153,7 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     }
     let y = &response[offset..offset + y_size];
 
-    // Flush the transient primary key — we only needed the public point
+    // Flush transient primary — we only needed the public point
     let mut flush_cmd = Vec::with_capacity(14);
     flush_cmd.extend_from_slice(&TPM2_ST_NO_SESSIONS.to_be_bytes());
     flush_cmd.extend_from_slice(&14u32.to_be_bytes());
@@ -181,9 +179,9 @@ pub fn build_sealing_public() -> Vec<u8> {
     let attrs: u32 = 0x00000052;
     public.extend_from_slice(&attrs.to_be_bytes());
 
-    public.extend_from_slice(&0u16.to_be_bytes());
-    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes());
-    public.extend_from_slice(&0u16.to_be_bytes());
+    public.extend_from_slice(&0u16.to_be_bytes()); // authPolicy (empty)
+    public.extend_from_slice(&TPM2_ALG_NULL.to_be_bytes()); // scheme
+    public.extend_from_slice(&0u16.to_be_bytes()); // unique (empty)
 
     public
 }

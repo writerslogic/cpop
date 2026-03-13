@@ -111,7 +111,7 @@ impl PhysJitter {
         Ok(samples)
     }
 
-    /// Estimate entropy bits from inter-sample delta variance (Welford's single-pass).
+    /// Welford's single-pass variance of inter-sample deltas.
     fn estimate_entropy(&self, samples: &[u64]) -> u8 {
         if samples.len() < 2 {
             return 0;

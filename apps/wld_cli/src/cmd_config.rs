@@ -260,13 +260,7 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
     Ok(())
 }
 
-/// Parse an EDITOR environment variable value into a command and its arguments.
-///
-/// Uses `split_whitespace` to safely tokenize the value, which prevents shell
-/// injection attacks: metacharacters like `;`, `|`, `&&` are treated as literal
-/// parts of token strings rather than being interpreted by a shell.
-///
-/// Returns `(command, arguments)` or an error if the value is empty/whitespace-only.
+/// Split EDITOR into command + args via whitespace (shell metacharacters stay literal).
 fn parse_editor_value(editor: &str) -> Result<(String, Vec<String>)> {
     let parts: Vec<String> = editor.split_whitespace().map(String::from).collect();
     let (cmd, args) = parts
@@ -300,19 +294,13 @@ mod tests {
         assert_eq!(args, vec!["-nw", "--no-splash"]);
     }
 
-    /// Verify that shell injection metacharacters are treated as literal tokens.
-    /// `"vim; rm -rf /"` must NOT be interpreted as two shell commands — the
-    /// semicolon stays attached to `"vim;"` as a literal string.
     #[test]
     fn test_parse_editor_injection_attempt_semicolon() {
         let (cmd, args) = parse_editor_value("vim; rm -rf /").unwrap();
-        // "vim;" is one token — the semicolon is literal, not a shell separator
         assert_eq!(cmd, "vim;");
         assert_eq!(args, vec!["rm", "-rf", "/"]);
     }
 
-    /// Pipe injection: `"vim | cat /etc/passwd"` must produce command `"vim"`
-    /// with literal args `["|", "cat", "/etc/passwd"]`, not a shell pipeline.
     #[test]
     fn test_parse_editor_injection_attempt_pipe() {
         let (cmd, args) = parse_editor_value("vim | cat /etc/passwd").unwrap();
@@ -320,7 +308,6 @@ mod tests {
         assert_eq!(args, vec!["|", "cat", "/etc/passwd"]);
     }
 
-    /// Double-ampersand injection: treated as a literal token, not shell chaining.
     #[test]
     fn test_parse_editor_injection_attempt_and() {
         let (cmd, args) = parse_editor_value("vim && curl evil.com").unwrap();
@@ -328,7 +315,6 @@ mod tests {
         assert_eq!(args, vec!["&&", "curl", "evil.com"]);
     }
 
-    /// Backtick/subshell injection: treated as literal tokens.
     #[test]
     fn test_parse_editor_injection_attempt_backtick() {
         let (cmd, args) = parse_editor_value("vim `whoami`").unwrap();

@@ -46,73 +46,47 @@ const SE_ATTESTATION_KEY_TAG: &str = "com.writerslogic.secureenclave.attestation
 #[allow(dead_code)]
 const SE_ENCRYPTION_KEY_TAG: &str = "com.writerslogic.secureenclave.encryption";
 
-/// Key attestation information from Secure Enclave.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyAttestation {
-    /// Version of the attestation format
     pub version: u32,
-    /// The attested public key in X9.62 format
+    /// X9.62 format.
     pub public_key: Vec<u8>,
-    /// Device-specific identifier
     pub device_id: String,
-    /// Timestamp when attestation was generated
     pub timestamp: chrono::DateTime<Utc>,
-    /// Cryptographic attestation proof
     pub attestation_proof: Vec<u8>,
-    /// Signature over the attestation data
     pub signature: Vec<u8>,
-    /// Additional attestation metadata
     pub metadata: HashMap<String, String>,
 }
 
-/// Secure Enclave key information.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecureEnclaveKeyInfo {
-    /// Key tag/identifier
     pub tag: String,
-    /// Public key in X9.62 format
+    /// X9.62 format.
     pub public_key: Vec<u8>,
-    /// Key creation time (if available)
     pub created_at: Option<chrono::DateTime<Utc>>,
-    /// Whether key is backed by Secure Enclave hardware
     pub hardware_backed: bool,
-    /// Key size in bits
     pub key_size: u32,
 }
 
 struct SecureEnclaveState {
-    /// Primary signing key reference
     key_ref: SecKeyRef,
-    /// Attestation key reference (separate for key attestation operations)
     attestation_key_ref: Option<SecKeyRef>,
-    /// Device identifier derived from hardware UUID
     device_id: String,
-    /// Primary public key in X9.62 format
     public_key: Vec<u8>,
-    /// Attestation public key (if different from signing key)
     attestation_public_key: Option<Vec<u8>>,
-    /// Monotonic counter value
     counter: u64,
-    /// Path to counter persistence file
     counter_file: PathBuf,
-    /// Time when provider was initialized
     start_time: SystemTime,
-    /// Cached hardware information
     hardware_info: HardwareInfo,
 }
 
-/// Hardware information for attestation context.
 #[derive(Debug, Clone, Default)]
 struct HardwareInfo {
-    /// Hardware UUID
     uuid: Option<String>,
-    /// Model identifier (e.g., "MacBookPro18,1")
     model: Option<String>,
-    /// Secure Enclave available
     se_available: bool,
-    /// macOS version
     os_version: Option<String>,
 }
 
@@ -176,7 +150,6 @@ fn init_state(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
     Ok(())
 }
 
-/// Collect hardware information for attestation context.
 #[allow(clippy::field_reassign_with_default)]
 fn collect_hardware_info() -> HardwareInfo {
     let mut info = HardwareInfo::default();
@@ -188,7 +161,7 @@ fn collect_hardware_info() -> HardwareInfo {
     info
 }
 
-/// Get the Mac model identifier using sysctl (safer than IOKit).
+/// sysctl is safer than IOKit for model detection.
 fn get_model_identifier() -> Option<String> {
     use std::process::Command;
 
@@ -208,7 +181,6 @@ fn get_model_identifier() -> Option<String> {
     None
 }
 
-/// Get macOS version string.
 fn get_os_version() -> Option<String> {
     use std::process::Command;
 
@@ -227,8 +199,6 @@ fn get_os_version() -> Option<String> {
     None
 }
 
-/// Load an existing SE key by tag, or create a new one if not found.
-/// Returns (key_ref, public_key).
 fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TPMError> {
     let tag = CFData::from_buffer(tag_str.as_bytes());
     let query = core_foundation::dictionary::CFDictionary::from_CFType_pairs(&[
@@ -321,7 +291,6 @@ fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TPMError
     Ok((key_ref, public_key))
 }
 
-/// Load or create a separate attestation key.
 fn load_or_create_attestation_key(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
     let (key_ref, public_key) = load_or_create_se_key(SE_ATTESTATION_KEY_TAG)?;
     state.attestation_key_ref = Some(key_ref);
@@ -401,7 +370,7 @@ fn save_counter(state: &SecureEnclaveState) {
 }
 
 impl SecureEnclaveProvider {
-    /// Legacy v4 unseal: XOR cipher (backward compat only).
+    /// v4 format: XOR cipher, kept for backward compat only.
     fn unseal_v4_legacy(
         &self,
         state: &SecureEnclaveState,
@@ -421,7 +390,6 @@ impl SecureEnclaveProvider {
         Ok(data)
     }
 
-    /// v5 unseal: ChaCha20-Poly1305 AEAD.
     fn unseal_v5_aead(
         &self,
         state: &SecureEnclaveState,
@@ -595,8 +563,7 @@ impl Provider for SecureEnclaveProvider {
 
 #[allow(dead_code)]
 impl SecureEnclaveProvider {
-    /// Generate a self-attestation proving the signing key lives in the Secure Enclave.
-    /// Full Apple App Attest requires entitlements; this is a local self-attestation.
+    /// Local self-attestation (full Apple App Attest requires entitlements).
     pub fn generate_key_attestation(&self, challenge: &[u8]) -> Result<KeyAttestation, TPMError> {
         let state = self.state.lock_recover();
         let timestamp = Utc::now();
@@ -656,12 +623,6 @@ impl SecureEnclaveProvider {
         })
     }
 
-    /// Verify a key attestation.
-    ///
-    /// This verifies that:
-    /// 1. The signature is valid against the attestation public key
-    /// 2. The attestation proof matches the expected format
-    /// 3. The timestamp is within acceptable bounds
     pub fn verify_key_attestation(
         &self,
         attestation: &KeyAttestation,
@@ -703,7 +664,6 @@ impl SecureEnclaveProvider {
         verify_ecdsa_signature(verify_key, &expected_data, &attestation.signature)
     }
 
-    /// Get information about the signing key.
     pub fn get_key_info(&self) -> SecureEnclaveKeyInfo {
         let state = self.state.lock_recover();
         SecureEnclaveKeyInfo {
@@ -715,7 +675,6 @@ impl SecureEnclaveProvider {
         }
     }
 
-    /// Get information about the attestation key (if separate from signing key).
     pub fn get_attestation_key_info(&self) -> Option<SecureEnclaveKeyInfo> {
         let state = self.state.lock_recover();
         state
@@ -730,7 +689,6 @@ impl SecureEnclaveProvider {
             })
     }
 
-    /// Get hardware information for this device.
     pub fn get_hardware_info(&self) -> HashMap<String, String> {
         let state = self.state.lock_recover();
         let mut info = HashMap::new();
@@ -750,12 +708,10 @@ impl SecureEnclaveProvider {
         info
     }
 
-    /// Get the current monotonic counter value without incrementing.
     pub fn get_counter(&self) -> u64 {
         self.state.lock_recover().counter
     }
 
-    /// Increment and return the monotonic counter.
     pub fn increment_counter(&self) -> u64 {
         let mut state = self.state.lock_recover();
         state.counter += 1;
@@ -763,13 +719,11 @@ impl SecureEnclaveProvider {
         state.counter
     }
 
-    /// Check if the Secure Enclave hardware is available.
     pub fn is_hardware_available() -> bool {
         is_secure_enclave_available()
     }
 }
 
-/// Sign data with a specific key reference.
 #[allow(dead_code)]
 fn sign_with_key(key_ref: SecKeyRef, data: &[u8]) -> Result<Vec<u8>, TPMError> {
     if key_ref.is_null() {
@@ -792,8 +746,6 @@ fn sign_with_key(key_ref: SecKeyRef, data: &[u8]) -> Result<Vec<u8>, TPMError> {
     Ok(sig.bytes().to_vec())
 }
 
-/// Verify an ECDSA P-256 signature.
-/// Note: Full verification requires parsing the X9.62 public key format.
 #[allow(dead_code)]
 fn verify_ecdsa_signature(
     public_key: &[u8],

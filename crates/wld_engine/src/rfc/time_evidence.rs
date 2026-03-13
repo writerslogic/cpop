@@ -63,7 +63,6 @@ impl TimeBindingTier {
         } else if has_vdf && (blockchain_count >= 1 || tsa_count >= 1 || roughtime_count >= 1) {
             Self::Standard
         } else {
-            // VDF-only or nothing
             Self::Degraded
         }
     }

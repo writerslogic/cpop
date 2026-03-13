@@ -25,7 +25,6 @@ struct WindowsTpmState {
     counter: u64,
 }
 
-/// Probe for an available TPM 2.0 via TBS.
 pub fn try_init() -> Option<WindowsTpmProvider> {
     match TbsContext::new() {
         Ok(context) => match context.get_device_info() {
@@ -90,7 +89,7 @@ impl WindowsTpmProvider {
         self.parse_pcr_read_response(&response, pcrs)
     }
 
-    /// Parse TPM2_PCR_Read response:
+    /// Parse TPM2_PCR_Read response layout:
     /// header(10) + pcrUpdateCounter(4) + TPML_PCR_SELECTION + TPML_DIGEST
     fn parse_pcr_read_response(
         &self,
@@ -101,9 +100,7 @@ impl WindowsTpmProvider {
             return Err(TPMError::Quote("PCR read response too short".to_string()));
         }
 
-        let mut offset = TPM2_RESPONSE_HEADER_SIZE;
-
-        offset += 4;
+        let mut offset = TPM2_RESPONSE_HEADER_SIZE + 4; // skip pcrUpdateCounter
 
         let selection_count = super::helpers::read_u32_be(&response, offset)
             .map_err(|_| TPMError::Quote("PCR read response missing selection count".into()))?;
@@ -115,7 +112,7 @@ impl WindowsTpmProvider {
                     "PCR read response truncated in selection".to_string(),
                 ));
             }
-            offset += 2; // hash algorithm
+            offset += 2;
             let size_of_select = response[offset] as usize;
             offset += 1;
             if offset
@@ -160,8 +157,7 @@ impl WindowsTpmProvider {
         Ok(values)
     }
 
-    /// TPM-assisted signature: TPM random || SHA256(random || data).
-    /// TODO: use TPM2_Sign with a loaded key for real signatures.
+    /// TPM random || SHA256(random || data). Not a real TPM2_Sign.
     fn sign_payload(&self, data: &[u8]) -> Result<Vec<u8>, TPMError> {
         let random = self
             .context
@@ -180,7 +176,7 @@ impl WindowsTpmProvider {
         Ok(signature)
     }
 
-    /// Create ECC P-256 SRK under the Owner hierarchy via TPM2_CreatePrimary.
+    /// TPM2_CreatePrimary: ECC P-256 SRK under Owner hierarchy.
     fn create_primary_srk(&self) -> Result<Vec<u8>, TbsError> {
         let mut cmd = Vec::with_capacity(128);
         let mut body = Vec::new();
@@ -191,18 +187,16 @@ impl WindowsTpmProvider {
         body.extend_from_slice(&(auth_area.len() as u32).to_be_bytes());
         body.extend_from_slice(&auth_area);
 
-        // inSensitive: empty userAuth + empty data
-        body.extend_from_slice(&4u16.to_be_bytes());
-        body.extend_from_slice(&0u16.to_be_bytes());
-        body.extend_from_slice(&0u16.to_be_bytes());
+        body.extend_from_slice(&4u16.to_be_bytes()); // inSensitive size
+        body.extend_from_slice(&0u16.to_be_bytes()); // empty userAuth
+        body.extend_from_slice(&0u16.to_be_bytes()); // empty data
 
         let public_area = build_srk_public_ecc();
         body.extend_from_slice(&(public_area.len() as u16).to_be_bytes());
         body.extend_from_slice(&public_area);
 
-        // outsideInfo (empty) + creationPCR (none)
-        body.extend_from_slice(&0u16.to_be_bytes());
-        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&0u16.to_be_bytes()); // outsideInfo
+        body.extend_from_slice(&0u32.to_be_bytes()); // creationPCR
 
         let command_size = (10 + body.len()) as u32;
         cmd.extend_from_slice(&TPM2_ST_SESSIONS.to_be_bytes());
@@ -222,7 +216,6 @@ impl WindowsTpmProvider {
         body.extend_from_slice(&(auth_area.len() as u32).to_be_bytes());
         body.extend_from_slice(&auth_area);
 
-        // inSensitive: machine-specific authValue + data to seal
         let auth_value = self.derive_seal_auth_value();
         let sensitive_size = 2 + auth_value.len() + 2 + data.len();
         body.extend_from_slice(&(sensitive_size as u16).to_be_bytes());
@@ -235,9 +228,8 @@ impl WindowsTpmProvider {
         body.extend_from_slice(&(public_area.len() as u16).to_be_bytes());
         body.extend_from_slice(&public_area);
 
-        // outsideInfo (empty) + creationPCR (none)
-        body.extend_from_slice(&0u16.to_be_bytes());
-        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&0u16.to_be_bytes()); // outsideInfo
+        body.extend_from_slice(&0u32.to_be_bytes()); // creationPCR
 
         let mut cmd = Vec::with_capacity(10 + body.len());
         let command_size = (10 + body.len()) as u32;
@@ -249,15 +241,13 @@ impl WindowsTpmProvider {
         self.context.submit_command(&cmd)
     }
 
-    /// Extract outPrivate/outPublic from TPM2_Create response into sealed blob:
-    /// `[pub_len: u32][pub_bytes][priv_len: u32][priv_bytes]`
+    /// Parse TPM2_Create response into `[pub_len: u32][pub][priv_len: u32][priv]`.
     fn parse_create_response(&self, response: &[u8]) -> Result<Vec<u8>, String> {
         if response.len() < 16 {
             return Err("response too short".into());
         }
 
-        // Skip header (10) + parameterSize (4)
-        let mut offset = 14;
+        let mut offset = 14; // header(10) + parameterSize(4)
 
         if offset + 2 > response.len() {
             return Err("missing outPrivate size".into());
@@ -344,26 +334,23 @@ impl WindowsTpmProvider {
         let command_size: u32 = 14;
         cmd.extend_from_slice(&TPM2_ST_NO_SESSIONS.to_be_bytes());
         cmd.extend_from_slice(&command_size.to_be_bytes());
-        cmd.extend_from_slice(&0x00000165u32.to_be_bytes()); // TPM2_CC_FlushContext
+        cmd.extend_from_slice(&0x00000165u32.to_be_bytes()); // CC_FlushContext
         cmd.extend_from_slice(&handle.to_be_bytes());
         self.context.submit_command(&cmd)?;
         Ok(())
     }
 
-    /// Derive a machine-specific auth value for sealed objects.
-    /// Prevents moving the sealed blob to another machine -- the authValue
-    /// is derived from the TPM's device ID, making it hardware-bound.
+    /// Hardware-bound: derived from TPM device ID so sealed blobs
+    /// can't be moved to another machine.
     fn derive_seal_auth_value(&self) -> Vec<u8> {
         use sha2::Digest;
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-seal-auth-v1");
         hasher.update(self.context.device_id().as_bytes());
-        // Must be deterministic (not random), otherwise unseal would fail
         let hash = hasher.finalize();
         hash[..32].to_vec()
     }
 
-    /// Build a TPMS_ATTEST-like structure for a quote.
     fn build_quote_attestation_data(
         &self,
         nonce: &[u8],
@@ -374,22 +361,19 @@ impl WindowsTpmProvider {
 
         data.extend_from_slice(&0xFF544347u32.to_be_bytes()); // TCG magic
         data.extend_from_slice(&0x8018u16.to_be_bytes()); // ATTEST_QUOTE
-        data.extend_from_slice(&0u16.to_be_bytes()); // qualifiedSigner (empty)
+        data.extend_from_slice(&0u16.to_be_bytes()); // qualifiedSigner
 
         let nonce_len = nonce.len().min(64) as u16;
-        data.extend_from_slice(&nonce_len.to_be_bytes()); // extraData (nonce)
+        data.extend_from_slice(&nonce_len.to_be_bytes());
         data.extend_from_slice(&nonce[..nonce_len as usize]);
 
-        // TPMS_CLOCK_INFO
         let clock = timestamp.timestamp() as u64;
-        data.extend_from_slice(&clock.to_be_bytes());
+        data.extend_from_slice(&clock.to_be_bytes()); // TPMS_CLOCK_INFO
         data.extend_from_slice(&0u32.to_be_bytes()); // resetCount
         data.extend_from_slice(&0u32.to_be_bytes()); // restartCount
         data.push(1); // safe
 
         data.extend_from_slice(&0u64.to_be_bytes()); // firmwareVersion
-
-        // PCR digest
         let mut pcr_digest = Sha256::new();
         for pcr in pcr_values {
             pcr_digest.update(&pcr.value);
@@ -408,8 +392,7 @@ impl Provider for WindowsTpmProvider {
             hardware_backed: true,
             supports_pcrs: true,
             supports_sealing: true,
-            // sign_payload uses SHA256(random||data), not real TPM2_Sign
-            supports_attestation: false,
+            supports_attestation: false, // sign_payload is not real TPM2_Sign
             monotonic_counter: true,
             secure_clock: true,
         }
@@ -561,7 +544,7 @@ impl Provider for WindowsTpmProvider {
         let mut cmd = Vec::with_capacity(command_size as usize);
         cmd.extend_from_slice(&TPM2_ST_NO_SESSIONS.to_be_bytes());
         cmd.extend_from_slice(&command_size.to_be_bytes());
-        cmd.extend_from_slice(&0x00000181u32.to_be_bytes());
+        cmd.extend_from_slice(&0x00000181u32.to_be_bytes()); // CC_ReadClock
 
         let response = self
             .context

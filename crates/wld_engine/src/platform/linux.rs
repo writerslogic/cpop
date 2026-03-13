@@ -60,7 +60,6 @@ pub fn linux_keycode_to_zone(keycode: u16) -> u8 {
     }
 }
 
-/// Check if we have access to input devices.
 fn check_input_device_access() -> bool {
     match fs::read_dir("/dev/input") {
         Ok(entries) => {
@@ -83,19 +82,16 @@ fn check_input_device_access() -> bool {
     }
 }
 
-/// Get combined permission status.
 pub fn get_permission_status() -> PermissionStatus {
     let input_devices = check_input_device_access();
     PermissionStatus {
-        accessibility: true,    // Not applicable on Linux
-        input_monitoring: true, // Not applicable on Linux
+        accessibility: true,    // N/A on Linux
+        input_monitoring: true, // N/A on Linux
         input_devices,
         all_granted: input_devices,
     }
 }
 
-/// Request all required permissions.
-/// On Linux, this just checks current status and provides guidance.
 pub fn request_all_permissions() -> PermissionStatus {
     let status = get_permission_status();
     if !status.input_devices {
@@ -112,32 +108,23 @@ pub fn request_all_permissions() -> PermissionStatus {
     status
 }
 
-/// Check if all required permissions are granted.
 pub fn has_required_permissions() -> bool {
     check_input_device_access()
 }
 
-/// Information about a Linux input device.
 #[derive(Debug, Clone)]
 pub struct LinuxInputDevice {
-    /// Path to the device (e.g., /dev/input/event0)
     pub path: PathBuf,
-    /// Device name
     pub name: String,
-    /// Physical path (empty for virtual devices)
+    /// Empty for virtual devices.
     pub phys: Option<String>,
-    /// Unique identifier
     pub uniq: Option<String>,
-    /// Vendor ID
     pub vendor_id: u16,
-    /// Product ID
     pub product_id: u16,
-    /// Whether this appears to be a physical device
     pub is_physical: bool,
 }
 
 impl LinuxInputDevice {
-    /// Check if this device appears to be virtual/synthetic.
     pub fn appears_virtual(&self) -> bool {
         is_virtual_device(
             &self.name,
@@ -148,7 +135,6 @@ impl LinuxInputDevice {
     }
 }
 
-/// Enumerate all keyboard input devices.
 /// Enumerate input devices matching a predicate, with a virtual-device filter.
 fn enumerate_input_devices(
     matches: impl Fn(&Device) -> bool,
@@ -204,7 +190,6 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
     )
 }
 
-/// Check if a device appears to be virtual based on its properties.
 fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
     let name_lower = name.to_lowercase();
 
@@ -235,8 +220,6 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
     false
 }
 
-/// Get information about the currently focused application and document.
-/// This uses various methods depending on the display server.
 pub fn get_active_focus() -> Result<FocusInfo> {
     #[cfg(feature = "x11")]
     if let Ok(focus) = get_x11_focus() {
@@ -246,8 +229,7 @@ pub fn get_active_focus() -> Result<FocusInfo> {
     get_focus_from_proc()
 }
 
-/// Get focus info by examining /proc.
-/// This is a fallback method that may not work in all cases.
+/// Fallback: scan /proc for known editor processes.
 fn get_focus_from_proc() -> Result<FocusInfo> {
     let entries = fs::read_dir("/proc")?;
     for entry in entries.flatten() {
@@ -364,7 +346,6 @@ fn get_x11_focus() -> Result<FocusInfo> {
     })
 }
 
-/// Linux keystroke capture implementation using evdev.
 pub struct LinuxKeystrokeCapture {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<KeystrokeEvent>>,
@@ -375,7 +356,6 @@ pub struct LinuxKeystrokeCapture {
 }
 
 impl LinuxKeystrokeCapture {
-    /// Create a new Linux keystroke capture instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -387,7 +367,6 @@ impl LinuxKeystrokeCapture {
         })
     }
 
-    /// Enumerate and register physical keyboard devices.
     fn enumerate_physical_devices(&self) -> Result<Vec<PathBuf>> {
         let keyboards = enumerate_keyboards()?;
         let mut devices = self.physical_devices.write_recover();
@@ -478,7 +457,6 @@ impl KeystrokeCapture for LinuxKeystrokeCapture {
 }
 
 impl LinuxKeystrokeCapture {
-    /// Reader thread for a single input device.
     fn device_reader_thread(
         path: PathBuf,
         tx: mpsc::Sender<KeystrokeEvent>,
@@ -565,7 +543,6 @@ impl LinuxKeystrokeCapture {
     }
 }
 
-/// Convert evdev keycode to character (basic implementation).
 fn keycode_to_char(keycode: u16) -> Option<char> {
     match keycode {
         16 => Some('q'),
@@ -615,7 +592,6 @@ impl Drop for LinuxKeystrokeCapture {
     }
 }
 
-/// Linux focus monitor implementation.
 pub struct LinuxFocusMonitor {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<FocusInfo>>,
@@ -623,7 +599,6 @@ pub struct LinuxFocusMonitor {
 }
 
 impl LinuxFocusMonitor {
-    /// Create a new Linux focus monitor instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -688,7 +663,6 @@ impl FocusMonitor for LinuxFocusMonitor {
     }
 }
 
-/// Linux HID enumerator implementation.
 #[derive(Default)]
 pub struct LinuxHIDEnumerator;
 
@@ -707,7 +681,7 @@ impl HIDEnumerator for LinuxHIDEnumerator {
                 vendor_id: d.vendor_id as u32,
                 product_id: d.product_id as u32,
                 product_name: d.name,
-                manufacturer: String::new(), // Not easily available via evdev
+                manufacturer: String::new(), // evdev doesn't expose this
                 serial_number: d.uniq,
                 transport: d.phys.unwrap_or_default(),
             })
@@ -725,7 +699,6 @@ impl HIDEnumerator for LinuxHIDEnumerator {
     }
 }
 
-/// Enumerate all mouse/pointing input devices.
 pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
     enumerate_input_devices(
         |dev| {
@@ -737,7 +710,6 @@ pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
     )
 }
 
-/// Check if a mouse device appears to be virtual based on its properties.
 fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
     let name_lower = name.to_lowercase();
 
@@ -769,7 +741,6 @@ fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: 
     false
 }
 
-/// Linux mouse capture implementation using evdev EV_REL events.
 pub struct LinuxMouseCapture {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<MouseEvent>>,
@@ -782,7 +753,6 @@ pub struct LinuxMouseCapture {
 }
 
 impl LinuxMouseCapture {
-    /// Create a new Linux mouse capture instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -796,7 +766,6 @@ impl LinuxMouseCapture {
         })
     }
 
-    /// Enumerate and register physical mouse devices.
     fn enumerate_physical_devices(&self) -> Result<Vec<PathBuf>> {
         let mice = enumerate_mice()?;
         let mut devices = self.physical_devices.write_recover();
@@ -812,7 +781,6 @@ impl LinuxMouseCapture {
         Ok(physical_paths)
     }
 
-    /// Reader thread for a single mouse device.
     fn device_reader_thread(
         path: PathBuf,
         tx: mpsc::Sender<MouseEvent>,
@@ -931,7 +899,6 @@ impl MouseCapture for LinuxMouseCapture {
 
         let physical_paths = self.enumerate_physical_devices()?;
         if physical_paths.is_empty() {
-            // Not an error - mice may not be connected
             log::warn!("No physical mouse devices found");
         }
 

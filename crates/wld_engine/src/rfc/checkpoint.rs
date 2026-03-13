@@ -32,39 +32,31 @@ use super::vdf::VdfProofRfc;
 /// strategies (JSON for human-readable, CBOR for wire).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointRfc {
-    /// Sequence number (ordinal) of this checkpoint in the chain.
     #[serde(rename = "1")]
     pub sequence: u64,
 
-    /// Checkpoint UUID (v4)
     #[serde(rename = "2")]
     pub checkpoint_id: Uuid,
 
-    /// Unix timestamp (epoch seconds)
     #[serde(rename = "3")]
     pub timestamp: u64,
 
-    /// SHA-256 of document content at checkpoint time
     #[serde(rename = "4", with = "hex_bytes")]
     pub content_hash: [u8; 32],
 
-    /// SHA-256 of previous checkpoint (zeros for first)
+    /// Zeros for the first checkpoint in a chain.
     #[serde(rename = "5", with = "hex_bytes")]
     pub prev_hash: [u8; 32],
 
-    /// SHA-256 of this checkpoint structure
     #[serde(rename = "6", with = "hex_bytes")]
     pub checkpoint_hash: [u8; 32],
 
-    /// Silicon-anchored VDF proof (optional for first checkpoint)
     #[serde(rename = "7", skip_serializing_if = "Option::is_none")]
     pub vdf_proof: Option<VdfProofRfc>,
 
-    /// Behavioral jitter binding
     #[serde(rename = "8", skip_serializing_if = "Option::is_none")]
     pub jitter_binding: Option<JitterBinding>,
 
-    /// PUF-bound chain MAC
     #[serde(
         rename = "9",
         skip_serializing_if = "Option::is_none",
@@ -74,7 +66,6 @@ pub struct CheckpointRfc {
 }
 
 impl CheckpointRfc {
-    /// Create a checkpoint with core fields; optional fields default to `None`.
     pub fn new(sequence: u64, timestamp: u64, content_hash: [u8; 32], prev_hash: [u8; 32]) -> Self {
         Self {
             sequence,
@@ -89,25 +80,22 @@ impl CheckpointRfc {
         }
     }
 
-    /// Attach VDF proof.
     pub fn with_vdf(mut self, proof: VdfProofRfc) -> Self {
         self.vdf_proof = Some(proof);
         self
     }
 
-    /// Attach jitter binding.
     pub fn with_jitter(mut self, binding: JitterBinding) -> Self {
         self.jitter_binding = Some(binding);
         self
     }
 
-    /// Attach PUF-bound chain MAC.
     pub fn with_chain_mac(mut self, mac: [u8; 32]) -> Self {
         self.chain_mac = Some(mac);
         self
     }
 
-    /// Compute and set `checkpoint_hash` (SHA-256 over all fields except itself).
+    /// Compute and set `checkpoint_hash` over all fields except itself.
     pub fn compute_hash(&mut self) {
         use sha2::{Digest, Sha256};
 
@@ -148,7 +136,6 @@ impl CheckpointRfc {
         self.checkpoint_hash = hasher.finalize().into();
     }
 
-    /// Validate all fields. Returns a list of errors (empty if valid).
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -171,7 +158,6 @@ impl CheckpointRfc {
         errors
     }
 
-    /// Returns `true` if no validation errors.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
@@ -189,19 +175,16 @@ impl CheckpointRfc {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaVdfProof {
-    /// Algorithm identifier (20 = HMAC-SHA256-PUF)
+    /// 20 = HMAC-SHA256-PUF
     #[serde(rename = "1")]
     pub algorithm: u32,
 
-    /// Iteration count
     #[serde(rename = "2")]
     pub iterations: u64,
 
-    /// CPU cycle count (RDTSC)
     #[serde(rename = "3")]
     pub cycle_count: u64,
 
-    /// VDF output
     #[serde(rename = "4", with = "hex_bytes_vec")]
     pub output: Vec<u8>,
 }
@@ -217,21 +200,17 @@ pub struct SaVdfProof {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BioBinding {
-    /// Spearman rho (x1000)
     #[serde(rename = "1")]
     pub rho_millibits: RhoMillibits,
 
-    /// Hurst exponent (x1000)
     #[serde(rename = "2")]
     pub hurst_millibits: Millibits,
 
-    /// Recognition gap (ms)
     #[serde(rename = "3")]
     pub recognition_gap_ms: u32,
 }
 
 impl BioBinding {
-    /// Create from floating-point values.
     pub fn new(rho: f64, hurst: f64, gap_ms: u32) -> Self {
         Self {
             rho_millibits: RhoMillibits::from_float(rho),
@@ -240,13 +219,12 @@ impl BioBinding {
         }
     }
 
-    /// Returns `true` if Hurst exponent is in the human typing range (0.55..0.85).
+    /// Human typing produces Hurst exponents in 0.55..0.85.
     pub fn is_hurst_human_like(&self) -> bool {
         let h = self.hurst_millibits.raw();
         h > 550 && h < 850
     }
 
-    /// Returns `true` if rho is in the acceptable range (0.5..=0.95).
     pub fn is_correlation_valid(&self) -> bool {
         let rho = self.rho_millibits.raw();
         (500..=950).contains(&rho)

@@ -20,7 +20,6 @@ use crate::tpm::{ClockInfo, ProviderHandle};
 
 use super::types::*;
 
-/// Persistent TPM-sealed key storage.
 pub struct SealedIdentityStore {
     provider: ProviderHandle,
     store_path: PathBuf,
@@ -40,8 +39,7 @@ impl SealedIdentityStore {
         Self::new(provider, data_dir)
     }
 
-    /// If a sealed blob already exists and can be unsealed, reuses it.
-    /// Records boot_count and restart_count from TPM ClockInfo into the blob.
+    /// Reuses an existing sealed blob if it can be unsealed, otherwise re-derives.
     pub fn initialize(&self, puf: &dyn PUFProvider) -> Result<MasterIdentity, SealedIdentityError> {
         if self.store_path.exists() {
             match self.unseal_master_key() {
@@ -136,13 +134,11 @@ impl SealedIdentityStore {
                             });
                         }
                     }
-                    // Ratchet forward so this counter value cannot be reused
                     blob.last_known_counter = Some(current);
                     self.persist_blob(&blob)?;
                 }
             }
         } else if blob.last_known_counter.is_none() {
-            // First unseal: set last_known_counter to prevent rollback gap
             if let Ok(binding) = self.provider.bind(b"identity-counter-check") {
                 if let Some(current) = binding.monotonic_counter {
                     blob.last_known_counter = Some(current);
@@ -175,8 +171,7 @@ impl SealedIdentityStore {
         Ok(signing_key)
     }
 
-    /// Re-persists the blob with updated counter. This ensures the counter
-    /// ratchets forward and prevents "forking" at the same counter value.
+    /// Ratchet counter forward to prevent forking at the same counter value.
     pub fn advance_counter(&self, new_counter: u64) -> Result<(), SealedIdentityError> {
         let mut blob = self.load_blob()?;
 
@@ -215,8 +210,7 @@ impl SealedIdentityStore {
         })
     }
 
-    /// Unseals the current seed, then re-seals with the new platform state.
-    /// Records new boot_count/restart_count to detect reboot-based attacks.
+    /// Re-seal with fresh platform state to detect reboot-based attacks.
     pub fn reseal(&self, puf: &dyn PUFProvider) -> Result<(), SealedIdentityError> {
         let old_blob = self.load_blob()?;
 
@@ -270,10 +264,6 @@ impl SealedIdentityStore {
         Ok(())
     }
 
-    /// T4 (HardwareHardened): Reserved for SGX/TrustZone (future)
-    /// T3 (HardwareBound):    hardware_backed && supports_sealing
-    /// T2 (AttestedSoftware): hardware_backed && supports_attestation (but no sealing)
-    /// T1 (SoftwareOnly):     pure software fallback
     pub fn attestation_tier(&self) -> AttestationTier {
         let caps = self.provider.capabilities();
         if caps.hardware_backed && caps.supports_sealing {
@@ -362,7 +352,7 @@ impl SealedIdentityStore {
         }
     }
 
-    /// Legacy v1 unwrap: XOR cipher (backward compat only).
+    /// Legacy v1: XOR cipher (backward compat only).
     fn software_unwrap_v1(&self, wrapped: &[u8]) -> Result<Vec<u8>, SealedIdentityError> {
         let salt = self.machine_salt();
         let mut hasher = Sha256::new();
@@ -377,7 +367,6 @@ impl SealedIdentityStore {
         Ok(seed)
     }
 
-    /// v2 unwrap: ChaCha20-Poly1305 AEAD.
     fn software_unwrap_v2(&self, wrapped: &[u8]) -> Result<Vec<u8>, SealedIdentityError> {
         // Format: version(1) || random_salt(32) || aead_nonce(12) || ciphertext+tag
         const HEADER_LEN: usize = 1 + 32 + 12; // 45

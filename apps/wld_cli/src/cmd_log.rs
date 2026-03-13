@@ -12,7 +12,7 @@ use crate::util::{ensure_dirs, load_vdf_params, open_secure_store};
 
 pub(crate) fn cmd_log(file_path: &PathBuf, out: &OutputMode) -> Result<()> {
     let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
-    let abs_path_str = abs_path.to_string_lossy().to_string();
+    let abs_path_str = abs_path.to_string_lossy().into_owned();
     let db = open_secure_store()?;
     let events = db.get_events_for_file(&abs_path_str)?;
 
@@ -73,7 +73,7 @@ pub(crate) fn cmd_log(file_path: &PathBuf, out: &OutputMode) -> Result<()> {
         if !out.quiet {
             let file_name = file_path
                 .file_name()
-                .map(|n| n.to_string_lossy().to_string())
+                .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| file_path.display().to_string());
             println!("No checkpoints found for this file.\n");
             println!("Create one with: wld commit {}", file_name);

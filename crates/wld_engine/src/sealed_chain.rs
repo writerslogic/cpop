@@ -70,9 +70,7 @@ impl ChainEncryptionKey {
 }
 
 impl Drop for ChainEncryptionKey {
-    fn drop(&mut self) {
-        // ProtectedKey handles zeroization
-    }
+    fn drop(&mut self) {}
 }
 
 /// Save a chain to a sealed (encrypted) file.
@@ -110,7 +108,6 @@ pub fn save_sealed(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    // Atomic write: write to tmp then rename for crash safety
     let tmp_path = path.with_extension("tmp");
     fs::write(&tmp_path, &output)?;
     fs::rename(&tmp_path, path)?;
@@ -161,8 +158,6 @@ pub fn load_sealed_verified(
     let nonce_bytes = &data[8..20];
     let header_doc_id = &data[20..52];
 
-    // Verify document_id matches expectation (eliminates TOCTOU between
-    // read_sealed_document_id and load_sealed).
     if let Some(expected) = expected_id {
         if header_doc_id != expected.as_slice() {
             return Err(Error::checkpoint(

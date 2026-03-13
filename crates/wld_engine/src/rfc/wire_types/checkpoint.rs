@@ -10,7 +10,7 @@ use super::components::{
 use super::hash::HashValue;
 use super::serde_helpers::{fixed_bytes_16, serde_bytes_opt};
 
-/// Wire-format checkpoint per CDDL `checkpoint`.
+/// Wire-format checkpoint per draft-condrey-rats-pop CDDL `checkpoint`.
 ///
 /// ```cddl
 /// checkpoint = {
@@ -38,7 +38,6 @@ pub struct CheckpointWire {
     #[serde(rename = "2", with = "fixed_bytes_16")]
     pub checkpoint_id: [u8; 16],
 
-    /// Epoch ms
     #[serde(rename = "3")]
     pub timestamp: u64,
 
@@ -51,7 +50,6 @@ pub struct CheckpointWire {
     #[serde(rename = "6")]
     pub delta: EditDelta,
 
-    /// Zeros for the first checkpoint in a chain
     #[serde(rename = "7")]
     pub prev_hash: HashValue,
 
@@ -61,15 +59,12 @@ pub struct CheckpointWire {
     #[serde(rename = "9")]
     pub process_proof: ProcessProof,
 
-    /// ENHANCED+ tier only
     #[serde(rename = "10", default, skip_serializing_if = "Option::is_none")]
     pub jitter_binding: Option<JitterBindingWire>,
 
-    /// ENHANCED+ tier only
     #[serde(rename = "11", default, skip_serializing_if = "Option::is_none")]
     pub physical_state: Option<PhysicalState>,
 
-    /// ENHANCED+ tier only
     #[serde(
         rename = "12",
         default,
@@ -85,11 +80,9 @@ pub struct CheckpointWire {
     pub active_probes: Option<Vec<ActiveProbe>>,
 }
 
-/// Max self-receipts per checkpoint.
 const MAX_SELF_RECEIPTS: usize = 100;
-/// Max active probes per checkpoint.
 const MAX_ACTIVE_PROBES: usize = 100;
-/// Max entangled MAC length (HMAC-SHA256 = 32 bytes).
+/// HMAC-SHA256 = 32 bytes; allow up to 64 for future algorithms.
 const MAX_ENTANGLED_MAC_LEN: usize = 64;
 
 impl CheckpointWire {
@@ -111,38 +104,30 @@ impl CheckpointWire {
 
         let mut hasher = Sha256::new();
 
-        // DST prefix
         hasher.update(b"PoP-Checkpoint-v1");
-
-        // Raw digest bytes for hash-value fields
         hasher.update(&self.prev_hash.digest);
         hasher.update(&self.content_hash.digest);
 
-        // CBOR-encode edit-delta
         let delta_cbor = crate::codec::cbor::encode(&self.delta).expect("CBOR encode edit-delta");
         hasher.update(&delta_cbor);
 
-        // Optional: CBOR-encode jitter-binding (ENHANCED+)
         if let Some(ref jitter) = self.jitter_binding {
             let jitter_cbor =
                 crate::codec::cbor::encode(jitter).expect("CBOR encode jitter-binding");
             hasher.update(&jitter_cbor);
         }
 
-        // Optional: CBOR-encode physical-state (ENHANCED+)
         if let Some(ref phys) = self.physical_state {
             let phys_cbor = crate::codec::cbor::encode(phys).expect("CBOR encode physical-state");
             hasher.update(&phys_cbor);
         }
 
-        // Merkle root raw bytes from process-proof
         hasher.update(&self.process_proof.merkle_root);
 
         let digest: [u8; 32] = hasher.finalize().into();
         HashValue::sha256(digest.to_vec())
     }
 
-    /// Validate size limits and hash digests.
     pub fn validate(&self) -> Result<(), String> {
         self.content_hash.validate_digest_length()?;
         self.prev_hash.validate_digest_length()?;

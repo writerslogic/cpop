@@ -23,7 +23,6 @@ pub struct RunLoopHandle(pub(super) *mut std::ffi::c_void);
 unsafe impl Send for RunLoopHandle {}
 unsafe impl Sync for RunLoopHandle {}
 
-/// Extended keystroke information including device fingerprint.
 #[derive(Debug, Clone)]
 pub struct KeystrokeInfo {
     pub timestamp_ns: i64,
@@ -33,10 +32,8 @@ pub struct KeystrokeInfo {
     pub device_hint: Option<HIDDeviceInfo>,
 }
 
-/// Callback type for enhanced keystroke monitoring.
 pub type KeystrokeCallback = Arc<dyn Fn(KeystrokeInfo) + Send + Sync>;
 
-/// Enhanced keystroke monitor with synthetic event detection.
 pub struct KeystrokeMonitor {
     thread: Option<std::thread::JoinHandle<()>>,
     keystroke_count: Arc<AtomicU64>,
@@ -46,12 +43,10 @@ pub struct KeystrokeMonitor {
 }
 
 impl KeystrokeMonitor {
-    /// Start the keystroke monitor with a simple jitter session.
     pub fn start(session: Arc<Mutex<SimpleJitterSession>>) -> Result<Self> {
         Self::start_with_callback(session, None)
     }
 
-    /// Start the keystroke monitor with optional callback for extended info.
     pub fn start_with_callback(
         session: Arc<Mutex<SimpleJitterSession>>,
         callback: Option<KeystrokeCallback>,
@@ -81,30 +76,22 @@ impl KeystrokeMonitor {
         )
     }
 
-    /// Get total keystroke count (verified events only).
     pub fn keystroke_count(&self) -> u64 {
         self.keystroke_count.load(Ordering::SeqCst)
     }
 
-    /// Get count of verified hardware events.
     pub fn verified_count(&self) -> u64 {
         self.verified_count.load(Ordering::SeqCst)
     }
 
-    /// Get count of rejected synthetic events.
     pub fn rejected_count(&self) -> u64 {
         self.rejected_count.load(Ordering::SeqCst)
     }
 
-    /// Check if synthetic injection has been detected.
     pub fn synthetic_injection_detected(&self) -> bool {
         self.rejected_count.load(Ordering::SeqCst) > 0
     }
 
-    /// Start the keystroke monitor with a hybrid jitter session (wld_jitter-backed).
-    ///
-    /// This variant uses wld_jitter's hardware entropy when available,
-    /// with automatic fallback to HMAC-based jitter.
     #[cfg(feature = "wld_jitter")]
     pub fn start_with_hybrid(
         session: Arc<Mutex<crate::wld_jitter_bridge::HybridJitterSession>>,
@@ -112,7 +99,6 @@ impl KeystrokeMonitor {
         Self::start_with_hybrid_callback(session, None)
     }
 
-    /// Start the keystroke monitor with a hybrid jitter session and optional callback.
     #[cfg(feature = "wld_jitter")]
     pub fn start_with_hybrid_callback(
         session: Arc<Mutex<crate::wld_jitter_bridge::HybridJitterSession>>,
@@ -142,11 +128,6 @@ impl KeystrokeMonitor {
         )
     }
 
-    /// Shared CGEventTap setup for all keystroke monitor variants.
-    ///
-    /// Handles event tap creation, source verification, run loop lifecycle,
-    /// and counter management. The `on_keystroke` closure is called for each
-    /// verified (non-synthetic) KeyDown event.
     fn start_event_tap<F>(on_keystroke: F) -> Result<Self>
     where
         F: FnMut(&CGEvent, EventVerificationResult) + Send + 'static,
@@ -164,7 +145,7 @@ impl KeystrokeMonitor {
         let run_loop: Arc<Mutex<Option<RunLoopHandle>>> = Arc::new(Mutex::new(None));
         let run_loop_clone = Arc::clone(&run_loop);
 
-        // Wrap in Mutex so the FnMut closure can be called from FnOnce context
+        // FnMut → Mutex so it can be called from the FnOnce CGEventTap callback
         let on_keystroke = Mutex::new(on_keystroke);
 
         let thread = std::thread::spawn(move || {
@@ -243,9 +224,8 @@ impl KeystrokeMonitor {
         }
     }
 
-    /// Stop the keystroke monitor, terminating its run loop and joining the thread.
     pub fn stop(&mut self) {
-        // Extract pointer and signal stop (C-001 fix: release only after thread exits)
+        // C-001: extract pointer now, but defer CFRelease until after thread exits
         let ptr = self
             .run_loop
             .lock()
@@ -256,7 +236,6 @@ impl KeystrokeMonitor {
                 CFRunLoopStop(p);
             }
         }
-        // Join thread before releasing the run loop reference
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -274,23 +253,18 @@ impl Drop for KeystrokeMonitor {
     }
 }
 
-/// macOS keystroke capture implementation.
 pub struct MacOSKeystrokeCapture {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<KeystrokeEvent>>,
     thread: Option<std::thread::JoinHandle<()>>,
     strict_mode: bool,
-    /// Total events seen (atomic — no lock contention in CGEventTap callback)
     total_events: Arc<AtomicU64>,
-    /// Verified hardware events
     verified_hardware: Arc<AtomicU64>,
-    /// Rejected synthetic events
     rejected_synthetic: Arc<AtomicU64>,
     run_loop: Arc<Mutex<Option<RunLoopHandle>>>,
 }
 
 impl MacOSKeystrokeCapture {
-    /// Create a new macOS keystroke capture instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -346,7 +320,6 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
                             EventVerificationResult::Synthetic => false,
                         };
 
-                        // Update stats via atomics (lock-free in CGEventTap callback)
                         total_events.fetch_add(1, Ordering::Relaxed);
                         if is_hardware {
                             verified_hardware.fetch_add(1, Ordering::Relaxed);
@@ -429,7 +402,7 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
     fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
-        // C-001 fix: release only after thread exits to prevent use-after-free
+        // C-001: defer CFRelease until after thread exits to prevent use-after-free
         let ptr = self
             .run_loop
             .lock()

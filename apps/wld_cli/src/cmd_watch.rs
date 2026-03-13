@@ -84,7 +84,7 @@ async fn cmd_watch(action: Option<WatchAction>) -> Result<()> {
             }
 
             let mut config = load_watch_config()?;
-            let path_str = abs_path.to_string_lossy().to_string();
+            let path_str = abs_path.to_string_lossy().into_owned();
 
             if config.folders.iter().any(|f| f.path == path_str) {
                 println!("Folder already being watched: {}", path_str);
@@ -111,7 +111,7 @@ async fn cmd_watch(action: Option<WatchAction>) -> Result<()> {
                 eprintln!("Warning: could not canonicalize path: {e}");
                 path.clone()
             });
-            let path_str = abs_path.to_string_lossy().to_string();
+            let path_str = abs_path.to_string_lossy().into_owned();
 
             let mut config = load_watch_config()?;
             let before = config.folders.len();
@@ -225,7 +225,6 @@ pub(crate) async fn cmd_watch_smart(
     }
 }
 
-/// Cached state for the watcher to avoid repeated disk reads per checkpoint.
 struct WatcherState {
     vdf_params: vdf::Parameters,
     device_id: [u8; 16],
@@ -236,14 +235,12 @@ struct WatcherState {
 async fn run_watcher(config: &WatchConfig) -> Result<()> {
     let (tx, rx) = std_mpsc::channel();
 
-    // Use an atomic flag so Ctrl+C breaks the loop promptly (within 250ms)
-    // instead of waiting for the full recv_timeout duration.
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })
-    .ok(); // Best-effort — default Ctrl+C handler still works if this fails
+    .ok();
 
     let engine_config = ensure_dirs()?;
     let cached_vdf_params = load_vdf_params(&engine_config);
@@ -286,7 +283,6 @@ async fn run_watcher(config: &WatchConfig) -> Result<()> {
 
     let mut last_checkpoint: HashMap<PathBuf, Instant> = HashMap::new();
     let debounce_duration = Duration::from_secs(5);
-    // Evict debounce entries older than this to prevent unbounded HashMap growth
     let stale_entry_threshold = debounce_duration * 2;
 
     loop {
@@ -319,11 +315,10 @@ async fn run_watcher(config: &WatchConfig) -> Result<()> {
                                         );
                                     }
                                     Err(e) => {
-                                        let err_str = format!("{}", e);
+                                        let err_str = e.to_string();
                                         if err_str.contains("database is locked")
                                             || err_str.contains("SQLITE_BUSY")
                                         {
-                                            // DB locked by another process — skip, next save retries
                                             eprintln!(
                                                 "[{}] Skipped (database busy): {}",
                                                 Utc::now().format("%H:%M:%S"),
@@ -347,10 +342,6 @@ async fn run_watcher(config: &WatchConfig) -> Result<()> {
                 _ => {}
             },
             Err(std_mpsc::RecvTimeoutError::Timeout) => {
-                // CLI-L4: Periodic cleanup of stale debounce entries to prevent
-                // unbounded HashMap growth over long-running watch sessions.
-                // Use 2x debounce_duration so entries remain valid through the
-                // full debounce window and are only evicted once clearly stale.
                 let now = Instant::now();
                 last_checkpoint.retain(|_, last| now.duration_since(*last) < stale_entry_threshold);
             }
@@ -391,14 +382,14 @@ fn should_checkpoint(path: &Path, folder_patterns: &[(PathBuf, Vec<Pattern>)]) -
 
 fn auto_checkpoint(file_path: &Path, state: &mut WatcherState) -> Result<()> {
     let abs_path = fs::canonicalize(file_path)?;
-    let abs_path_str = abs_path.to_string_lossy().to_string();
+    let abs_path_str = abs_path.to_string_lossy().into_owned();
     let metadata = fs::metadata(&abs_path)?;
     if metadata.len() > 500_000_000 {
-        return Ok(()); // Skip very large files in watch mode
+        return Ok(());
     }
     let content = fs::read(&abs_path)?;
     if content.is_empty() {
-        return Ok(()); // Skip empty files — likely mid-write
+        return Ok(());
     }
     let content_hash: [u8; 32] = Sha256::digest(&content).into();
     let file_size = content.len() as i64;

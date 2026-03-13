@@ -9,11 +9,11 @@ use crate::util::ensure_dirs;
 
 pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
     let config = ensure_dirs()?;
-    let fingerprint_dir = config.fingerprint.storage_path.clone();
+    let fingerprint_dir = &config.fingerprint.storage_path;
 
     match action {
         FingerprintAction::Status => {
-            let manager = FingerprintManager::new(&fingerprint_dir)
+            let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
             let consent_manager = ConsentManager::new(&config.data_dir)
@@ -154,15 +154,13 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             config.fingerprint.voice_enabled = false;
             config.persist()?;
 
-            // Note: Voice data deletion would require iterating through profiles
-            // For now, just disable voice collection
             println!("Voice fingerprinting disabled.");
             println!("Voice data collection has been stopped.");
             println!("To delete existing voice data, delete profiles individually.");
         }
 
         FingerprintAction::Show { id } => {
-            let manager = FingerprintManager::new(&fingerprint_dir)
+            let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
             let profile_id: ProfileId = id.unwrap_or_else(|| {
@@ -205,7 +203,7 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
         }
 
         FingerprintAction::Compare { id1, id2 } => {
-            let manager = FingerprintManager::new(&fingerprint_dir)
+            let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
             let comparison = manager
@@ -231,7 +229,7 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
         }
 
         FingerprintAction::List => {
-            let manager = FingerprintManager::new(&fingerprint_dir)
+            let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
             let profiles = manager
@@ -275,7 +273,7 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 }
             }
 
-            let mut manager = FingerprintManager::new(&fingerprint_dir)
+            let mut manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
             manager

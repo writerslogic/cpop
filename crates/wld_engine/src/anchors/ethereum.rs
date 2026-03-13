@@ -34,7 +34,6 @@ pub struct EthereumProvider {
 }
 
 impl EthereumProvider {
-    /// Create a provider with explicit configuration.
     pub fn new(
         rpc_url: String,
         contract_address: String,
@@ -107,7 +106,6 @@ impl EthereumProvider {
         self.cached_address.clone()
     }
 
-    /// Send a JSON-RPC request to the Ethereum node.
     async fn rpc_call(
         &self,
         method: &str,
@@ -146,7 +144,6 @@ impl EthereumProvider {
         Ok(result["result"].clone())
     }
 
-    /// Fetch pending nonce for the signing address.
     async fn get_nonce(&self) -> Result<u64, AnchorError> {
         let address = self.address();
         let result = self
@@ -164,7 +161,6 @@ impl EthereumProvider {
             .map_err(|e| AnchorError::Network(format!("Failed to parse nonce: {e}")))
     }
 
-    /// Fetch current gas price via `eth_gasPrice`.
     async fn get_gas_price(&self) -> Result<u128, AnchorError> {
         let result = self.rpc_call("eth_gasPrice", serde_json::json!([])).await?;
 
@@ -176,7 +172,6 @@ impl EthereumProvider {
             .map_err(|e| AnchorError::Network(format!("Failed to parse gas price: {e}")))
     }
 
-    /// Estimate gas with a 20% safety buffer; falls back to 90k on error.
     async fn estimate_gas(&self, data: &[u8]) -> Result<u64, AnchorError> {
         let address = self.address();
         let result = self
@@ -205,7 +200,6 @@ impl EthereumProvider {
         }
     }
 
-    /// ABI-encode `anchor(bytes32)` calldata.
     fn encode_anchor_call(&self, content_hash: &[u8; 32]) -> Vec<u8> {
         let mut data = Vec::with_capacity(36);
         data.extend_from_slice(&ANCHOR_FUNCTION_SELECTOR);
@@ -213,7 +207,6 @@ impl EthereumProvider {
         data
     }
 
-    /// RLP-encode and sign an EIP-155 legacy transaction.
     fn sign_transaction(
         &self,
         nonce: u64,
@@ -277,7 +270,6 @@ impl EthereumProvider {
         Ok(signed.out().to_vec())
     }
 
-    /// Submit with automatic nonce-conflict retry (up to `MAX_NONCE_RETRIES`).
     async fn submit_transaction(&self, content_hash: &[u8; 32]) -> Result<String, AnchorError> {
         let data = self.encode_anchor_call(content_hash);
         let mut last_error = None;
@@ -340,7 +332,6 @@ impl EthereumProvider {
         }))
     }
 
-    /// Fetch transaction receipt via `eth_getTransactionReceipt`.
     async fn get_receipt(&self, txid: &str) -> Result<serde_json::Value, AnchorError> {
         self.rpc_call("eth_getTransactionReceipt", serde_json::json!([txid]))
             .await
@@ -458,7 +449,6 @@ impl AnchorProvider for EthereumProvider {
     }
 }
 
-/// Parse hex (with or without `0x` prefix) into bytes.
 /// Derive the checksumless Ethereum address from a signing key.
 fn derive_eth_address(signing_key: &SigningKey) -> String {
     let verifying_key = VerifyingKey::from(signing_key);

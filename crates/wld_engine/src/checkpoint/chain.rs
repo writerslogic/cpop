@@ -43,10 +43,8 @@ fn genesis_prev_hash(
     Ok(Sha256::digest(&cbor_bytes).into())
 }
 
-/// Mix an optional physics seed into a base VDF input.
-///
-/// When present, hashes the base input together with the physics seed to produce
-/// a new VDF input that is bound to both the chain state and the physical context.
+/// Mix an optional physics seed into a base VDF input, binding the chain
+/// state to the physical context.
 fn mix_physics_seed(base_input: [u8; 32], physics_seed: Option<[u8; 32]>) -> [u8; 32] {
     if let Some(seed) = physics_seed {
         let mut hasher = Sha256::new();
@@ -65,14 +63,11 @@ pub struct Chain {
     pub created_at: DateTime<Utc>,
     pub checkpoints: Vec<Checkpoint>,
     pub vdf_params: Parameters,
-    /// Entanglement mode for this chain (defaults to Legacy for backward compatibility)
     #[serde(default)]
     pub entanglement_mode: EntanglementMode,
-    /// Signature policy for checkpoint verification.
     /// Legacy chains deserialize as Optional; new chains default to Required.
     #[serde(default)]
     pub signature_policy: SignaturePolicy,
-    /// Signed chain metadata for anti-deletion verification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ChainMetadata>,
     #[serde(skip)]
@@ -84,14 +79,11 @@ impl Chain {
         Self::new_with_mode(document_path, vdf_params, EntanglementMode::Legacy)
     }
 
-    /// Set signature policy.
     pub fn with_signature_policy(mut self, policy: SignaturePolicy) -> Self {
         self.signature_policy = policy;
         self
     }
 
-    /// Create a chain with specified entanglement mode.
-    ///
     /// `EntanglementMode::Entangled` (WAR/1.1): each VDF is seeded by
     /// previous VDF output + jitter + document state.
     pub fn new_with_mode(
@@ -129,8 +121,7 @@ impl Chain {
         self.commit_internal(message, Some(vdf_duration))
     }
 
-    /// Shared commit logic. If `vdf_duration` is None, elapsed time since
-    /// the last checkpoint is used instead.
+    /// If `vdf_duration` is None, elapsed time since the last checkpoint is used.
     fn commit_internal(
         &mut self,
         message: Option<String>,
@@ -169,12 +160,7 @@ impl Chain {
     }
 
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
-    ///
     /// Prevents precomputation since each VDF depends on the previous VDF's actual output.
-    ///
-    /// When `physics` is provided, a physics seed is derived from the content
-    /// hash and physical context, then mixed into the VDF input for stronger
-    /// non-repudiation binding to the local hardware environment.
     pub fn commit_entangled(
         &mut self,
         message: Option<String>,
@@ -230,11 +216,6 @@ impl Chain {
     }
 
     /// Commit with full RFC-compliant structures (draft-condrey-rats-pop-01).
-    ///
-    /// Includes `VdfProofRfc`, `JitterBinding` (entropy + stats), and `TimeEvidence`.
-    ///
-    /// When `physics` is provided and the chain is in `Entangled` mode,
-    /// the physics seed is mixed into the VDF input for stronger non-repudiation.
     pub fn commit_rfc(
         &mut self,
         message: Option<String>,
@@ -307,7 +288,6 @@ impl Chain {
             )
         });
 
-        // Backward-compat jitter binding from RFC structure
         let jitter_binding = rfc_jitter.as_ref().map(|rj| JitterBinding {
             jitter_hash: rj.entropy_commitment.hash,
             session_id: format!("rfc-{}", ordinal),
@@ -315,9 +295,8 @@ impl Chain {
             physics_seed,
         });
 
-        // Derive spec-conformant SWF seed (draft-condrey-rats-pop)
+        // SWF seed derivation per draft-condrey-rats-pop
         let swf_seed = if ordinal == 0 {
-            // Genesis: H("PoP-SWF-Seed-v1" || CBOR(document-ref) || jitter-or-nonce)
             let doc_ref = DocumentRef {
                 content_hash: HashValue::sha256(content_hash.to_vec()),
                 filename: std::path::Path::new(&self.document_path)
@@ -333,16 +312,12 @@ impl Chain {
             let jitter_or_nonce = rfc_jitter
                 .as_ref()
                 .map(|j| j.entropy_commitment.hash)
-                .unwrap_or_else(|| {
-                    // CORE fallback: use content_hash as local nonce
-                    content_hash
-                });
+                .unwrap_or_else(|| content_hash);
             vdf::swf_seed_genesis(&doc_cbor, &jitter_or_nonce)
         } else if let Some(ref jb) = rfc_jitter {
-            // ENHANCED+: H("PoP-SWF-Seed-v1" || prev-hash || CBOR(intervals) || CBOR(physical-state))
             let intervals_cbor = crate::codec::cbor::encode(&jb.summary.sample_count)
                 .map_err(|e| Error::checkpoint(format!("SWF intervals CBOR: {e}")))?;
-            // PhysicalContext isn't Serialize; encode combined_hash as stand-in
+            // PhysicalContext isn't Serialize; use combined_hash as stand-in
             let phys_cbor = match physics {
                 Some(p) => crate::codec::cbor::encode(&p.combined_hash.to_vec())
                     .map_err(|e| Error::checkpoint(format!("SWF physics CBOR: {e}")))?,
@@ -350,11 +325,10 @@ impl Chain {
             };
             vdf::swf_seed_enhanced(&previous_hash, &intervals_cbor, &phys_cbor)
         } else {
-            // CORE fallback: H("PoP-SWF-Seed-v1" || prev-hash || local-nonce)
             vdf::swf_seed_core(&previous_hash, &content_hash)
         };
 
-        // Compute Argon2id SWF proof (draft-condrey-rats-pop, algorithm=20)
+        // Argon2id SWF proof per draft-condrey-rats-pop (algorithm=20)
         let argon2_swf = {
             let swf_params = vdf::swf_argon2::Argon2SwfParams {
                 iterations: self.vdf_params.min_iterations.max(3),
@@ -381,7 +355,7 @@ impl Chain {
         Ok(checkpoint)
     }
 
-    /// Verify the chain, returning `Err` on failure. See `verify_detailed()` for diagnostics.
+    /// Verify the chain, returning `Err` on failure.
     pub fn verify(&self) -> Result<()> {
         let report = self.verify_detailed();
         if report.valid {
@@ -393,9 +367,7 @@ impl Chain {
         }
     }
 
-    /// Full verification returning a `VerificationReport`.
-    ///
-    /// Lightweight hash-chain check (no VDF reverification). O(n) in checkpoints.
+    /// Lightweight hash-chain check (no VDF reverification).
     pub fn verify_hash_chain(&self) -> bool {
         for (i, cp) in self.checkpoints.iter().enumerate() {
             if cp.compute_hash() != cp.hash {
@@ -420,8 +392,6 @@ impl Chain {
         true
     }
 
-    /// Checks hash integrity, chain linkage, ordinal contiguity, VDF proofs,
-    /// signature policy, and metadata consistency.
     pub fn verify_detailed(&self) -> VerificationReport {
         let mut report = VerificationReport::new();
 
@@ -573,7 +543,6 @@ impl Chain {
                 }
             }
 
-            // Verify Argon2id SWF proof if present
             if let Some(swf) = &checkpoint.argon2_swf {
                 match vdf::swf_argon2::verify(swf) {
                     Ok(true) => {}
@@ -688,11 +657,7 @@ impl Chain {
         Ok(chain)
     }
 
-    /// Validate VDF proofs embedded in checkpoints after deserialization.
-    ///
-    /// Re-derives expected VDF inputs from the chain state and re-computes
-    /// each proof's hash chain to confirm the output matches. Returns an
-    /// error on the first invalid proof encountered.
+    /// Validate VDF proofs after deserialization to reject tampered chain files.
     fn validate_vdf_proofs(&self) -> Result<()> {
         for (i, checkpoint) in self.checkpoints.iter().enumerate() {
             let vdf = match checkpoint.vdf.as_ref() {

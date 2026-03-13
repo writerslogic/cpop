@@ -5,125 +5,78 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Result of Galton Invariant probe.
-///
-/// The Galton Board analogy: balls falling through a grid of pegs
-/// naturally produce a bell curve. Similarly, human timing naturally
-/// absorbs perturbations back to a mean rhythm.
+/// The Galton Board analogy: human timing naturally absorbs perturbations
+/// back to a mean rhythm, like balls falling through pegs produce a bell curve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaltonInvariantResult {
-    /// Absorption coefficient (α).
-    /// Higher values indicate faster return to baseline rhythm.
     /// Human range: α ∈ [0.3, 0.8]
     pub absorption_coefficient: f64,
 
-    /// Time constant τ for perturbation decay (milliseconds).
-    /// How long perturbation effects persist.
+    /// τ = 1/α, scaled to ms
     pub time_constant_ms: f64,
 
-    /// Asymmetry factor.
-    /// Ratio of recovery from acceleration vs. deceleration.
-    /// Humans typically show slight asymmetry (~1.1-1.3).
+    /// Recovery from acceleration vs. deceleration. Humans: ~1.1-1.3.
     pub asymmetry_factor: f64,
 
-    /// Standard error of the absorption estimate.
     pub std_error: f64,
-
-    /// Whether the result passes RFC validation.
     pub is_valid: bool,
-
-    /// Number of perturbations analyzed.
     pub perturbation_count: usize,
 }
 
 impl GaltonInvariantResult {
-    /// RFC-compliant range for absorption coefficient.
     pub const MIN_VALID_ALPHA: f64 = 0.3;
     pub const MAX_VALID_ALPHA: f64 = 0.8;
 
-    /// Check if absorption coefficient is biologically plausible.
     pub fn is_biologically_plausible(&self) -> bool {
         self.absorption_coefficient >= Self::MIN_VALID_ALPHA
             && self.absorption_coefficient <= Self::MAX_VALID_ALPHA
     }
 }
 
-/// Result of Reflex Gate probe.
-///
-/// Measures the neural pathway delay in responding to unexpected
-/// stimuli. Human reflexes have physiological lower bounds.
+/// Neural pathway delay in responding to unexpected stimuli.
+/// Human reflexes have physiological lower bounds (~100ms for visual).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflexGateResult {
-    /// Minimum observed response latency (milliseconds).
     /// Below ~100ms is physiologically implausible for visual stimuli.
     pub min_latency_ms: f64,
 
-    /// Mean response latency (milliseconds).
     pub mean_latency_ms: f64,
-
-    /// Latency standard deviation.
     pub std_latency_ms: f64,
 
-    /// Coefficient of variation (std/mean).
-    /// Humans typically show CV ∈ [0.15, 0.40].
+    /// Humans: CV ∈ [0.15, 0.40]
     pub coefficient_of_variation: f64,
 
-    /// Sequential dependency (correlation with previous response).
     /// Humans show mild positive correlation (~0.2-0.5).
     pub sequential_dependency: f64,
 
-    /// Whether the result passes RFC validation.
     pub is_valid: bool,
-
-    /// Number of reflex responses analyzed.
     pub response_count: usize,
 }
 
 impl ReflexGateResult {
-    /// Physiological minimum for visual stimulus response.
     pub const MIN_PHYSIOLOGICAL_LATENCY_MS: f64 = 100.0;
-
-    /// Expected range for reflex latency CV.
     pub const MIN_VALID_CV: f64 = 0.15;
     pub const MAX_VALID_CV: f64 = 0.40;
 
-    /// Check if reflex characteristics are physiologically plausible.
     pub fn is_biologically_plausible(&self) -> bool {
         self.min_latency_ms >= Self::MIN_PHYSIOLOGICAL_LATENCY_MS
             && self.coefficient_of_variation >= Self::MIN_VALID_CV
             && self.coefficient_of_variation <= Self::MAX_VALID_CV
     }
 
-    /// Check if responses are impossibly fast.
     pub fn has_superhuman_responses(&self) -> bool {
         self.min_latency_ms < Self::MIN_PHYSIOLOGICAL_LATENCY_MS
     }
 }
 
-/// A timing sample with optional perturbation marker.
 #[derive(Debug, Clone)]
 pub struct ProbeSample {
-    /// Timestamp in nanoseconds.
     pub timestamp_ns: i64,
-    /// Inter-event interval in milliseconds.
     pub interval_ms: f64,
-    /// Whether this sample was during a perturbation period.
     pub is_perturbed: bool,
-    /// Response to a stimulus (for reflex gate).
     pub is_stimulus_response: bool,
 }
 
-/// Analyze Galton Invariant from timing data.
-///
-/// Detects natural perturbations in the rhythm and measures
-/// how quickly the subject returns to baseline.
-///
-/// # Arguments
-/// * `samples` - Timing samples with perturbation markers
-/// * `baseline_interval_ms` - Expected baseline interval
-///
-/// # Returns
-/// * `GaltonInvariantResult` with absorption characteristics
 pub fn analyze_galton_invariant(
     samples: &[ProbeSample],
     baseline_interval_ms: f64,
@@ -178,7 +131,6 @@ pub fn analyze_galton_invariant(
     let absorption_coefficient: f64 =
         absorption_rates.iter().sum::<f64>() / absorption_rates.len() as f64;
 
-    // Calculate time constant (τ = 1/α, scaled to ms)
     let time_constant_ms = if absorption_coefficient > 0.0 {
         baseline_interval_ms / absorption_coefficient
     } else {
@@ -224,14 +176,12 @@ pub fn analyze_galton_invariant(
     })
 }
 
-/// Estimate exponential decay rate from a sequence.
 fn estimate_decay_rate(deviations: &[f64]) -> f64 {
     if deviations.len() < 2 {
         return 0.5;
     }
 
-    // Simple exponential decay fit: y = y0 * exp(-α * t)
-    // ln(y/y0) = -α * t
+    // Exponential decay fit: ln(y/y0) = -α * t
     let y0 = deviations[0].abs().max(0.001);
     let mut sum_rate = 0.0;
     let mut count = 0;
@@ -254,13 +204,6 @@ fn estimate_decay_rate(deviations: &[f64]) -> f64 {
     }
 }
 
-/// Analyze Reflex Gate from stimulus-response data.
-///
-/// # Arguments
-/// * `samples` - Samples with stimulus_response markers
-///
-/// # Returns
-/// * `ReflexGateResult` with latency characteristics
 pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, String> {
     let responses: Vec<f64> = samples
         .iter()
@@ -311,7 +254,6 @@ pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, 
     })
 }
 
-/// Calculate lag-1 autocorrelation.
 fn calculate_lag1_autocorrelation(data: &[f64]) -> f64 {
     let n = data.len();
     if n < 3 {
@@ -338,21 +280,15 @@ fn calculate_lag1_autocorrelation(data: &[f64]) -> f64 {
     }
 }
 
-/// Combined active probe results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveProbeResults {
-    /// Galton Invariant analysis (if available).
     pub galton: Option<GaltonInvariantResult>,
-    /// Reflex Gate analysis (if available).
     pub reflex: Option<ReflexGateResult>,
-    /// Combined validation score (0-1).
     pub combined_score: f64,
-    /// Whether all available probes passed validation.
     pub all_valid: bool,
 }
 
 impl ActiveProbeResults {
-    /// Create combined results from individual probe analyses.
     pub fn combine(
         galton: Option<GaltonInvariantResult>,
         reflex: Option<ReflexGateResult>,
@@ -412,7 +348,6 @@ mod tests {
                 if i == pert_idx {
                     interval += deviation;
                 } else if i > pert_idx && i < pert_idx + 5 {
-                    // Decay of perturbation effect
                     let decay = deviation * (0.5_f64).powi((i - pert_idx) as i32);
                     interval += decay;
                 }

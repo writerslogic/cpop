@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Shared utility functions for the WritersLogic CLI.
-
 use anyhow::{anyhow, Result};
 use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha256};
@@ -46,7 +44,6 @@ pub fn ensure_dirs() -> Result<WLDConfig> {
             }
         })?;
 
-        // The .writerslogic directory contains keys, events, and other sensitive data.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -64,12 +61,13 @@ pub fn ensure_dirs() -> Result<WLDConfig> {
 }
 
 pub fn load_vdf_params(config: &WLDConfig) -> VdfParameters {
-    VdfParameters::from(config.clone())
+    VdfParameters {
+        iterations_per_second: config.vdf.iterations_per_second,
+        min_iterations: config.vdf.min_iterations,
+        max_iterations: config.vdf.max_iterations,
+    }
 }
 
-// Note: No advisory lock on signing key file. Concurrent CLI instances
-// may read simultaneously, which is safe (read-only). Key writes only
-// happen during init/recover, which are user-initiated and unlikely to race.
 pub fn load_signing_key(dir: &Path) -> Result<SigningKey> {
     let key_path = dir.join("signing_key");
     let mut key_data = fs::read(&key_path).map_err(|e| match e.kind() {
@@ -172,11 +170,10 @@ pub fn validate_session_id(id: &str) -> Result<&str> {
 
 pub fn get_machine_id() -> String {
     hostname::get()
-        .map(|h| h.to_string_lossy().to_string())
+        .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
-/// Load the author DID from identity.json.
 pub fn load_did(dir: &Path) -> Result<String> {
     let identity_path = dir.join("identity.json");
     let data = fs::read_to_string(&identity_path)
@@ -189,7 +186,6 @@ pub fn load_did(dir: &Path) -> Result<String> {
         .ok_or_else(|| anyhow!("Identity file missing 'did' field"))
 }
 
-/// Write data to a file with restrictive permissions (0o600 on Unix).
 pub fn write_restrictive(path: &Path, data: &[u8]) -> Result<()> {
     #[cfg(unix)]
     {
@@ -211,7 +207,6 @@ pub fn write_restrictive(path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Load the WritersProof API key.
 pub fn load_api_key(dir: &Path) -> Result<String> {
     let key_path = dir.join("api_key");
     fs::read_to_string(&key_path)

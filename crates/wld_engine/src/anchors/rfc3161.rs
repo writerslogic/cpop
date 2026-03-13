@@ -151,8 +151,8 @@ impl Rfc3161Provider {
     }
 }
 
-// Minimal DER/CMS parsing helpers. Uses byte-range offsets to sidestep
-// lifetime issues with closure-based iteration.
+// DER/CMS parsing uses byte-range offsets to sidestep lifetime issues
+// with closure-based iteration.
 
 /// DER TLV as byte-range offsets into the source buffer.
 #[derive(Clone, Copy)]

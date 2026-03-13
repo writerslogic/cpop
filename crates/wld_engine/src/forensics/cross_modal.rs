@@ -13,9 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::types::EventData;
 use crate::jitter::SimpleJitterSample;
 
-/// Minimum events for cross-modal analysis.
 const MIN_EVENTS: usize = 10;
-/// Minimum jitter samples for cross-modal analysis.
 const MIN_JITTER_SAMPLES: usize = 20;
 
 /// Human typing rarely exceeds 15 chars/second sustained over 10+ seconds.
@@ -26,44 +24,25 @@ const MIN_EDIT_TO_JITTER_RATIO: f64 = 0.02;
 /// Maximum allowable gap between last jitter sample and last edit event (seconds).
 const MAX_TEMPORAL_DRIFT_SEC: f64 = 120.0;
 
-/// Default score for insufficient data.
 const INSUFFICIENT_SCORE: f64 = 0.5;
-/// Score for a failed binary check.
 const FAILED_CHECK_SCORE: f64 = 0.3;
-/// Minimum session duration (seconds) for growth rate analysis.
 const MIN_SESSION_DURATION_SEC: f64 = 10.0;
-/// Events-per-checkpoint lower bound (below = suspicious).
 const EVENTS_PER_CHECKPOINT_MIN: f64 = 0.5;
-/// Events-per-checkpoint upper bound (above = suspicious).
 const EVENTS_PER_CHECKPOINT_MAX: f64 = 200.0;
-/// Edit/jitter ratio above which coherence is fully passing.
 const EDIT_JITTER_RATIO_GOOD: f64 = 0.1;
-/// Score for marginal edit/jitter coherence.
 const COHERENCE_MARGINAL_SCORE: f64 = 0.6;
-/// Maximum score when edit/jitter ratio is below minimum.
 const COHERENCE_FAILED_MAX_SCORE: f64 = 0.4;
-/// Temporal drift (seconds) below which score is perfect.
 const DRIFT_PERFECT_SEC: f64 = 10.0;
-/// Score penalty fraction for moderate temporal drift.
 const DRIFT_MODERATE_PENALTY: f64 = 0.4;
-/// Large-drift denominator (seconds beyond MAX_TEMPORAL_DRIFT_SEC).
 const DRIFT_LARGE_DIVISOR: f64 = 600.0;
-/// Maximum score for very large temporal drift.
 const DRIFT_LARGE_MAX_SCORE: f64 = 0.3;
-/// Keystroke/content ratio threshold for passing.
 const KS_CONTENT_MIN: f64 = 0.5;
-/// Jitter/keystroke ratio threshold for passing.
 const JITTER_KS_MIN: f64 = 0.3;
-/// Keystroke/content ratio for optimal score.
 const KS_CONTENT_OPTIMAL: f64 = 1.0;
-/// Jitter/keystroke ratio for optimal score.
 const JITTER_KS_OPTIMAL: f64 = 0.8;
-/// Score for passing but non-optimal entanglement.
 const ENTANGLEMENT_MARGINAL_SCORE: f64 = 0.6;
-/// Score for failed entanglement check.
 const ENTANGLEMENT_FAILED_SCORE: f64 = 0.2;
 
-/// Cross-modal consistency input bundle.
 pub struct CrossModalInput<'a> {
     pub events: &'a [EventData],
     pub jitter_samples: Option<&'a [SimpleJitterSample]>,
@@ -73,7 +52,6 @@ pub struct CrossModalInput<'a> {
     pub session_duration_sec: f64,
 }
 
-/// Cross-modal consistency result.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CrossModalResult {
     /// Overall consistency score [0.0, 1.0]; higher = more consistent.
@@ -82,7 +60,6 @@ pub struct CrossModalResult {
     pub verdict: CrossModalVerdict,
 }
 
-/// Individual cross-modal consistency check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossModalCheck {
     pub name: String,
@@ -91,21 +68,16 @@ pub struct CrossModalCheck {
     pub detail: String,
 }
 
-/// Cross-modal verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CrossModalVerdict {
-    /// All cross-modal checks pass.
     Consistent,
-    /// Some checks raise warnings.
     Marginal,
     /// Multiple channels are inconsistent -- likely forgery.
     Inconsistent,
-    /// Insufficient data to determine.
     #[default]
     Insufficient,
 }
 
-/// Run all cross-modal consistency checks.
 pub fn analyze_cross_modal(input: &CrossModalInput<'_>) -> CrossModalResult {
     let mut checks = Vec::new();
 

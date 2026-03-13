@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Verify command implementation for the WritersLogic CLI.
-//!
-//! Supports verification of evidence packets (JSON), CWAR blocks (.cwar),
-//! and secure database files.
-
 use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::PathBuf;
@@ -139,7 +134,6 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
         let data = fs::read(file_path).context("Failed to read CPOP file")?;
         match wld_engine::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(&data) {
             Ok(packet) => {
-                // Validate structure and field constraints per CDDL schema
                 match packet.validate() {
                     Ok(()) => {
                         println!("[OK] CPOP evidence packet VERIFIED");

@@ -456,7 +456,6 @@ pub fn ffi_export_c2pa_manifest(
         };
     }
 
-    // Read evidence packet
     let evidence_bytes = match std::fs::read(&evidence_file) {
         Ok(b) => b,
         Err(e) => {
@@ -468,7 +467,6 @@ pub fn ffi_export_c2pa_manifest(
         }
     };
 
-    // Decode evidence to get packet metadata for the assertion
     let evidence_packet = match decode_evidence_for_c2pa(&evidence_bytes) {
         Ok(p) => p,
         Err(e) => {
@@ -480,7 +478,6 @@ pub fn ffi_export_c2pa_manifest(
         }
     };
 
-    // Hash the original document
     let doc_hash = match crate::crypto::hash_file(&doc_file) {
         Ok(h) => h,
         Err(e) => {
@@ -498,7 +495,6 @@ pub fn ffi_export_c2pa_manifest(
         .map(|s| s.to_string());
     let doc_title = doc_filename.clone();
 
-    // Build C2PA manifest
     let mut builder =
         wld_protocol::c2pa::C2paManifestBuilder::new(evidence_packet, evidence_bytes, doc_hash);
     if let Some(ref name) = doc_filename {
@@ -508,7 +504,6 @@ pub fn ffi_export_c2pa_manifest(
         builder = builder.title(title);
     }
 
-    // Sign with device key (TPM/Secure Enclave/software fallback)
     let provider = crate::tpm::detect_provider();
     let signer = crate::tpm::TpmSigner::new(provider);
 
@@ -585,8 +580,6 @@ fn decode_evidence_for_c2pa(
     let doc_hash = hex::decode(&doc.final_hash)
         .map_err(|e| format!("document.final_hash: invalid hex: {e}"))?;
 
-    // Derive a unique packet ID from the evidence content hash so each
-    // manifest gets a distinct instanceID / manifest label.
     let packet_id = {
         use sha2::{Digest, Sha256};
         let full_hash = Sha256::digest(data);

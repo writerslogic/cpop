@@ -30,20 +30,14 @@ pub struct Sentinel {
     pub(crate) current_focus: Arc<RwLock<Option<String>>>,
     pub(crate) running: Arc<AtomicBool>,
     pub(crate) signing_key: Arc<RwLock<Option<SigningKey>>>,
-    /// Accumulates keystroke timing for authorship fingerprinting
     pub(crate) activity_accumulator:
         Arc<RwLock<crate::fingerprint::ActivityFingerprintAccumulator>>,
     session_events_tx: broadcast::Sender<SessionEvent>,
     pub(crate) shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
-    /// Writing style voice collector (consent-gated)
     voice_collector: Arc<RwLock<Option<crate::fingerprint::VoiceCollector>>>,
-    /// Mouse idle jitter stats for behavioral fingerprinting
     mouse_idle_stats: Arc<RwLock<crate::platform::MouseIdleStats>>,
-    /// Mouse steganography engine
     mouse_stego_engine: Arc<RwLock<crate::platform::MouseStegoEngine>>,
-    /// Attestation nonce for current daemon session
     session_nonce: Arc<RwLock<Option<[u8; 32]>>>,
-    /// Bridge thread handles for clean shutdown
     bridge_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
 }
 
@@ -65,7 +59,6 @@ impl Sentinel {
             shadow: Arc::new(shadow),
             current_focus: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
-            // None until identity is loaded via set_signing_key() / set_hmac_key()
             signing_key: Arc::new(RwLock::new(None)),
             session_events_tx,
             shutdown_tx: Arc::new(Mutex::new(None)),
@@ -82,7 +75,6 @@ impl Sentinel {
         })
     }
 
-    /// Return existing or lazily generate a 32-byte attestation nonce.
     pub fn get_or_generate_nonce(&self) -> [u8; 32] {
         let mut nonce_lock = self.session_nonce.write_recover();
         if let Some(nonce) = *nonce_lock {
@@ -96,13 +88,11 @@ impl Sentinel {
         }
     }
 
-    /// Clear the session nonce, forcing regeneration on next access.
     pub fn reset_nonce(&self) {
         let mut nonce_lock = self.session_nonce.write_recover();
         *nonce_lock = None;
     }
 
-    /// Enable voice fingerprinting. Requires prior user consent.
     pub fn enable_voice_fingerprinting(&self) {
         let mut collector = self.voice_collector.write_recover();
         if collector.is_none() {
@@ -110,20 +100,17 @@ impl Sentinel {
         }
     }
 
-    /// Disable voice fingerprinting and drop the collector.
     pub fn disable_voice_fingerprinting(&self) {
         let mut collector = self.voice_collector.write_recover();
         *collector = None;
     }
 
-    /// Snapshot the current activity fingerprint.
     pub fn current_activity_fingerprint(&self) -> crate::fingerprint::ActivityFingerprint {
         self.activity_accumulator
             .read_recover()
             .current_fingerprint()
     }
 
-    /// Snapshot the current voice fingerprint, if enabled.
     pub fn current_voice_fingerprint(&self) -> Option<crate::fingerprint::VoiceFingerprint> {
         self.voice_collector
             .read_recover()
@@ -131,22 +118,18 @@ impl Sentinel {
             .map(|c| c.current_fingerprint())
     }
 
-    /// Clone the current mouse idle jitter statistics.
     pub fn mouse_idle_stats(&self) -> crate::platform::MouseIdleStats {
         self.mouse_idle_stats.read_recover().clone()
     }
 
-    /// Reset mouse idle statistics to empty state.
     pub fn reset_mouse_idle_stats(&self) {
         *self.mouse_idle_stats.write_recover() = crate::platform::MouseIdleStats::new();
     }
 
-    /// Access the mouse steganography engine.
     pub fn mouse_stego_engine(&self) -> &Arc<RwLock<crate::platform::MouseStegoEngine>> {
         &self.mouse_stego_engine
     }
 
-    /// Re-derive the mouse steganography seed from the current signing key.
     fn update_mouse_stego_seed(&self) {
         let guard = self.signing_key.read_recover();
         if let Some(key) = guard.as_ref() {
@@ -158,13 +141,11 @@ impl Sentinel {
         }
     }
 
-    /// Set the signing key (also re-seeds mouse steganography).
     pub fn set_signing_key(&self, key: SigningKey) {
         *self.signing_key.write_recover() = Some(key);
         self.update_mouse_stego_seed();
     }
 
-    /// Set signing key from a 32-byte HMAC key. Silently ignores wrong-length keys.
     pub fn set_hmac_key(&self, key: Vec<u8>) {
         if key.len() == 32 {
             let mut bytes: [u8; 32] = match key.try_into() {
@@ -182,7 +163,6 @@ impl Sentinel {
         }
     }
 
-    /// Start the sentinel event loop (focus, keystroke, mouse capture).
     pub async fn start(&self) -> Result<()> {
         if self.running.swap(true, Ordering::SeqCst) {
             return Err(SentinelError::AlreadyRunning);
@@ -395,7 +375,6 @@ impl Sentinel {
         Ok(())
     }
 
-    /// Stop the sentinel daemon and clean up shadow buffers.
     pub async fn stop(&self) -> Result<()> {
         if !self.running.swap(false, Ordering::SeqCst) {
             return Ok(());
@@ -437,22 +416,18 @@ impl Sentinel {
         self.current_focus.read_recover().clone()
     }
 
-    /// Subscribe to session lifecycle events (started, focused, ended, etc.).
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
         self.session_events_tx.subscribe()
     }
 
-    /// Create a shadow buffer for an unsaved document.
     pub fn create_shadow(&self, app_name: &str, window_title: &str) -> Result<String> {
         self.shadow.create(app_name, window_title)
     }
 
-    /// Update shadow buffer content.
     pub fn update_shadow_content(&self, shadow_id: &str, content: &[u8]) -> Result<()> {
         self.shadow.update(shadow_id, content)
     }
 
-    /// Check platform availability (permissions, API support).
     pub fn available(&self) -> (bool, String) {
         #[cfg(target_os = "macos")]
         {
@@ -474,7 +449,6 @@ impl Sentinel {
         }
     }
 
-    /// Begin witnessing a file. Called internally from StartWitnessing IPC.
     pub fn start_witnessing(
         &self,
         file_path: &Path,
@@ -602,7 +576,6 @@ impl Sentinel {
     }
 
     pub fn start_time(&self) -> Option<SystemTime> {
-        // Start time tracked in DaemonState, not here
         None
     }
 
@@ -612,7 +585,7 @@ impl Sentinel {
             .read_recover()
             .to_session_summary();
         if summary.keystroke_count < 10 {
-            return Ok(()); // Need at least 10 keystrokes for meaningful baseline
+            return Ok(());
         }
 
         let guard = self.signing_key.read_recover();

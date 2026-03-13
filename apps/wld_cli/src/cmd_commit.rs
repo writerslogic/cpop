@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Implementation of the `commit` subcommand.
-
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
@@ -51,9 +49,8 @@ pub(crate) fn cmd_commit(
             e
         )
     })?;
-    let abs_path_str = abs_path.to_string_lossy().to_string();
+    let abs_path_str = abs_path.to_string_lossy().into_owned();
 
-    // Reject binary file types that cannot be meaningfully checkpointed
     if let Some(ext) = abs_path.extension().and_then(|e| e.to_str()) {
         let ext_lower = ext.to_lowercase();
         if BINARY_EXTENSIONS.contains(&ext_lower.as_str()) {
@@ -190,7 +187,6 @@ pub(crate) fn cmd_commit(
     Ok(())
 }
 
-/// Smart commit — handles auto-init and file selection.
 pub(crate) async fn cmd_commit_smart(
     file: Option<PathBuf>,
     message: Option<String>,
@@ -241,12 +237,11 @@ pub(crate) async fn cmd_commit_smart(
     Ok(())
 }
 
-/// Anchor the latest evidence hash in the WritersProof transparency log.
 async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
     use wld_engine::writersproof::{AnchorMetadata, AnchorRequest, WritersProofClient};
 
     let abs_path = fs::canonicalize(file_path)?;
-    let abs_path_str = abs_path.to_string_lossy().to_string();
+    let abs_path_str = abs_path.to_string_lossy().into_owned();
 
     let db = open_secure_store()?;
     let events = db.get_events_for_file(&abs_path_str)?;
@@ -256,7 +251,6 @@ async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
 
     let evidence_hash = hex::encode(latest.event_hash);
 
-    // Load signing key for the anchor signature
     let config = ensure_dirs()?;
     let dir = &config.data_dir;
     let signing_key = crate::util::load_signing_key(dir)?;
@@ -281,7 +275,7 @@ async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
             metadata: Some(AnchorMetadata {
                 document_name: file_path
                     .file_name()
-                    .map(|n| n.to_string_lossy().to_string()),
+                    .map(|n| n.to_string_lossy().into_owned()),
                 tier: Some("anchored".into()),
             }),
         }),
@@ -301,7 +295,6 @@ async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Select a file for commit interactively.
 fn select_file_for_commit() -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
 

@@ -196,7 +196,9 @@ impl SecureStorage {
             })?;
             encoded.zeroize();
             Ok(Some(Zeroizing::new(decoded)))
-        } else if status == -25300 {
+        } else if status == -25300
+        /* errSecItemNotFound */
+        {
             Ok(None)
         } else {
             Err(anyhow!("Keychain search failed with status: {}", status))
@@ -236,7 +238,9 @@ impl SecureStorage {
         ]);
 
         let status = unsafe { SecItemDelete(query.as_concrete_TypeRef()) };
-        if status == security_framework_sys::base::errSecSuccess || status == -25300 {
+        if status == security_framework_sys::base::errSecSuccess || status == -25300
+        /* errSecItemNotFound */
+        {
             Ok(())
         } else {
             Err(anyhow!("Keychain delete failed with status: {}", status))
@@ -252,7 +256,6 @@ impl SecureStorage {
             };
             let data_dir = home_dir.join(".writerslogic");
 
-            // Reject paths with traversal components (H-069)
             if data_dir
                 .components()
                 .any(|c| matches!(c, std::path::Component::ParentDir))

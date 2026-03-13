@@ -7,8 +7,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Validation status for biology invariant claims.
-///
 /// ```cddl
 /// validation-status = &(
 ///   empirical: 1,      ; Validated against empirical data
@@ -41,10 +39,6 @@ impl ValidationStatus {
     }
 }
 
-/// RFC-compliant biology-invariant-claim structure.
-///
-/// Captures behavioral biometric evidence with scored confidence
-/// in millibits (1/1000 of a bit of information).
 /// ```cddl
 /// biology-invariant-claim = {
 ///   1: validation-status,                    ; How the claim was validated
@@ -90,7 +84,6 @@ pub struct BiologyInvariantClaim {
     pub anomaly_flags: Option<Vec<AnomalyFlag>>,
 }
 
-/// Scoring parameters for biology invariant calculation.
 /// ```cddl
 /// biology-scoring-parameters = {
 ///   1: float64,        ; Hurst weight (w_H)
@@ -135,7 +128,6 @@ impl Default for BiologyScoringParameters {
     }
 }
 
-/// Raw behavioral measurements.
 /// ```cddl
 /// biology-measurements = {
 ///   1: uint,           ; Sample count
@@ -180,10 +172,7 @@ pub struct BiologyMeasurements {
     pub typing_rate: f64,
 }
 
-/// Pink noise (1/f) spectral analysis.
-///
-/// Human typing exhibits characteristic 1/f noise with spectral slope
-/// α between 0.8 and 1.2.
+/// Human typing: 1/f noise with α ∈ [0.8, 1.2].
 /// ```cddl
 /// pink-noise-analysis = {
 ///   1: float64,        ; Spectral slope (α)
@@ -218,9 +207,7 @@ impl PinkNoiseAnalysis {
     }
 }
 
-/// Error topology analysis.
-///
-/// Composite score: S = 0.4*ρ_gap + 0.4*H + 0.2*adj_phys.
+/// S = 0.4*ρ_gap + 0.4*H + 0.2*adj_phys
 /// ```cddl
 /// error-topology = {
 ///   1: float64,        ; Gap ratio (ρ_gap)
@@ -267,7 +254,6 @@ impl ErrorTopology {
     }
 }
 
-/// Detected suspicious pattern flag.
 /// ```cddl
 /// anomaly-flag = {
 ///   1: anomaly-type,   ; Type of anomaly
@@ -293,7 +279,6 @@ pub struct AnomalyFlag {
     pub timestamp_ms: Option<u64>,
 }
 
-/// Anomaly type discriminant.
 /// ```cddl
 /// anomaly-type = &(
 ///   white-noise-hurst: 1,           ; H ≈ 0.5 (no long-range dependence)

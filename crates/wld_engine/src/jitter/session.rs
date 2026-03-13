@@ -343,18 +343,16 @@ impl Session {
         Ok(session)
     }
 
-    /// Post-deserialization integrity checks to detect tampered session files.
     fn verify_loaded_integrity(&self) -> crate::error::Result<()> {
         self.verify_chain()?;
 
-        // Temporal: started_at must precede ended_at
         if let Some(ended) = self.ended_at {
             if ended < self.started_at {
                 return Err(Error::validation("ended_at precedes started_at"));
             }
         }
 
-        // Guard against far-future timestamps (5 min tolerance for clock skew)
+        // 5 min tolerance for clock skew
         let ceiling = Utc::now() + chrono::Duration::minutes(5);
         if self.started_at > ceiling {
             return Err(Error::validation("started_at is in the future"));

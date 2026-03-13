@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Smart defaults and helper functions for improved CLI user experience.
-//!
-//! This module provides utilities for:
-//! - Interactive prompts and confirmations
-//! - File selection from recently modified files
-//! - Path normalization and validation
-//! - Default value generation
-//! - Quick status display
-
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use std::fs;
@@ -127,7 +118,7 @@ pub fn select_file_from_list(files: &[PathBuf], prompt_prefix: &str) -> Result<O
     for (i, file) in files.iter().enumerate() {
         let display = file
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
+            .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file.display().to_string());
         println!("  [{}] {}", i + 1, display);
     }
@@ -186,7 +177,6 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
         let canonical = fs::canonicalize(&cleaned)
             .map_err(|e| anyhow!("Cannot access path {}: {}", cleaned.display(), e))?;
 
-        // On Windows, canonicalize returns UNC paths (\\?\C:\...) — strip the prefix
         #[cfg(target_os = "windows")]
         {
             let s = canonical.to_string_lossy();
@@ -201,10 +191,6 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Clean path by removing trailing slashes and collapsing duplicates.
-/// Note: Uses string operations via `to_string_lossy()` — non-UTF8 path
-/// components will be replaced with U+FFFD, which is acceptable for
-/// display and comparison purposes.
 fn clean_path(path: &Path) -> PathBuf {
     let path_str = path.to_string_lossy();
     let trimmed = path_str.trim_end_matches('/');
@@ -275,7 +261,7 @@ pub fn show_quick_status(
         for (path, ts, count) in recent.iter().take(5) {
             let name = Path::new(path)
                 .file_name()
-                .map(|n| n.to_string_lossy().to_string())
+                .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| path.clone());
             let ts_str = DateTime::from_timestamp_nanos(*ts).format("%m/%d %H:%M");
             println!("  {} ({} checkpoints, {})", name, count, ts_str);

@@ -40,7 +40,6 @@ impl ShadowManager {
         })
     }
 
-    /// Allocate a shadow buffer for an unsaved document.
     pub fn create(&self, app_name: &str, window_title: &str) -> Result<String> {
         use rand::Rng;
         let mut rng = rand::rng();
@@ -65,7 +64,6 @@ impl ShadowManager {
         Ok(id)
     }
 
-    /// Update the content of a shadow buffer
     pub fn update(&self, id: &str, content: &[u8]) -> Result<()> {
         let mut shadows = self.shadows.write_recover();
         let shadow = shadows
@@ -79,12 +77,10 @@ impl ShadowManager {
         Ok(())
     }
 
-    /// Get the file path for a shadow buffer
     pub fn get_path(&self, id: &str) -> Option<PathBuf> {
         self.shadows.read_recover().get(id).map(|s| s.path.clone())
     }
 
-    /// Delete a shadow buffer
     pub fn delete(&self, id: &str) -> Result<()> {
         if let Some(shadow) = self.shadows.write_recover().remove(id) {
             if let Err(e) = fs::remove_file(&shadow.path) {
@@ -94,7 +90,7 @@ impl ShadowManager {
         Ok(())
     }
 
-    /// Migrate a shadow buffer to a real file path (when unsaved document is saved)
+    /// Migrate a shadow buffer to a real file path when the document is saved.
     pub fn migrate(&self, id: &str, _new_path: &str) -> Result<()> {
         if let Some(shadow) = self.shadows.write_recover().remove(id) {
             if let Err(e) = fs::remove_file(&shadow.path) {
@@ -104,7 +100,6 @@ impl ShadowManager {
         Ok(())
     }
 
-    /// Remove all shadow buffers
     pub fn cleanup_all(&self) {
         let mut shadows = self.shadows.write_recover();
         for shadow in shadows.values() {
@@ -115,7 +110,6 @@ impl ShadowManager {
         shadows.clear();
     }
 
-    /// Remove shadow buffers older than max_age
     pub fn cleanup_old(&self, max_age: Duration) -> u32 {
         let cutoff = SystemTime::now() - max_age;
         let mut shadows = self.shadows.write_recover();
@@ -136,7 +130,6 @@ impl ShadowManager {
         removed
     }
 
-    /// List all active shadow buffers
     pub fn list(&self) -> Vec<(String, String, String)> {
         self.shadows
             .read_recover()

@@ -18,49 +18,29 @@
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 
-/// Minimum number of data points for spectral analysis.
 const MIN_SPECTRAL_SAMPLES: usize = 32;
-
-/// Floor power value; bins below this are excluded from log-log regression.
 const MIN_POWER_THRESHOLD: f64 = 1e-20;
-
-/// Minimum number of valid frequency bins for a meaningful regression.
 const MIN_FREQ_BINS: usize = 5;
 
-/// Slope classification boundaries (ascending).
 const SLOPE_WHITE_MAX: f64 = 0.3;
 const SLOPE_PINKISH_WHITE_MAX: f64 = 0.8;
 const SLOPE_PINK_MAX: f64 = 1.2;
 const SLOPE_PINKISH_BROWN_MAX: f64 = 1.8;
 const SLOPE_BROWN_MAX: f64 = 2.2;
 
-/// Multiplier of mean power used for peak detection in PSD.
 const PEAK_DETECTION_MULTIPLIER: f64 = 3.0;
 
-/// Result of pink noise analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinkNoiseAnalysis {
-    /// Spectral slope (α) from log-log regression of power spectrum.
-    /// α ≈ 1.0 for ideal pink noise.
+    /// α ≈ 1.0 for ideal pink noise (from log-log PSD regression).
     pub spectral_slope: f64,
-
-    /// Standard error of the slope estimate.
     pub slope_std_error: f64,
-
-    /// R-squared value indicating fit quality.
     pub r_squared: f64,
-
-    /// Interpretation of the spectral characteristics.
     pub noise_type: NoiseType,
-
-    /// Whether the signal passes RFC validation as biologically plausible.
     pub is_valid: bool,
-
-    /// Dominant frequency components (Hz) if any stand out.
     pub dominant_frequencies: Vec<f64>,
 }
 
-/// Classification of noise type based on spectral slope.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NoiseType {
     /// α ≈ 0: White noise (flat spectrum) - random, no memory.
@@ -78,37 +58,22 @@ pub enum NoiseType {
 }
 
 impl PinkNoiseAnalysis {
-    /// RFC-compliant range for biological plausibility.
     pub const MIN_VALID_SLOPE: f64 = 0.8;
     pub const MAX_VALID_SLOPE: f64 = 1.2;
 
-    /// Check if the spectral slope indicates biologically plausible patterns.
     pub fn is_biologically_plausible(&self) -> bool {
         self.spectral_slope >= Self::MIN_VALID_SLOPE && self.spectral_slope <= Self::MAX_VALID_SLOPE
     }
 
-    /// Check if the signal appears to be white noise (suspicious).
     pub fn is_white_noise(&self) -> bool {
         self.spectral_slope < SLOPE_WHITE_MAX
     }
 
-    /// Check if the signal appears to be over-smoothed (suspicious).
     pub fn is_over_smoothed(&self) -> bool {
         self.spectral_slope > SLOPE_PINKISH_BROWN_MAX
     }
 }
 
-/// Analyze a time series for pink noise characteristics.
-///
-/// Uses FFT to compute power spectral density, then fits log-log
-/// regression to determine spectral slope.
-///
-/// # Arguments
-/// * `data` - Time series data (e.g., inter-event intervals)
-/// * `sample_rate` - Sampling rate in Hz (for frequency axis)
-///
-/// # Returns
-/// * `PinkNoiseAnalysis` with spectral characteristics
 pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAnalysis, String> {
     let n = data.len();
     if n < MIN_SPECTRAL_SAMPLES {
@@ -135,11 +100,8 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
         return Err("Insufficient valid frequency bins for analysis".to_string());
     }
 
-    // Linear regression: log(P) = -α * log(f) + c
+    // log(P) = -α * log(f) + c, so spectral slope = -regression slope
     let (slope, _intercept, r_squared, std_error) = linear_regression(&log_freq, &log_power)?;
-
-    // Spectral slope is negative of regression slope
-    // (since P ∝ 1/f^α means log(P) = -α*log(f) + c)
     let spectral_slope = -slope;
 
     let noise_type = classify_noise_type(spectral_slope);
@@ -158,7 +120,6 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
     })
 }
 
-/// Classify noise type based on spectral slope.
 fn classify_noise_type(slope: f64) -> NoiseType {
     if slope < SLOPE_WHITE_MAX {
         NoiseType::White
@@ -175,7 +136,6 @@ fn classify_noise_type(slope: f64) -> NoiseType {
     }
 }
 
-/// In-place Cooley-Tukey radix-2 FFT. Input length must be a power of 2.
 fn fft_radix2(real: &mut [f64], imag: &mut [f64]) {
     let n = real.len();
     debug_assert!(n.is_power_of_two() && imag.len() == n);
@@ -216,15 +176,12 @@ fn fft_radix2(real: &mut [f64], imag: &mut [f64]) {
     }
 }
 
-/// Compute power spectral density using discrete Fourier transform.
-///
-/// Uses a Cooley-Tukey radix-2 FFT for O(n log n) power calculation.
 fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
     let n = data.len();
 
     let fft_size = n.next_power_of_two();
 
-    // Apply Hann window to reduce spectral leakage
+    // Hann window to reduce spectral leakage
     let mut windowed: Vec<f64> = data
         .iter()
         .enumerate()
@@ -249,9 +206,6 @@ fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
     Ok(psd)
 }
 
-/// Find dominant frequencies in the power spectrum.
-///
-/// Returns frequencies of peaks that are significantly above the mean.
 fn find_dominant_frequencies(psd: &[f64], freq_step: f64) -> Vec<f64> {
     let n = psd.len();
     if n < MIN_FREQ_BINS {
@@ -260,7 +214,6 @@ fn find_dominant_frequencies(psd: &[f64], freq_step: f64) -> Vec<f64> {
 
     let nyquist_idx = n / 2;
 
-    // Calculate mean power (excluding DC)
     let mean_power: f64 = psd[1..nyquist_idx].iter().sum::<f64>() / (nyquist_idx - 1) as f64;
     let threshold = mean_power * PEAK_DETECTION_MULTIPLIER;
 
@@ -278,9 +231,7 @@ fn find_dominant_frequencies(psd: &[f64], freq_step: f64) -> Vec<f64> {
 
 use super::stats::linear_regression;
 
-/// Generate synthetic pink noise for testing.
-///
-/// Uses the Voss-McCartney algorithm for 1/f noise generation.
+/// Voss-McCartney algorithm for 1/f noise generation.
 pub fn generate_pink_noise(length: usize, seed: u64) -> Vec<f64> {
     let mut state = seed;
     let mut next_random = || {

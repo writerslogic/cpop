@@ -59,7 +59,7 @@ async fn run() -> Result<()> {
         if let Ok(dir) = util::writerslogic_dir() {
             if let Ok(config) = wld_engine::config::WLDConfig::load_or_default(&dir) {
                 if config.sentinel.auto_start {
-                    let daemon_manager = wld_engine::DaemonManager::new(config.data_dir.clone());
+                    let daemon_manager = wld_engine::DaemonManager::new(&config.data_dir);
                     if !daemon_manager.is_running() {
                         if !out.quiet {
                             eprintln!("Starting WritersLogic daemon...");
@@ -109,7 +109,6 @@ async fn run() -> Result<()> {
             recover,
             json,
         }) => {
-            // Identity has its own --json flag; use whichever is set
             cmd_identity::cmd_identity(fingerprint, did, mnemonic, recover, json || out.json)?;
         }
         Some(Commands::Commit {

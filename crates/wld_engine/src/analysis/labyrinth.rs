@@ -9,49 +9,39 @@ use std::collections::HashSet;
 /// Result of labyrinth structure analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabyrinthAnalysis {
-    /// Estimated embedding dimension.
     /// Number of dimensions needed to unfold the attractor.
     pub embedding_dimension: usize,
 
     /// Optimal time delay (in samples).
     pub optimal_delay: usize,
 
-    /// Correlation dimension estimate.
-    /// Measures the complexity/fractal dimension of the attractor.
+    /// Fractal dimension of the attractor (Grassberger-Procaccia estimate).
     pub correlation_dimension: f64,
 
-    /// Betti numbers (β₀, β₁, β₂).
-    /// Topological invariants counting connected components, loops, and voids.
+    /// Betti numbers (β₀, β₁, β₂): connected components, loops, and voids.
     pub betti_numbers: [usize; 3],
 
-    /// Recurrence rate (percentage of recurrent points).
     pub recurrence_rate: f64,
 
-    /// Determinism (percentage of recurrent points forming diagonal lines).
     pub determinism: f64,
 
-    /// Whether the structure passes RFC validation.
     pub is_valid: bool,
 
-    /// Confidence score (0-1) based on data quality.
+    /// 0.0-1.0, based on data quantity and embedding parameter quality.
     pub confidence: f64,
 }
 
 impl LabyrinthAnalysis {
-    /// RFC-compliant range for embedding dimension of human motor signals.
+    /// RFC-compliant range for human motor signals (draft-condrey-rats-pop-01 §5.4).
     pub const MIN_EMBEDDING_DIM: usize = 3;
     pub const MAX_EMBEDDING_DIM: usize = 8;
 
-    /// Expected correlation dimension range for human motor control.
     pub const MIN_CORRELATION_DIM: f64 = 1.5;
     pub const MAX_CORRELATION_DIM: f64 = 5.0;
 
-    /// Minimum determinism for biological plausibility.
     pub const MIN_DETERMINISM: f64 = 0.3;
-    /// Maximum determinism for biological plausibility.
     pub const MAX_DETERMINISM: f64 = 0.95;
 
-    /// Check if labyrinth structure is characteristic of human input.
     pub fn is_biologically_plausible(&self) -> bool {
         self.embedding_dimension >= Self::MIN_EMBEDDING_DIM
             && self.embedding_dimension <= Self::MAX_EMBEDDING_DIM
@@ -62,16 +52,12 @@ impl LabyrinthAnalysis {
     }
 }
 
-/// Parameters for labyrinth analysis.
 #[derive(Debug, Clone)]
 pub struct LabyrinthParams {
-    /// Maximum embedding dimension to test.
     pub max_embedding_dim: usize,
-    /// Maximum time delay to test.
     pub max_delay: usize,
-    /// Recurrence threshold (fraction of standard deviation).
+    /// Fraction of standard deviation used as recurrence threshold.
     pub recurrence_threshold: f64,
-    /// Minimum line length for determinism calculation.
     pub min_line_length: usize,
 }
 
@@ -86,16 +72,12 @@ impl Default for LabyrinthParams {
     }
 }
 
-/// Minimum data points for labyrinth analysis.
 const MIN_LABYRINTH_DATA_POINTS: usize = 50;
-/// Hard limit on maximum embedding dimension parameter.
 const MAX_EMBEDDING_DIM_LIMIT: usize = 20;
-/// Hard limit on maximum delay parameter.
 const MAX_DELAY_LIMIT: usize = 50;
-/// FNN ratio below which the embedding dimension is sufficient.
+/// Below this FNN ratio, the embedding dimension is considered sufficient.
 const FNN_RATIO_THRESHOLD: f64 = 0.1;
 
-/// Perform labyrinth structure analysis on a time series.
 pub fn analyze_labyrinth(
     data: &[f64],
     params: &LabyrinthParams,
@@ -153,7 +135,7 @@ pub fn analyze_labyrinth(
     })
 }
 
-/// Find optimal time delay using first minimum of mutual information.
+/// First minimum of mutual information selects the optimal delay.
 fn find_optimal_delay(data: &[f64], max_delay: usize) -> usize {
     let n = data.len();
     if n < max_delay + 10 {
@@ -181,7 +163,6 @@ fn find_optimal_delay(data: &[f64], max_delay: usize) -> usize {
     max_delay / 2
 }
 
-/// Calculate mutual information between x(t) and x(t+delay).
 fn calculate_mutual_information(data: &[f64], delay: usize, num_bins: usize) -> f64 {
     let n = data.len() - delay;
     if n < num_bins * 2 {
@@ -219,7 +200,6 @@ fn calculate_mutual_information(data: &[f64], delay: usize, num_bins: usize) -> 
     mi
 }
 
-/// Estimate embedding dimension using false nearest neighbors.
 fn estimate_embedding_dimension(data: &[f64], delay: usize, max_dim: usize) -> usize {
     for dim in 1..=max_dim {
         let embedding = construct_embedding(data, dim, delay);
@@ -245,7 +225,6 @@ fn estimate_embedding_dimension(data: &[f64], delay: usize, max_dim: usize) -> u
 /// that are "false" due to projection from a higher-dimensional space.
 const FNN_DISTANCE_THRESHOLD: f64 = 15.0;
 
-/// Calculate false nearest neighbors ratio.
 fn calculate_fnn_ratio(embedding: &[Vec<f64>], original: &[f64], dim: usize, delay: usize) -> f64 {
     let n = embedding.len();
     if n < 10 {
@@ -303,7 +282,6 @@ fn calculate_fnn_ratio(embedding: &[Vec<f64>], original: &[f64], dim: usize, del
     }
 }
 
-/// Construct delay-coordinate embedding.
 fn construct_embedding(data: &[f64], dim: usize, delay: usize) -> Vec<Vec<f64>> {
     let n = data.len();
     let embed_length = n.saturating_sub((dim - 1) * delay);
@@ -325,11 +303,6 @@ fn construct_embedding(data: &[f64], dim: usize, delay: usize) -> Vec<Vec<f64>> 
     embedding
 }
 
-/// Compute recurrence quantification analysis metrics.
-///
-/// `min_line_length` controls the minimum diagonal line length in the recurrence
-/// matrix that counts toward determinism. Longer minimums filter out short
-/// (potentially spurious) diagonal structures.
 fn compute_recurrence_quantification(
     embedding: &[Vec<f64>],
     threshold: f64,
@@ -416,7 +389,6 @@ fn compute_recurrence_quantification(
     (recurrence_rate, determinism)
 }
 
-/// Estimate correlation dimension using Grassberger-Procaccia algorithm.
 fn estimate_correlation_dimension(embedding: &[Vec<f64>]) -> f64 {
     let n = embedding.len();
     if n < 20 {
@@ -488,7 +460,6 @@ fn estimate_correlation_dimension(embedding: &[Vec<f64>]) -> f64 {
     }
 }
 
-/// Estimate Betti numbers using simplicial complex approximation.
 fn estimate_betti_numbers(embedding: &[Vec<f64>], threshold: f64) -> [usize; 3] {
     let n = embedding.len();
     if n < 10 {
@@ -533,7 +504,6 @@ fn estimate_betti_numbers(embedding: &[Vec<f64>], threshold: f64) -> [usize; 3] 
     [beta_0, beta_1, beta_2]
 }
 
-/// Count connected components using union-find.
 fn count_connected_components(n: usize, edges: &HashSet<(usize, usize)>) -> usize {
     let mut parent: Vec<usize> = (0..n).collect();
 
@@ -566,7 +536,6 @@ fn count_connected_components(n: usize, edges: &HashSet<(usize, usize)>) -> usiz
     roots.len()
 }
 
-/// Calculate Euclidean distance between two points.
 fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
     a.iter()
         .zip(b.iter())
@@ -575,7 +544,6 @@ fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
         .sqrt()
 }
 
-/// Calculate confidence score based on data quality.
 fn calculate_confidence(n: usize, dim: usize, delay: usize) -> f64 {
     let data_factor = (n as f64 / 100.0).min(1.0);
 

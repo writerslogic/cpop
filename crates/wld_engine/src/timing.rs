@@ -36,7 +36,7 @@ impl Default for Config {
             pause_threshold_secs: 5.0,
             entropy_threshold_bits: 32.0,
             size_delta_threshold: 256,
-            max_time_interval_secs: 300.0, // 5 minutes max
+            max_time_interval_secs: 300.0,
         }
     }
 }
@@ -94,8 +94,6 @@ impl CheckpointTrigger {
         }
     }
 
-    /// The `jitter_micros` parameter is the timing jitter from the keystroke,
-    /// which contributes to entropy accumulation.
     pub fn record_keystroke(
         &mut self,
         jitter_micros: u32,
@@ -208,9 +206,6 @@ impl CheckpointTrigger {
         hasher.update(self.total_keystrokes.to_be_bytes());
         self.entropy_hash = hasher.finalize().into();
 
-        // TODO: Estimate entropy from jitter timing
-        // Assuming jitter has ~8 bits of entropy per sample (conservative)
-        // This is a simplified model; real entropy estimation is more complex
         self.accumulated_entropy += estimate_jitter_entropy(jitter_micros);
     }
 }
@@ -221,10 +216,7 @@ impl Default for CheckpointTrigger {
     }
 }
 
-/// Estimate entropy bits from jitter timing.
-/// TODO:
-/// This is a simplified model based on the jitter range.
-/// Real implementations might use more sophisticated entropy estimation.
+/// Estimate entropy bits from jitter timing via log2 of the microsecond value, clamped to [0.5, 8.0].
 fn estimate_jitter_entropy(jitter_micros: u32) -> f64 {
     if jitter_micros == 0 {
         0.0

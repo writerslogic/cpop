@@ -23,23 +23,19 @@ use super::wire_types::components::{SWF_MAX_DURATION_FACTOR, SWF_MIN_DURATION_FA
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VdfProofRfc {
-    /// Challenge input.
     #[serde(rename = "1", with = "hex_bytes")]
     pub challenge: [u8; 32],
 
-    /// VDF output (64 bytes, Wesolowski proof).
+    /// 64-byte Wesolowski proof output.
     #[serde(rename = "2", with = "hex_bytes")]
     pub output: [u8; 64],
 
-    /// Sequential iterations (T parameter).
     #[serde(rename = "3")]
     pub iterations: u64,
 
-    /// Measured wall clock duration (ms).
     #[serde(rename = "4")]
     pub duration_ms: u64,
 
-    /// Calibration reference for this proof.
     #[serde(rename = "5")]
     pub calibration: CalibrationAttestation,
 }
@@ -61,7 +57,6 @@ impl VdfProofRfc {
         }
     }
 
-    /// Theoretical minimum elapsed time (ms) based on calibration.
     pub fn minimum_elapsed_ms(&self) -> u64 {
         // Integer arithmetic avoids f64 precision / NaN edge cases
         if self.calibration.iterations_per_second > 0 {
@@ -74,7 +69,6 @@ impl VdfProofRfc {
         }
     }
 
-    /// Returns `true` if `duration_ms` >= `minimum_elapsed_ms` (5% tolerance).
     pub fn is_duration_consistent(&self) -> bool {
         let minimum = self.minimum_elapsed_ms();
         // 5% tolerance for timing variance
@@ -82,9 +76,7 @@ impl VdfProofRfc {
         self.duration_ms >= threshold
     }
 
-    /// Returns `true` if `duration_ms` falls within the IETF-mandated
-    /// `[SWF_MIN_DURATION_FACTOR, SWF_MAX_DURATION_FACTOR]` range relative
-    /// to the calibration-derived expected duration.
+    /// IETF-mandated `[SWF_MIN_DURATION_FACTOR, SWF_MAX_DURATION_FACTOR]` bounds check.
     pub fn is_duration_within_spec_bounds(&self) -> bool {
         let expected = self.minimum_elapsed_ms();
         if expected == 0 || self.duration_ms == 0 {
@@ -94,7 +86,7 @@ impl VdfProofRfc {
         (SWF_MIN_DURATION_FACTOR..=SWF_MAX_DURATION_FACTOR).contains(&ratio)
     }
 
-    /// Iterations-to-time ratio. Higher = faster hardware (potential gaming).
+    /// Higher ratio = faster hardware (potential gaming).
     pub fn iterations_per_ms(&self) -> f64 {
         if self.duration_ms > 0 {
             self.iterations as f64 / self.duration_ms as f64
@@ -103,7 +95,6 @@ impl VdfProofRfc {
         }
     }
 
-    /// Validate all fields; returns a list of errors.
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -151,9 +142,7 @@ impl VdfProofRfc {
     }
 }
 
-/// Calibration reference for evaluating VDF computation times
-/// across hardware configurations.
-///
+/// Calibration reference per draft-condrey-rats-pop-01.
 /// ```cddl
 /// calibration-attestation = {
 ///   1: uint,                   ; iterations-per-second (baseline rate)
@@ -165,24 +154,19 @@ impl VdfProofRfc {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CalibrationAttestation {
-    /// Baseline iterations per second for this hardware class.
     #[serde(rename = "1")]
     pub iterations_per_second: u64,
 
-    /// Hardware classification string.
-    /// Examples: "mobile-arm64", "desktop-x86_64", "server-xeon"
+    /// E.g. "mobile-arm64", "desktop-x86_64", "server-xeon".
     #[serde(rename = "2")]
     pub hardware_class: String,
 
-    /// Signed calibration attestation.
     #[serde(rename = "3", with = "hex_bytes_vec")]
     pub calibration_signature: Vec<u8>,
 
-    /// Unix timestamp when calibration was performed.
     #[serde(rename = "4")]
     pub timestamp: u64,
 
-    /// Optional calibration authority identifier.
     #[serde(rename = "5", skip_serializing_if = "Option::is_none")]
     pub calibration_authority: Option<String>,
 }
@@ -223,7 +207,7 @@ impl CalibrationAttestation {
         current_time.saturating_sub(self.timestamp)
     }
 
-    /// Returns `true` if calibration is less than 24 hours old.
+    /// 24-hour freshness window.
     pub fn is_fresh(&self, current_time: u64) -> bool {
         self.age_seconds(current_time) < 86400
     }
@@ -256,45 +240,30 @@ impl CalibrationAttestation {
     }
 }
 
-/// VDF algorithm identifier.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum VdfAlgorithm {
-    /// Wesolowski's VDF construction.
     #[default]
     Wesolowski,
-    /// Pietrzak's VDF construction.
     Pietrzak,
-    /// RSA-based VDF.
     Rsa2048,
 }
 
-/// Extended VDF proof with algorithm metadata for multi-algorithm scenarios.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VdfProofExtended {
-    /// Core VDF proof
     pub proof: VdfProofRfc,
-
-    /// Algorithm used
     pub algorithm: VdfAlgorithm,
-
-    /// Intermediate checkpoints for long VDFs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkpoints: Option<Vec<VdfCheckpoint>>,
 }
 
-/// Intermediate VDF checkpoint for partial verification of long proofs.
+/// Intermediate checkpoint for partial verification of long VDF proofs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VdfCheckpoint {
-    /// Iteration count at this point
     pub iteration: u64,
-
-    /// Output value at this point
     #[serde(with = "hex_bytes")]
     pub value: [u8; 64],
-
-    /// Wall clock elapsed to this point (ms)
     pub elapsed_ms: u64,
 }
 

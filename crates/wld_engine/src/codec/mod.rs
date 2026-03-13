@@ -28,7 +28,6 @@ pub const CBOR_TAG_COMPACT_REF: u64 = 1129336657;
 /// IANA Private Enterprise Number for WritersLogic Inc.
 pub const IANA_PEN: u32 = 65074;
 
-/// Evidence format for serialization/deserialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Format {
     /// CBOR encoding (RFC 8949 deterministic)
@@ -39,7 +38,6 @@ pub enum Format {
 }
 
 impl Format {
-    /// Returns the MIME type for this format.
     pub fn mime_type(&self) -> &'static str {
         match self {
             Format::Cbor => "application/cpop+cbor",
@@ -47,7 +45,6 @@ impl Format {
         }
     }
 
-    /// Returns the file extension for this format.
     pub fn extension(&self) -> &'static str {
         match self {
             Format::Cbor => "cpop",
@@ -55,7 +52,6 @@ impl Format {
         }
     }
 
-    /// Detect format from magic bytes.
     pub fn detect(data: &[u8]) -> Option<Self> {
         if data.is_empty() {
             return None;
@@ -70,7 +66,6 @@ impl Format {
     }
 }
 
-/// Codec error types.
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
     #[error("CBOR encoding error: {0}")]
@@ -93,10 +88,8 @@ pub enum CodecError {
     Validation(String),
 }
 
-/// Result type for codec operations.
 pub type Result<T> = std::result::Result<T, CodecError>;
 
-/// Encode a value to bytes using the specified format.
 pub fn encode<T: Serialize>(value: &T, format: Format) -> Result<Vec<u8>> {
     match format {
         Format::Cbor => cbor::encode(value),
@@ -104,7 +97,6 @@ pub fn encode<T: Serialize>(value: &T, format: Format) -> Result<Vec<u8>> {
     }
 }
 
-/// Decode a value from bytes using the specified format.
 pub fn decode<T: DeserializeOwned>(data: &[u8], format: Format) -> Result<T> {
     match format {
         Format::Cbor => cbor::decode(data),
@@ -112,14 +104,12 @@ pub fn decode<T: DeserializeOwned>(data: &[u8], format: Format) -> Result<T> {
     }
 }
 
-/// Decode a value from bytes, auto-detecting the format.
 pub fn decode_auto<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     let format = Format::detect(data)
         .ok_or_else(|| CodecError::InvalidFormat("unable to detect format".to_string()))?;
     decode(data, format)
 }
 
-/// Encode a value to a writer using the specified format.
 pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W, format: Format) -> Result<()> {
     match format {
         Format::Cbor => cbor::encode_to(value, writer),
@@ -127,7 +117,6 @@ pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W, format: Format) -
     }
 }
 
-/// Decode a value from a reader using the specified format.
 pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R, format: Format) -> Result<T> {
     match format {
         Format::Cbor => cbor::decode_from(reader),

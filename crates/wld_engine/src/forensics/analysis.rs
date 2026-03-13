@@ -19,25 +19,13 @@ use super::types::{
 };
 use super::velocity::{compute_session_stats, count_sessions_sorted};
 
-/// Perplexity score above this triggers an anomaly flag.
 const PERPLEXITY_ANOMALY_THRESHOLD: f64 = 15.0;
-
-/// Minimum IKI samples required for Hurst exponent analysis.
 const MIN_IKI_FOR_HURST: usize = 50;
-
-/// CV threshold below which steganographic confidence is low.
 const STEG_LOW_CONF: f64 = 0.3;
-
-/// Steganographic confidence value when CV indicates genuine variability.
 const STEG_HIGH_CONF: f64 = 0.95;
-
-/// Steganographic confidence value when CV is suspiciously low.
 const STEG_PENALTY: f64 = 0.20;
-
-/// Steg confidence above which a suspicious forgery triggers an anomaly.
 const STEG_ALERT_THRESHOLD: f64 = 0.8;
 
-/// Build a complete authorship profile from events and edit regions.
 pub fn build_profile(
     events: &[EventData],
     regions_by_event: &HashMap<i64, Vec<RegionData>>,
@@ -97,7 +85,6 @@ pub fn build_profile(
     }
 }
 
-/// Extended analysis input that includes cross-modal context.
 #[derive(Default)]
 pub struct AnalysisContext {
     pub document_length: i64,
@@ -105,7 +92,6 @@ pub struct AnalysisContext {
     pub checkpoint_count: u64,
 }
 
-/// Run comprehensive forensic analysis across all dimensions.
 pub fn analyze_forensics(
     events: &[EventData],
     regions: &HashMap<i64, Vec<RegionData>>,
@@ -123,7 +109,6 @@ pub fn analyze_forensics(
     )
 }
 
-/// Run comprehensive forensic analysis with full cross-modal context.
 pub fn analyze_forensics_ext(
     events: &[EventData],
     regions: &HashMap<i64, Vec<RegionData>>,

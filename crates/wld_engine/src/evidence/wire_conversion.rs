@@ -24,9 +24,9 @@ const JITTER_QUANTIZATION_MS: u64 = 5;
 
 /// Convert a checkpoint chain to a spec-conformant `EvidencePacketWire`.
 pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
-    // Determine entangled mode: ENHANCED/MAXIMUM use algorithm 21 per §entangled-mode-requirement
+    // ENHANCED/MAXIMUM tiers use entangled algorithm 21 per §entangled-mode-requirement
     let has_jitter_any = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
-    let use_entangled = has_jitter_any; // ENHANCED or MAXIMUM → algorithm 21
+    let use_entangled = has_jitter_any;
 
     let checkpoints: Vec<CheckpointWire> = chain
         .checkpoints
@@ -46,14 +46,13 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
         content_hash: HashValue::sha256(content_hash.to_vec()),
         filename,
         byte_length: content_size,
-        char_count: content_size, // best-effort
+        char_count: content_size, // byte_length used as proxy when char count unavailable
         salt_mode: None,
         salt_commitment: None,
     };
 
     let attestation_tier = Some(AttestationTier::SoftwareOnly);
-    // Determine content tier: ENHANCED requires jitter binding, MAXIMUM requires
-    // jitter + physical state on every checkpoint.
+    // ENHANCED = jitter binding; MAXIMUM = jitter + physical state on all checkpoints
     let has_jitter = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
     let all_have_physical = has_jitter
         && chain.checkpoints.iter().all(|cp| {
@@ -122,7 +121,6 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             claimed_duration: swf.claimed_duration.as_millis() as u64,
         }
     } else if let Some(vdf) = &cp.vdf {
-        // Legacy SHA-256 VDF (algorithm=10)
         ProcessProof {
             algorithm: ProofAlgorithm::SwfSha256,
             params: ProofParams {
@@ -137,7 +135,6 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             claimed_duration: vdf.duration.as_millis() as u64,
         }
     } else {
-        // Genesis checkpoint — no proof
         ProcessProof {
             algorithm: ProofAlgorithm::SwfSha256,
             params: ProofParams {
@@ -153,14 +150,12 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
         }
     };
 
-    // Build jitter-binding wire structure with HKDF-derived seal (ENHANCED+ tier)
     let merkle_root = &process_proof.merkle_root;
     let swf_input = &process_proof.input;
     let has_merkle_root = merkle_root.len() >= 32 && merkle_root.iter().any(|&b| b != 0);
 
     let (jitter_binding_wire, physical_state_wire) = if let Some(rfc_jitter) = &cp.rfc_jitter {
-        // Extract interval data: prefer raw_intervals, fall back to summary sample_count.
-        // §11.4: quantize to JITTER_QUANTIZATION_MS to limit timing side-channel leakage.
+        // §11.4: quantize intervals to limit timing side-channel leakage
         let intervals: Vec<u64> = rfc_jitter
             .raw_intervals
             .as_ref()
@@ -179,7 +174,6 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
         let entropy_estimate = (rfc_jitter.summary.entropy_bits * 100.0) as u64;
 
         let jitter_seal = if has_merkle_root {
-            // CBOR-encode intervals for seal input
             let intervals_cbor = crate::codec::cbor::encode(&intervals).unwrap_or_else(|e| {
                 log::warn!("CBOR encode intervals for jitter seal failed: {e}");
                 vec![]
@@ -195,7 +189,6 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             jitter_seal,
         };
 
-        // Build physical-state from jitter binding's physics seed if available
         let ps_wire = cp.jitter_binding.as_ref().and_then(|jb| {
             jb.physics_seed.map(|seed| PhysicalState {
                 thermal: vec![],
@@ -209,7 +202,6 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
         (None, None)
     };
 
-    // Compute entangled-mac when jitter-binding and a valid merkle root are present
     let entangled_mac = if let (true, Some(jb)) = (has_merkle_root, jitter_binding_wire.as_ref()) {
         let jb_cbor = crate::codec::cbor::encode(jb).unwrap_or_else(|e| {
             log::warn!("CBOR encode jitter-binding for entangled MAC failed: {e}");
@@ -250,7 +242,7 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             positions: None,
         },
         prev_hash: HashValue::sha256(cp.previous_hash.to_vec()),
-        checkpoint_hash: HashValue::zero_sha256(), // placeholder
+        checkpoint_hash: HashValue::zero_sha256(), // overwritten by compute_hash() below
         process_proof,
         jitter_binding: jitter_binding_wire,
         physical_state: physical_state_wire,
@@ -258,7 +250,7 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
         receipts: None,
         active_probes: None,
     };
-    // Compute spec-conformant checkpoint hash: SHA-256(CBOR(checkpoint \ {8}))
+    // SHA-256(CBOR(checkpoint \ {8})) per spec
     wire.checkpoint_hash = wire.compute_hash();
     wire
 }

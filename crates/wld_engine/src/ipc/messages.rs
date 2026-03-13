@@ -11,8 +11,6 @@ pub(crate) const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 /// into system directories. Called on every PathBuf deserialized from an IPC
 /// message before any handler touches the filesystem.
 fn validate_ipc_path(path: &Path) -> Result<(), String> {
-    // Require absolute paths — relative paths are ambiguous and could resolve
-    // differently depending on the daemon's cwd.
     if !path.is_absolute() {
         return Err(format!(
             "Relative path rejected (must be absolute): '{}'",
@@ -20,18 +18,14 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
         ));
     }
 
-    // Reject any ".." component (traversal) before canonicalization — canonicalize
-    // itself would follow symlinks/".." silently, but the raw path should never
-    // contain them in a legitimate GUI→engine message.
     for component in path.components() {
         if matches!(component, Component::ParentDir) {
             return Err(format!("Path traversal rejected: '{}'", path.display()));
         }
     }
 
-    // Block well-known system directories on the raw (pre-canonicalized) path.
-    // The sentinel's validate_path() does a second check after canonicalization;
-    // this is the first line of defense at the IPC boundary.
+    // First line of defense at IPC boundary; sentinel::validate_path() does a
+    // second check post-canonicalization.
     #[cfg(unix)]
     {
         let s = path.to_string_lossy();

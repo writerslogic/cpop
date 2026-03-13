@@ -25,14 +25,11 @@ pub enum IpcError {
     },
 }
 
-/// Peer credentials obtained from the socket
 pub struct PeerCreds {
     pub uid: u32,
     pub pid: i32,
 }
 
-/// Get peer credentials from a Unix socket.
-/// Uses platform-specific socket options (SO_PEERCRED on Linux, LOCAL_PEERCRED on macOS).
 #[cfg(target_os = "linux")]
 fn get_peer_creds(stream: &UnixStream) -> Result<PeerCreds, IpcError> {
     use nix::sys::socket::sockopt::PeerCredentials;
@@ -117,7 +114,6 @@ pub struct VerifiedConnection {
 }
 
 impl VerifiedConnection {
-    /// Additional verification: check peer process executable
     pub fn verify_peer_executable(&self, allowed_names: &[&str]) -> Result<(), IpcError> {
         #[cfg(target_os = "linux")]
         {

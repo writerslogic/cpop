@@ -22,7 +22,6 @@ use super::types::{
 
 use super::identity::derive_master_private_key;
 
-/// Shared session-creation logic used by all `start_session*` variants.
 pub(crate) fn start_session_inner(
     signing_key: &SigningKey,
     document_hash: [u8; 32],
@@ -84,7 +83,6 @@ pub(crate) fn start_session_inner(
     })
 }
 
-/// Start a session using a pre-derived master signing key (for sealed store path).
 pub fn start_session_with_key(
     master_key: &SigningKey,
     document_hash: [u8; 32],
@@ -215,11 +213,8 @@ impl Session {
         }
     }
 
-    /// End session with TPM binding — generates closing quote with chain-entangled nonce
-    /// and records end counter/reboot state for time-travel detection.
+    /// Generates closing quote with chain-entangled nonce for time-travel detection.
     pub fn end_with_provider(&mut self, provider: &dyn crate::tpm::Provider, mmr_root: &[u8; 32]) {
-        // Compute chain-entangled closing nonce:
-        // SHA256(session_id || final_checkpoint_hash || current_mmr_root)
         let final_checkpoint_hash = self
             .signatures
             .last()
@@ -252,10 +247,7 @@ impl Session {
     }
 
     /// Bind session start to TPM state with chain-entangled nonce.
-    /// Called after session creation when a TPM provider is available.
     pub fn bind_start_quote(&mut self, provider: &dyn crate::tpm::Provider, mmr_root: &[u8; 32]) {
-        // Compute chain-entangled start nonce:
-        // SHA256(session_id || document_hash || previous_mmr_root)
         let start_nonce = compute_entangled_nonce(
             &self.certificate.session_id,
             &self.certificate.document_hash,

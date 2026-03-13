@@ -60,26 +60,17 @@ impl IpcClient {
     }
 }
 
-/// Windows IPC client using Named Pipes.
-///
-/// Connects to the WritersLogic daemon via a Windows Named Pipe. The pipe name is
-/// derived from the provided path (e.g., a path ending in `writerslogic_ipc` becomes
-/// `\\.\pipe\writerslogic-writerslogic_ipc`). Uses the same length-prefixed bincode wire
-/// protocol as the Unix client: [4-byte LE length][payload].
-///
-/// The Windows WinUI app uses its own C# IPC client for the GUI. This Rust client
-/// is primarily used by `wld_cli` on Windows.
+/// Pipe name: `\\.\pipe\writerslogic-{filename}`. Same length-prefixed
+/// bincode wire protocol as the Unix client.
 #[cfg(target_os = "windows")]
 pub struct IpcClient {
-    // std::fs::File can open Windows Named Pipes as regular file handles.
-    // This avoids needing raw Win32 CreateFileW calls while supporting
-    // synchronous Read/Write via the std::io traits.
+    // std::fs::File can open Named Pipes as regular file handles,
+    // avoiding raw Win32 CreateFileW calls.
     pipe: std::fs::File,
 }
 
 #[cfg(target_os = "windows")]
 impl IpcClient {
-    /// Derives pipe name as `\\.\pipe\writerslogic-{filename}` from the given path.
     pub fn connect(path: PathBuf) -> Result<Self> {
         let pipe_name = format!(
             r"\\.\pipe\writerslogic-{}",
@@ -100,8 +91,6 @@ impl IpcClient {
                     e
                 )
             })?;
-
-        // Relies on the server's 5-second default pipe timeout.
 
         Ok(Self { pipe })
     }

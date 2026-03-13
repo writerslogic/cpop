@@ -56,16 +56,14 @@ pub struct BehavioralFingerprint {
     pub keystroke_interval_skewness: f64,
     pub keystroke_interval_kurtosis: f64,
 
-    // Note: We don't have key values in SimpleJitterSample, so we can't do digraphs yet.
-    // We will use interval buckets instead.
-    pub interval_buckets: Vec<f64>, // Histogram of intervals
+    pub interval_buckets: Vec<f64>,
 
     pub sentence_pause_mean: f64,
     pub paragraph_pause_mean: f64,
-    pub thinking_pause_frequency: f64, // Pauses > 2 seconds
+    pub thinking_pause_frequency: f64,
 
-    pub burst_length_mean: f64,    // Characters between pauses
-    pub burst_speed_variance: f64, // Speed changes within bursts
+    pub burst_length_mean: f64,
+    pub burst_speed_variance: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +83,6 @@ pub enum ForgeryFlag {
 }
 
 impl BehavioralFingerprint {
-    /// Compute fingerprint from jitter samples
     pub fn from_samples(samples: &[SimpleJitterSample]) -> Self {
         if samples.len() < 2 {
             return Self::default();
@@ -212,7 +209,6 @@ impl BehavioralFingerprint {
         }
     }
 
-    /// Detect if samples were likely generated artificially
     pub fn detect_forgery(samples: &[SimpleJitterSample]) -> ForgeryAnalysis {
         if samples.len() < 10 {
             return ForgeryAnalysis {
@@ -241,7 +237,6 @@ impl BehavioralFingerprint {
 
         let skewness = stats::skewness(&intervals, mean, std);
         if skewness < SKEWNESS_FORGERY_THRESHOLD {
-            // Human typing is usually positively skewed (long tail)
             flags.push(ForgeryFlag::WrongSkewness { skewness });
         }
 
@@ -265,7 +260,6 @@ impl BehavioralFingerprint {
             });
         }
 
-        // Fatigue detection: real humans slow down over extended typing sessions.
         if intervals.len() >= MIN_FATIGUE_SAMPLES {
             let quarter = intervals.len() / 4;
             let first_q = &intervals[..quarter];
@@ -310,7 +304,6 @@ mod tests {
         let mut samples = Vec::new();
         let mut current_ns = 1_000_000_000u64;
 
-        // First sample
         samples.push(SimpleJitterSample {
             timestamp_ns: current_ns as i64,
             duration_since_last_ns: 0,
@@ -338,14 +331,13 @@ mod tests {
 
     #[test]
     fn test_fingerprint_human_like() {
-        // Typical human intervals: 150-300ms with some variation
         let intervals = vec![200, 250, 180, 220, 400, 210, 190, 230, 220, 200];
         let samples = mock_samples(&intervals);
         let fp = BehavioralFingerprint::from_samples(&samples);
 
         assert!(fp.keystroke_interval_mean > 200.0 && fp.keystroke_interval_mean < 300.0);
         assert!(fp.keystroke_interval_std > 0.0);
-        assert!(fp.keystroke_interval_skewness > 0.0); // Should be positively skewed by the 400ms interval
+        assert!(fp.keystroke_interval_skewness > 0.0);
     }
 
     #[test]
@@ -361,31 +353,25 @@ mod tests {
 
     #[test]
     fn test_fingerprint_pause_means() {
-        // Include some long pauses
         let intervals = vec![100, 150, 120, 800, 100, 130, 2500, 100, 3000, 150];
         let samples = mock_samples(&intervals);
         let fp = BehavioralFingerprint::from_samples(&samples);
 
-        // sentence pauses > 500ms: 800, 2500, 3000 → mean ~2100
         assert!(fp.sentence_pause_mean > 500.0);
-        // paragraph pauses > 2000ms: 2500, 3000 → mean 2750
         assert!(fp.paragraph_pause_mean > 2000.0);
     }
 
     #[test]
     fn test_fingerprint_burst_speed_variance() {
-        // Burst intervals < 200ms with variance
         let intervals = vec![80, 120, 150, 90, 110, 130, 170, 500, 100, 140];
         let samples = mock_samples(&intervals);
         let fp = BehavioralFingerprint::from_samples(&samples);
 
-        // Should have non-zero variance from the sub-200ms intervals
         assert!(fp.burst_speed_variance > 0.0);
     }
 
     #[test]
     fn test_detect_forgery_robotic() {
-        // Exactly 200ms every time - very suspicious
         let intervals = vec![200; 20];
         let samples = mock_samples(&intervals);
         let analysis = BehavioralFingerprint::detect_forgery(&samples);
@@ -399,7 +385,6 @@ mod tests {
 
     #[test]
     fn test_detect_forgery_human_plausible() {
-        // Varied intervals, positive skew, micro-pauses
         let intervals = vec![
             180, 220, 190, 450, 210, 170, 230, 200, 190, 210, 500, 180, 220, 200, 190,
         ];
@@ -411,7 +396,6 @@ mod tests {
 
     #[test]
     fn test_detect_forgery_superhuman() {
-        // Very fast intervals < 20ms
         let mut intervals = vec![200; 15];
         intervals.extend(vec![10, 5, 10, 5, 10]); // Robotic/Superhuman burst
         let samples = mock_samples(&intervals);

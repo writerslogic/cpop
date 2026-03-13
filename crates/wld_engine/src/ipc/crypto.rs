@@ -24,54 +24,41 @@ pub(crate) enum WireProtocol {
 }
 
 /// JSON protocol magic bytes: "WJ" (0x57 0x4A).
-/// Client sends these after connecting to indicate JSON mode.
-/// Legacy bincode clients send a 4-byte length prefix directly,
-/// which is backward compatible since "WJ" is not a valid length prefix
-/// for any real message (0x4A57 = 19031 bytes minimum).
+/// Backward compatible: "WJ" is not a valid bincode length prefix.
 #[cfg(test)]
 pub(crate) const JSON_PROTOCOL_MAGIC: [u8; 2] = [0x57, 0x4A];
 
 /// Secure JSON protocol magic bytes: "WS" (0x57 0x53).
-/// Client sends [0x57, 0x53, version_byte] to indicate encrypted JSON mode.
-/// After this:
-///   1. Client sends 65-byte uncompressed P-256 public key
-///   2. Server sends 65-byte uncompressed P-256 public key
-///   3. Both derive shared secret via ECDH → HKDF-SHA256 (channel-bound) → AES-256-GCM key
-///   4. Both exchange encrypted confirmation token to verify key agreement
-///   5. All subsequent messages: [4-byte len][8-byte seq][12-byte nonce][ciphertext+tag]
+/// Wire format after handshake: [4-byte len][8-byte seq][12-byte nonce][ciphertext+tag].
 pub(crate) const SECURE_JSON_PROTOCOL_MAGIC: [u8; 2] = [0x57, 0x53];
 
 pub(crate) const SECURE_PROTOCOL_VERSION_MIN: u8 = 1;
 pub(crate) const SECURE_PROTOCOL_VERSION_MAX: u8 = 1;
 
-/// Size of an uncompressed P-256 public key (0x04 prefix + 32-byte X + 32-byte Y)
+/// Uncompressed P-256 public key: 0x04 prefix + 32-byte X + 32-byte Y.
 pub(crate) const P256_PUBLIC_KEY_SIZE: usize = 65;
 
 pub(crate) const IPC_HKDF_SALT: &[u8] = b"witnessd-ipc-v1";
 
-/// Timeout for the ECDH handshake phase (prevents hanging connections)
+/// Timeout for the ECDH handshake phase.
 pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Key confirmation token that both sides encrypt after key derivation
-/// to verify they derived the same session key.
+/// Key confirmation token encrypted by both sides to verify key agreement.
 pub(crate) const KEY_CONFIRM_PLAINTEXT: &[u8] = b"witnessd-key-confirm-ok";
 
-/// Per-connection secure session state after ECDH key exchange.
-/// Provides AES-256-GCM encryption with sequence number replay protection.
+/// Per-connection AES-256-GCM session with sequence-based replay protection.
 /// Key material is zeroized on drop.
 pub(crate) struct SecureSession {
     cipher: Aes256Gcm,
-    /// Transmit sequence counter. Server uses odd (1,3,5...), client uses even (0,2,4...).
+    /// Server uses odd (1,3,5...), client uses even (0,2,4...).
     tx_sequence: AtomicU64,
     rx_sequence: AtomicU64,
-    /// Copy of key bytes for zeroization on drop
     key_bytes: [u8; 32],
-    /// Nonce prefix for bytes [0..4], derived from shared secret via HKDF.
-    /// Prevents the first 4 bytes from always being zero.
+    /// HKDF-derived prefix for nonce bytes [0..4] to avoid zero-prefix bias.
     nonce_prefix: [u8; 4],
 }
 
-/// Build a 12-byte AES-GCM nonce from a 4-byte HKDF-derived prefix and an 8-byte sequence number.
+/// Build a 12-byte AES-GCM nonce: 4-byte HKDF prefix + 8-byte sequence number.
 fn construct_nonce(prefix: &[u8; 4], seq: u64) -> [u8; 12] {
     let mut nonce = [0u8; 12];
     nonce[0..4].copy_from_slice(prefix);
@@ -80,7 +67,7 @@ fn construct_nonce(prefix: &[u8; 4], seq: u64) -> [u8; 12] {
 }
 
 impl SecureSession {
-    /// Derive a session from a P-256 ECDH shared secret with channel binding.
+    /// Derive a session from a P-256 ECDH shared secret.
     /// Pubkeys are included in HKDF info to prevent MITM relay attacks.
     pub(crate) fn from_shared_secret(
         shared_secret: &[u8],
@@ -88,8 +75,6 @@ impl SecureSession {
         server_pubkey: &[u8],
         is_server: bool,
     ) -> Result<Self> {
-        // Channel-bound HKDF info: "aes-256-gcm-key" + client pubkey + server pubkey
-        // This binds the derived key to the specific ECDH key pair, preventing relay attacks.
         let mut info = Vec::with_capacity(15 + P256_PUBLIC_KEY_SIZE * 2);
         info.extend_from_slice(b"aes-256-gcm-key");
         info.extend_from_slice(client_pubkey);
@@ -100,8 +85,6 @@ impl SecureSession {
         hk.expand(&info, &mut key_bytes)
             .map_err(|_| anyhow!("HKDF expand failed"))?;
 
-        // Derive a 4-byte nonce prefix from the same HKDF to fill nonce bytes [0..4].
-        // Both sides derive the same prefix deterministically.
         let mut nonce_prefix = [0u8; 4];
         hk.expand(b"nonce-prefix", &mut nonce_prefix)
             .map_err(|_| anyhow!("HKDF expand for nonce prefix failed"))?;
@@ -121,7 +104,7 @@ impl SecureSession {
         })
     }
 
-    /// Encrypt a JSON message payload. Returns wire bytes: [8-byte seq][12-byte nonce][ciphertext+tag].
+    /// Encrypt a payload. Returns [8-byte seq][12-byte nonce][ciphertext+tag].
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let seq = self.tx_sequence.fetch_add(2, Ordering::SeqCst);
         let nonce_bytes = construct_nonce(&self.nonce_prefix, seq);
@@ -139,12 +122,9 @@ impl SecureSession {
         Ok(out)
     }
 
-    /// Decrypt a wire message. Verifies sequence number for replay protection.
-    /// Input format: [8-byte seq][12-byte nonce][ciphertext+tag].
+    /// Decrypt a wire message: [8-byte seq][12-byte nonce][ciphertext+tag].
     ///
-    /// Decrypt failure MUST be treated as connection-fatal by the caller.
-    /// A failed decrypt or sequence mismatch indicates tampering, replay, or
-    /// key desynchronization — none of which are recoverable on the same channel.
+    /// Failure is connection-fatal: indicates tampering, replay, or key desync.
     pub(crate) fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() < 36 {
             return Err(anyhow!("Encrypted message too short: {} bytes", data.len()));
@@ -156,7 +136,7 @@ impl SecureSession {
                 .map_err(|_| anyhow!("Invalid sequence number bytes"))?,
         );
 
-        // Peek at expected sequence without advancing — only advance on full success.
+        // Only advance rx_sequence on full decrypt success (see CAS below)
         let expected_seq = self.rx_sequence.load(Ordering::SeqCst);
 
         if seq
@@ -180,9 +160,7 @@ impl SecureSession {
             .decrypt(nonce, ciphertext)
             .map_err(|_| anyhow!("AES-GCM decrypt failed (tampered or wrong key)"))?;
 
-        // Atomically advance only after decrypt + sequence check both succeed.
-        // CAS guards against concurrent callers (shouldn't happen in practice,
-        // but defends the invariant that a slot is never consumed on failure).
+        // CAS: never consume a slot on failure
         self.rx_sequence
             .compare_exchange(
                 expected_seq,
@@ -202,19 +180,14 @@ impl Drop for SecureSession {
     }
 }
 
-/// Per-connection rate limiter with per-category limits.
 pub(crate) struct RateLimiter {
-    /// Map of operation name → (count, window_start)
     operations: HashMap<String, (u32, Instant)>,
-    /// Window duration in seconds
     window_secs: u64,
 }
 
-/// Per-category rate limit configuration
 pub(crate) struct RateLimitConfig;
 
 impl RateLimitConfig {
-    /// Max operations per window for a given category.
     pub(crate) fn max_ops(category: &str) -> u32 {
         match category {
             "heartbeat" | "status" => 120,
@@ -234,12 +207,10 @@ impl RateLimiter {
         }
     }
 
-    /// Check if an operation is within its per-category rate limit.
     pub(crate) fn check(&mut self, operation: &str) -> bool {
         let now = Instant::now();
         let max_ops = RateLimitConfig::max_ops(operation);
 
-        // Fast path: avoid String allocation when the key already exists.
         if let Some(entry) = self.operations.get_mut(operation) {
             if now.duration_since(entry.1).as_secs() >= self.window_secs {
                 *entry = (1, now);
@@ -251,21 +222,12 @@ impl RateLimiter {
             return false;
         }
 
-        // Slow path: first time seeing this operation — allocate once.
         self.operations.insert(operation.to_string(), (1, now));
         true
     }
 }
 
-/// Perform server-side ECDH key exchange with timeout, channel binding, and key confirmation.
-///
-/// Protocol (v1):
-///   1. [Already read] Client sent magic "WS" + version byte
-///   2. Client sends 65-byte uncompressed P-256 public key
-///   3. Server sends 65-byte uncompressed P-256 public key
-///   4. Both derive shared key via ECDH → HKDF-SHA256 (channel-bound to both pubkeys)
-///   5. Server sends encrypted confirmation token
-///   6. Client sends encrypted confirmation token (server verifies)
+/// Server-side ECDH key exchange with timeout and key confirmation.
 pub(crate) async fn secure_handshake_server<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 >(
@@ -315,8 +277,7 @@ pub(crate) async fn secure_handshake_server<
             true,
         )?;
 
-        // Zeroize ECDH ephemeral secrets now that session key is derived.
-        // Both types implement ZeroizeOnDrop, so explicit drop triggers cleanup.
+        // Explicit drop triggers ZeroizeOnDrop; fence prevents reordering
         drop(shared_secret);
         drop(server_secret);
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
@@ -352,7 +313,7 @@ pub(crate) async fn secure_handshake_server<
     .map_err(|_| anyhow!("Secure handshake timed out after {:?}", HANDSHAKE_TIMEOUT))?
 }
 
-/// Send an encrypted message over a stream.
+/// Send an encrypted message over a stream (4-byte length-prefixed).
 pub(crate) async fn send_encrypted<S: tokio::io::AsyncWrite + Unpin>(
     stream: &mut S,
     session: &SecureSession,
@@ -368,7 +329,7 @@ pub(crate) async fn send_encrypted<S: tokio::io::AsyncWrite + Unpin>(
     Ok(())
 }
 
-/// Map an IPC message to its rate-limit category.
+/// Map an IPC message to its rate-limit category for per-category throttling.
 pub(crate) fn rate_limit_key(msg: &IpcMessage) -> &'static str {
     match msg {
         IpcMessage::ExportFile { .. } | IpcMessage::ExportWithNonce { .. } => "export",

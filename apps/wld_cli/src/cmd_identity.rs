@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Identity command implementation for the WritersLogic CLI.
-
 use anyhow::{anyhow, Result};
 use ed25519_dalek::SigningKey;
 use std::fs;
@@ -22,8 +20,6 @@ pub(crate) fn cmd_identity(
     let dir = &config.data_dir;
 
     if recover {
-        // CLI-L1: Mnemonic is always read from stdin to avoid exposure in
-        // process listings (`ps`) and shell history.
         if !json {
             eprintln!("Enter your BIP-39 recovery phrase:");
             eprint!("> ");
@@ -215,7 +211,6 @@ pub(crate) fn cmd_identity(
         return Ok(());
     }
 
-    // No specific flag set: show general identity info (not mnemonic)
     println!("Identity Fingerprint: {}", fp);
     println!("DID: {}", stored_did);
     println!("Public Key: {}", pub_key);

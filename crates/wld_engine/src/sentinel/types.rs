@@ -31,7 +31,6 @@ pub enum ChangeEventType {
     Deleted,
 }
 
-/// File change event from the platform monitor.
 #[derive(Debug, Clone)]
 pub struct ChangeEvent {
     pub event_type: ChangeEventType,
@@ -50,7 +49,6 @@ pub enum SessionEventType {
     Ended,
 }
 
-/// Session lifecycle event broadcast to subscribers.
 #[derive(Debug, Clone)]
 pub struct SessionEvent {
     pub event_type: SessionEventType,
@@ -59,7 +57,6 @@ pub struct SessionEvent {
     pub timestamp: SystemTime,
 }
 
-/// Information about the currently focused window.
 #[derive(Debug, Clone)]
 pub struct WindowInfo {
     pub path: Option<String>,
@@ -88,16 +85,13 @@ impl Default for WindowInfo {
     }
 }
 
-/// Tracks a single document's editing session.
 #[derive(Debug, Clone)]
 pub struct DocumentSession {
     pub path: String,
     pub session_id: String,
-    /// Shadow buffer ID for unsaved documents
     pub shadow_id: Option<String>,
     pub start_time: SystemTime,
     pub last_focus_time: SystemTime,
-    /// Total focused time in milliseconds
     pub total_focus_ms: i64,
     pub focus_count: u32,
     pub initial_hash: Option<String>,
@@ -141,7 +135,6 @@ impl DocumentSession {
         }
     }
 
-    /// Record focus gained; starts the focus timer.
     pub fn focus_gained(&mut self) {
         if !self.has_focus {
             self.has_focus = true;
@@ -151,7 +144,6 @@ impl DocumentSession {
         }
     }
 
-    /// Record focus lost; accumulates elapsed focus time.
     pub fn focus_lost(&mut self) {
         if self.has_focus {
             if let Some(started) = self.focus_started.take() {
@@ -165,7 +157,7 @@ impl DocumentSession {
         self.has_focus
     }
 
-    /// Total focus duration, including currently active focus interval.
+    /// Includes currently active focus interval if focused.
     pub fn total_focus_duration(&self) -> Duration {
         let mut total = Duration::from_millis(self.total_focus_ms as u64);
         if let Some(started) = self.focus_started {
@@ -207,12 +199,10 @@ pub enum SessionBinding {
 }
 
 impl SessionBinding {
-    /// Bind to a file path.
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self::FilePath(path.into())
     }
 
-    /// Bind to an app context (unsaved document).
     pub fn app_context(bundle_id: impl Into<String>, window_title: &str) -> Self {
         let window_hash = hash_string(window_title);
         let shadow_id = generate_session_id();
@@ -223,7 +213,6 @@ impl SessionBinding {
         }
     }
 
-    /// Bind to a URL context (browser editor). Components are hashed.
     pub fn url_context(url: &str) -> Self {
         let (domain, path) = parse_url_parts(url);
         Self::UrlContext {
@@ -232,14 +221,12 @@ impl SessionBinding {
         }
     }
 
-    /// Bind to a universal session (no specific document).
     pub fn universal() -> Self {
         Self::Universal {
             session_id: generate_session_id(),
         }
     }
 
-    /// Unique key for session map lookup.
     pub fn key(&self) -> String {
         match self {
             Self::FilePath(path) => path.to_string_lossy().to_string(),
@@ -323,7 +310,6 @@ pub fn infer_document_path_from_title(title: &str) -> Option<String> {
         }
     }
 
-    // Last resort: check the entire title
     if looks_like_file_path(title.trim()) {
         return Some(title.trim().to_string());
     }
@@ -331,7 +317,6 @@ pub fn infer_document_path_from_title(title: &str) -> Option<String> {
     None
 }
 
-/// Heuristic: looks like a file path (absolute path prefix or known extension).
 fn looks_like_file_path(s: &str) -> bool {
     if s.is_empty() {
         return false;
@@ -357,12 +342,10 @@ fn looks_like_file_path(s: &str) -> bool {
     false
 }
 
-/// Normalize a document path to an absolute canonical form.
 /// Returns `None` if the path contains traversal components or cannot be resolved.
 pub fn normalize_document_path(path: &str) -> Option<String> {
     let p = Path::new(path);
 
-    // Reject path traversal components before any filesystem interaction
     for component in p.components() {
         if matches!(component, std::path::Component::ParentDir) {
             log::warn!("Rejected path with traversal component: '{path}'");
@@ -373,7 +356,6 @@ pub fn normalize_document_path(path: &str) -> Option<String> {
     match p.canonicalize() {
         Ok(canonical) => Some(canonical.to_string_lossy().to_string()),
         Err(e) => {
-            // Path doesn't exist or can't be resolved — refuse to guess
             log::warn!("Failed to canonicalize path '{path}': {e}");
             None
         }

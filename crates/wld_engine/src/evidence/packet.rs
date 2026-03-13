@@ -393,17 +393,14 @@ impl Packet {
         Ok(())
     }
 
-    /// Whether a verifier nonce is set.
     pub fn has_verifier_nonce(&self) -> bool {
         self.verifier_nonce.is_some()
     }
 
-    /// Whether the packet is signed.
     pub fn is_signed(&self) -> bool {
         self.packet_signature.is_some() && self.signing_public_key.is_some()
     }
 
-    /// Return the verifier nonce, if set.
     pub fn get_verifier_nonce(&self) -> Option<&[u8; 32]> {
         self.verifier_nonce.as_ref()
     }

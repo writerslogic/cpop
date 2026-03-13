@@ -31,8 +31,7 @@ pub struct TranscriptionMetadata {
     pub timestamp_ms: u64,
 }
 
-/// Aggregates word timing information to produce a fingerprint
-/// without retaining any content.
+/// Aggregates word timing into a content-free fingerprint.
 pub struct TranscriptionCollector {
     engine: String,
     word_intervals_us: Vec<u64>,
@@ -52,29 +51,19 @@ impl TranscriptionCollector {
         }
     }
 
-    /// Record a word boundary timing.
-    /// * `interval_us` - Time since previous word in microseconds
     pub fn record_word_interval(&mut self, interval_us: u64) {
         self.word_intervals_us.push(interval_us);
     }
 
-    /// Record word confidence.
-    /// * `confidence` - Word-level confidence (0.0 to 1.0)
     pub fn record_confidence(&mut self, confidence: f64) {
         self.confidence_sum += confidence.clamp(0.0, 1.0);
         self.confidence_count += 1;
     }
 
-    /// Set the total audio duration.
-    /// * `duration_ms` - Total duration in milliseconds
     pub fn set_duration(&mut self, duration_ms: u64) {
         self.total_duration_ms = duration_ms;
     }
 
-    /// The fingerprint is a SHA-256 hash of:
-    /// - Inter-word intervals (quantized)
-    /// - Total word count
-    /// - Duration
     fn compute_fingerprint(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
@@ -89,7 +78,6 @@ impl TranscriptionCollector {
         hasher.finalize().into()
     }
 
-    /// Returns the privacy-safe metadata without any content.
     pub fn finalize(self) -> TranscriptionMetadata {
         let word_count = self.word_intervals_us.len() as u64;
         let confidence = if self.confidence_count > 0 {
@@ -110,7 +98,6 @@ impl TranscriptionCollector {
         }
     }
 
-    /// Reset the collector for a new session.
     pub fn reset(&mut self) {
         self.word_intervals_us.clear();
         self.total_duration_ms = 0;
@@ -119,7 +106,6 @@ impl TranscriptionCollector {
     }
 }
 
-/// Inter-word timing statistics for transcription evidence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionTimingStats {
     pub mean_interval_us: f64,
@@ -130,7 +116,6 @@ pub struct TranscriptionTimingStats {
 }
 
 impl TranscriptionTimingStats {
-    /// Compute timing statistics from intervals.
     pub fn from_intervals(intervals: &[u64]) -> Option<Self> {
         if intervals.is_empty() {
             return None;
@@ -192,7 +177,6 @@ mod tests {
 
     #[test]
     fn test_fingerprint_determinism() {
-        // Same intervals should produce same fingerprint
         let mut c1 = TranscriptionCollector::new("test");
         let mut c2 = TranscriptionCollector::new("test");
 
@@ -211,7 +195,6 @@ mod tests {
 
     #[test]
     fn test_fingerprint_sensitivity() {
-        // Different intervals should produce different fingerprint
         let mut c1 = TranscriptionCollector::new("test");
         let mut c2 = TranscriptionCollector::new("test");
 

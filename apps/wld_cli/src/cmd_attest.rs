@@ -90,7 +90,8 @@ pub(crate) fn cmd_attest(
         ));
     }
 
-    let proof = match format.to_lowercase().as_str() {
+    let format_lower = format.to_lowercase();
+    let proof = match format_lower.as_str() {
         "compact" => result.compact_ref.clone(),
         "both" => format!("{}\n{}", result.war_block, result.compact_ref),
         _ => result.war_block.clone(), // "war" is default
@@ -106,8 +107,7 @@ pub(crate) fn cmd_attest(
         }
     }
 
-    // Print compact ref to stderr for scripting convenience
-    if format.to_lowercase() != "compact" {
+    if format_lower != "compact" {
         eprintln!("Compact ref: {}", result.compact_ref);
     }
 

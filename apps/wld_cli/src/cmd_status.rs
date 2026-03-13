@@ -51,7 +51,6 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
     let config = ensure_dirs()?;
     let dir = &config.data_dir;
 
-    // Collect status data
     let pub_key_hex = fs::read(dir.join("signing_key.pub"))
         .ok()
         .filter(|k| k.len() >= 8)

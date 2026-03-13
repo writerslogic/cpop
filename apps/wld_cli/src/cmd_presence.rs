@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-//! Presence verification command implementation.
-
 use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -54,7 +52,6 @@ pub(crate) fn cmd_presence(action: PresenceAction) -> Result<()> {
             session.active = false;
             session.end_time = Some(chrono::Utc::now());
 
-            // CLI-M4: Derive counters from the challenge list (single source of truth)
             let total_count = session.challenges.len();
             let passed_count = session
                 .challenges

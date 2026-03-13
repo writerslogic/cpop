@@ -55,46 +55,30 @@ impl HurstAnalysis {
     pub const MAX_VALID: f64 = 0.85;
     pub const WHITE_NOISE_TOLERANCE: f64 = 0.05;
 
-    /// Check if the Hurst exponent is within biologically plausible range.
     pub fn is_biologically_plausible(&self) -> bool {
         self.exponent >= Self::MIN_VALID && self.exponent <= Self::MAX_VALID
     }
 
-    /// Check if the series appears to be white noise.
     pub fn is_white_noise(&self) -> bool {
         (self.exponent - 0.5).abs() < Self::WHITE_NOISE_TOLERANCE
     }
 
-    /// Check if the series is suspiciously predictable.
-    /// Threshold above which Hurst exponent is suspiciously predictable.
     pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
 
-    /// Check if the series is suspiciously predictable.
     pub fn is_suspiciously_predictable(&self) -> bool {
         self.exponent > Self::SUSPICIOUSLY_PREDICTABLE
     }
 }
 
-/// Minimum data points for R/S analysis.
 const RS_MIN_DATA_POINTS: usize = 20;
-/// Minimum window size (power of 2) for R/S analysis.
 const RS_MIN_WINDOW: usize = 8;
-/// Minimum data points for DFA analysis.
 #[allow(dead_code)]
 const DFA_MIN_DATA_POINTS: usize = 32;
-/// Minimum DFA scale size.
 #[allow(dead_code)]
 const DFA_MIN_SCALE: usize = 8;
 
-/// Calculate Hurst exponent using R/S (Rescaled Range) analysis.
-///
-/// This is the classical method described by Mandelbrot and Wallis.
-///
-/// # Arguments
-/// * `data` - Time series data (e.g., inter-keystroke intervals)
-///
-/// # Returns
-/// * `HurstAnalysis` with exponent and diagnostics, or error message
+/// Calculate Hurst exponent using R/S (Rescaled Range) analysis
+/// (Mandelbrot & Wallis method).
 pub fn calculate_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
     if n < RS_MIN_DATA_POINTS {
@@ -121,18 +105,14 @@ pub fn calculate_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
         return Err("Insufficient window sizes for reliable estimation".to_string());
     }
 
-    // Linear regression: log(R/S) = H * log(n) + c
     let (slope, _intercept, r_squared, std_error) = linear_regression(&log_n_vec, &log_rs_vec)?;
 
-    // NaN/Inf from degenerate inputs (all-zero series, constant windows) would
-    // bypass clamp and propagate silently. Fall back to random-walk default.
+    // NaN/Inf from degenerate inputs would bypass clamp and propagate silently
     if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
         return Err("Degenerate regression output (NaN/Inf)".to_string());
     }
 
-    // R/S Hurst exponent is bounded [0, 1] by definition of rescaled range.
-    // The shared biological validity range [0.55, 0.85] is enforced in
-    // `is_biologically_plausible()` and `is_valid` below.
+    // R/S Hurst exponent is bounded [0, 1] by definition
     let exponent = slope.clamp(0.0, 1.0);
 
     let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
@@ -156,7 +136,7 @@ pub fn calculate_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     })
 }
 
-/// Calculate R/S statistic for a specific window size.
+/// R/S statistic for a specific window size.
 fn calculate_rs_for_window(data: &[f64], window_size: usize) -> f64 {
     let n = data.len();
     if window_size > n || window_size < 2 {
@@ -207,14 +187,7 @@ fn calculate_rs_for_window(data: &[f64], window_size: usize) -> f64 {
 }
 
 /// Calculate Hurst exponent using Detrended Fluctuation Analysis (DFA).
-///
-/// DFA is more robust to non-stationarities than R/S analysis.
-///
-/// # Arguments
-/// * `data` - Time series data
-///
-/// # Returns
-/// * `HurstAnalysis` with exponent and diagnostics
+/// More robust to non-stationarities than R/S.
 #[allow(dead_code)]
 pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
@@ -256,10 +229,7 @@ pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
         return Err("Degenerate regression output (NaN/Inf)".to_string());
     }
 
-    // DFA alpha can reach 2.0 for strongly non-stationary signals
-    // (Brownian motion ≈ 1.5, ballistic ≈ 2.0), so the upper bound is wider
-    // than R/S's [0, 1]. The shared biological validity range [0.55, 0.85]
-    // still applies for human typing detection.
+    // DFA alpha can reach 2.0 (Brownian ~1.5, ballistic ~2.0)
     let exponent = slope.clamp(0.0, 2.0);
 
     let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
@@ -283,7 +253,7 @@ pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     })
 }
 
-/// Calculate DFA fluctuation for a given scale.
+/// DFA fluctuation for a given scale.
 fn calculate_dfa_fluctuation(profile: &[f64], scale: usize) -> f64 {
     let n = profile.len();
     if scale > n || scale < 4 {
@@ -309,7 +279,7 @@ fn calculate_dfa_fluctuation(profile: &[f64], scale: usize) -> f64 {
     (total_variance / num_segments as f64).sqrt()
 }
 
-/// Calculate variance after linear detrending.
+/// Variance after linear detrending.
 fn detrend_variance(segment: &[f64]) -> f64 {
     let n = segment.len();
     if n < 2 {
