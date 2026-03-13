@@ -40,12 +40,14 @@ const MAX_INTERVAL_US: f64 = 5_000_000.0;
 /// Minimum number of interval samples for R/S Hurst exponent analysis.
 const MIN_SAMPLES_FOR_HURST: usize = 20;
 
+/// Accumulate evidence layers into a signed evidence packet.
 pub struct Builder {
     packet: Packet,
     errors: Vec<String>,
 }
 
 impl Builder {
+    /// Create a builder from a document title and checkpoint chain.
     pub fn new(title: &str, chain: &checkpoint::Chain) -> Self {
         let mut packet = Packet {
             version: 1,
@@ -147,6 +149,7 @@ impl Builder {
         });
     }
 
+    /// Attach a signed author declaration. Fails silently if signature is invalid.
     pub fn with_declaration(mut self, decl: &declaration::Declaration) -> Self {
         if !decl.verify() {
             self.errors
@@ -157,6 +160,7 @@ impl Builder {
         self
     }
 
+    /// Attach presence verification evidence. Boosts strength to `Standard`.
     pub fn with_presence(mut self, sessions: &[presence::Session]) -> Self {
         if sessions.is_empty() {
             return self;
@@ -190,6 +194,7 @@ impl Builder {
         self
     }
 
+    /// Attach keystroke timing evidence. Boosts strength to `Standard`.
     pub fn with_keystroke(mut self, evidence: &jitter::Evidence) -> Self {
         if evidence.statistics.total_keystrokes == 0 {
             return self;
@@ -290,6 +295,7 @@ impl Builder {
         self
     }
 
+    /// Attach behavioral edit topology and forensic metrics. Boosts strength to `Maximum`.
     pub fn with_behavioral(
         mut self,
         regions: Vec<EditRegion>,
@@ -310,6 +316,7 @@ impl Builder {
         self
     }
 
+    /// Attach behavioral evidence with fingerprint and forgery analysis from jitter samples.
     pub fn with_behavioral_full(
         mut self,
         regions: Vec<EditRegion>,
@@ -341,6 +348,7 @@ impl Builder {
         self
     }
 
+    /// Attach context periods (focused, assisted, external).
     pub fn with_contexts(mut self, contexts: Vec<ContextPeriod>) -> Self {
         if contexts.is_empty() {
             return self;
@@ -349,6 +357,7 @@ impl Builder {
         self
     }
 
+    /// Attach record provenance (OS, build version, device info).
     pub fn with_provenance(mut self, prov: RecordProvenance) -> Self {
         self.packet.provenance = Some(prov);
         self
@@ -367,6 +376,7 @@ impl Builder {
         self
     }
 
+    /// Attach OpenTimestamps and RFC 3161 external timestamp anchors.
     pub fn with_external_anchors(mut self, ots: Vec<OTSProof>, rfc: Vec<RFC3161Proof>) -> Self {
         if ots.is_empty() && rfc.is_empty() {
             return self;
@@ -382,6 +392,7 @@ impl Builder {
         self
     }
 
+    /// Attach anchor proofs (blockchain, TSA, etc.). Boosts strength to `Maximum`.
     pub fn with_anchors(mut self, proofs: &[anchors::Proof]) -> Self {
         if proofs.is_empty() {
             return self;
@@ -395,7 +406,11 @@ impl Builder {
             });
         }
 
-        let ext = self.packet.external.as_mut().unwrap();
+        let ext = self
+            .packet
+            .external
+            .as_mut()
+            .expect("just ensured Some above");
         for proof in proofs {
             ext.proofs.push(convert_anchor_proof(proof));
         }
@@ -406,6 +421,7 @@ impl Builder {
         self
     }
 
+    /// Attach key hierarchy evidence (master key, ratchet chain, checkpoint sigs).
     pub fn with_key_hierarchy(mut self, evidence: &keyhierarchy::KeyHierarchyEvidence) -> Self {
         let packet = KeyHierarchyEvidencePacket {
             version: evidence.version,
@@ -443,6 +459,7 @@ impl Builder {
         self
     }
 
+    /// Attach provenance parent links for derivative works.
     pub fn with_provenance_links(mut self, section: provenance::ProvenanceSection) -> Self {
         if section.parent_links.is_empty() {
             return self;
@@ -451,11 +468,13 @@ impl Builder {
         self
     }
 
+    /// Attach continuation section linking to a previous evidence packet.
     pub fn with_continuation(mut self, section: continuation::ContinuationSection) -> Self {
         self.packet.continuation = Some(section);
         self
     }
 
+    /// Attach multi-author collaboration section.
     pub fn with_collaboration(mut self, section: collaboration::CollaborationSection) -> Self {
         if section.participants.is_empty() {
             return self;
@@ -464,11 +483,13 @@ impl Builder {
         self
     }
 
+    /// Attach aggregate VDF proof covering the entire chain.
     pub fn with_vdf_aggregate(mut self, proof: vdf::VdfAggregateProof) -> Self {
         self.packet.vdf_aggregate = Some(proof);
         self
     }
 
+    /// Attach a pre-built jitter binding. Boosts strength to `Enhanced`.
     pub fn with_jitter_binding(mut self, binding: JitterBinding) -> Self {
         self.packet.jitter_binding = Some(binding);
         if self.packet.strength < Strength::Enhanced {
@@ -477,6 +498,7 @@ impl Builder {
         self
     }
 
+    /// Attach RFC-compliant time evidence (TSA, blockchain, Roughtime). Boosts to `Enhanced`.
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.packet.time_evidence = Some(evidence);
         if self.packet.strength < Strength::Enhanced {
@@ -680,12 +702,14 @@ impl Builder {
         self
     }
 
+    /// Attach MMR root hash and range proof for append-only verification.
     pub fn with_mmr_proof(mut self, mmr_root: [u8; 32], range_proof: &[u8]) -> Self {
         self.packet.mmr_root = Some(hex::encode(mmr_root));
         self.packet.mmr_proof = Some(hex::encode(range_proof));
         self
     }
 
+    /// Attach authorship baseline verification (digest + session summary).
     pub fn with_baseline_verification(
         mut self,
         bv: wld_protocol::baseline::BaselineVerification,
@@ -694,16 +718,19 @@ impl Builder {
         self
     }
 
+    /// Set a verifier-supplied nonce for freshness binding.
     pub fn with_writersproof_nonce(mut self, nonce: [u8; 32]) -> Self {
         self.packet.verifier_nonce = Some(nonce);
         self
     }
 
+    /// Set the WritersProof CA certificate ID for this packet.
     pub fn with_writersproof_certificate(mut self, certificate_id: String) -> Self {
         self.packet.writersproof_certificate_id = Some(certificate_id);
         self
     }
 
+    /// Finalize the packet, generating claims, limitations, and trust tier.
     pub fn build(mut self) -> crate::error::Result<Packet> {
         if self.packet.declaration.is_none() {
             self.errors.push("declaration is required".to_string());
@@ -902,6 +929,7 @@ impl Builder {
     }
 }
 
+/// Convert an internal anchor proof to the evidence packet format.
 pub fn convert_anchor_proof(proof: &anchors::Proof) -> AnchorProof {
     let provider = format!("{:?}", proof.provider).to_lowercase();
     let timestamp = proof.confirmed_at.unwrap_or(proof.submitted_at);

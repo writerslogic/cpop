@@ -34,8 +34,11 @@ pub enum AttestationTier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ContentTier {
+    /// Core evidence tier.
     Core = 1,
+    /// Enhanced evidence tier.
     Enhanced = 2,
+    /// Maximum evidence tier.
     Maximum = 3,
 }
 
@@ -55,9 +58,13 @@ pub enum ProofAlgorithm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Verdict {
+    /// Evidence supports authentic human authorship.
     Authentic = 1,
+    /// Insufficient evidence to determine.
     Inconclusive = 2,
+    /// Evidence indicates potential forgery.
     Suspicious = 3,
+    /// Evidence is structurally invalid.
     Invalid = 4,
 }
 
@@ -85,7 +92,9 @@ pub enum FeatureId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum HashSaltMode {
+    /// No salt applied.
     Unsalted = 0,
+    /// Author-provided salt for privacy.
     AuthorSalted = 1,
 }
 
@@ -93,7 +102,9 @@ pub enum HashSaltMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum CostUnit {
+    /// US dollars.
     Usd = 1,
+    /// CPU-hours.
     CpuHours = 2,
 }
 
@@ -101,8 +112,11 @@ pub enum CostUnit {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum AbsenceType {
+    /// Bound by computational cost.
     ComputationallyBound = 1,
+    /// Dependent on monitoring infrastructure.
     MonitoringDependent = 2,
+    /// Environmental constraint.
     Environmental = 3,
 }
 
@@ -110,8 +124,11 @@ pub enum AbsenceType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ProbeType {
+    /// Binomial absorption test.
     GaltonBoard = 1,
+    /// Backspace-after-typo latency test.
     ReflexGate = 2,
+    /// Spatial targeting accuracy test.
     SpatialTarget = 3,
 }
 
@@ -119,5 +136,6 @@ pub enum ProbeType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum BindingType {
+    /// TLS Exporter Key Material (RFC 5705).
     TlsExporter = 1,
 }

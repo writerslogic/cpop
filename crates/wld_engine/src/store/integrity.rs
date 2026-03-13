@@ -77,6 +77,7 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Verify the full event chain: HMAC integrity, hash linkage, and event count.
     pub fn verify_integrity(&mut self) -> anyhow::Result<()> {
         let res = self.conn.query_row(
             "SELECT chain_hash, event_count, hmac FROM integrity WHERE id = 1",

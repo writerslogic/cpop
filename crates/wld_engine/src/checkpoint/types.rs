@@ -81,6 +81,7 @@ pub struct JitterBinding {
     pub physics_seed: Option<[u8; 32]>,
 }
 
+/// Single checkpoint in a hash chain with VDF proof and optional bindings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub ordinal: u64,
@@ -122,6 +123,7 @@ pub struct Checkpoint {
     pub argon2_swf: Option<Argon2SwfProof>,
 }
 
+/// TPM/Secure Enclave attestation binding for a checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TpmBinding {
     pub monotonic_counter: u64,
@@ -178,15 +180,17 @@ impl Checkpoint {
     /// Reject timestamps that overflow i64 nanos (~2262+) or precede the Unix epoch,
     /// either of which would silently degrade hash uniqueness.
     pub(super) fn validate_timestamp(&self) -> Result<()> {
-        let nanos = self.timestamp.timestamp_nanos_opt();
-        if nanos.is_none() {
-            return Err(Error::checkpoint(format!(
-                "checkpoint timestamp {} overflows nanosecond representation",
-                self.timestamp
-            )));
-        }
+        let nanos = match self.timestamp.timestamp_nanos_opt() {
+            Some(n) => n,
+            None => {
+                return Err(Error::checkpoint(format!(
+                    "checkpoint timestamp {} overflows nanosecond representation",
+                    self.timestamp
+                )));
+            }
+        };
         // Pre-epoch: `as u64` would wrap negative values
-        if nanos.unwrap() < 0 {
+        if nanos < 0 {
             return Err(Error::checkpoint(format!(
                 "checkpoint timestamp {} is before the Unix epoch",
                 self.timestamp
@@ -266,16 +270,19 @@ impl Checkpoint {
         hasher.finalize().into()
     }
 
+    /// Attach an RFC-compliant VDF proof.
     pub fn with_rfc_vdf(mut self, vdf_proof: VdfProofRfc) -> Self {
         self.rfc_vdf = Some(vdf_proof);
         self
     }
 
+    /// Attach an RFC-compliant jitter binding.
     pub fn with_rfc_jitter(mut self, jitter: rfc::JitterBinding) -> Self {
         self.rfc_jitter = Some(jitter);
         self
     }
 
+    /// Attach external time evidence (roughtime, TSA, blockchain).
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.time_evidence = Some(evidence);
         self
@@ -305,6 +312,7 @@ impl Checkpoint {
     }
 }
 
+/// Human-readable summary of a checkpoint chain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSummary {
     pub document_path: String,

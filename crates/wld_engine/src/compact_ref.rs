@@ -55,6 +55,7 @@ pub struct CompactEvidenceRef {
 }
 
 impl CompactEvidenceRef {
+    /// Create a compact reference with required fields.
     pub fn new(
         packet_id: Uuid,
         chain_hash: String,
@@ -74,6 +75,7 @@ impl CompactEvidenceRef {
         }
     }
 
+    /// Attach optional metadata (author, verifier, timestamps).
     pub fn with_metadata(mut self, metadata: CompactMetadata) -> Self {
         self.metadata = Some(metadata);
         self
@@ -149,10 +151,15 @@ impl CompactEvidenceRef {
 /// Compact reference decoding/verification errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompactRefError {
+    /// URI does not start with `pop-ref:`.
     InvalidPrefix,
+    /// Base64 decoding failed.
     InvalidBase64,
+    /// JSON structure is malformed.
     InvalidJson,
+    /// Ed25519 signature verification failed.
     InvalidSignature,
+    /// Document hash does not match the referenced evidence.
     HashMismatch,
 }
 

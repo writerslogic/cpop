@@ -85,6 +85,7 @@ pub struct Argon2SwfProof {
     pub challenge: [u8; 32],
 }
 
+/// Merkle inclusion proof for a single sampled SWF iteration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MerkleSampleProof {
     pub leaf_index: u64,

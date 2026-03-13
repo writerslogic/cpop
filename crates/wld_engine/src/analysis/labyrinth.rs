@@ -21,10 +21,13 @@ pub struct LabyrinthAnalysis {
     /// Betti numbers (β₀, β₁, β₂): connected components, loops, and voids.
     pub betti_numbers: [usize; 3],
 
+    /// Fraction of recurrent points in the recurrence plot.
     pub recurrence_rate: f64,
 
+    /// Ratio of recurrent points forming diagonal lines (predictability).
     pub determinism: f64,
 
+    /// Whether the analysis falls within biologically plausible ranges.
     pub is_valid: bool,
 
     /// 0.0-1.0, based on data quantity and embedding parameter quality.
@@ -34,14 +37,20 @@ pub struct LabyrinthAnalysis {
 impl LabyrinthAnalysis {
     /// RFC-compliant range for human motor signals (draft-condrey-rats-pop-01 §5.4).
     pub const MIN_EMBEDDING_DIM: usize = 3;
+    /// Maximum plausible embedding dimension for human motor signals.
     pub const MAX_EMBEDDING_DIM: usize = 8;
 
+    /// Minimum plausible correlation dimension for human attractors.
     pub const MIN_CORRELATION_DIM: f64 = 1.5;
+    /// Maximum plausible correlation dimension for human attractors.
     pub const MAX_CORRELATION_DIM: f64 = 5.0;
 
+    /// Minimum determinism threshold for human-like recurrence.
     pub const MIN_DETERMINISM: f64 = 0.3;
+    /// Maximum determinism threshold (above this suggests periodic/robotic input).
     pub const MAX_DETERMINISM: f64 = 0.95;
 
+    /// Return `true` if all metrics fall within RFC-defined human ranges.
     pub fn is_biologically_plausible(&self) -> bool {
         self.embedding_dimension >= Self::MIN_EMBEDDING_DIM
             && self.embedding_dimension <= Self::MAX_EMBEDDING_DIM
@@ -52,12 +61,16 @@ impl LabyrinthAnalysis {
     }
 }
 
+/// Configuration parameters for labyrinth analysis.
 #[derive(Debug, Clone)]
 pub struct LabyrinthParams {
+    /// Maximum embedding dimension to test via FNN.
     pub max_embedding_dim: usize,
+    /// Maximum time delay to test via mutual information.
     pub max_delay: usize,
     /// Fraction of standard deviation used as recurrence threshold.
     pub recurrence_threshold: f64,
+    /// Minimum diagonal line length for determinism counting.
     pub min_line_length: usize,
 }
 
@@ -78,6 +91,7 @@ const MAX_DELAY_LIMIT: usize = 50;
 /// Below this FNN ratio, the embedding dimension is considered sufficient.
 const FNN_RATIO_THRESHOLD: f64 = 0.1;
 
+/// Perform Takens' delay-coordinate embedding analysis on a time series.
 pub fn analyze_labyrinth(
     data: &[f64],
     params: &LabyrinthParams,

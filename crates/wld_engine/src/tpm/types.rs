@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Errors from TPM/Secure Enclave operations.
 #[derive(Debug, thiserror::Error)]
 pub enum TPMError {
     #[error("tpm: hardware not available")]
@@ -48,10 +49,13 @@ pub enum TPMError {
     SealedDataTooShort,
     #[error("tpm: sealed data corrupted")]
     SealedCorrupted,
+    #[error("tpm: communication error: {0}")]
+    CommunicationError(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// TPM hash algorithm identifiers (TPM2_ALG_ID values).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum HashAlgorithm {
     Sha1 = 0x0004,
@@ -60,12 +64,14 @@ pub enum HashAlgorithm {
     Sha512 = 0x000D,
 }
 
+/// PCR bank and slot selection for quotes and sealing policies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PCRSelection {
     pub hash: HashAlgorithm,
     pub pcrs: Vec<u32>,
 }
 
+/// Return the default PCR selection (SHA-256, PCRs 0/4/7).
 pub fn default_pcr_selection() -> PCRSelection {
     PCRSelection {
         hash: HashAlgorithm::Sha256,
@@ -73,6 +79,7 @@ pub fn default_pcr_selection() -> PCRSelection {
     }
 }
 
+/// TPM clock state: milliseconds, reset/restart counts, and safety flag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClockInfo {
     pub clock: u64,
@@ -81,12 +88,14 @@ pub struct ClockInfo {
     pub safe: bool,
 }
 
+/// Raw attestation payload with optional embedded quote.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attestation {
     pub payload: Vec<u8>,
     pub quote: Option<Vec<u8>>,
 }
 
+/// Signed binding of data to a TPM device at a point in time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Binding {
     pub version: u32,
@@ -101,12 +110,14 @@ pub struct Binding {
     pub attestation: Option<Attestation>,
 }
 
+/// Single PCR index and its digest value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrValue {
     pub index: u32,
     pub value: Vec<u8>,
 }
 
+/// TPM quote: signed attestation over a nonce and PCR values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quote {
     pub provider_type: String,
@@ -121,6 +132,7 @@ pub struct Quote {
     pub extra: HashMap<String, String>,
 }
 
+/// Full attestation report combining nonces, evidence hash, and hardware quote.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationReport {
     pub report_id: String,
@@ -131,6 +143,7 @@ pub struct AttestationReport {
     pub signature: Vec<u8>, // RSA/ECDSA signature of (verifier_nonce + attestation_nonce + evidence_hash)
 }
 
+/// Feature flags describing what a TPM provider supports.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Capabilities {
     pub hardware_backed: bool,

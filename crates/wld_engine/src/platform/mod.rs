@@ -35,116 +35,153 @@ use std::sync::mpsc;
 
 /// Platform-specific keystroke capture.
 pub trait KeystrokeCapture: Send + Sync {
+    /// Begin capturing keystrokes, returning a receiver for events.
     fn start(&mut self) -> Result<mpsc::Receiver<KeystrokeEvent>>;
+    /// Stop capturing and release resources.
     fn stop(&mut self) -> Result<()>;
+    /// Return accumulated synthetic vs. hardware detection statistics.
     fn synthetic_stats(&self) -> SyntheticStats;
+    /// Return true if capture is currently active.
     fn is_running(&self) -> bool;
+    /// Enable or disable strict mode (reject synthetic events).
     fn set_strict_mode(&mut self, strict: bool);
+    /// Return whether strict mode is enabled.
     fn get_strict_mode(&self) -> bool;
 }
 
 /// Platform-specific focus monitoring.
 pub trait FocusMonitor: Send + Sync {
+    /// Query the currently focused application.
     fn get_active_focus(&self) -> Result<FocusInfo>;
+    /// Begin polling for focus changes, returning a receiver for events.
     fn start_monitoring(&mut self) -> Result<mpsc::Receiver<FocusInfo>>;
+    /// Stop focus change polling.
     fn stop_monitoring(&mut self) -> Result<()>;
+    /// Return true if monitoring is currently active.
     fn is_monitoring(&self) -> bool;
 }
 
 /// HID device enumeration.
 pub trait HIDEnumerator {
+    /// List all detected keyboard HID devices.
     fn enumerate_keyboards(&self) -> Result<Vec<HIDDeviceInfo>>;
+    /// Check whether a specific device is currently connected.
     fn is_device_connected(&self, vendor_id: u32, product_id: u32) -> bool;
 }
 
 /// Platform-specific mouse capture with idle jitter and steganography support.
 pub trait MouseCapture: Send + Sync {
+    /// Begin capturing mouse events, returning a receiver.
     fn start(&mut self) -> Result<mpsc::Receiver<MouseEvent>>;
+    /// Stop capturing and release resources.
     fn stop(&mut self) -> Result<()>;
+    /// Return true if capture is currently active.
     fn is_running(&self) -> bool;
+    /// Return accumulated idle micro-movement statistics.
     fn idle_stats(&self) -> MouseIdleStats;
+    /// Reset idle statistics to defaults.
     fn reset_idle_stats(&mut self);
+    /// Configure steganographic mouse parameters.
     fn set_stego_params(&mut self, params: MouseStegoParams);
+    /// Return current steganographic mouse parameters.
     fn get_stego_params(&self) -> MouseStegoParams;
+    /// Enable or disable idle-only capture mode.
     fn set_idle_only_mode(&mut self, enabled: bool);
+    /// Return whether only idle micro-movements are captured.
     fn is_idle_only_mode(&self) -> bool;
 }
 
+/// Create the platform-appropriate keystroke capture implementation.
 #[cfg(target_os = "macos")]
 pub fn create_keystroke_capture() -> Result<Box<dyn KeystrokeCapture>> {
     Ok(Box::new(macos::MacOSKeystrokeCapture::new()?))
 }
 
+/// Create the platform-appropriate keystroke capture implementation.
 #[cfg(target_os = "windows")]
 pub fn create_keystroke_capture() -> Result<Box<dyn KeystrokeCapture>> {
     Ok(Box::new(windows::WindowsKeystrokeCapture::new()?))
 }
 
+/// Create the platform-appropriate keystroke capture implementation.
 #[cfg(target_os = "linux")]
 pub fn create_keystroke_capture() -> Result<Box<dyn KeystrokeCapture>> {
     Ok(Box::new(linux::LinuxKeystrokeCapture::new()?))
 }
 
+/// Create the platform-appropriate focus monitor implementation.
 #[cfg(target_os = "macos")]
 pub fn create_focus_monitor() -> Result<Box<dyn FocusMonitor>> {
     Ok(Box::new(macos::MacOSFocusMonitor::new()?))
 }
 
+/// Create the platform-appropriate focus monitor implementation.
 #[cfg(target_os = "windows")]
 pub fn create_focus_monitor() -> Result<Box<dyn FocusMonitor>> {
     Ok(Box::new(windows::WindowsFocusMonitor::new()?))
 }
 
+/// Create the platform-appropriate focus monitor implementation.
 #[cfg(target_os = "linux")]
 pub fn create_focus_monitor() -> Result<Box<dyn FocusMonitor>> {
     Ok(Box::new(linux::LinuxFocusMonitor::new()?))
 }
 
+/// Create the platform-appropriate mouse capture implementation.
 #[cfg(target_os = "macos")]
 pub fn create_mouse_capture() -> Result<Box<dyn MouseCapture>> {
     Ok(Box::new(macos::MacOSMouseCapture::new()?))
 }
 
+/// Create the platform-appropriate mouse capture implementation.
 #[cfg(target_os = "windows")]
 pub fn create_mouse_capture() -> Result<Box<dyn MouseCapture>> {
     Ok(Box::new(windows::WindowsMouseCapture::new()?))
 }
 
+/// Create the platform-appropriate mouse capture implementation.
 #[cfg(target_os = "linux")]
 pub fn create_mouse_capture() -> Result<Box<dyn MouseCapture>> {
     Ok(Box::new(linux::LinuxMouseCapture::new()?))
 }
 
+/// Query current platform permission status.
 #[cfg(target_os = "macos")]
 pub fn check_permissions() -> PermissionStatus {
     macos::get_permission_status()
 }
 
+/// Query current platform permission status.
 #[cfg(target_os = "windows")]
 pub fn check_permissions() -> PermissionStatus {
     windows::get_permission_status()
 }
 
+/// Query current platform permission status.
 #[cfg(target_os = "linux")]
 pub fn check_permissions() -> PermissionStatus {
     linux::get_permission_status()
 }
 
+/// Prompt for required permissions and return updated status.
 #[cfg(target_os = "macos")]
 pub fn request_permissions() -> PermissionStatus {
     macos::request_all_permissions()
 }
 
+/// Prompt for required permissions and return updated status.
 #[cfg(target_os = "windows")]
 pub fn request_permissions() -> PermissionStatus {
     windows::request_all_permissions()
 }
 
+/// Prompt for required permissions and return updated status.
 #[cfg(target_os = "linux")]
 pub fn request_permissions() -> PermissionStatus {
     linux::request_all_permissions()
 }
 
+/// Return true if all platform-required permissions are granted.
 pub fn has_required_permissions() -> bool {
     check_permissions().all_granted
 }

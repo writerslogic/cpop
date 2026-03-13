@@ -24,6 +24,7 @@ fn derive_signing_key(puf: &dyn PUFProvider) -> Result<SigningKey, KeyHierarchyE
     Ok(SigningKey::from_bytes(&seed))
 }
 
+/// Derive the master identity (public key + fingerprint) from the PUF provider.
 pub fn derive_master_identity(puf: &dyn PUFProvider) -> Result<MasterIdentity, KeyHierarchyError> {
     let signing_key = derive_signing_key(puf)?;
     let public_key = signing_key.verifying_key().to_bytes().to_vec();

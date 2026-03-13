@@ -51,38 +51,59 @@ const FORGERY_CONFIDENCE_PER_FLAG: f64 = 0.3;
 /// Features extracted from typing that are hard to fake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehavioralFingerprint {
+    /// Mean inter-keystroke interval in milliseconds.
     pub keystroke_interval_mean: f64,
+    /// Standard deviation of inter-keystroke intervals.
     pub keystroke_interval_std: f64,
+    /// Skewness of the interval distribution (positive = right-tailed).
     pub keystroke_interval_skewness: f64,
+    /// Excess kurtosis of the interval distribution.
     pub keystroke_interval_kurtosis: f64,
 
+    /// Normalized histogram of interval durations across fixed buckets.
     pub interval_buckets: Vec<f64>,
 
+    /// Mean duration of sentence-level pauses (> 500ms).
     pub sentence_pause_mean: f64,
+    /// Mean duration of paragraph-level pauses (> 2000ms).
     pub paragraph_pause_mean: f64,
+    /// Fraction of keystrokes preceded by a thinking pause.
     pub thinking_pause_frequency: f64,
 
+    /// Mean number of keystrokes per typing burst.
     pub burst_length_mean: f64,
+    /// Variance of within-burst keystroke speeds.
     pub burst_speed_variance: f64,
 }
 
+/// Result of automated forgery detection on typing samples.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgeryAnalysis {
+    /// True if any forgery indicator was triggered.
     pub is_suspicious: bool,
+    /// Confidence score (0.0 to 1.0) based on number of flags.
     pub confidence: f64,
+    /// Individual forgery indicators that were triggered.
     pub flags: Vec<ForgeryFlag>,
 }
 
+/// Individual forgery indicator from behavioral analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ForgeryFlag {
+    /// Coefficient of variation is suspiciously low (robotic regularity).
     TooRegular { cv: f64 },
+    /// Skewness is too low for natural human timing distribution.
     WrongSkewness { skewness: f64 },
+    /// Expected micro-pauses (150-500ms) are absent or too rare.
     MissingMicroPauses,
+    /// Intervals below 20ms exceed plausible threshold.
     SuperhumanSpeed { count: usize },
+    /// No detectable slowdown between first and last quarter (fatigue absent).
     NoFatiguePattern,
 }
 
 impl BehavioralFingerprint {
+    /// Build a fingerprint from jitter samples, computing all statistical features.
     pub fn from_samples(samples: &[SimpleJitterSample]) -> Self {
         if samples.len() < 2 {
             return Self::default();
@@ -209,6 +230,7 @@ impl BehavioralFingerprint {
         }
     }
 
+    /// Scan timing samples for statistical anomalies indicating synthetic input.
     pub fn detect_forgery(samples: &[SimpleJitterSample]) -> ForgeryAnalysis {
         if samples.len() < 10 {
             return ForgeryAnalysis {
@@ -406,5 +428,66 @@ mod tests {
             .flags
             .iter()
             .any(|f| matches!(f, ForgeryFlag::SuperhumanSpeed { .. })));
+    }
+
+    #[test]
+    fn test_fingerprint_single_sample_returns_default() {
+        let samples = mock_samples(&[]);
+        assert_eq!(samples.len(), 1); // only the initial sample
+        let fp = BehavioralFingerprint::from_samples(&samples);
+        assert_eq!(fp.keystroke_interval_mean, 0.0);
+        assert_eq!(fp.burst_length_mean, 0.0);
+    }
+
+    #[test]
+    fn test_detect_forgery_too_few_samples() {
+        let samples = mock_samples(&[200, 180, 220]);
+        let analysis = BehavioralFingerprint::detect_forgery(&samples);
+        // < 10 samples -> not suspicious, no flags
+        assert!(!analysis.is_suspicious);
+        assert!(analysis.flags.is_empty());
+        assert!((analysis.confidence - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_fingerprint_thinking_pause_frequency() {
+        // Include several paragraph-level pauses (> 2000ms)
+        let intervals = vec![150, 180, 2500, 160, 170, 3000, 140, 190, 200, 2100];
+        let samples = mock_samples(&intervals);
+        let fp = BehavioralFingerprint::from_samples(&samples);
+
+        assert!(
+            fp.thinking_pause_frequency > 0.0,
+            "Should detect thinking pauses, got {}",
+            fp.thinking_pause_frequency
+        );
+    }
+
+    #[test]
+    fn test_detect_forgery_no_fatigue_pattern() {
+        // 50 perfectly uniform intervals -> should flag NoFatiguePattern
+        let intervals = vec![200; 50];
+        let samples = mock_samples(&intervals);
+        let analysis = BehavioralFingerprint::detect_forgery(&samples);
+
+        assert!(analysis.is_suspicious);
+        assert!(analysis
+            .flags
+            .iter()
+            .any(|f| matches!(f, ForgeryFlag::NoFatiguePattern)));
+    }
+
+    #[test]
+    fn test_forgery_confidence_caps_at_one() {
+        // Trigger as many flags as possible -> confidence should max at 1.0
+        let mut intervals = vec![200; 50]; // uniform -> TooRegular, WrongSkewness, NoFatiguePattern, MissingMicroPauses
+                                           // Add superhuman speeds
+        for i in 0..10 {
+            intervals[i] = 5;
+        }
+        let samples = mock_samples(&intervals);
+        let analysis = BehavioralFingerprint::detect_forgery(&samples);
+
+        assert!(analysis.confidence <= 1.0);
     }
 }

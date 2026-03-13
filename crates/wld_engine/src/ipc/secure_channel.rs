@@ -21,17 +21,19 @@ const NONCE_COUNTER_MAX: u64 = u64::MAX - 1;
 /// Uses the same cap as IPC wire frames.
 const MAX_SECURE_CHANNEL_PAYLOAD: usize = super::messages::MAX_MESSAGE_SIZE;
 
-/// Typed channel pair with ChaCha20-Poly1305 encryption over `mpsc`
+/// Factory for creating matched sender/receiver pairs with ChaCha20-Poly1305 encryption.
 pub struct SecureChannel<T> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+/// Wire-format encrypted message with nonce and ciphertext.
 pub struct EncryptedMessage {
     nonce: [u8; 12],
     ciphertext: Vec<u8>,
 }
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
+    /// Create a matched sender/receiver pair sharing a fresh random key.
     pub fn new_pair() -> (SecureSender<T>, SecureReceiver<T>) {
         let (tx, rx) = mpsc::channel();
 
@@ -62,6 +64,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> SecureChannel<T> {
     }
 }
 
+/// Sending half of an encrypted channel; encrypts and sends typed values.
 pub struct SecureSender<T> {
     tx: Sender<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
@@ -72,6 +75,7 @@ pub struct SecureSender<T> {
 }
 
 impl<T: serde::Serialize> SecureSender<T> {
+    /// Serialize, encrypt, and send a value through the channel.
     pub fn send(&self, value: T) -> Result<(), SendError<EncryptedMessage>> {
         let plaintext = bincode::serde::encode_to_vec(&value, bincode::config::standard())
             .map_err(|_| {
@@ -110,6 +114,7 @@ impl<T: serde::Serialize> SecureSender<T> {
     }
 }
 
+/// Receiving half of an encrypted channel; decrypts and deserializes typed values.
 pub struct SecureReceiver<T> {
     rx: Receiver<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
@@ -117,6 +122,7 @@ pub struct SecureReceiver<T> {
 }
 
 impl<T: serde::de::DeserializeOwned> SecureReceiver<T> {
+    /// Block until a message arrives, then decrypt and deserialize it.
     pub fn recv(&self) -> Result<T, RecvError> {
         let msg = self.rx.recv()?;
         let nonce = Nonce::from_slice(&msg.nonce);

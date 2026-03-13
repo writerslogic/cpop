@@ -6,6 +6,7 @@ use crate::DateTimeNanosExt;
 use rusqlite::params;
 
 impl SecureStore {
+    /// Insert an event, computing its hash chain link and HMAC, then update integrity.
     pub fn insert_secure_event(&mut self, e: &mut SecureEvent) -> anyhow::Result<()> {
         let previous_hash = self.last_hash;
         e.previous_hash = previous_hash;
@@ -74,6 +75,7 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Retrieve all events for a file path, ordered by insertion.
     pub fn get_events_for_file(&self, path: &str) -> anyhow::Result<Vec<SecureEvent>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, device_id, machine_id, timestamp_ns, file_path, content_hash, file_size, size_delta,
@@ -159,6 +161,7 @@ impl SecureStore {
         rows.map(|r| r.map_err(anyhow::Error::from)).collect()
     }
 
+    /// List tracked files with their latest timestamp and event count.
     pub fn list_files(&self) -> anyhow::Result<Vec<(String, i64, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT file_path, MAX(timestamp_ns) as last_ts, COUNT(*) as event_count
@@ -170,6 +173,7 @@ impl SecureStore {
         rows.map(|r| r.map_err(anyhow::Error::from)).collect()
     }
 
+    /// Return (timestamp, 1) pairs for all events after `start_ts`.
     pub fn get_global_activity(&self, start_ts: i64) -> anyhow::Result<Vec<(i64, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT timestamp_ns FROM secure_events WHERE timestamp_ns >= ? ORDER BY timestamp_ns ASC"
@@ -180,6 +184,7 @@ impl SecureStore {
             .collect()
     }
 
+    /// Return all event timestamps after `start_ts`, ascending.
     pub fn get_all_event_timestamps(&self, start_ts: i64) -> anyhow::Result<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT timestamp_ns FROM secure_events WHERE timestamp_ns >= ? ORDER BY timestamp_ns ASC"
@@ -189,6 +194,7 @@ impl SecureStore {
         rows.map(|r| r.map_err(anyhow::Error::from)).collect()
     }
 
+    /// Return (timestamp, size_delta) pairs for all events, ascending.
     pub fn get_all_events_summary(&self) -> anyhow::Result<Vec<(i64, i32)>> {
         let mut stmt = self.conn.prepare(
             "SELECT timestamp_ns, size_delta FROM secure_events ORDER BY timestamp_ns ASC",
@@ -198,6 +204,7 @@ impl SecureStore {
         rows.map(|r| r.map_err(anyhow::Error::from)).collect()
     }
 
+    /// Null out context notes and VDF data for events older than `days_to_keep`.
     pub fn prune_payloads(&self, days_to_keep: i64) -> anyhow::Result<usize> {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days_to_keep);
         let cutoff_ns = cutoff.timestamp_nanos_safe();

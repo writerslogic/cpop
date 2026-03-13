@@ -41,6 +41,7 @@ pub enum TimeBindingTier {
 }
 
 impl TimeBindingTier {
+    /// Return the string representation of this tier.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Maximum => "maximum",
@@ -50,6 +51,7 @@ impl TimeBindingTier {
         }
     }
 
+    /// Determine the tier from anchor counts and VDF availability.
     pub fn calculate(
         blockchain_count: usize,
         tsa_count: usize,
@@ -266,6 +268,7 @@ impl TimeEvidence {
         }
     }
 
+    /// Append a TSA response and recalculate the tier.
     pub fn add_tsa_response(&mut self, response: TsaResponse) {
         self.tsa_responses
             .get_or_insert_with(Vec::new)
@@ -273,6 +276,7 @@ impl TimeEvidence {
         self.recalculate_tier();
     }
 
+    /// Append a blockchain anchor and recalculate the tier.
     pub fn add_blockchain_anchor(&mut self, anchor: BlockchainAnchor) {
         self.blockchain_anchors
             .get_or_insert_with(Vec::new)
@@ -280,6 +284,7 @@ impl TimeEvidence {
         self.recalculate_tier();
     }
 
+    /// Append a Roughtime sample and recalculate the tier.
     pub fn add_roughtime_sample(&mut self, sample: RoughtimeSample) {
         self.roughtime_samples
             .get_or_insert_with(Vec::new)
@@ -287,6 +292,7 @@ impl TimeEvidence {
         self.recalculate_tier();
     }
 
+    /// Recompute the tier from current anchor counts.
     pub fn recalculate_tier(&mut self) {
         self.tier = TimeBindingTier::calculate(
             self.blockchain_anchors.as_ref().map_or(0, |v| v.len()),
@@ -313,24 +319,28 @@ impl TimeEvidence {
         tsa.chain(bc).chain(rt)
     }
 
+    /// Return the earliest timestamp across all anchor types.
     pub fn earliest_anchor_time(&self) -> Option<DateTime<Utc>> {
         self.anchor_timestamps_ms()
             .min()
             .and_then(|ms| DateTime::from_timestamp_millis(ms as i64))
     }
 
+    /// Return the latest timestamp across all anchor types.
     pub fn latest_anchor_time(&self) -> Option<DateTime<Utc>> {
         self.anchor_timestamps_ms()
             .max()
             .and_then(|ms| DateTime::from_timestamp_millis(ms as i64))
     }
 
+    /// Return the total number of anchors across all types.
     pub fn anchor_count(&self) -> usize {
         self.tsa_responses.as_ref().map_or(0, |v| v.len())
             + self.blockchain_anchors.as_ref().map_or(0, |v| v.len())
             + self.roughtime_samples.as_ref().map_or(0, |v| v.len())
     }
 
+    /// Validate all fields and return a list of errors (empty if valid).
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -433,6 +443,7 @@ impl TimeEvidence {
         errors
     }
 
+    /// Return `true` if `validate()` produces no errors.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }

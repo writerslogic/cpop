@@ -113,10 +113,8 @@ pub fn compute_session_stats(events: &[EventData]) -> SessionStats {
 
     let mut total_duration = 0.0;
     for session in &sessions {
-        if session.len() >= 2 {
-            let first = session.first().unwrap().timestamp_ns;
-            let last = session.last().unwrap().timestamp_ns;
-            total_duration += (last - first) as f64 / 1e9;
+        if let (Some(first), Some(last)) = (session.first(), session.last()) {
+            total_duration += (last.timestamp_ns - first.timestamp_ns) as f64 / 1e9;
         }
     }
 

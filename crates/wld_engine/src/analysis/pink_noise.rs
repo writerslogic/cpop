@@ -30,17 +30,24 @@ const SLOPE_BROWN_MAX: f64 = 2.2;
 
 const PEAK_DETECTION_MULTIPLIER: f64 = 3.0;
 
+/// Result of spectral slope analysis on a time series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinkNoiseAnalysis {
     /// α ≈ 1.0 for ideal pink noise (from log-log PSD regression).
     pub spectral_slope: f64,
+    /// Standard error of the spectral slope estimate.
     pub slope_std_error: f64,
+    /// R-squared goodness-of-fit for the log-log PSD regression.
     pub r_squared: f64,
+    /// Classified noise type based on spectral slope.
     pub noise_type: NoiseType,
+    /// Whether the slope falls within the biologically plausible range.
     pub is_valid: bool,
+    /// Peak frequencies that stand out above the 1/f baseline.
     pub dominant_frequencies: Vec<f64>,
 }
 
+/// Classification of noise type by spectral slope.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NoiseType {
     /// α ≈ 0: White noise (flat spectrum) - random, no memory.
@@ -58,22 +65,28 @@ pub enum NoiseType {
 }
 
 impl PinkNoiseAnalysis {
+    /// Lower bound of biologically plausible spectral slope.
     pub const MIN_VALID_SLOPE: f64 = 0.8;
+    /// Upper bound of biologically plausible spectral slope.
     pub const MAX_VALID_SLOPE: f64 = 1.2;
 
+    /// Return true if the spectral slope is within the human-plausible range.
     pub fn is_biologically_plausible(&self) -> bool {
         self.spectral_slope >= Self::MIN_VALID_SLOPE && self.spectral_slope <= Self::MAX_VALID_SLOPE
     }
 
+    /// Return true if the slope indicates white noise (flat spectrum).
     pub fn is_white_noise(&self) -> bool {
         self.spectral_slope < SLOPE_WHITE_MAX
     }
 
+    /// Return true if the slope indicates over-smoothed or scripted data.
     pub fn is_over_smoothed(&self) -> bool {
         self.spectral_slope > SLOPE_PINKISH_BROWN_MAX
     }
 }
 
+/// Compute spectral slope via FFT-based PSD and classify the noise type.
 pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAnalysis, String> {
     let n = data.len();
     if n < MIN_SPECTRAL_SAMPLES {

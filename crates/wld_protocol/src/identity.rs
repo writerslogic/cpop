@@ -60,7 +60,7 @@ impl DynSignatureAlgorithmIdentifier for PoPSigner {
     }
 }
 
-/// Local signature type to implement SignatureBitStringEncoding (orphan rule).
+/// Newtype wrapper over Ed25519 signature for `SignatureBitStringEncoding` (orphan rule).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoPSignature(pub ed25519_dalek::Signature);
 
@@ -125,18 +125,24 @@ impl AsExtension for PoPCapability {
     }
 }
 
+/// Request payload for enrolling a new PoP identity with a verifier.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EnrollmentRequest {
+    /// User-chosen identifier.
     pub user_id: String,
+    /// COSE-encoded Ed25519 public key bytes.
     pub public_key_cose: Vec<u8>,
+    /// TPM quote or Secure Enclave blob; empty for software-only.
     pub hardware_attestation: Vec<u8>,
 }
 
+/// Manage PoP signing identity: key generation, CSR creation, and enrollment.
 pub struct IdentityManager {
     signer: PoPSigner,
 }
 
 impl IdentityManager {
+    /// Generate a new random Ed25519 signing identity.
     pub fn generate() -> Self {
         let mut bytes = Zeroizing::new([0u8; 32]);
         OsRng.fill_bytes(bytes.as_mut());
@@ -145,16 +151,19 @@ impl IdentityManager {
         }
     }
 
+    /// Restore an identity from a 32-byte Ed25519 secret key.
     pub fn from_secret_key(bytes: &[u8; 32]) -> Self {
         Self {
             signer: PoPSigner(SigningKey::from_bytes(bytes)),
         }
     }
 
+    /// Return a reference to the underlying Ed25519 signing key.
     pub fn signing_key(&self) -> &SigningKey {
         &self.signer.0
     }
 
+    /// Generate a DER-encoded X.509 CSR with SKI and PoP capability extensions.
     pub fn generate_csr(&self, subject_dn: &str) -> Result<Vec<u8>> {
         let subject = Name::from_str(subject_dn)
             .map_err(|e| Error::Validation(format!("Invalid Subject DN: {}", e)))?;

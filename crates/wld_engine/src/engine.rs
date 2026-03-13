@@ -18,23 +18,35 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::SystemTime;
 
+/// Snapshot of the engine's runtime state.
 #[derive(Clone, Debug, Serialize)]
 pub struct EngineStatus {
+    /// Whether the engine is actively monitoring.
     pub running: bool,
+    /// Whether accessibility permissions are granted (macOS).
     pub accessibility_trusted: bool,
+    /// Directories being watched for file changes.
     pub watch_dirs: Vec<PathBuf>,
+    /// Total number of events written to the store.
     pub events_written: u64,
+    /// Number of keystroke jitter samples collected this session.
     pub jitter_samples: u64,
+    /// Timestamp (ns since epoch) of the most recent event.
     pub last_event_timestamp_ns: Option<i64>,
 }
 
+/// Summary of a monitored file's event history.
 #[derive(Clone, Debug, Serialize)]
 pub struct ReportFile {
+    /// Canonical path of the monitored file.
     pub file_path: String,
+    /// Timestamp (ns since epoch) of the last recorded event.
     pub last_event_timestamp_ns: i64,
+    /// Total number of events recorded for this file.
     pub event_count: u64,
 }
 
+/// Core witnessing engine: monitors files and keystrokes, records evidence events.
 pub struct Engine {
     inner: Arc<EngineInner>,
 }
@@ -55,6 +67,7 @@ struct EngineInner {
 }
 
 impl Engine {
+    /// Initialize and start the engine with the given configuration.
     pub fn start(config: WLDConfig) -> Result<Self> {
         crate::crypto::harden_process();
 
@@ -120,10 +133,12 @@ impl Engine {
         Ok(Self { inner })
     }
 
+    /// Stop the engine (alias for `pause`).
     pub fn stop(&self) -> Result<()> {
         self.pause()
     }
 
+    /// Pause monitoring: stop file watcher and keystroke capture.
     pub fn pause(&self) -> Result<()> {
         self.inner.running.store(false, Ordering::SeqCst);
         *self.inner.watcher.lock_recover() = None;
@@ -137,6 +152,7 @@ impl Engine {
         Ok(())
     }
 
+    /// Resume monitoring after a pause, restarting watchers and capture.
     pub fn resume(&self) -> Result<()> {
         if self.inner.status.lock_recover().running {
             return Ok(());
@@ -159,12 +175,14 @@ impl Engine {
         Ok(())
     }
 
+    /// Return a snapshot of the engine's current status.
     pub fn status(&self) -> EngineStatus {
         let mut status = self.inner.status.lock_recover().clone();
         status.jitter_samples = self.inner.jitter_session.lock_recover().samples.len() as u64;
         status
     }
 
+    /// List all monitored files with their event counts and timestamps.
     pub fn report_files(&self) -> Result<Vec<ReportFile>> {
         let rows = self.inner.store.lock_recover().list_files()?;
         Ok(rows
@@ -177,10 +195,12 @@ impl Engine {
             .collect())
     }
 
+    /// Return the engine's data directory path.
     pub fn data_dir(&self) -> PathBuf {
         self.inner.data_dir.clone()
     }
 
+    /// Apply a new configuration, restarting watchers if currently running.
     pub fn update_config(&self, mut config: WLDConfig) -> Result<()> {
         config.data_dir = self.inner.data_dir.clone();
         config.persist()?;

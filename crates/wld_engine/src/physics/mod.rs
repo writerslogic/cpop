@@ -13,3 +13,6 @@ pub use entanglement::Entanglement;
 pub use environment::{AmbientEntropy, AmbientSensing};
 pub use puf::SiliconPUF;
 pub use synthesis::PhysicalContext;
+
+#[cfg(test)]
+mod tests;

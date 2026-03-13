@@ -55,9 +55,12 @@ pub fn derive_session_secret(master_key: &[u8], context: &[u8]) -> [u8; 32] {
     output
 }
 
+/// SHA-256 hash of physical entropy samples with estimated entropy level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PhysHash {
+    /// Raw 32-byte hash of captured timing samples.
     pub hash: [u8; 32],
+    /// Estimated entropy in bits from the source measurements.
     pub entropy_bits: u8,
 }
 
@@ -70,8 +73,10 @@ impl From<[u8; 32]> for PhysHash {
     }
 }
 
+/// Jitter delay in microseconds.
 pub type Jitter = u32;
 
+/// Errors from entropy collection and jitter computation.
 #[derive(Debug)]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum Error {
@@ -141,6 +146,7 @@ where
     P: EntropySource + JitterEngine,
     F: JitterEngine,
 {
+    /// Create a hybrid engine with a primary physics source and HMAC fallback.
     pub fn new(phys: P, fallback: F) -> Self {
         Self {
             phys,
@@ -149,11 +155,13 @@ where
         }
     }
 
+    /// Set the minimum entropy bits required before using the physics source.
     pub fn with_min_entropy(mut self, bits: u8) -> Self {
         self.min_phys_entropy = bits;
         self
     }
 
+    /// Sample jitter, preferring physics entropy and falling back to HMAC.
     pub fn sample(&self, secret: &[u8; 32], inputs: &[u8]) -> Result<(Jitter, Evidence), Error> {
         match self.phys.sample(inputs) {
             Ok(entropy)
@@ -171,6 +179,7 @@ where
         }
     }
 
+    /// Return true if the physics entropy source is currently functional.
     pub fn phys_available(&self) -> bool {
         self.phys.sample(b"probe").is_ok()
     }
@@ -188,6 +197,7 @@ pub struct Session {
 
 #[cfg(feature = "std")]
 impl Session {
+    /// Create a session with the given secret and default hybrid engine.
     pub fn new(secret: [u8; 32]) -> Self {
         Self {
             secret: Zeroizing::new(secret),
@@ -197,6 +207,7 @@ impl Session {
         }
     }
 
+    /// Create a session with a custom hybrid engine.
     pub fn with_engine(secret: [u8; 32], engine: HybridEngine) -> Self {
         Self {
             secret: Zeroizing::new(secret),
@@ -206,6 +217,7 @@ impl Session {
         }
     }
 
+    /// Create a session with a cryptographically random secret.
     #[cfg(feature = "rand")]
     pub fn random() -> Self {
         use rand::RngCore;
@@ -214,25 +226,30 @@ impl Session {
         Self::new(secret)
     }
 
+    /// Sample jitter for the given input and append evidence to the chain.
     pub fn sample(&mut self, inputs: &[u8]) -> Result<Jitter, Error> {
         let (jitter, evidence) = self.engine.sample(&self.secret, inputs)?;
         self.evidence.append(evidence);
         Ok(jitter)
     }
 
+    /// Return a reference to the accumulated evidence chain.
     pub fn evidence(&self) -> &EvidenceChain {
         &self.evidence
     }
 
+    /// Validate collected jitter values against the human typing model.
     pub fn validate(&self) -> ValidationResult {
         let jitters: Vec<Jitter> = self.evidence.records.iter().map(|e| e.jitter()).collect();
         self.model.validate(&jitters)
     }
 
+    /// Return the fraction of evidence records backed by physics entropy.
     pub fn phys_ratio(&self) -> f64 {
         self.evidence.phys_ratio()
     }
 
+    /// Serialize the evidence chain to pretty-printed JSON.
     pub fn export_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(&self.evidence)
     }

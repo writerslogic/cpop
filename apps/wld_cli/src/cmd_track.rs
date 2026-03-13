@@ -89,6 +89,100 @@ fn auto_checkpoint_file(
     Ok(true)
 }
 
+fn setup_keystroke_capture(
+    session: &Arc<Mutex<JitterSession>>,
+) -> (
+    Option<Box<dyn wld_engine::platform::KeystrokeCapture>>,
+    Option<std::thread::JoinHandle<()>>,
+) {
+    let perms = wld_engine::platform::check_permissions();
+    if !perms.all_granted {
+        println!("Requesting input monitoring permissions...");
+        let updated = wld_engine::platform::request_permissions();
+        if !updated.all_granted {
+            eprintln!("Warning: Permissions not granted. Keystroke capture disabled.");
+            eprintln!("Grant access in System Settings > Privacy & Security > Input Monitoring.");
+            eprintln!("File checkpoints will still be created on save.");
+            eprintln!();
+        }
+    }
+
+    if !wld_engine::platform::has_required_permissions() {
+        return (None, None);
+    }
+
+    match wld_engine::platform::create_keystroke_capture() {
+        Ok(mut capture) => match capture.start() {
+            Ok(rx) => {
+                let session_clone = Arc::clone(session);
+                let handle = std::thread::spawn(move || {
+                    while let Ok(_event) = rx.recv() {
+                        if let Ok(mut s) = session_clone.lock() {
+                            if let Err(e) = s.record_keystroke() {
+                                eprintln!("Warning: keystroke recording failed: {}", e);
+                            }
+                        }
+                    }
+                });
+                println!("Keystroke capture: active");
+                (Some(capture), Some(handle))
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not start keystroke capture: {}", e);
+                (None, None)
+            }
+        },
+        Err(e) => {
+            eprintln!("Warning: Could not initialize keystroke capture: {}", e);
+            (None, None)
+        }
+    }
+}
+
+fn finalize_session(
+    capture_box: &mut Option<Box<dyn wld_engine::platform::KeystrokeCapture>>,
+    keystroke_handle: Option<std::thread::JoinHandle<()>>,
+    session: &Arc<Mutex<JitterSession>>,
+    session_path: &Path,
+    current_file: &Path,
+    checkpoint_count: u32,
+    file: &Path,
+) -> Result<()> {
+    if let Some(ref mut capture) = capture_box {
+        let _ = capture.stop();
+    }
+    if let Some(handle) = keystroke_handle {
+        let _ = handle.join();
+    }
+
+    let (duration, keystroke_count, sample_count) = {
+        let mut s = session
+            .lock()
+            .map_err(|_| anyhow!("Session lock poisoned"))?;
+        s.end();
+        s.save(session_path)
+            .map_err(|e| anyhow!("Error saving session: {}", e))?;
+        (s.duration(), s.keystroke_count(), s.sample_count())
+    };
+
+    let _ = fs::remove_file(current_file);
+
+    println!();
+    println!("=== Session Complete ===");
+    println!("Duration: {:?}", duration);
+    println!("Keystrokes: {}", keystroke_count);
+    println!("Jitter samples: {}", sample_count);
+    println!("Checkpoints: {}", checkpoint_count);
+    if duration.as_secs() > 0 && keystroke_count > 0 {
+        let rate = keystroke_count as f64 / (duration.as_secs_f64() / 60.0);
+        println!("Typing rate: {:.0} keystrokes/min", rate);
+    }
+    println!();
+    println!("Export evidence with: wld export {}", file.display());
+
+    Ok(())
+}
+
 #[allow(unused_variables)]
 async fn cmd_track_start(
     file: &Path,
@@ -161,51 +255,7 @@ async fn cmd_track_start(
         .map_err(|e| anyhow!("Error saving session: {}", e))?;
 
     let session = Arc::new(Mutex::new(session));
-    let perms = wld_engine::platform::check_permissions();
-    let mut capture_box: Option<Box<dyn wld_engine::platform::KeystrokeCapture>> = None;
-
-    if !perms.all_granted {
-        println!("Requesting input monitoring permissions...");
-        let updated = wld_engine::platform::request_permissions();
-        if !updated.all_granted {
-            eprintln!("Warning: Permissions not granted. Keystroke capture disabled.");
-            eprintln!("Grant access in System Settings > Privacy & Security > Input Monitoring.");
-            eprintln!("File checkpoints will still be created on save.");
-            eprintln!();
-        }
-    }
-
-    let keystroke_handle = if wld_engine::platform::has_required_permissions() {
-        match wld_engine::platform::create_keystroke_capture() {
-            Ok(mut capture) => match capture.start() {
-                Ok(rx) => {
-                    let session_clone = Arc::clone(&session);
-                    let handle = std::thread::spawn(move || {
-                        while let Ok(_event) = rx.recv() {
-                            if let Ok(mut s) = session_clone.lock() {
-                                if let Err(e) = s.record_keystroke() {
-                                    eprintln!("Warning: keystroke recording failed: {}", e);
-                                }
-                            }
-                        }
-                    });
-                    capture_box = Some(capture);
-                    println!("Keystroke capture: active");
-                    Some(handle)
-                }
-                Err(e) => {
-                    eprintln!("Warning: Could not start keystroke capture: {}", e);
-                    None
-                }
-            },
-            Err(e) => {
-                eprintln!("Warning: Could not initialize keystroke capture: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let (mut capture_box, keystroke_handle) = setup_keystroke_capture(&session);
 
     let (watcher_tx, watcher_rx) = std_mpsc::channel();
     let file_parent = abs_path.parent().unwrap_or(&abs_path).to_path_buf();
@@ -255,7 +305,7 @@ async fn cmd_track_start(
 
     let mut last_checkpoint = Instant::now();
     let debounce = Duration::from_secs(5);
-    let save_interval = Duration::from_secs(30);
+    let save_interval = Duration::from_secs(5);
     let mut last_save = Instant::now();
 
     loop {
@@ -329,39 +379,15 @@ async fn cmd_track_start(
         }
     }
 
-    if let Some(ref mut capture) = capture_box {
-        let _ = capture.stop();
-    }
-    if let Some(handle) = keystroke_handle {
-        let _ = handle.join();
-    }
-
-    let (duration, keystroke_count, sample_count) = {
-        let mut s = session
-            .lock()
-            .map_err(|_| anyhow!("Session lock poisoned"))?;
-        s.end();
-        s.save(&session_path)
-            .map_err(|e| anyhow!("Error saving session: {}", e))?;
-        (s.duration(), s.keystroke_count(), s.sample_count())
-    };
-
-    let _ = fs::remove_file(current_file);
-
-    println!();
-    println!("=== Session Complete ===");
-    println!("Duration: {:?}", duration);
-    println!("Keystrokes: {}", keystroke_count);
-    println!("Jitter samples: {}", sample_count);
-    println!("Checkpoints: {}", checkpoint_count);
-    if duration.as_secs() > 0 && keystroke_count > 0 {
-        let rate = keystroke_count as f64 / (duration.as_secs_f64() / 60.0);
-        println!("Typing rate: {:.0} keystrokes/min", rate);
-    }
-    println!();
-    println!("Export evidence with: wld export {}", file.display());
-
-    Ok(())
+    finalize_session(
+        &mut capture_box,
+        keystroke_handle,
+        &session,
+        &session_path,
+        current_file,
+        checkpoint_count,
+        file,
+    )
 }
 
 pub(crate) async fn cmd_track_smart(

@@ -48,6 +48,7 @@ const COMPARE_WEIGHT_ALTERNATING: f64 = 0.3;
 /// Weight for hand alternation scalar in profile comparison.
 const COMPARE_WEIGHT_HAND_ALT: f64 = 0.1;
 
+/// Map a keystroke interval duration to a histogram bucket index (0..9).
 pub fn interval_to_bucket(duration: Duration) -> u8 {
     let ms = duration.as_millis().min(i64::MAX as u128) as i64;
     let mut bucket = ms / INTERVAL_BUCKET_SIZE_MS;
@@ -60,6 +61,7 @@ pub fn interval_to_bucket(duration: Duration) -> u8 {
     bucket as u8
 }
 
+/// Compute a weighted similarity score (0.0..1.0) between two typing profiles.
 pub fn compare_profiles(a: TypingProfile, b: TypingProfile) -> f64 {
     if a.total_transitions == 0 || b.total_transitions == 0 {
         return 0.0;
@@ -106,6 +108,7 @@ fn sqrt(x: f64) -> f64 {
     x.sqrt()
 }
 
+/// Return true if the typing profile falls within human-plausible bounds.
 pub fn is_human_plausible(profile: TypingProfile) -> bool {
     if profile.total_transitions < MIN_TRANSITIONS_PLAUSIBILITY {
         return true;
@@ -175,6 +178,7 @@ fn max_histogram_concentration(profile: &TypingProfile) -> f64 {
     max_bucket as f64 / total as f64
 }
 
+/// Compute Euclidean distance between two normalized typing profiles.
 pub fn profile_distance(a: TypingProfile, b: TypingProfile) -> f64 {
     let a_norm = normalize_histograms(&a);
     let b_norm = normalize_histograms(&b);
@@ -238,6 +242,7 @@ fn normalize_histograms(profile: &TypingProfile) -> NormalizedProfile {
     out
 }
 
+/// Run quick plausibility checks and return a list of warning strings.
 pub fn quick_verify_profile(profile: TypingProfile) -> Vec<String> {
     let mut issues = Vec::new();
     if !is_human_plausible(profile) {

@@ -28,15 +28,24 @@ const MIN_HUMAN_CONFIDENCE: f64 = 0.5;
 const REPEATING_PATTERN_THRESHOLD: f64 = 0.8;
 const MIN_PATTERN_CHECKS: usize = 2;
 
+/// Statistical model of human typing patterns for automation detection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HumanModel {
+    /// Minimum expected inter-key interval in microseconds.
     pub iki_min_us: u32,
+    /// Maximum expected inter-key interval in microseconds.
     pub iki_max_us: u32,
+    /// Mean inter-key interval in microseconds (Aalto 136M baseline).
     pub iki_mean_us: u32,
+    /// Standard deviation of inter-key intervals in microseconds.
     pub iki_std_us: u32,
+    /// Minimum expected jitter value in microseconds.
     pub jitter_min_us: u32,
+    /// Maximum expected jitter value in microseconds.
     pub jitter_max_us: u32,
+    /// Minimum sequence length required for validation.
     pub min_sequence_length: usize,
+    /// Maximum fraction of consecutive identical values before flagging.
     pub max_perfect_ratio: f64,
 }
 
@@ -55,37 +64,57 @@ impl Default for HumanModel {
     }
 }
 
+/// Result of validating a jitter or IKI sequence against the human model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationResult {
+    /// True if no anomalies detected and confidence exceeds threshold.
     pub is_human: bool,
-    /// 0.0 to 1.0.
+    /// Confidence score from 0.0 (automated) to 1.0 (human).
     pub confidence: f64,
+    /// Detected anomalies that reduced confidence.
     pub anomalies: Vec<Anomaly>,
+    /// Descriptive statistics of the input sequence.
     pub stats: SequenceStats,
 }
 
+/// Single detected anomaly in a jitter or IKI sequence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Anomaly {
+    /// Classification of the anomaly.
     pub kind: AnomalyKind,
+    /// Index of the first occurrence in the sequence.
     pub position: usize,
+    /// Human-readable description of the anomaly.
     pub detail: String,
 }
 
+/// Classification of typing anomalies that suggest automation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnomalyKind {
+    /// Too many consecutive identical timing values.
     PerfectTiming,
+    /// Values outside the expected human range.
     OutOfRange,
+    /// Sequence too short for meaningful analysis.
     DistributionMismatch,
+    /// Detected a short repeating pattern (length 2-5).
     RepeatingPattern,
+    /// Standard deviation below the minimum threshold.
     LowVariance,
 }
 
+/// Descriptive statistics for a sequence of timing values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequenceStats {
+    /// Number of values in the sequence.
     pub count: usize,
+    /// Arithmetic mean.
     pub mean: f64,
+    /// Population standard deviation.
     pub std_dev: f64,
+    /// Minimum value.
     pub min: Jitter,
+    /// Maximum value.
     pub max: Jitter,
 }
 
@@ -122,17 +151,20 @@ fn out_of_range_anomaly<T>(
 }
 
 impl HumanModel {
+    /// Load the embedded Aalto 136M keystroke baseline model.
     #[cfg(feature = "std")]
     pub fn baseline() -> Self {
         const BASELINE: &str = include_str!("baseline.json");
         serde_json::from_str(BASELINE).expect("embedded baseline is valid")
     }
 
+    /// Deserialize a model from JSON.
     #[cfg(feature = "std")]
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
+    /// Serialize the model to pretty-printed JSON.
     #[cfg(feature = "std")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)

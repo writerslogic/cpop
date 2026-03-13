@@ -56,6 +56,7 @@ fn mix_physics_seed(base_input: [u8; 32], physics_seed: Option<[u8; 32]>) -> [u8
     }
 }
 
+/// Append-only checkpoint chain with VDF time proofs for a single document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chain {
     pub document_id: String,
@@ -75,10 +76,12 @@ pub struct Chain {
 }
 
 impl Chain {
+    /// Create a new chain in Legacy entanglement mode.
     pub fn new(document_path: impl AsRef<Path>, vdf_params: Parameters) -> Result<Self> {
         Self::new_with_mode(document_path, vdf_params, EntanglementMode::Legacy)
     }
 
+    /// Set the signature policy (Required or Optional) for this chain.
     pub fn with_signature_policy(mut self, policy: SignaturePolicy) -> Self {
         self.signature_policy = policy;
         self
@@ -109,10 +112,12 @@ impl Chain {
         })
     }
 
+    /// Commit a new checkpoint, hashing the document and computing VDF proof.
     pub fn commit(&mut self, message: Option<String>) -> Result<Checkpoint> {
         self.commit_internal(message, None)
     }
 
+    /// Commit with an explicit VDF duration instead of elapsed time since last checkpoint.
     pub fn commit_with_vdf_duration(
         &mut self,
         message: Option<String>,
@@ -174,6 +179,9 @@ impl Chain {
             return Err(Error::invalid_state(
                 "commit_entangled requires EntanglementMode::Entangled",
             ));
+        }
+        if jitter_session_id.is_empty() {
+            return Err(Error::checkpoint("empty jitter_session_id"));
         }
 
         let (content_hash, content_size) =
@@ -392,6 +400,7 @@ impl Chain {
         true
     }
 
+    /// Verify the chain and return a detailed report with warnings and failures.
     pub fn verify_detailed(&self) -> VerificationReport {
         let mut report = VerificationReport::new();
 
@@ -603,6 +612,7 @@ impl Chain {
         report
     }
 
+    /// Sum the minimum elapsed time across all VDF proofs in the chain.
     pub fn total_elapsed_time(&self) -> Duration {
         self.checkpoints
             .iter()
@@ -611,6 +621,7 @@ impl Chain {
             .fold(Duration::from_secs(0), |acc, v| acc + v)
     }
 
+    /// Generate a human-readable summary of the chain state.
     pub fn summary(&self) -> ChainSummary {
         let mut summary = ChainSummary {
             document_path: self.document_path.clone(),
@@ -633,6 +644,7 @@ impl Chain {
         summary
     }
 
+    /// Persist the chain to disk using atomic tmp+rename.
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         self.storage_path = Some(path.to_path_buf());
@@ -648,6 +660,7 @@ impl Chain {
         Ok(())
     }
 
+    /// Load and validate a chain from disk, rejecting tampered VDF proofs.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let data = fs::read(path.as_ref())?;
         let mut chain: Chain = serde_json::from_slice(&data)
@@ -718,6 +731,7 @@ impl Chain {
         Ok(())
     }
 
+    /// Locate the chain file for a document in the writerslogic directory.
     pub fn find_chain(
         document_path: impl AsRef<Path>,
         writerslogic_dir: impl AsRef<Path>,
@@ -738,6 +752,7 @@ impl Chain {
         Ok(chain_path)
     }
 
+    /// Load an existing chain or create a new one for the given document.
     pub fn get_or_create_chain(
         document_path: impl AsRef<Path>,
         writerslogic_dir: impl AsRef<Path>,
@@ -760,10 +775,12 @@ impl Chain {
         Ok(chain)
     }
 
+    /// Return the most recent checkpoint, if any.
     pub fn latest(&self) -> Option<&Checkpoint> {
         self.checkpoints.last()
     }
 
+    /// Return the checkpoint at the given ordinal, or error if out of range.
     pub fn at(&self, ordinal: u64) -> Result<&Checkpoint> {
         let index = usize::try_from(ordinal)
             .map_err(|_| Error::checkpoint("ordinal too large for this platform"))?;
@@ -772,10 +789,12 @@ impl Chain {
             .ok_or_else(|| Error::not_found(format!("checkpoint ordinal {ordinal} out of range")))
     }
 
+    /// Return the filesystem path where this chain is persisted, if set.
     pub fn storage_path(&self) -> Option<&Path> {
         self.storage_path.as_deref()
     }
 
+    /// Override the storage path for subsequent `save` calls.
     pub fn set_storage_path(&mut self, path: PathBuf) {
         self.storage_path = Some(path);
     }

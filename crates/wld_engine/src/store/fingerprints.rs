@@ -5,6 +5,7 @@ use crate::store::SecureStore;
 use rusqlite::params;
 
 impl SecureStore {
+    /// Load a stored author fingerprint by profile ID.
     pub fn get_fingerprint(&self, profile_id: &str) -> anyhow::Result<Option<AuthorFingerprint>> {
         let mut stmt = self
             .conn
@@ -20,6 +21,7 @@ impl SecureStore {
         }
     }
 
+    /// Persist an author fingerprint, replacing any existing one with the same ID.
     pub fn save_fingerprint(&self, fingerprint: &AuthorFingerprint) -> anyhow::Result<()> {
         let json = serde_json::to_string(fingerprint)?;
         let now = chrono::Utc::now().timestamp();

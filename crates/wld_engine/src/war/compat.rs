@@ -134,8 +134,8 @@ impl Block {
     }
 }
 
-/// Convert legacy `AttestationResultWire` to an `EarToken`.
 impl AttestationResultWire {
+    /// Convert this legacy attestation result to an EAR token.
     pub fn to_ear(&self) -> EarToken {
         let status = match self.verdict {
             Verdict::Authentic => Ar4siStatus::Affirming,
@@ -202,8 +202,8 @@ impl AttestationResultWire {
     }
 }
 
-/// Convert an `EarToken` back to legacy `AttestationResultWire`.
 impl EarToken {
+    /// Convert this EAR token back to a legacy `AttestationResultWire`.
     pub fn to_attestation_result_wire(&self) -> AttestationResultWire {
         let appr = self.pop_appraisal();
 

@@ -10,13 +10,12 @@ use std::time::SystemTime;
 
 /// macOS focus monitor using NSWorkspace and Accessibility APIs.
 pub struct MacOSFocusMonitor {
-    #[allow(dead_code)]
-    config: Arc<SentinelConfig>,
+    _config: Arc<SentinelConfig>,
 }
 
 impl MacOSFocusMonitor {
     pub fn new(config: Arc<SentinelConfig>) -> Self {
-        Self { config }
+        Self { _config: config }
     }
 
     pub fn new_monitor(config: Arc<SentinelConfig>) -> Box<dyn SentinelFocusTracker> {

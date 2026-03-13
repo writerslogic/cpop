@@ -42,7 +42,7 @@ pub struct EntropyReport {
 }
 
 impl EntropyReport {
-    /// Check if all entropy values meet the draft-condrey-rats-pop-appraisal thresholds.
+    /// Return `true` if all entropy values meet the spec appraisal thresholds.
     pub fn validate_thresholds(&self) -> bool {
         self.timing_entropy >= 3.0 && self.revision_entropy >= 3.0 && self.pause_entropy >= 2.0
     }

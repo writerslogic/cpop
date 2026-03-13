@@ -19,6 +19,7 @@ pub struct ResearchCollector {
 }
 
 impl ResearchCollector {
+    /// Create a collector with the given research configuration.
     pub fn new(config: ResearchConfig) -> Self {
         Self {
             config,
@@ -26,6 +27,7 @@ impl ResearchCollector {
         }
     }
 
+    /// Return `true` if the user has opted in to research contribution.
     pub fn is_enabled(&self) -> bool {
         self.config.contribute_to_research
     }
@@ -49,10 +51,12 @@ impl ResearchCollector {
         }
     }
 
+    /// Return the number of sessions currently buffered.
     pub fn session_count(&self) -> usize {
         self.sessions.len()
     }
 
+    /// Build a serializable export envelope from all buffered sessions.
     pub fn export(&self) -> ResearchDataExport {
         ResearchDataExport {
             version: 1,
@@ -62,10 +66,12 @@ impl ResearchCollector {
         }
     }
 
+    /// Serialize all buffered sessions to pretty-printed JSON.
     pub fn export_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(&self.export()).map_err(|e| e.to_string())
     }
 
+    /// Persist buffered sessions to a timestamped JSON file on disk.
     pub fn save(&self) -> Result<(), String> {
         if self.sessions.is_empty() {
             return Ok(());
@@ -83,6 +89,7 @@ impl ResearchCollector {
         Ok(())
     }
 
+    /// Load previously saved sessions from the research data directory.
     pub fn load(&mut self) -> Result<(), String> {
         if !self.config.research_data_dir.exists() {
             return Ok(());
@@ -111,6 +118,7 @@ impl ResearchCollector {
         Ok(())
     }
 
+    /// Clear all buffered sessions and delete the research data directory.
     pub fn clear(&mut self) -> Result<(), String> {
         self.sessions.clear();
 
@@ -121,6 +129,7 @@ impl ResearchCollector {
         Ok(())
     }
 
+    /// Upload buffered sessions to the research endpoint; clear on success.
     pub async fn upload(&mut self) -> Result<UploadResult, String> {
         if !self.is_enabled() {
             return Err("Research contribution not enabled".to_string());
@@ -184,6 +193,7 @@ impl ResearchCollector {
         })
     }
 
+    /// Return `true` if research is enabled and enough sessions are buffered.
     pub fn should_upload(&self) -> bool {
         self.is_enabled() && self.sessions.len() >= MIN_SESSIONS_FOR_UPLOAD
     }

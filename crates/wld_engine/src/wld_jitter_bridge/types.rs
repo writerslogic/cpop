@@ -20,6 +20,7 @@ pub struct HybridSample {
 }
 
 impl HybridSample {
+    /// Compute the SHA-256 hash of this sample's fields for chain integrity.
     pub fn compute_hash(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();

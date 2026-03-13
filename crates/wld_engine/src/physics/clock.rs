@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 pub struct ClockSkew;
 
 impl ClockSkew {
+    /// Sample the CPU counter delta as a clock skew measurement.
     pub fn measure() -> u64 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {

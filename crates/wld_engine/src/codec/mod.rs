@@ -28,6 +28,7 @@ pub const CBOR_TAG_COMPACT_REF: u64 = 1129336657;
 /// IANA Private Enterprise Number for WritersLogic Inc.
 pub const IANA_PEN: u32 = 65074;
 
+/// Wire serialization format selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Format {
     /// CBOR encoding (RFC 8949 deterministic)
@@ -38,6 +39,7 @@ pub enum Format {
 }
 
 impl Format {
+    /// Return the MIME type for this format.
     pub fn mime_type(&self) -> &'static str {
         match self {
             Format::Cbor => "application/cpop+cbor",
@@ -45,6 +47,7 @@ impl Format {
         }
     }
 
+    /// Return the file extension for this format.
     pub fn extension(&self) -> &'static str {
         match self {
             Format::Cbor => "cpop",
@@ -52,6 +55,7 @@ impl Format {
         }
     }
 
+    /// Detect format from the first byte of encoded data.
     pub fn detect(data: &[u8]) -> Option<Self> {
         if data.is_empty() {
             return None;
@@ -66,6 +70,7 @@ impl Format {
     }
 }
 
+/// Encoding/decoding errors for CBOR and JSON codecs.
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
     #[error("CBOR encoding error: {0}")]
@@ -90,6 +95,7 @@ pub enum CodecError {
 
 pub type Result<T> = std::result::Result<T, CodecError>;
 
+/// Serialize a value in the specified format.
 pub fn encode<T: Serialize>(value: &T, format: Format) -> Result<Vec<u8>> {
     match format {
         Format::Cbor => cbor::encode(value),
@@ -97,6 +103,7 @@ pub fn encode<T: Serialize>(value: &T, format: Format) -> Result<Vec<u8>> {
     }
 }
 
+/// Deserialize a value from the specified format.
 pub fn decode<T: DeserializeOwned>(data: &[u8], format: Format) -> Result<T> {
     match format {
         Format::Cbor => cbor::decode(data),
@@ -104,12 +111,14 @@ pub fn decode<T: DeserializeOwned>(data: &[u8], format: Format) -> Result<T> {
     }
 }
 
+/// Auto-detect format and deserialize.
 pub fn decode_auto<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     let format = Format::detect(data)
         .ok_or_else(|| CodecError::InvalidFormat("unable to detect format".to_string()))?;
     decode(data, format)
 }
 
+/// Serialize a value into a writer in the specified format.
 pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W, format: Format) -> Result<()> {
     match format {
         Format::Cbor => cbor::encode_to(value, writer),
@@ -117,6 +126,7 @@ pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W, format: Format) -
     }
 }
 
+/// Deserialize a value from a reader in the specified format.
 pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R, format: Format) -> Result<T> {
     match format {
         Format::Cbor => cbor::decode_from(reader),
@@ -191,5 +201,77 @@ mod tests {
         let json_encoded = encode(&original, Format::Json).unwrap();
         let json_decoded: TestStruct = decode_auto(&json_encoded).unwrap();
         assert_eq!(original, json_decoded);
+    }
+
+    #[test]
+    fn test_format_mime_type() {
+        assert_eq!(Format::Cbor.mime_type(), "application/cpop+cbor");
+        assert_eq!(Format::Json.mime_type(), "application/json");
+    }
+
+    #[test]
+    fn test_format_extension() {
+        assert_eq!(Format::Cbor.extension(), "cpop");
+        assert_eq!(Format::Json.extension(), "json");
+    }
+
+    #[test]
+    fn test_format_default_is_cbor() {
+        assert_eq!(Format::default(), Format::Cbor);
+    }
+
+    #[test]
+    fn test_format_detect_tagged_cbor() {
+        // 0xD9 = 2-byte tag header (CBOR major type 6)
+        assert_eq!(Format::detect(&[0xD9, 0x01, 0x02]), Some(Format::Cbor));
+        // 0xDA = 4-byte tag header
+        assert_eq!(
+            Format::detect(&[0xDA, 0x00, 0x00, 0x00, 0x01]),
+            Some(Format::Cbor)
+        );
+        // 0xDB = 8-byte tag header
+        assert_eq!(Format::detect(&[0xDB]), Some(Format::Cbor));
+    }
+
+    #[test]
+    fn test_format_detect_unknown_byte() {
+        // A byte that doesn't match JSON or CBOR patterns
+        assert_eq!(Format::detect(&[0x00]), None);
+        assert_eq!(Format::detect(&[0x42]), None);
+        assert_eq!(Format::detect(&[0xFF]), None);
+    }
+
+    #[test]
+    fn test_decode_auto_empty_data() {
+        let result = decode_auto::<TestStruct>(&[]);
+        assert!(matches!(result, Err(CodecError::InvalidFormat(_))));
+    }
+
+    #[test]
+    fn test_encode_to_decode_from_cbor() {
+        let original = TestStruct {
+            name: "writer".to_string(),
+            value: -7,
+            data: vec![0xFF, 0x00],
+        };
+
+        let mut buf = Vec::new();
+        encode_to(&original, &mut buf, Format::Cbor).unwrap();
+        let decoded: TestStruct = decode_from(&buf[..], Format::Cbor).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_encode_to_decode_from_json() {
+        let original = TestStruct {
+            name: "writer".to_string(),
+            value: -7,
+            data: vec![0xFF, 0x00],
+        };
+
+        let mut buf = Vec::new();
+        encode_to(&original, &mut buf, Format::Json).unwrap();
+        let decoded: TestStruct = decode_from(&buf[..], Format::Json).unwrap();
+        assert_eq!(original, decoded);
     }
 }

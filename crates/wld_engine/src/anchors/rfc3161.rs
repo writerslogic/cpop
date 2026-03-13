@@ -10,12 +10,14 @@ const DEFAULT_TSA_URLS: &[&str] = &[
     "http://timestamp.globalsign.com/tsa/r6advanced1",
 ];
 
+/// Anchor provider using RFC 3161 Time-Stamp Authorities.
 pub struct Rfc3161Provider {
     tsa_urls: Vec<String>,
     client: reqwest::Client,
 }
 
 impl Rfc3161Provider {
+    /// Create a provider with explicit TSA endpoint URLs.
     pub fn new(tsa_urls: Vec<String>) -> Result<Self, AnchorError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -454,6 +456,7 @@ impl AnchorProvider for Rfc3161Provider {
 }
 
 impl Rfc3161Provider {
+    /// Create a provider using well-known public TSA endpoints.
     pub fn with_defaults() -> Result<Self, AnchorError> {
         Self::new(DEFAULT_TSA_URLS.iter().map(|s| s.to_string()).collect())
     }

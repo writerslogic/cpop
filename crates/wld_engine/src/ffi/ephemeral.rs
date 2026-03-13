@@ -42,8 +42,7 @@ struct EphemeralSession {
     jitter_intervals: Vec<u64>,
     checkpoint_count: u64,
     keystroke_count: u64,
-    #[allow(dead_code)] // Retained for diagnostic/audit purposes
-    last_timestamp_ns: i64,
+    _last_timestamp_ns: i64,
     /// Content hashes from each checkpoint (for chain building).
     content_snapshots: Vec<ContentSnapshot>,
     /// Canary seed from NMH handshake (hex-encoded).
@@ -55,8 +54,7 @@ struct ContentSnapshot {
     timestamp_ns: i64,
     content_hash: [u8; 32],
     char_count: u64,
-    #[allow(dead_code)] // Retained for diagnostic/audit purposes
-    size_delta: i32,
+    _size_delta: i32,
     message: Option<String>,
 }
 
@@ -143,7 +141,7 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
             jitter_intervals: Vec::new(),
             checkpoint_count: 0,
             keystroke_count: 0,
-            last_timestamp_ns: 0,
+            _last_timestamp_ns: 0,
             content_snapshots: Vec::new(),
             canary_seed: None,
         },
@@ -210,7 +208,7 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
         timestamp_ns: now_ns(),
         content_hash,
         char_count,
-        size_delta,
+        _size_delta: size_delta,
         message: context_note,
     });
     entry.checkpoint_count += 1;
@@ -475,7 +473,7 @@ pub fn ffi_ephemeral_checkpoint_hash(
         timestamp_ns: now_ns(),
         content_hash,
         char_count,
-        size_delta,
+        _size_delta: size_delta,
         message: context_note,
     });
     entry.checkpoint_count += 1;
@@ -573,7 +571,9 @@ fn build_war_block(
     let data_dir = crate::ffi::helpers::get_data_dir()
         .ok_or_else(|| "Cannot determine data directory".to_string())?;
     let key_path = data_dir.join("signing_key");
-    let key_data = std::fs::read(&key_path).map_err(|e| format!("Cannot read signing key: {e}"))?;
+    let key_data = zeroize::Zeroizing::new(
+        std::fs::read(&key_path).map_err(|e| format!("Cannot read signing key: {e}"))?,
+    );
     if key_data.len() < 32 {
         return Err("Signing key too short".to_string());
     }

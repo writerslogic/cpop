@@ -16,6 +16,7 @@ pub struct VdfProof {
 }
 
 impl VdfProof {
+    /// Compute a VDF proof targeting the given wall-clock duration within parameter bounds.
     pub fn compute(
         input: [u8; 32],
         target_duration: Duration,
@@ -46,6 +47,7 @@ impl VdfProof {
         })
     }
 
+    /// Compute a VDF proof with an exact iteration count.
     pub fn compute_iterations(input: [u8; 32], iterations: u64) -> Self {
         let start = Instant::now();
         let output = compute_chain(input, iterations);
@@ -59,10 +61,12 @@ impl VdfProof {
         }
     }
 
+    /// Verify this proof by recomputing the full hash chain.
     pub fn verify(&self) -> bool {
         self.verify_with_progress(None::<fn(f64)>)
     }
 
+    /// Verify this proof, reporting progress (0.0..1.0) via optional callback.
     pub fn verify_with_progress<F>(&self, mut progress: Option<F>) -> bool
     where
         F: FnMut(f64),
@@ -86,11 +90,13 @@ impl VdfProof {
         hash == self.output
     }
 
+    /// Calculate the minimum wall-clock time this proof represents.
     pub fn min_elapsed_time(&self, params: Parameters) -> Duration {
         let seconds = self.iterations as f64 / params.iterations_per_second as f64;
         Duration::from_secs_f64(seconds)
     }
 
+    /// Serialize to a compact 80-byte binary format.
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = vec![0u8; 32 + 32 + 8 + 8];
         buf[0..32].copy_from_slice(&self.input);
@@ -100,6 +106,7 @@ impl VdfProof {
         buf
     }
 
+    /// Deserialize from the compact 80-byte binary format.
     pub fn decode(data: &[u8]) -> Result<Self, String> {
         if data.len() < 80 {
             return Err("proof data too short".to_string());
@@ -109,8 +116,8 @@ impl VdfProof {
         let mut output = [0u8; 32];
         input.copy_from_slice(&data[0..32]);
         output.copy_from_slice(&data[32..64]);
-        let iterations = u64::from_be_bytes(data[64..72].try_into().unwrap());
-        let duration_nanos = u64::from_be_bytes(data[72..80].try_into().unwrap());
+        let iterations = u64::from_be_bytes(data[64..72].try_into().expect("8-byte slice"));
+        let duration_nanos = u64::from_be_bytes(data[72..80].try_into().expect("8-byte slice"));
 
         Ok(Self {
             input,
@@ -130,7 +137,6 @@ fn compute_chain(input: [u8; 32], iterations: u64) -> [u8; 32] {
 }
 
 #[cfg(test)]
-#[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
     use crate::vdf::default_parameters;
@@ -298,7 +304,7 @@ mod tests {
         let input = [42u8; 32];
         let proof = VdfProof::compute_iterations(input, 1);
 
-        let expected_output: [u8; 32] = Sha256::digest(&input).into();
+        let expected_output: [u8; 32] = Sha256::digest(input).into();
         assert_eq!(proof.output, expected_output);
         assert!(proof.verify());
     }

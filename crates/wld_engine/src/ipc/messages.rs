@@ -74,62 +74,59 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
 /// IPC message protocol between the engine (Brain) and GUI (Face).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcMessage {
-    Handshake {
-        version: String,
-    },
-    StartWitnessing {
-        file_path: PathBuf,
-    },
-    StopWitnessing {
-        file_path: Option<PathBuf>,
-    },
+    /// Client initiates connection with its version string.
+    Handshake { version: String },
+    /// Begin witnessing a file at the given path.
+    StartWitnessing { file_path: PathBuf },
+    /// Stop witnessing a specific file, or all files if None.
+    StopWitnessing { file_path: Option<PathBuf> },
+    /// Request current daemon status.
     GetStatus,
 
+    /// Request the session attestation nonce bound to TPM/TEE state.
     GetAttestationNonce,
+    /// Export evidence with a verifier-provided nonce for replay prevention.
     ExportWithNonce {
         file_path: PathBuf,
         title: String,
         verifier_nonce: [u8; 32],
     },
+    /// Verify evidence with optional nonce validation.
     VerifyWithNonce {
         evidence_path: PathBuf,
         expected_nonce: Option<[u8; 32]>,
     },
 
+    /// Keystroke timing jitter sample from the GUI.
     Pulse(SimpleJitterSample),
-    CheckpointCreated {
-        id: i64,
-        hash: [u8; 32],
-    },
-    SystemAlert {
-        level: String,
-        message: String,
-    },
+    /// Notification that a checkpoint was persisted.
+    CheckpointCreated { id: i64, hash: [u8; 32] },
+    /// System-level alert forwarded to the GUI.
+    SystemAlert { level: String, message: String },
 
+    /// Keep-alive ping from client.
     Heartbeat,
 
-    Ok {
-        message: Option<String>,
-    },
-    Error {
-        code: IpcErrorCode,
-        message: String,
-    },
+    /// Generic success response with optional detail message.
+    Ok { message: Option<String> },
+    /// Generic error response with structured error code.
+    Error { code: IpcErrorCode, message: String },
+    /// Server acknowledges handshake with its version.
     HandshakeAck {
         version: String,
         server_version: String,
     },
-    HeartbeatAck {
-        timestamp_ns: u64,
-    },
+    /// Server acknowledges heartbeat with current timestamp.
+    HeartbeatAck { timestamp_ns: u64 },
+    /// Daemon status: running state, tracked files, and uptime.
     StatusResponse {
         running: bool,
         tracked_files: Vec<String>,
         uptime_secs: u64,
     },
-    AttestationNonceResponse {
-        nonce: [u8; 32],
-    },
+    /// Return the 32-byte attestation nonce for this session.
+    AttestationNonceResponse { nonce: [u8; 32] },
+    /// Result of a nonce-bound evidence export.
     NonceExportResponse {
         success: bool,
         output_path: Option<String>,
@@ -140,6 +137,7 @@ pub enum IpcMessage {
         attestation_report: Option<String>,
         error: Option<String>,
     },
+    /// Result of a nonce-bound evidence verification.
     NonceVerifyResponse {
         valid: bool,
         nonce_valid: bool,
@@ -150,9 +148,9 @@ pub enum IpcMessage {
         errors: Vec<String>,
     },
 
-    VerifyFile {
-        path: PathBuf,
-    },
+    /// Verify an evidence packet at the given path.
+    VerifyFile { path: PathBuf },
+    /// Result of evidence file verification.
     VerifyFileResponse {
         success: bool,
         checkpoint_count: u32,
@@ -162,19 +160,21 @@ pub enum IpcMessage {
         error: Option<String>,
     },
 
+    /// Export evidence for a file at the specified tier.
     ExportFile {
         path: PathBuf,
         tier: String,
         output: PathBuf,
     },
+    /// Result of evidence file export.
     ExportFileResponse {
         success: bool,
         error: Option<String>,
     },
 
-    GetFileForensics {
-        path: PathBuf,
-    },
+    /// Request forensic analysis of a tracked file.
+    GetFileForensics { path: PathBuf },
+    /// Forensic analysis results for a tracked file.
     ForensicsResponse {
         assessment_score: f64,
         risk_level: String,
@@ -187,9 +187,9 @@ pub enum IpcMessage {
         error: Option<String>,
     },
 
-    ComputeProcessScore {
-        path: PathBuf,
-    },
+    /// Request composite process score for a tracked file.
+    ComputeProcessScore { path: PathBuf },
+    /// Composite process score breakdown.
     ProcessScoreResponse {
         residency: f64,
         sequence: f64,
@@ -199,10 +199,9 @@ pub enum IpcMessage {
         error: Option<String>,
     },
 
-    CreateFileCheckpoint {
-        path: PathBuf,
-        message: String,
-    },
+    /// Create a manual checkpoint for a tracked file.
+    CreateFileCheckpoint { path: PathBuf, message: String },
+    /// Result of checkpoint creation.
     CheckpointResponse {
         success: bool,
         hash: Option<String>,
@@ -249,20 +248,33 @@ impl IpcMessage {
     }
 }
 
+/// Structured error codes for IPC error responses.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum IpcErrorCode {
+    /// Unclassified error.
     Unknown = 0,
+    /// Malformed or unrecognized message.
     InvalidMessage = 1,
+    /// Referenced file does not exist.
     FileNotFound = 2,
+    /// File is already being witnessed.
     AlreadyTracking = 3,
+    /// File is not currently being witnessed.
     NotTracking = 4,
+    /// Caller lacks permission for the requested operation.
     PermissionDenied = 5,
+    /// Client/server protocol version incompatibility.
     VersionMismatch = 6,
+    /// Unexpected internal failure.
     InternalError = 7,
+    /// Supplied nonce is invalid or does not match.
     NonceInvalid = 8,
+    /// Engine identity or subsystem not yet initialized.
     NotInitialized = 9,
 }
 
+/// Dispatch trait for handling incoming IPC messages and producing responses.
 pub trait IpcMessageHandler: Send + Sync + 'static {
+    /// Process an incoming message and return the response to send back.
     fn handle(&self, msg: IpcMessage) -> IpcMessage;
 }

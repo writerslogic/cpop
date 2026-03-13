@@ -28,9 +28,13 @@ use super::serde_helpers::{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i32)]
 pub enum Strength {
+    /// Minimal evidence: chain integrity only.
     Basic = 1,
+    /// Keystrokes and timing data included.
     Standard = 2,
+    /// Behavioral analysis and hardware binding included.
     Enhanced = 3,
+    /// Full evidence with external anchors and attestation.
     Maximum = 4,
 }
 
@@ -52,6 +56,7 @@ pub enum TrustTier {
 }
 
 impl Strength {
+    /// Return the strength level as a lowercase string.
     pub fn as_str(&self) -> &'static str {
         match self {
             Strength::Basic => "basic",
@@ -62,6 +67,7 @@ impl Strength {
     }
 }
 
+/// Complete evidence packet containing all attestation data for a document session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Packet {
     pub version: i32,
@@ -144,6 +150,7 @@ pub struct Packet {
     pub limitations: Vec<String>,
 }
 
+/// Key hierarchy snapshot proving session certificate chain and ratchet state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyHierarchyEvidencePacket {
     pub version: i32,
@@ -159,6 +166,7 @@ pub struct KeyHierarchyEvidencePacket {
     pub checkpoint_signatures: Vec<CheckpointSignature>,
 }
 
+/// Signature binding a checkpoint hash to a ratchet key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointSignature {
     pub ordinal: u64,
@@ -167,6 +175,7 @@ pub struct CheckpointSignature {
     pub signature: String,
 }
 
+/// Time-bounded context annotation (e.g. break, research, revision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPeriod {
     #[serde(rename = "type")]
@@ -176,6 +185,7 @@ pub struct ContextPeriod {
     pub end_time: DateTime<Utc>,
 }
 
+/// Document metadata: title, path, final content hash and size.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentInfo {
     pub title: String,
@@ -184,6 +194,7 @@ pub struct DocumentInfo {
     pub final_size: u64,
 }
 
+/// Provenance metadata identifying the recording device, OS, and session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordProvenance {
     pub device_id: String,
@@ -199,6 +210,7 @@ pub struct RecordProvenance {
     pub access_control: Option<AccessControlInfo>,
 }
 
+/// HID input device descriptor with vendor/product IDs and fingerprint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputDeviceInfo {
     pub vendor_id: u16,
@@ -223,6 +235,7 @@ impl From<&HIDDeviceInfo> for InputDeviceInfo {
     }
 }
 
+/// File and process access control state at capture time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessControlInfo {
     pub captured_at: DateTime<Utc>,
@@ -237,6 +250,7 @@ pub struct AccessControlInfo {
     pub limitations: Vec<String>,
 }
 
+/// Single checkpoint in the evidence chain with VDF proof and content hash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointProof {
     pub ordinal: u64,
@@ -268,6 +282,7 @@ pub struct HardwareEvidence {
     pub attestation_nonce: Option<[u8; 32]>,
 }
 
+/// Keystroke session evidence with timing samples and rate analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeystrokeEvidence {
     pub session_id: String,
@@ -286,6 +301,7 @@ pub struct KeystrokeEvidence {
     pub phys_ratio: Option<f64>,
 }
 
+/// Behavioral evidence: edit topology, forensic metrics, and fingerprint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehavioralEvidence {
     pub edit_topology: Vec<EditRegion>,
@@ -298,6 +314,7 @@ pub struct BehavioralEvidence {
     pub forgery_analysis: Option<ForgeryAnalysis>,
 }
 
+/// Spatial edit region within the document (position range + byte delta).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditRegion {
     pub start_pct: f64,
@@ -306,6 +323,7 @@ pub struct EditRegion {
     pub byte_count: i32,
 }
 
+/// Statistical forensic metrics for edit pattern analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForensicMetrics {
     pub monotonic_append_ratio: f64,
@@ -327,6 +345,7 @@ pub struct PhysicalContextEvidence {
     pub combined_hash: String,
 }
 
+/// External timestamping anchors (OTS, RFC 3161, blockchain).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalAnchors {
     pub opentimestamps: Vec<OTSProof>,
@@ -334,6 +353,7 @@ pub struct ExternalAnchors {
     pub proofs: Vec<AnchorProof>,
 }
 
+/// OpenTimestamps proof for a chain hash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OTSProof {
     pub chain_hash: String,
@@ -343,6 +363,7 @@ pub struct OTSProof {
     pub block_time: Option<DateTime<Utc>>,
 }
 
+/// RFC 3161 timestamp authority response for a chain hash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RFC3161Proof {
     pub chain_hash: String,
@@ -351,6 +372,7 @@ pub struct RFC3161Proof {
     pub timestamp: DateTime<Utc>,
 }
 
+/// External anchor proof from a timestamping provider (TSA, blockchain, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnchorProof {
     pub provider: String,
@@ -365,6 +387,7 @@ pub struct AnchorProof {
     pub verify_url: Option<String>,
 }
 
+/// Blockchain confirmation details for an anchor proof.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockchainAnchorInfo {
     pub chain: String,
@@ -374,6 +397,7 @@ pub struct BlockchainAnchorInfo {
     pub tx_id: Option<String>,
 }
 
+/// Typed attestation claim with confidence level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claim {
     #[serde(rename = "type")]
@@ -382,26 +406,37 @@ pub struct Claim {
     pub confidence: String,
 }
 
+/// Category of attestation claim in an evidence packet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClaimType {
+    /// Checkpoint chain hash integrity verified.
     #[serde(rename = "chain_integrity")]
     ChainIntegrity,
+    /// Elapsed time bound by VDF proof.
     #[serde(rename = "time_elapsed")]
     TimeElapsed,
+    /// Author declaration recorded.
     #[serde(rename = "process_declared")]
     ProcessDeclared,
+    /// Author presence verified via challenges.
     #[serde(rename = "presence_verified")]
     PresenceVerified,
+    /// Keystroke timing data verified as human-plausible.
     #[serde(rename = "keystrokes_verified")]
     KeystrokesVerified,
+    /// Hardware TPM/TEE attestation included.
     #[serde(rename = "hardware_attested")]
     HardwareAttested,
+    /// Behavioral forensic analysis completed.
     #[serde(rename = "behavior_analyzed")]
     BehaviorAnalyzed,
+    /// Context periods (breaks, research) recorded.
     #[serde(rename = "contexts_recorded")]
     ContextsRecorded,
+    /// External timestamp anchors (OTS, RFC 3161) present.
     #[serde(rename = "external_anchored")]
     ExternalAnchored,
+    /// Key hierarchy certificate chain included.
     #[serde(rename = "key_hierarchy")]
     KeyHierarchy,
 }

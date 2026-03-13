@@ -228,7 +228,7 @@ fn hash_with_seed(s: &str, seed: u64) -> u64 {
     hasher.update(s.as_bytes());
     hasher.update(seed.to_le_bytes());
     let result = hasher.finalize();
-    u64::from_le_bytes(result[0..8].try_into().unwrap())
+    u64::from_le_bytes(result[0..8].try_into().expect("8-byte slice"))
 }
 
 /// Correction/backspace behavioral signature.

@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 impl WLDConfig {
+    /// Load config from `data_dir/writerslogic.json`, falling back to defaults and legacy files.
     pub fn load_or_default(data_dir: &Path) -> Result<Self> {
         let config_path = data_dir.join("writerslogic.json");
 
@@ -57,6 +58,7 @@ impl WLDConfig {
         Ok(config)
     }
 
+    /// Create default config rooted at the given data directory.
     pub fn default_with_dir(data_dir: &Path) -> Self {
         Self {
             data_dir: data_dir.to_path_buf(),
@@ -78,6 +80,7 @@ impl WLDConfig {
         }
     }
 
+    /// Write config to `writerslogic.json` with restrictive permissions (0600 on Unix).
     pub fn persist(&self) -> Result<()> {
         fs::create_dir_all(&self.data_dir)?;
         let config_path = self.data_dir.join("writerslogic.json");

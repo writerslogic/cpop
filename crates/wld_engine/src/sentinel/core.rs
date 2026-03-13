@@ -42,6 +42,7 @@ pub struct Sentinel {
 }
 
 impl Sentinel {
+    /// Create a new sentinel from the given configuration.
     pub fn new(config: SentinelConfig) -> Result<Self> {
         config.validate().map_err(SentinelError::Anyhow)?;
         config.ensure_directories().map_err(SentinelError::Anyhow)?;
@@ -75,6 +76,7 @@ impl Sentinel {
         })
     }
 
+    /// Return the session nonce, generating one if not yet set.
     pub fn get_or_generate_nonce(&self) -> [u8; 32] {
         let mut nonce_lock = self.session_nonce.write_recover();
         if let Some(nonce) = *nonce_lock {
@@ -88,11 +90,13 @@ impl Sentinel {
         }
     }
 
+    /// Clear the session nonce so a new one will be generated on next access.
     pub fn reset_nonce(&self) {
         let mut nonce_lock = self.session_nonce.write_recover();
         *nonce_lock = None;
     }
 
+    /// Enable voice fingerprint collection for behavioral biometrics.
     pub fn enable_voice_fingerprinting(&self) {
         let mut collector = self.voice_collector.write_recover();
         if collector.is_none() {
@@ -100,17 +104,20 @@ impl Sentinel {
         }
     }
 
+    /// Disable voice fingerprint collection and discard the collector.
     pub fn disable_voice_fingerprinting(&self) {
         let mut collector = self.voice_collector.write_recover();
         *collector = None;
     }
 
+    /// Return a snapshot of the current activity fingerprint.
     pub fn current_activity_fingerprint(&self) -> crate::fingerprint::ActivityFingerprint {
         self.activity_accumulator
             .read_recover()
             .current_fingerprint()
     }
 
+    /// Return the current voice fingerprint, if collection is enabled.
     pub fn current_voice_fingerprint(&self) -> Option<crate::fingerprint::VoiceFingerprint> {
         self.voice_collector
             .read_recover()
@@ -118,14 +125,17 @@ impl Sentinel {
             .map(|c| c.current_fingerprint())
     }
 
+    /// Return a snapshot of mouse idle statistics during typing.
     pub fn mouse_idle_stats(&self) -> crate::platform::MouseIdleStats {
         self.mouse_idle_stats.read_recover().clone()
     }
 
+    /// Reset mouse idle statistics to initial state.
     pub fn reset_mouse_idle_stats(&self) {
         *self.mouse_idle_stats.write_recover() = crate::platform::MouseIdleStats::new();
     }
 
+    /// Return a shared reference to the mouse steganography engine.
     pub fn mouse_stego_engine(&self) -> &Arc<RwLock<crate::platform::MouseStegoEngine>> {
         &self.mouse_stego_engine
     }
@@ -141,11 +151,13 @@ impl Sentinel {
         }
     }
 
+    /// Set the Ed25519 signing key and update the mouse stego seed.
     pub fn set_signing_key(&self, key: SigningKey) {
         *self.signing_key.write_recover() = Some(key);
         self.update_mouse_stego_seed();
     }
 
+    /// Set the signing key from raw HMAC key bytes (must be exactly 32 bytes).
     pub fn set_hmac_key(&self, key: Vec<u8>) {
         if key.len() == 32 {
             let mut bytes: [u8; 32] = match key.try_into() {
@@ -163,6 +175,7 @@ impl Sentinel {
         }
     }
 
+    /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
     pub async fn start(&self) -> Result<()> {
         if self.running.swap(true, Ordering::SeqCst) {
             return Err(SentinelError::AlreadyRunning);
@@ -284,6 +297,7 @@ impl Sentinel {
             let mut pending_focus: Option<FocusEvent> = None;
             let mut idle_check_interval = interval(Duration::from_secs(60));
             let mut last_keystroke_time = std::time::Instant::now();
+            let mut last_keystroke_ts_ns: i64 = 0;
 
             loop {
                 tokio::select! {
@@ -292,6 +306,12 @@ impl Sentinel {
                     }
 
                     Some(event) = keystroke_rx.recv() => {
+                        // Dedup guard: skip duplicate events with identical timestamps
+                        if event.timestamp_ns == last_keystroke_ts_ns {
+                            continue;
+                        }
+                        last_keystroke_ts_ns = event.timestamp_ns;
+
                         let sample = crate::jitter::SimpleJitterSample {
                             timestamp_ns: event.timestamp_ns,
                             duration_since_last_ns: 0,
@@ -375,6 +395,7 @@ impl Sentinel {
         Ok(())
     }
 
+    /// Stop the sentinel, joining bridge threads and cleaning up shadow buffers.
     pub async fn stop(&self) -> Result<()> {
         if !self.running.swap(false, Ordering::SeqCst) {
             return Ok(());
@@ -396,14 +417,17 @@ impl Sentinel {
         Ok(())
     }
 
+    /// Return `true` if the sentinel event loop is active.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Return a snapshot of all active document sessions.
     pub fn sessions(&self) -> Vec<DocumentSession> {
         self.sessions.read_recover().values().cloned().collect()
     }
 
+    /// Look up a session by document path.
     pub fn session(&self, path: &str) -> Result<DocumentSession> {
         self.sessions
             .read_recover()
@@ -412,22 +436,27 @@ impl Sentinel {
             .ok_or_else(|| SentinelError::SessionNotFound(path.to_string()))
     }
 
+    /// Return the path of the currently focused document, if any.
     pub fn current_focus(&self) -> Option<String> {
         self.current_focus.read_recover().clone()
     }
 
+    /// Subscribe to session lifecycle events (started, ended, idle).
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
         self.session_events_tx.subscribe()
     }
 
+    /// Create a shadow buffer for apps that don't expose file paths directly.
     pub fn create_shadow(&self, app_name: &str, window_title: &str) -> Result<String> {
         self.shadow.create(app_name, window_title)
     }
 
+    /// Write new content to an existing shadow buffer.
     pub fn update_shadow_content(&self, shadow_id: &str, content: &[u8]) -> Result<()> {
         self.shadow.update(shadow_id, content)
     }
 
+    /// Check whether the sentinel can run on the current platform.
     pub fn available(&self) -> (bool, String) {
         #[cfg(target_os = "macos")]
         {
@@ -449,6 +478,7 @@ impl Sentinel {
         }
     }
 
+    /// Begin witnessing a file, creating a session and WAL entry.
     pub fn start_witnessing(
         &self,
         file_path: &Path,
@@ -530,6 +560,7 @@ impl Sentinel {
         Ok(())
     }
 
+    /// Stop witnessing a file, ending its session and updating the baseline.
     pub fn stop_witnessing(
         &self,
         file_path: &Path,
@@ -571,14 +602,17 @@ impl Sentinel {
         }
     }
 
+    /// Return the paths of all currently tracked files.
     pub fn tracked_files(&self) -> Vec<String> {
         self.sessions.read_recover().keys().cloned().collect()
     }
 
+    /// Return the sentinel start time (currently unimplemented, returns None).
     pub fn start_time(&self) -> Option<SystemTime> {
         None
     }
 
+    /// Compute and persist an updated authorship baseline digest from accumulated activity.
     pub fn update_baseline(&self) -> anyhow::Result<()> {
         let summary = self
             .activity_accumulator

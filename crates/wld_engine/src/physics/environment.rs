@@ -8,15 +8,21 @@ use raw_cpuid::CpuId;
 use sha2::{Digest, Sha256};
 use sysinfo::System;
 
+/// Collector for ambient system entropy (processes, hardware, OS version).
 pub struct AmbientSensing;
 
+/// Captured ambient entropy snapshot with virtualization detection.
 pub struct AmbientEntropy {
+    /// SHA-256 hash of combined ambient entropy sources.
     pub hash: [u8; 32],
+    /// Whether a hypervisor was detected (CPUID-based on x86).
     pub is_virtualized: bool,
+    /// Whether Secure Boot is active (currently always false).
     pub secure_boot_active: bool,
 }
 
 impl AmbientSensing {
+    /// Capture ambient entropy from OS, processes, and hardware identifiers.
     pub fn capture() -> AmbientEntropy {
         let mut sys = System::new_all();
         sys.refresh_all();

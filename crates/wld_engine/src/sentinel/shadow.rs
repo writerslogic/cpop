@@ -16,11 +16,9 @@ struct ShadowBuffer {
     app_name: String,
     window_title: ObfuscatedString,
     path: PathBuf,
-    #[allow(dead_code)] // Retained for diagnostic/audit purposes
-    created_at: SystemTime,
+    _created_at: SystemTime,
     updated_at: SystemTime,
-    #[allow(dead_code)] // Retained for diagnostic/audit purposes
-    size: i64,
+    _size: i64,
 }
 
 /// Manages shadow buffers for unsaved documents
@@ -54,9 +52,9 @@ impl ShadowManager {
             app_name: app_name.to_string(),
             window_title: ObfuscatedString::new(window_title),
             path,
-            created_at: SystemTime::now(),
+            _created_at: SystemTime::now(),
             updated_at: SystemTime::now(),
-            size: 0,
+            _size: 0,
         };
 
         self.shadows.write_recover().insert(id.clone(), shadow);
@@ -72,7 +70,7 @@ impl ShadowManager {
 
         fs::write(&shadow.path, content)?;
         shadow.updated_at = SystemTime::now();
-        shadow.size = content.len() as i64;
+        shadow._size = content.len() as i64;
 
         Ok(())
     }

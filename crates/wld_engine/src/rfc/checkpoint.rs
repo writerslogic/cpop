@@ -66,6 +66,7 @@ pub struct CheckpointRfc {
 }
 
 impl CheckpointRfc {
+    /// Create a checkpoint with a new UUID and zeroed checkpoint hash.
     pub fn new(sequence: u64, timestamp: u64, content_hash: [u8; 32], prev_hash: [u8; 32]) -> Self {
         Self {
             sequence,
@@ -80,16 +81,19 @@ impl CheckpointRfc {
         }
     }
 
+    /// Attach a VDF proof.
     pub fn with_vdf(mut self, proof: VdfProofRfc) -> Self {
         self.vdf_proof = Some(proof);
         self
     }
 
+    /// Attach a jitter binding.
     pub fn with_jitter(mut self, binding: JitterBinding) -> Self {
         self.jitter_binding = Some(binding);
         self
     }
 
+    /// Attach a PUF-bound chain MAC.
     pub fn with_chain_mac(mut self, mac: [u8; 32]) -> Self {
         self.chain_mac = Some(mac);
         self
@@ -136,6 +140,7 @@ impl CheckpointRfc {
         self.checkpoint_hash = hasher.finalize().into();
     }
 
+    /// Validate all fields and return a list of errors (empty if valid).
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -158,6 +163,7 @@ impl CheckpointRfc {
         errors
     }
 
+    /// Return `true` if `validate()` produces no errors.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
@@ -211,6 +217,7 @@ pub struct BioBinding {
 }
 
 impl BioBinding {
+    /// Create a bio binding from floating-point correlation, Hurst, and gap values.
     pub fn new(rho: f64, hurst: f64, gap_ms: u32) -> Self {
         Self {
             rho_millibits: RhoMillibits::from_float(rho),
@@ -225,6 +232,7 @@ impl BioBinding {
         h > 550 && h < 850
     }
 
+    /// Return `true` if the Spearman rho correlation is within plausible bounds.
     pub fn is_correlation_valid(&self) -> bool {
         let rho = self.rho_millibits.raw();
         (500..=950).contains(&rho)

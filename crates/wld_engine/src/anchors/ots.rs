@@ -15,12 +15,14 @@ const OTS_CALENDAR_URLS: &[&str] = &[
 
 const OTS_MAGIC: &[u8] = b"\x00OpenTimestamps\x00\x00Proof\x00\xbf\x89\xe2\xe8\x84\xe8\x92\x94";
 
+/// Anchor provider using OpenTimestamps calendar servers for Bitcoin attestation.
 pub struct OpenTimestampsProvider {
     calendar_urls: Vec<String>,
     client: reqwest::Client,
 }
 
 impl OpenTimestampsProvider {
+    /// Create a provider using the default public calendar servers.
     pub fn new() -> Self {
         Self {
             calendar_urls: OTS_CALENDAR_URLS.iter().map(|s| s.to_string()).collect(),
@@ -32,6 +34,7 @@ impl OpenTimestampsProvider {
     }
 
     #[allow(dead_code)]
+    /// Create a provider using custom calendar server URLs.
     pub fn with_calendars(urls: Vec<String>) -> Self {
         Self {
             calendar_urls: urls,

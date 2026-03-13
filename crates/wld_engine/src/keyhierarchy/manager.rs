@@ -14,11 +14,9 @@ pub struct SessionManager {
     session: Session,
     identity: MasterIdentity,
     /// Retained to keep PUF provider alive for session recovery
-    #[allow(dead_code)]
-    puf: Box<dyn PUFProvider>,
+    _puf: Box<dyn PUFProvider>,
     /// Retained for document re-loading during session recovery
-    #[allow(dead_code)]
-    document_path: String,
+    _document_path: String,
 }
 
 impl SessionManager {
@@ -35,8 +33,8 @@ impl SessionManager {
         Ok(Self {
             session,
             identity,
-            puf,
-            document_path,
+            _puf: puf,
+            _document_path: document_path,
         })
     }
 
@@ -65,8 +63,8 @@ impl SessionManager {
         Ok(Self {
             session,
             identity,
-            puf,
-            document_path,
+            _puf: puf,
+            _document_path: document_path,
         })
     }
 

@@ -5,6 +5,7 @@ use wld_protocol::baseline::{
     BaselineDigest, ConfidenceTier, SessionBehavioralSummary, StreamingStats,
 };
 
+/// Create a zero-session baseline digest for a new identity.
 pub fn compute_initial_digest(identity_fingerprint: Vec<u8>) -> BaselineDigest {
     BaselineDigest {
         version: 1,
@@ -25,6 +26,7 @@ pub fn compute_initial_digest(identity_fingerprint: Vec<u8>) -> BaselineDigest {
     }
 }
 
+/// Incorporate a session's behavioral summary into the running digest.
 pub fn update_digest(
     mut digest: BaselineDigest,
     summary: &SessionBehavioralSummary,

@@ -6,6 +6,7 @@ use crate::ffi::types::{
 };
 use crate::DateTimeNanosExt;
 
+/// Initialize the engine: create data directory, signing key, and event database.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_init() -> FfiResult {
     let data_dir = match get_data_dir() {
@@ -39,6 +40,8 @@ pub fn ffi_init() -> FfiResult {
             };
         }
         let signing_key = SigningKey::from_bytes(&seed);
+        use zeroize::Zeroize;
+        seed.zeroize();
         if let Err(e) = std::fs::write(&key_path, signing_key.to_bytes()) {
             return FfiResult {
                 success: false,
@@ -74,6 +77,7 @@ pub fn ffi_init() -> FfiResult {
     }
 }
 
+/// Return the current engine status including tracked file count and SWF calibration.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_status() -> FfiStatus {
     // SWF calibration is independent of engine init — always report it.
@@ -135,6 +139,7 @@ pub fn ffi_get_status() -> FfiStatus {
     }
 }
 
+/// List all tracked files with their checkpoint counts and forensic scores.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     let store = match open_store() {
@@ -166,6 +171,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     result
 }
 
+/// Return the checkpoint event log for a specific tracked file.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_log(path: String) -> Vec<FfiLogEntry> {
     let path = match crate::sentinel::helpers::validate_path(&path) {
@@ -194,6 +200,7 @@ pub fn ffi_get_log(path: String) -> Vec<FfiLogEntry> {
         .collect()
 }
 
+/// Compute aggregate dashboard metrics: files, checkpoints, streaks, activity.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_dashboard_metrics() -> FfiDashboardMetrics {
     let store = match open_store() {
@@ -243,6 +250,7 @@ pub fn ffi_get_dashboard_metrics() -> FfiDashboardMetrics {
     }
 }
 
+/// Return per-day checkpoint counts for the last N days (activity heatmap data).
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_activity_data(days: u32) -> Vec<FfiActivityPoint> {
     let store = match open_store() {

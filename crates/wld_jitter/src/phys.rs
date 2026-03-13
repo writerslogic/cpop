@@ -6,10 +6,14 @@ use sha2::{Digest, Sha256};
 
 use crate::{EntropySource, Error, Jitter, JitterEngine, PhysHash};
 
+/// Hardware entropy source using CPU timing counter measurements.
 #[derive(Debug, Clone)]
 pub struct PhysJitter {
+    /// Minimum entropy bits required for a valid sample.
     pub min_entropy_bits: u8,
+    /// Minimum jitter output in microseconds.
     pub jmin: u32,
+    /// Range of jitter values above `jmin`.
     pub range: u32,
 }
 
@@ -24,6 +28,7 @@ impl Default for PhysJitter {
 }
 
 impl PhysJitter {
+    /// Create a physics jitter source with the given minimum entropy requirement.
     pub fn new(min_entropy_bits: u8) -> Self {
         Self {
             min_entropy_bits,
@@ -31,6 +36,8 @@ impl PhysJitter {
         }
     }
 
+    /// Set the jitter output range.
+    ///
     /// # Panics
     /// Panics if `range` is 0.
     pub fn with_jitter_range(mut self, jmin: u32, range: u32) -> Self {
@@ -40,6 +47,7 @@ impl PhysJitter {
         self
     }
 
+    /// Set the jitter output range, returning `None` if `range` is 0.
     pub fn try_with_jitter_range(mut self, jmin: u32, range: u32) -> Option<Self> {
         if range == 0 {
             None

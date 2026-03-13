@@ -10,12 +10,14 @@ use super::types::{
     DeclarationJitter, InputModality, ModalityType,
 };
 
+/// Fluent builder for constructing and signing author declarations.
 pub struct Builder {
     decl: Declaration,
     err: Option<String>,
 }
 
 impl Builder {
+    /// Start a new declaration bound to the given document and chain hashes.
     pub fn new(document_hash: [u8; 32], chain_hash: [u8; 32], title: impl Into<String>) -> Self {
         Self {
             decl: Declaration {
@@ -36,6 +38,7 @@ impl Builder {
         }
     }
 
+    /// Add an input modality with its percentage share.
     pub fn add_modality(
         mut self,
         modality_type: ModalityType,
@@ -50,6 +53,7 @@ impl Builder {
         self
     }
 
+    /// Record an AI tool's usage, purpose, and extent.
     pub fn add_ai_tool(
         mut self,
         tool: impl Into<String>,
@@ -69,6 +73,7 @@ impl Builder {
         self
     }
 
+    /// Add a named collaborator with their role and affected sections.
     pub fn add_collaborator(
         mut self,
         name: impl Into<String>,
@@ -84,6 +89,7 @@ impl Builder {
         self
     }
 
+    /// Set the author's free-text attestation statement.
     pub fn with_statement(mut self, statement: impl Into<String>) -> Self {
         self.decl.statement = statement.into();
         self
@@ -95,6 +101,7 @@ impl Builder {
         self
     }
 
+    /// Validate, sign, and finalize the declaration.
     pub fn sign(mut self, signer: &dyn PoPSigner) -> crate::error::Result<Declaration> {
         if let Some(err) = self.err.take() {
             return Err(Error::validation(err));
@@ -148,6 +155,7 @@ impl Builder {
     }
 }
 
+/// Create a keyboard-only, no-AI declaration builder with the given statement.
 pub fn no_ai_declaration(
     document_hash: [u8; 32],
     chain_hash: [u8; 32],
@@ -159,6 +167,7 @@ pub fn no_ai_declaration(
         .with_statement(statement)
 }
 
+/// Create an empty declaration builder for AI-assisted content (add tools via builder).
 pub fn ai_assisted_declaration(
     document_hash: [u8; 32],
     chain_hash: [u8; 32],

@@ -184,6 +184,7 @@ pub struct CollaborationSection {
 }
 
 impl CollaborationSection {
+    /// Create an empty collaboration section with the given mode.
     pub fn new(mode: CollaborationMode) -> Self {
         Self {
             mode,
@@ -194,21 +195,25 @@ impl CollaborationSection {
         }
     }
 
+    /// Append a collaborator to the participant list.
     pub fn add_participant(mut self, collaborator: Collaborator) -> Self {
         self.participants.push(collaborator);
         self
     }
 
+    /// Append a contribution claim.
     pub fn add_contribution(mut self, claim: ContributionClaim) -> Self {
         self.contributions.push(claim);
         self
     }
 
+    /// Attach a merge record.
     pub fn with_merge_record(mut self, record: MergeRecord) -> Self {
         self.merge_record = Some(record);
         self
     }
 
+    /// Attach a governance policy.
     pub fn with_policy(mut self, policy: CollaborationPolicy) -> Self {
         self.policy = Some(policy);
         self
@@ -247,10 +252,12 @@ impl CollaborationSection {
         }
     }
 
+    /// Return the number of participants.
     pub fn participant_count(&self) -> usize {
         self.participants.len()
     }
 
+    /// Filter participants by role.
     pub fn participants_by_role(&self, role: CollaboratorRole) -> Vec<&Collaborator> {
         self.participants
             .iter()
@@ -260,6 +267,7 @@ impl CollaborationSection {
 }
 
 impl Collaborator {
+    /// Create a collaborator with the required fields.
     pub fn new(public_key: String, role: CollaboratorRole, signature: String) -> Self {
         Self {
             public_key,
@@ -273,26 +281,31 @@ impl Collaborator {
         }
     }
 
+    /// Set the display name.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.display_name = Some(name.into());
         self
     }
 
+    /// Set the external identifier (email, ORCID, etc.).
     pub fn with_identifier(mut self, id: impl Into<String>) -> Self {
         self.identifier = Some(id.into());
         self
     }
 
+    /// Append an active time interval.
     pub fn add_active_period(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         self.active_periods.push(TimeInterval { start, end });
         self
     }
 
+    /// Set the inclusive checkpoint ranges authored by this collaborator.
     pub fn with_checkpoint_ranges(mut self, ranges: Vec<(u32, u32)>) -> Self {
         self.checkpoint_ranges = Some(ranges);
         self
     }
 
+    /// Attach aggregate contribution statistics.
     pub fn with_summary(mut self, summary: ContributionSummary) -> Self {
         self.contribution_summary = Some(summary);
         self

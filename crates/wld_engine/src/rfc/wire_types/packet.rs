@@ -100,20 +100,24 @@ const MAX_PRESENCE_CHALLENGES: usize = 100;
 use super::MAX_STRING_LEN;
 
 impl EvidencePacketWire {
+    /// Encode to CBOR with the CPOP semantic tag.
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {
         codec::cbor::encode_tagged(self, CBOR_TAG_EVIDENCE_PACKET)
     }
 
+    /// Decode from tagged CBOR bytes with validation.
     pub fn decode_cbor(data: &[u8]) -> Result<Self, CodecError> {
         let packet: Self = codec::cbor::decode_tagged(data, CBOR_TAG_EVIDENCE_PACKET)?;
         packet.validate()?;
         Ok(packet)
     }
 
+    /// Encode to CBOR without the semantic tag.
     pub fn encode_cbor_untagged(&self) -> Result<Vec<u8>, CodecError> {
         codec::cbor::encode(self)
     }
 
+    /// Decode from untagged CBOR bytes with validation.
     pub fn decode_cbor_untagged(data: &[u8]) -> Result<Self, CodecError> {
         let packet: Self = codec::cbor::decode(data)?;
         packet.validate()?;

@@ -6,11 +6,13 @@ use sha2::Sha256;
 use super::types::{ZwcBinding, ZwcParams, DST_POSITIONS, DST_WATERMARK, ZWC_ALPHABET};
 use crate::error::{Error, Result};
 
+/// Embed zero-width character watermarks into document text.
 pub struct ZwcEmbedder {
     params: ZwcParams,
 }
 
 impl ZwcEmbedder {
+    /// Create an embedder with the given parameters.
     pub fn new(params: ZwcParams) -> Self {
         Self { params }
     }

@@ -72,6 +72,7 @@ impl Block {
         }
     }
 
+    /// Verify the Ed25519 seal signature over H3.
     pub fn verify_signature(&self) -> CheckResult {
         if !self.signed {
             return CheckResult {
@@ -107,6 +108,7 @@ impl Block {
         }
     }
 
+    /// Build detailed forensic information from the block and its evidence.
     pub fn build_forensic_details(&self) -> ForensicDetails {
         let mut components = vec!["document".to_string(), "declaration".to_string()];
 
@@ -231,6 +233,7 @@ pub fn compute_seal(packet: &Packet, declaration: &Declaration) -> Result<Seal, 
     })
 }
 
+/// Verify the H1/H2/H3 hash chain against the evidence packet.
 pub fn verify_hash_chain(seal: &Seal, evidence: &Packet, version: Version) -> CheckResult {
     let declaration = match &evidence.declaration {
         Some(d) => d,
@@ -283,6 +286,7 @@ pub fn verify_hash_chain(seal: &Seal, evidence: &Packet, version: Version) -> Ch
 /// Maximum VDF iterations accepted during verification (1 hour at default rate).
 const MAX_VERIFICATION_ITERATIONS: u64 = 3_600_000_000;
 
+/// Verify all VDF proofs in the evidence packet's checkpoints.
 pub fn verify_vdf_proofs(evidence: &Packet) -> CheckResult {
     let mut verified = 0;
     let mut total = 0;
@@ -384,6 +388,7 @@ pub fn verify_vdf_proofs(evidence: &Packet) -> CheckResult {
     }
 }
 
+/// Verify the declaration signature in the evidence packet.
 pub fn verify_declaration(evidence: &Packet) -> CheckResult {
     match &evidence.declaration {
         Some(decl) => {

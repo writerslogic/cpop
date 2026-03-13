@@ -42,6 +42,7 @@ impl HashValue {
         }
     }
 
+    /// Create a SHA-256 hash value, returning an error if length is wrong.
     pub fn try_sha256(digest: Vec<u8>) -> Result<Self, String> {
         if digest.len() != 32 {
             return Err(format!(
@@ -71,6 +72,7 @@ impl HashValue {
         }
     }
 
+    /// Create a SHA-384 hash value, returning an error if length is wrong.
     pub fn try_sha384(digest: Vec<u8>) -> Result<Self, String> {
         if digest.len() != 48 {
             return Err(format!(
@@ -100,6 +102,7 @@ impl HashValue {
         }
     }
 
+    /// Create a SHA-512 hash value, returning an error if length is wrong.
     pub fn try_sha512(digest: Vec<u8>) -> Result<Self, String> {
         if digest.len() != 64 {
             return Err(format!(
@@ -121,6 +124,7 @@ impl HashValue {
         }
     }
 
+    /// Validate that the digest length matches the declared algorithm.
     pub fn validate_digest_length(&self) -> Result<(), String> {
         let expected = match self.algorithm {
             HashAlgorithm::Sha256 => 32,

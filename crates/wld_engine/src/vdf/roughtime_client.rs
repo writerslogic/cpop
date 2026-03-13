@@ -6,6 +6,7 @@ use base64::Engine as _;
 use std::net::UdpSocket;
 use std::time::Duration;
 
+/// Roughtime server descriptor with address and Ed25519 public key.
 pub struct RoughtimeServer {
     pub name: &'static str,
     pub address: &'static str,
@@ -45,6 +46,7 @@ const QUORUM_MIN: usize = 2;
 /// Maximum allowed disagreement between servers (10 seconds in microseconds).
 const QUORUM_TOLERANCE_US: u64 = 10_000_000;
 
+/// Client for querying Roughtime servers with quorum-based verification.
 pub struct RoughtimeClient;
 
 impl RoughtimeClient {

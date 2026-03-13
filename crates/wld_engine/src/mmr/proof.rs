@@ -7,24 +7,36 @@ const PROOF_VERSION: u8 = 1;
 const PROOF_TYPE_INCLUSION: u8 = 0x01;
 const PROOF_TYPE_RANGE: u8 = 0x02;
 
+/// Single sibling hash in a Merkle proof path.
 #[derive(Debug, Clone)]
 pub struct ProofElement {
+    /// Sibling node hash
     pub hash: [u8; HASH_SIZE],
+    /// Whether this sibling is on the left side
     pub is_left: bool,
 }
 
+/// Proof that a single leaf is included in the MMR.
 #[derive(Debug, Clone)]
 pub struct InclusionProof {
+    /// Position of the leaf in the MMR
     pub leaf_index: u64,
+    /// Hash of the leaf data
     pub leaf_hash: [u8; HASH_SIZE],
+    /// Sibling hashes from leaf to peak
     pub merkle_path: Vec<ProofElement>,
+    /// All peak hashes at proof generation time
     pub peaks: Vec<[u8; HASH_SIZE]>,
+    /// Index into `peaks` that this leaf's subtree rolls up to
     pub peak_position: usize,
+    /// Total MMR node count at proof generation time
     pub mmr_size: u64,
+    /// MMR root hash (bagged peaks)
     pub root: [u8; HASH_SIZE],
 }
 
 impl InclusionProof {
+    /// Verify this proof against the given leaf data and root.
     pub fn verify(&self, leaf_data: &[u8]) -> Result<(), MmrError> {
         let expected = hash_leaf(leaf_data);
         if expected != self.leaf_hash {
@@ -60,6 +72,7 @@ impl InclusionProof {
         Ok(())
     }
 
+    /// Serialize this proof to a versioned binary format.
     pub fn serialize(&self) -> Result<Vec<u8>, MmrError> {
         let path_len =
             u16::try_from(self.merkle_path.len()).map_err(|_| MmrError::ProofTooLarge)?;
@@ -101,6 +114,7 @@ impl InclusionProof {
         Ok(buf)
     }
 
+    /// Deserialize an inclusion proof from its binary representation.
     pub fn deserialize(data: &[u8]) -> Result<Self, MmrError> {
         if data.len() < 86 {
             return Err(MmrError::InvalidNodeData);
@@ -197,20 +211,31 @@ impl InclusionProof {
     }
 }
 
+/// Proof that a contiguous range of leaves is included in the MMR.
 #[derive(Debug, Clone)]
 pub struct RangeProof {
+    /// First leaf index in the range (inclusive)
     pub start_leaf: u64,
+    /// Last leaf index in the range (inclusive)
     pub end_leaf: u64,
+    /// MMR positions of each leaf in the range
     pub leaf_indices: Vec<u64>,
+    /// Hashes of each leaf in the range
     pub leaf_hashes: Vec<[u8; HASH_SIZE]>,
+    /// Sibling hashes needed to reconstruct the peak
     pub sibling_path: Vec<ProofElement>,
+    /// All peak hashes at proof generation time
     pub peaks: Vec<[u8; HASH_SIZE]>,
+    /// Index into `peaks` for the subtree containing the range
     pub peak_position: usize,
+    /// Total MMR node count at proof generation time
     pub mmr_size: u64,
+    /// MMR root hash (bagged peaks)
     pub root: [u8; HASH_SIZE],
 }
 
 impl RangeProof {
+    /// Verify this range proof against the given leaf data slices and root.
     pub fn verify(&self, leaf_data: &[Vec<u8>]) -> Result<(), MmrError> {
         let expected = (self.end_leaf - self.start_leaf + 1) as usize;
         if leaf_data.len() != expected {
@@ -227,6 +252,15 @@ impl RangeProof {
         }
         if self.leaf_indices.len() != self.leaf_hashes.len() {
             return Err(MmrError::InvalidProof);
+        }
+
+        // Reject duplicate leaf indices — HashMap would silently deduplicate
+        {
+            use std::collections::HashSet;
+            let unique: HashSet<&u64> = self.leaf_indices.iter().collect();
+            if unique.len() != self.leaf_indices.len() {
+                return Err(MmrError::InvalidProof);
+            }
         }
 
         use std::collections::HashMap;
@@ -314,6 +348,11 @@ impl RangeProof {
         if current.is_empty() {
             return Err(MmrError::InvalidProof);
         }
+        // After Merkle reconstruction, multiple remaining peaks means the
+        // proof path was incomplete — reject rather than silently picking one.
+        if current.len() != 1 {
+            return Err(MmrError::InvalidProof);
+        }
         let computed_peak = *current.values().next().ok_or(MmrError::InvalidProof)?;
         if self.peak_position >= self.peaks.len() {
             return Err(MmrError::InvalidProof);
@@ -337,6 +376,7 @@ impl RangeProof {
         Ok(())
     }
 
+    /// Serialize this range proof to a versioned binary format.
     pub fn serialize(&self) -> Result<Vec<u8>, MmrError> {
         let leaves_count = self.leaf_hashes.len();
         let leaves_len = u16::try_from(leaves_count).map_err(|_| MmrError::ProofTooLarge)?;
@@ -405,6 +445,7 @@ impl RangeProof {
         Ok(buf)
     }
 
+    /// Deserialize a range proof from its binary representation.
     pub fn deserialize(data: &[u8]) -> Result<Self, MmrError> {
         if data.len() < 1 + 1 + 8 + 8 + 2 + 2 + 2 + 8 + 32 {
             return Err(MmrError::InvalidNodeData);

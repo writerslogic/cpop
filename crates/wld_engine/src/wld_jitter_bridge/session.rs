@@ -15,6 +15,7 @@ use wld_jitter::{
     derive_session_secret, EvidenceChain as PhysEvidenceChain, Session as PhysSession,
 };
 
+/// Combined jitter + zone-tracking session for a single document.
 #[derive(Debug)]
 pub struct HybridJitterSession {
     pub(crate) wld_jitter_session: PhysSession,
@@ -31,6 +32,7 @@ pub struct HybridJitterSession {
 }
 
 impl HybridJitterSession {
+    /// Create a new session for the document at `document_path`.
     pub fn new(
         document_path: impl AsRef<Path>,
         params: Option<Parameters>,
@@ -72,6 +74,7 @@ impl HybridJitterSession {
         })
     }
 
+    /// Create a new session with an explicit session ID.
     pub fn new_with_id(
         document_path: impl AsRef<Path>,
         params: Option<Parameters>,
@@ -82,6 +85,7 @@ impl HybridJitterSession {
         Ok(session)
     }
 
+    /// Record a keystroke, returning `(jitter_micros, was_sampled)`.
     pub fn record_keystroke(&mut self, keycode: u16) -> Result<(u32, bool), String> {
         self.keystroke_count += 1;
 
@@ -132,18 +136,22 @@ impl HybridJitterSession {
         Ok((jitter, true))
     }
 
+    /// Mark the session as ended at the current time.
     pub fn end(&mut self) {
         self.ended_at = Some(Utc::now());
     }
 
+    /// Return the total number of keystrokes recorded.
     pub fn keystroke_count(&self) -> u64 {
         self.keystroke_count
     }
 
+    /// Return the number of jitter samples collected.
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
 
+    /// Return the elapsed session duration.
     pub fn duration(&self) -> Duration {
         let end = self.ended_at.unwrap_or_else(Utc::now);
         end.signed_duration_since(self.started_at)
@@ -151,10 +159,12 @@ impl HybridJitterSession {
             .unwrap_or(Duration::from_secs(0))
     }
 
+    /// Return the ratio of hardware-sourced entropy samples.
     pub fn phys_ratio(&self) -> f64 {
         self.wld_jitter_session.phys_ratio()
     }
 
+    /// Compute entropy quality metrics for this session.
     pub fn entropy_quality(&self) -> EntropyQuality {
         let evidence = self.wld_jitter_session.evidence();
         let phys_samples = evidence.phys_count();
@@ -168,14 +178,17 @@ impl HybridJitterSession {
         }
     }
 
+    /// Return the zone-based typing profile.
     pub fn profile(&self) -> &crate::jitter::TypingProfile {
         self.zone_engine.profile()
     }
 
+    /// Return all collected hybrid samples.
     pub fn samples(&self) -> &[HybridSample] {
         &self.samples
     }
 
+    /// Verify the hash chain integrity of all samples.
     pub fn verify_chain(&self) -> Result<(), String> {
         for (i, sample) in self.samples.iter().enumerate() {
             if sample.compute_hash() != sample.hash {
@@ -192,6 +205,7 @@ impl HybridJitterSession {
         Ok(())
     }
 
+    /// Export the session as a `HybridEvidence` record.
     pub fn export(&self) -> HybridEvidence {
         let end = self.ended_at.unwrap_or_else(Utc::now);
         let statistics = self.compute_stats();
@@ -211,6 +225,7 @@ impl HybridJitterSession {
         }
     }
 
+    /// Export the session as a standard `Evidence` record (without hybrid fields).
     pub fn export_standard(&self) -> Evidence {
         let end = self.ended_at.unwrap_or_else(Utc::now);
 
@@ -271,6 +286,7 @@ impl HybridJitterSession {
         }
     }
 
+    /// Serialize the session state to a JSON file.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
         let data = HybridSessionData {
             id: self.id.clone(),
@@ -293,6 +309,7 @@ impl HybridJitterSession {
         Ok(())
     }
 
+    /// Load a previously saved session from a JSON file.
     pub fn load(path: impl AsRef<Path>, key_material: Option<[u8; 32]>) -> Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         let data: HybridSessionData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -332,6 +349,7 @@ impl HybridJitterSession {
 }
 
 impl HybridEvidence {
+    /// Verify hash chain, timestamp monotonicity, and optional wld_jitter evidence.
     pub fn verify(&self) -> Result<(), String> {
         for (i, sample) in self.samples.iter().enumerate() {
             if sample.compute_hash() != sample.hash {
@@ -374,14 +392,17 @@ impl HybridEvidence {
         Ok(())
     }
 
+    /// Serialize to pretty-printed JSON bytes.
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec_pretty(self).map_err(|e| e.to_string())
     }
 
+    /// Deserialize from JSON bytes.
     pub fn decode(data: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(data).map_err(|e| e.to_string())
     }
 
+    /// Compute the average typing rate in keystrokes per minute.
     pub fn typing_rate(&self) -> f64 {
         if self.statistics.duration.as_secs_f64() > 0.0 {
             self.statistics.total_keystrokes as f64
@@ -391,6 +412,7 @@ impl HybridEvidence {
         }
     }
 
+    /// Check whether the typing rate and document hash diversity are plausibly human.
     pub fn is_plausible_human_typing(&self) -> bool {
         let rate = self.typing_rate();
         if rate < 10.0 && self.statistics.total_keystrokes > 100 {
@@ -405,6 +427,7 @@ impl HybridEvidence {
         true
     }
 
+    /// Return a human-readable label for the dominant entropy source.
     pub fn entropy_source(&self) -> &'static str {
         if self.entropy_quality.phys_ratio > 0.9 {
             "hardware (TSC-based)"

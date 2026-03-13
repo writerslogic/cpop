@@ -2,6 +2,7 @@
 
 //! QWERTY keyboard zone mapping and zone transition types.
 
+/// Map a macOS virtual key code to a QWERTY keyboard zone (0..7), or -1 if unmapped.
 pub fn keycode_to_zone(key_code: u16) -> i32 {
     match key_code {
         0x0C | 0x00 | 0x06 => 0,
@@ -16,6 +17,7 @@ pub fn keycode_to_zone(key_code: u16) -> i32 {
     }
 }
 
+/// Map a character to a QWERTY keyboard zone (0..7), or -1 if unmapped.
 pub fn char_to_zone(c: char) -> i32 {
     match c {
         'q' | 'Q' | 'a' | 'A' | 'z' | 'Z' => 0,
@@ -30,6 +32,7 @@ pub fn char_to_zone(c: char) -> i32 {
     }
 }
 
+/// Pack a zone transition into a single byte (from << 3 | to), or 0xFF if invalid.
 pub fn encode_zone_transition(from: i32, to: i32) -> u8 {
     if !(0..=7).contains(&from) || !(0..=7).contains(&to) {
         return 0xFF;
@@ -37,16 +40,19 @@ pub fn encode_zone_transition(from: i32, to: i32) -> u8 {
     ((from << 3) | to) as u8
 }
 
+/// Unpack a zone transition byte into (from, to) zone indices.
 pub fn decode_zone_transition(encoded: u8) -> (i32, i32) {
     let from = ((encoded >> 3) & 0x07) as i32;
     let to = (encoded & 0x07) as i32;
     (from, to)
 }
 
+/// Return true if the encoded byte represents a valid zone transition.
 pub fn is_valid_zone_transition(encoded: u8) -> bool {
     encoded != 0xFF && (encoded >> 3) < 8
 }
 
+/// Convert a text string into a sequence of consecutive zone transitions.
 pub fn text_to_zone_sequence(text: &str) -> Vec<ZoneTransition> {
     let mut transitions = Vec::with_capacity(text.len());
     let mut prev_zone = -1;
@@ -65,21 +71,27 @@ pub fn text_to_zone_sequence(text: &str) -> Vec<ZoneTransition> {
     transitions
 }
 
+/// A transition between two QWERTY keyboard zones.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoneTransition {
+    /// Source zone index (0..7).
     pub from: i32,
+    /// Destination zone index (0..7).
     pub to: i32,
 }
 
 impl ZoneTransition {
+    /// Return true if both zones are the same (same finger repeat).
     pub fn is_same_finger(&self) -> bool {
         self.from == self.to
     }
 
+    /// Return true if both zones belong to the same hand.
     pub fn is_same_hand(&self) -> bool {
         (self.from < 4) == (self.to < 4)
     }
 
+    /// Return true if the transition crosses from one hand to the other.
     pub fn is_alternating(&self) -> bool {
         !self.is_same_hand()
     }

@@ -18,7 +18,9 @@ pub use params::{
 pub use proof::VdfProof;
 
 // CDDL spec calls this "Sequential Work Function (SWF)"; module stays `vdf` for compat
+/// Alias for `Parameters` matching the CDDL spec naming.
 pub type SwfParameters = Parameters;
+/// Alias for `VdfProof` matching the CDDL spec naming.
 pub type SwfProof = VdfProof;
 pub use roughtime_client::RoughtimeClient;
 pub use swf_argon2::{

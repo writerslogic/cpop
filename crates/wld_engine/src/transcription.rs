@@ -41,6 +41,7 @@ pub struct TranscriptionCollector {
 }
 
 impl TranscriptionCollector {
+    /// Create a collector for the given transcription engine name.
     pub fn new(engine: &str) -> Self {
         Self {
             engine: engine.to_string(),
@@ -51,15 +52,18 @@ impl TranscriptionCollector {
         }
     }
 
+    /// Record a word-to-word timing interval in microseconds.
     pub fn record_word_interval(&mut self, interval_us: u64) {
         self.word_intervals_us.push(interval_us);
     }
 
+    /// Record a per-word confidence score, clamped to [0.0, 1.0].
     pub fn record_confidence(&mut self, confidence: f64) {
         self.confidence_sum += confidence.clamp(0.0, 1.0);
         self.confidence_count += 1;
     }
 
+    /// Set the total audio duration in milliseconds.
     pub fn set_duration(&mut self, duration_ms: u64) {
         self.total_duration_ms = duration_ms;
     }
@@ -78,6 +82,7 @@ impl TranscriptionCollector {
         hasher.finalize().into()
     }
 
+    /// Consume the collector and produce finalized transcription metadata.
     pub fn finalize(self) -> TranscriptionMetadata {
         let word_count = self.word_intervals_us.len() as u64;
         let confidence = if self.confidence_count > 0 {
@@ -98,6 +103,7 @@ impl TranscriptionCollector {
         }
     }
 
+    /// Clear all recorded intervals and reset counters.
     pub fn reset(&mut self) {
         self.word_intervals_us.clear();
         self.total_duration_ms = 0;
@@ -106,6 +112,7 @@ impl TranscriptionCollector {
     }
 }
 
+/// Statistical summary of transcription word timing intervals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionTimingStats {
     pub mean_interval_us: f64,
@@ -116,6 +123,7 @@ pub struct TranscriptionTimingStats {
 }
 
 impl TranscriptionTimingStats {
+    /// Compute timing statistics from a slice of word intervals. Returns `None` if empty.
     pub fn from_intervals(intervals: &[u64]) -> Option<Self> {
         if intervals.is_empty() {
             return None;

@@ -25,10 +25,15 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AggregationMethod {
+    /// Merkle tree over VDF outputs with sampled inclusion proofs.
     MerkleVdfTree,
+    /// Groth16 SNARK proof (requires trusted setup).
     SnarkGroth16,
+    /// PLONK SNARK proof (universal setup).
     SnarkPlonk,
+    /// STARK proof (no trusted setup, polylogarithmic verification).
     Stark,
+    /// Recursive SNARK for incremental aggregation.
     RecursiveSnark,
 }
 
@@ -36,9 +41,13 @@ pub enum AggregationMethod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SnarkScheme {
+    /// Groth16 over BN254 curve.
     Groth16Bn254,
+    /// Groth16 over BLS12-381 curve.
     Groth16Bls12381,
+    /// PLONK over BN254 curve.
     PlonkBn254,
+    /// PLONK over BLS12-381 curve.
     PlonkBls12381,
 }
 
@@ -201,10 +210,15 @@ impl VdfAggregateProof {
 /// Aggregate proof operation errors
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AggregateError {
+    /// Attempted to extract a proof type that does not match the method.
     WrongMethod,
+    /// Inner proof bytes failed to deserialize.
     DeserializationError,
+    /// Aggregate proof verification failed.
     VerificationFailed,
+    /// Merkle inclusion path is invalid.
     InvalidMerklePath,
+    /// Required verification key not found.
     MissingVerificationKey,
 }
 
@@ -229,6 +243,7 @@ pub struct MerkleVdfBuilder {
 }
 
 impl MerkleVdfBuilder {
+    /// Create an empty builder.
     pub fn new() -> Self {
         Self {
             leaf_hashes: Vec::new(),

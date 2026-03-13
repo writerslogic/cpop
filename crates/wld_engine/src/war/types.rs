@@ -17,6 +17,7 @@ pub enum Version {
 }
 
 impl Version {
+    /// Return the version string (e.g. "WAR/1.0").
     pub fn as_str(&self) -> &'static str {
         match self {
             Version::V1_0 => "WAR/1.0",
@@ -25,6 +26,7 @@ impl Version {
         }
     }
 
+    /// Parse a version string into a `Version` variant.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "WAR/1.0" => Some(Version::V1_0),
@@ -159,8 +161,11 @@ pub struct VerificationReport {
 /// Individual verification check result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
+    /// Check identifier (e.g. "seal_signature", "hash_chain")
     pub name: String,
+    /// Whether this check passed
     pub passed: bool,
+    /// Human-readable explanation of the result
     pub message: String,
 }
 

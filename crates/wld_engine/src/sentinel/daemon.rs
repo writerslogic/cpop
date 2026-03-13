@@ -15,19 +15,30 @@ use tokio::task::JoinHandle;
 /// Persisted alongside the PID file.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DaemonState {
+    /// OS process ID of the running daemon.
     pub pid: i32,
-    pub started_at: i64, // Unix timestamp
+    /// Unix timestamp when the daemon started.
+    pub started_at: i64,
+    /// Engine version string at startup.
     pub version: String,
+    /// Identity fingerprint, if a signing key was loaded.
     pub identity: Option<String>,
 }
 
+/// Snapshot of daemon state queried from PID/state files.
 #[derive(Debug, Clone)]
 pub struct DaemonStatus {
+    /// Whether the daemon process is alive.
     pub running: bool,
+    /// OS process ID, if the PID file exists and is valid.
     pub pid: Option<i32>,
+    /// When the daemon started.
     pub started_at: Option<SystemTime>,
+    /// Time since start, if still running.
     pub uptime: Option<Duration>,
+    /// Engine version at startup.
     pub version: Option<String>,
+    /// Identity fingerprint, if known.
     pub identity: Option<String>,
 }
 
@@ -43,6 +54,7 @@ pub struct DaemonHandle {
 }
 
 impl DaemonHandle {
+    /// Gracefully shut down the IPC server, sentinel, and clean up daemon files.
     pub async fn shutdown(self) -> Result<()> {
         let _ = self.ipc_shutdown_tx.send(()).await;
         self.sentinel.stop().await?;
@@ -52,6 +64,7 @@ impl DaemonHandle {
     }
 }
 
+/// Manage daemon lifecycle via PID file, state file, and Unix socket.
 pub struct DaemonManager {
     writerslogic_dir: PathBuf,
     pid_file: PathBuf,
@@ -60,6 +73,7 @@ pub struct DaemonManager {
 }
 
 impl DaemonManager {
+    /// Create a manager rooted at the given writerslogic directory.
     pub fn new(writerslogic_dir: impl AsRef<Path>) -> Self {
         let writerslogic_dir = writerslogic_dir.as_ref().to_path_buf();
         let sentinel_dir = writerslogic_dir.join("sentinel");
@@ -72,6 +86,7 @@ impl DaemonManager {
         }
     }
 
+    /// Check whether the daemon process recorded in the PID file is alive.
     pub fn is_running(&self) -> bool {
         if let Ok(pid) = self.read_pid() {
             is_process_running(pid)
@@ -80,6 +95,7 @@ impl DaemonManager {
         }
     }
 
+    /// Read the daemon PID from the PID file.
     pub fn read_pid(&self) -> Result<i32> {
         let data = fs::read_to_string(&self.pid_file)?;
         data.trim().parse().map_err(|_| {
@@ -90,6 +106,7 @@ impl DaemonManager {
         })
     }
 
+    /// Write the current process ID to the PID file.
     pub fn write_pid(&self) -> Result<()> {
         let parent = self.pid_file.parent().ok_or_else(|| {
             SentinelError::Io(std::io::Error::new(
@@ -177,11 +194,13 @@ impl DaemonManager {
         }
     }
 
+    /// Remove the PID file.
     pub fn remove_pid(&self) -> Result<()> {
         fs::remove_file(&self.pid_file)?;
         Ok(())
     }
 
+    /// Persist daemon state as JSON.
     pub fn write_state(&self, state: &DaemonState) -> Result<()> {
         let json = serde_json::to_string_pretty(state)
             .map_err(|e| SentinelError::Serialization(e.to_string()))?;
@@ -189,11 +208,13 @@ impl DaemonManager {
         Ok(())
     }
 
+    /// Read daemon state from the state file.
     pub fn read_state(&self) -> Result<DaemonState> {
         let data = fs::read_to_string(&self.state_file)?;
         serde_json::from_str(&data).map_err(|e| SentinelError::Serialization(e.to_string()))
     }
 
+    /// Send SIGTERM to the daemon process (Unix only).
     #[cfg(unix)]
     pub fn signal_stop(&self) -> Result<()> {
         use nix::sys::signal::{kill, Signal};
@@ -205,6 +226,7 @@ impl DaemonManager {
         Ok(())
     }
 
+    /// Send stop signal (unsupported on non-Unix platforms).
     #[cfg(not(unix))]
     pub fn signal_stop(&self) -> Result<()> {
         Err(SentinelError::NotAvailable(
@@ -212,6 +234,7 @@ impl DaemonManager {
         ))
     }
 
+    /// Send SIGHUP to the daemon process for config reload (Unix only).
     #[cfg(unix)]
     pub fn signal_reload(&self) -> Result<()> {
         use nix::sys::signal::{kill, Signal};
@@ -223,6 +246,7 @@ impl DaemonManager {
         Ok(())
     }
 
+    /// Send reload signal (unsupported on non-Unix platforms).
     #[cfg(not(unix))]
     pub fn signal_reload(&self) -> Result<()> {
         Err(SentinelError::NotAvailable(
@@ -230,6 +254,7 @@ impl DaemonManager {
         ))
     }
 
+    /// Poll until the daemon process exits or the timeout expires.
     pub fn wait_for_stop(&self, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
 
@@ -246,6 +271,7 @@ impl DaemonManager {
         )))
     }
 
+    /// Remove PID file, state file, and socket.
     pub fn cleanup(&self) {
         for path in [&self.pid_file, &self.state_file, &self.socket_path] {
             if let Err(e) = fs::remove_file(path) {
@@ -256,6 +282,7 @@ impl DaemonManager {
         }
     }
 
+    /// Query the current daemon status from PID/state files.
     pub fn status(&self) -> DaemonStatus {
         let mut status = DaemonStatus {
             running: false,
@@ -287,14 +314,17 @@ impl DaemonManager {
         status
     }
 
+    /// Return the path to the IPC Unix socket.
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
     }
 
+    /// Return the sentinel subdirectory path.
     pub fn sentinel_dir(&self) -> PathBuf {
         self.writerslogic_dir.join("sentinel")
     }
 
+    /// Return the WAL directory path.
     pub fn wal_dir(&self) -> PathBuf {
         self.writerslogic_dir.join("sentinel").join("wal")
     }
@@ -431,6 +461,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Signal the running daemon to stop and wait for it to exit.
 pub fn cmd_stop(writerslogic_dir: &Path) -> Result<()> {
     let daemon_mgr = DaemonManager::new(writerslogic_dir);
 
@@ -445,11 +476,13 @@ pub fn cmd_stop(writerslogic_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Query the daemon status without connecting to it.
 pub fn cmd_status(writerslogic_dir: &Path) -> DaemonStatus {
     let daemon_mgr = DaemonManager::new(writerslogic_dir);
     daemon_mgr.status()
 }
 
+/// Tell the running daemon to start tracking a file via IPC.
 pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     use crate::ipc::{IpcClient, IpcErrorCode, IpcMessage};
 
@@ -502,6 +535,7 @@ pub fn cmd_track(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     }
 }
 
+/// Tell the running daemon to stop tracking a file via IPC.
 pub fn cmd_untrack(writerslogic_dir: &Path, file_path: &Path) -> Result<()> {
     use crate::ipc::{IpcClient, IpcErrorCode, IpcMessage};
 

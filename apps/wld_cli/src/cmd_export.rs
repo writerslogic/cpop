@@ -37,33 +37,7 @@ pub(crate) async fn cmd_export(
     let db = open_secure_store()?;
     let events = db.get_events_for_file(&abs_path_str)?;
 
-    if events.is_empty() {
-        let file_name = file_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| file_path.display().to_string());
-        return Err(anyhow!(
-            "No checkpoints found for this file.\n\n\
-             Create one first with: wld commit {}",
-            file_name
-        ));
-    }
-
-    if events.len() < MIN_CHECKPOINTS_PER_PACKET {
-        let file_name = file_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| file_path.display().to_string());
-        return Err(anyhow!(
-            "Insufficient checkpoints for evidence export.\n\n\
-             The spec requires a minimum of {} checkpoints per evidence packet.\n\
-             You have {} checkpoint(s) for this file.\n\n\
-             Create more checkpoints with: wld commit {}",
-            MIN_CHECKPOINTS_PER_PACKET,
-            events.len(),
-            file_name
-        ));
-    }
+    validate_checkpoint_count(file_path, &events)?;
 
     let config = ensure_dirs()?;
     let dir = &config.data_dir;
@@ -92,135 +66,11 @@ pub(crate) async fn cmd_export(
         .ok_or_else(|| anyhow!("No events found for this file"))?;
 
     let tier_lower = tier.to_lowercase();
-    let mut keystroke_evidence = serde_json::Value::Null;
-    if tier_lower == "enhanced" || tier_lower == "maximum" {
-        let tracking_dir = dir.join("tracking");
-        let mut session_to_load: Option<String> = None;
-
-        if session_to_load.is_none() && tracking_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&tracking_dir) {
-                let mut candidates = Vec::new();
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "json") {
-                        let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(u64::MAX);
-                        if file_size > 10_000_000 {
-                            eprintln!(
-                                "Warning: Skipping oversized session file {:?} ({:.1} MB)",
-                                path.file_name().unwrap_or_default(),
-                                file_size as f64 / 1_000_000.0
-                            );
-                            continue;
-                        }
-                        if let Ok(content) = fs::read_to_string(&path) {
-                            let matches = if let Ok(parsed) =
-                                serde_json::from_str::<serde_json::Value>(&content)
-                            {
-                                parsed
-                                    .get("document_path")
-                                    .and_then(|v| v.as_str())
-                                    .is_some_and(|dp| dp == abs_path_str)
-                            } else {
-                                content.contains(&abs_path_str)
-                            };
-                            if matches {
-                                if let Ok(meta) = fs::metadata(&path) {
-                                    if let Ok(modified) = meta.modified() {
-                                        candidates.push((path, modified));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if let Some((path, _)) = candidates.iter().max_by_key(|(_, t)| *t) {
-                    println!(
-                        "Found matching tracking session: {:?}",
-                        path.file_name().unwrap_or_default()
-                    );
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        let id = name.split('.').next().unwrap_or("").to_string();
-                        if !id.is_empty() {
-                            match validate_session_id(&id) {
-                                Ok(_) => session_to_load = Some(id),
-                                Err(e) => {
-                                    eprintln!(
-                                        "Warning: Skipping session with invalid ID {:?}: {}",
-                                        id, e
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(ref id) = session_to_load {
-            validate_session_id(id)?;
-            let session_path = tracking_dir.join(format!("{}.session.json", id));
-            let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", id));
-
-            keystroke_evidence = if hybrid_path.exists() {
-                #[cfg(feature = "wld_jitter")]
-                {
-                    match wld_engine::HybridJitterSession::load(&hybrid_path, None) {
-                        Ok(s) => serde_json::to_value(s.export()).unwrap_or_else(|e| {
-                            eprintln!("Warning: failed to serialize jitter stats: {e}");
-                            serde_json::Value::Null
-                        }),
-                        Err(e) => {
-                            eprintln!("Warning: Could not load hybrid jitter session: {}", e);
-                            serde_json::Value::Null
-                        }
-                    }
-                }
-                #[cfg(not(feature = "wld_jitter"))]
-                {
-                    serde_json::Value::Null
-                }
-            } else if session_path.exists() {
-                match JitterSession::load(&session_path) {
-                    Ok(s) => serde_json::to_value(s.export()).unwrap_or_else(|e| {
-                        eprintln!("Warning: failed to serialize jitter stats: {e}");
-                        serde_json::Value::Null
-                    }),
-                    Err(e) => {
-                        eprintln!("Warning: Could not load jitter session: {}", e);
-                        serde_json::Value::Null
-                    }
-                }
-            } else {
-                serde_json::Value::Null
-            };
-
-            if keystroke_evidence != serde_json::Value::Null {
-                println!("Including keystroke evidence from session {}", id);
-            } else if hybrid_path.exists() {
-                #[cfg(not(feature = "wld_jitter"))]
-                eprintln!(
-                    "Warning: Could not load tracking session {}: \
-                     hybrid jitter requires the 'wld_jitter' feature",
-                    id
-                );
-                #[cfg(feature = "wld_jitter")]
-                eprintln!(
-                    "Warning: Could not load tracking session {}: \
-                     hybrid session file exists but produced no evidence",
-                    id
-                );
-            } else if session_path.exists() {
-                eprintln!(
-                    "Warning: Could not load tracking session {}: \
-                     session file exists but produced no evidence (see errors above)",
-                    id
-                );
-            }
-        } else {
-            println!("No matching tracking session found for this document.");
-            println!("Tip: Run 'wld track start' before writing to generate enhanced evidence.");
-        }
-    }
+    let keystroke_evidence = if tier_lower == "enhanced" || tier_lower == "maximum" {
+        load_keystroke_evidence(dir, &abs_path_str)
+    } else {
+        serde_json::Value::Null
+    };
 
     let title = file_path
         .file_name()
@@ -228,47 +78,320 @@ pub(crate) async fn cmd_export(
         .to_string_lossy()
         .into_owned();
 
-    let decl = if tier_lower == "basic" {
-        println!("Basic tier: using default declaration (no AI tools declared).");
-        declaration::no_ai_declaration(
-            latest.content_hash,
-            latest.event_hash,
-            &title,
-            "Basic-tier evidence: no declaration provided.",
-        )
-        .sign(signer.as_ref())
-        .map_err(|e| anyhow!("Failed to create declaration: {}", e))?
-    } else {
-        let is_tty = std::io::stdin().is_terminal();
-        if !is_tty {
-            println!("Non-interactive mode: using default declaration.");
-            declaration::no_ai_declaration(
-                latest.content_hash,
-                latest.event_hash,
-                &title,
-                "Automated export: no interactive declaration collected.",
-            )
-            .sign(signer.as_ref())
-            .map_err(|e| anyhow!("Failed to create declaration: {}", e))?
-        } else {
-            println!("=== Process Declaration ===");
-            println!("You must declare how this document was created.");
-            println!();
-
-            collect_declaration(
-                latest.content_hash,
-                latest.event_hash,
-                title,
-                signer.as_ref(),
-            )?
-        }
-    };
+    let decl = resolve_declaration(
+        &tier_lower,
+        latest.content_hash,
+        latest.event_hash,
+        title,
+        signer.as_ref(),
+    )?;
 
     let total_iterations: u64 = events.iter().map(|e| e.vdf_iterations).sum();
     let total_vdf_time =
         Duration::from_secs_f64(total_iterations as f64 / vdf_params.iterations_per_second as f64);
 
-    let strength = match tier_lower.as_str() {
+    let spec_content_tier = content_tier_from_cli(&tier_lower);
+    let spec_profile_uri = profile_uri_from_cli(&tier_lower);
+    let spec_attestation_tier = attestation_tier_value(true, caps.hardware_backed);
+
+    let packet = build_evidence_packet(
+        file_path,
+        &abs_path_str,
+        &events,
+        latest,
+        &vdf_params,
+        &tier_lower,
+        spec_content_tier,
+        spec_profile_uri,
+        spec_attestation_tier,
+        &total_vdf_time,
+        &decl,
+        &keystroke_evidence,
+    )?;
+
+    if let Ok(identity_data) = fs::read_to_string(dir.join("identity.json")) {
+        if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
+            println!(
+                "Including key hierarchy evidence: {}",
+                identity
+                    .get("fingerprint")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+            );
+        }
+    }
+
+    if tier_lower != "basic" {
+        print!("Building evidence packet...");
+        io::stdout().flush()?;
+    }
+
+    let format_lower = format.to_lowercase();
+    let out_path = output.unwrap_or_else(|| default_output_path(file_path, &format_lower));
+
+    write_evidence_output(
+        &format_lower,
+        &out_path,
+        file_path,
+        &config,
+        &events,
+        &packet,
+        signer.as_ref(),
+        &vdf_params,
+        tier,
+        &tier_lower,
+        spec_content_tier,
+        spec_profile_uri,
+        spec_attestation_tier,
+        &total_vdf_time,
+        &caps,
+        &tpm_device_id,
+    )?;
+
+    if tier_lower != "basic" {
+        println!(" done.");
+    }
+
+    if stego {
+        embed_steganographic_watermark(file_path, &abs_path_str, &events, dir).await?;
+    }
+
+    Ok(())
+}
+
+fn validate_checkpoint_count(file_path: &Path, events: &[wld_engine::SecureEvent]) -> Result<()> {
+    let file_name = || {
+        file_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| file_path.display().to_string())
+    };
+
+    if events.is_empty() {
+        return Err(anyhow!(
+            "No checkpoints found for this file.\n\n\
+             Create one first with: wld commit {}",
+            file_name()
+        ));
+    }
+
+    if events.len() < MIN_CHECKPOINTS_PER_PACKET {
+        return Err(anyhow!(
+            "Insufficient checkpoints for evidence export.\n\n\
+             The spec requires a minimum of {} checkpoints per evidence packet.\n\
+             You have {} checkpoint(s) for this file.\n\n\
+             Create more checkpoints with: wld commit {}",
+            MIN_CHECKPOINTS_PER_PACKET,
+            events.len(),
+            file_name()
+        ));
+    }
+
+    Ok(())
+}
+
+fn find_matching_session(tracking_dir: &Path, abs_path_str: &str) -> Option<String> {
+    let entries = fs::read_dir(tracking_dir).ok()?;
+    let mut candidates: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.extension().is_some_and(|e| e == "json") {
+            continue;
+        }
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.len() > 10_000_000 {
+            eprintln!(
+                "Warning: Skipping oversized session file {:?} ({:.1} MB)",
+                path.file_name().unwrap_or_default(),
+                meta.len() as f64 / 1_000_000.0
+            );
+            continue;
+        }
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let matches = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+            parsed
+                .get("document_path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|dp| dp == abs_path_str)
+        } else {
+            content.contains(abs_path_str)
+        };
+        if matches {
+            if let Ok(modified) = meta.modified() {
+                candidates.push((path, modified));
+            }
+        }
+    }
+
+    let (path, _) = candidates.iter().max_by_key(|(_, t)| *t)?;
+    println!(
+        "Found matching tracking session: {:?}",
+        path.file_name().unwrap_or_default()
+    );
+    let name = path.file_name().and_then(|n| n.to_str())?;
+    let id = name.split('.').next().unwrap_or("");
+    if id.is_empty() {
+        return None;
+    }
+    match validate_session_id(id) {
+        Ok(_) => Some(id.to_string()),
+        Err(e) => {
+            eprintln!("Warning: Skipping session with invalid ID {:?}: {}", id, e);
+            None
+        }
+    }
+}
+
+fn load_keystroke_evidence(dir: &Path, abs_path_str: &str) -> serde_json::Value {
+    let tracking_dir = dir.join("tracking");
+    if !tracking_dir.exists() {
+        println!("No matching tracking session found for this document.");
+        println!("Tip: Run 'wld track start' before writing to generate enhanced evidence.");
+        return serde_json::Value::Null;
+    }
+
+    let session_id = match find_matching_session(&tracking_dir, abs_path_str) {
+        Some(id) => id,
+        None => {
+            println!("No matching tracking session found for this document.");
+            println!("Tip: Run 'wld track start' before writing to generate enhanced evidence.");
+            return serde_json::Value::Null;
+        }
+    };
+
+    if let Err(e) = validate_session_id(&session_id) {
+        eprintln!("Warning: invalid session ID: {}", e);
+        return serde_json::Value::Null;
+    }
+
+    let session_path = tracking_dir.join(format!("{}.session.json", session_id));
+    let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
+
+    let evidence = load_session_evidence(&session_path, &hybrid_path);
+
+    if evidence != serde_json::Value::Null {
+        println!("Including keystroke evidence from session {}", session_id);
+    } else if hybrid_path.exists() {
+        #[cfg(not(feature = "wld_jitter"))]
+        eprintln!(
+            "Warning: Could not load tracking session {}: \
+             hybrid jitter requires the 'wld_jitter' feature",
+            session_id
+        );
+        #[cfg(feature = "wld_jitter")]
+        eprintln!(
+            "Warning: Could not load tracking session {}: \
+             hybrid session file exists but produced no evidence",
+            session_id
+        );
+    } else if session_path.exists() {
+        eprintln!(
+            "Warning: Could not load tracking session {}: \
+             session file exists but produced no evidence (see errors above)",
+            session_id
+        );
+    }
+
+    evidence
+}
+
+fn load_session_evidence(session_path: &Path, hybrid_path: &Path) -> serde_json::Value {
+    if hybrid_path.exists() {
+        #[cfg(feature = "wld_jitter")]
+        {
+            return match wld_engine::HybridJitterSession::load(hybrid_path, None) {
+                Ok(s) => serde_json::to_value(s.export()).unwrap_or_else(|e| {
+                    eprintln!("Warning: failed to serialize jitter stats: {e}");
+                    serde_json::Value::Null
+                }),
+                Err(e) => {
+                    eprintln!("Warning: Could not load hybrid jitter session: {}", e);
+                    serde_json::Value::Null
+                }
+            };
+        }
+        #[cfg(not(feature = "wld_jitter"))]
+        {
+            return serde_json::Value::Null;
+        }
+    }
+
+    if session_path.exists() {
+        return match JitterSession::load(session_path) {
+            Ok(s) => serde_json::to_value(s.export()).unwrap_or_else(|e| {
+                eprintln!("Warning: failed to serialize jitter stats: {e}");
+                serde_json::Value::Null
+            }),
+            Err(e) => {
+                eprintln!("Warning: Could not load jitter session: {}", e);
+                serde_json::Value::Null
+            }
+        };
+    }
+
+    serde_json::Value::Null
+}
+
+fn resolve_declaration(
+    tier_lower: &str,
+    content_hash: [u8; 32],
+    chain_hash: [u8; 32],
+    title: String,
+    signer: &dyn PoPSigner,
+) -> Result<declaration::Declaration> {
+    if tier_lower == "basic" {
+        println!("Basic tier: using default declaration (no AI tools declared).");
+        return declaration::no_ai_declaration(
+            content_hash,
+            chain_hash,
+            &title,
+            "Basic-tier evidence: no declaration provided.",
+        )
+        .sign(signer)
+        .map_err(|e| anyhow!("Failed to create declaration: {}", e));
+    }
+
+    if !std::io::stdin().is_terminal() {
+        println!("Non-interactive mode: using default declaration.");
+        return declaration::no_ai_declaration(
+            content_hash,
+            chain_hash,
+            &title,
+            "Automated export: no interactive declaration collected.",
+        )
+        .sign(signer)
+        .map_err(|e| anyhow!("Failed to create declaration: {}", e));
+    }
+
+    println!("=== Process Declaration ===");
+    println!("You must declare how this document was created.");
+    println!();
+    collect_declaration(content_hash, chain_hash, title, signer)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_evidence_packet(
+    file_path: &Path,
+    abs_path_str: &str,
+    events: &[wld_engine::SecureEvent],
+    latest: &wld_engine::SecureEvent,
+    vdf_params: &wld_engine::vdf::params::Parameters,
+    tier_lower: &str,
+    spec_content_tier: u8,
+    spec_profile_uri: &str,
+    spec_attestation_tier: u8,
+    total_vdf_time: &Duration,
+    decl: &declaration::Declaration,
+    keystroke_evidence: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let strength = match tier_lower {
         "basic" => "Basic",
         "standard" => "Standard",
         "enhanced" => "Enhanced",
@@ -276,14 +399,9 @@ pub(crate) async fn cmd_export(
         _ => "Basic",
     };
 
-    let spec_content_tier = content_tier_from_cli(&tier_lower);
-    let spec_profile_uri = profile_uri_from_cli(&tier_lower);
-
     // §7.5: entangled (21) for enhanced/maximum, standard (20) otherwise
     let proof_algorithm: u8 = if spec_content_tier >= 2 { 21 } else { 20 };
     let swf_params = wld_engine::vdf::params_for_tier(spec_content_tier);
-
-    let spec_attestation_tier = attestation_tier_value(true, caps.hardware_backed);
 
     let mut packet_id = [0u8; 16];
     getrandom::getrandom(&mut packet_id)?;
@@ -341,7 +459,7 @@ pub(crate) async fn cmd_export(
         })
         .collect();
 
-    let packet = serde_json::json!({
+    Ok(serde_json::json!({
         "version": 1,
         "exported_at": Utc::now().to_rfc3339(),
         "strength": strength,
@@ -368,7 +486,7 @@ pub(crate) async fn cmd_export(
                 "digest": hex::encode(latest.content_hash)
             },
             "byte_length": latest.file_size.max(0) as u64,
-            "char_count": fs::read_to_string(&abs_path_str)
+            "char_count": fs::read_to_string(abs_path_str)
                 .map(|s| s.chars().count() as u64)
                 .unwrap_or(latest.file_size.max(0) as u64),
         },
@@ -397,44 +515,50 @@ pub(crate) async fn cmd_export(
             "Cannot prove cognitive origin of ideas",
             "Cannot prove absence of AI involvement in ideation"
         ]
-    });
+    }))
+}
 
-    let identity_path = dir.join("identity.json");
-    if identity_path.exists() {
-        if let Ok(identity_data) = fs::read_to_string(&identity_path) {
-            if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
-                println!(
-                    "Including key hierarchy evidence: {}",
-                    identity
-                        .get("fingerprint")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
+fn default_output_path(file_path: &Path, format_lower: &str) -> PathBuf {
+    let name = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    match format_lower {
+        "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
+        "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
+        "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
+        _ => PathBuf::from(format!("{}.evidence.json", name)),
     }
+}
 
-    if tier_lower != "basic" {
-        print!("Building evidence packet...");
-        io::stdout().flush()?;
-    }
+fn write_atomic(out_path: &Path, data: &[u8]) -> Result<()> {
+    let tmp_path = out_path.with_extension("tmp");
+    fs::write(&tmp_path, data)?;
+    fs::rename(&tmp_path, out_path)?;
+    Ok(())
+}
 
-    let format_lower = format.to_lowercase();
-    let out_path = output.unwrap_or_else(|| {
-        let name = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned();
-        match format_lower.as_str() {
-            "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
-            "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
-            "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
-            _ => PathBuf::from(format!("{}.evidence.json", name)),
-        }
-    });
-
-    match format_lower.as_str() {
+#[allow(clippy::too_many_arguments)]
+fn write_evidence_output(
+    format_lower: &str,
+    out_path: &Path,
+    file_path: &Path,
+    config: &wld_engine::config::WLDConfig,
+    events: &[wld_engine::SecureEvent],
+    packet: &serde_json::Value,
+    signer: &dyn PoPSigner,
+    vdf_params: &wld_engine::vdf::params::Parameters,
+    tier: &str,
+    tier_lower: &str,
+    spec_content_tier: u8,
+    spec_profile_uri: &str,
+    spec_attestation_tier: u8,
+    total_vdf_time: &Duration,
+    caps: &wld_engine::tpm::Capabilities,
+    tpm_device_id: &str,
+) -> Result<()> {
+    match format_lower {
         "cpop" | "cbor" => {
             let chain = wld_engine::checkpoint::Chain::load(
                 wld_engine::checkpoint::Chain::find_chain(file_path, &config.data_dir)?,
@@ -444,9 +568,7 @@ pub(crate) async fn cmd_export(
                 .encode_cbor()
                 .map_err(|e| anyhow!("CBOR encode failed: {}", e))?;
 
-            let tmp_path = out_path.with_extension("tmp");
-            fs::write(&tmp_path, &cbor_data)?;
-            fs::rename(&tmp_path, &out_path)?;
+            write_atomic(out_path, &cbor_data)?;
 
             println!();
             println!("CPOP evidence exported to: {}", out_path.display());
@@ -459,13 +581,11 @@ pub(crate) async fn cmd_export(
             let evidence_packet: evidence::Packet = serde_json::from_value(packet.clone())
                 .context("Failed to create evidence packet")?;
 
-            let war_block = war::Block::from_packet_signed(&evidence_packet, signer.as_ref())
+            let war_block = war::Block::from_packet_signed(&evidence_packet, signer)
                 .map_err(|e| anyhow!("Failed to create WAR block: {}", e))?;
 
             let data = war_block.encode_ascii();
-            let tmp_path = out_path.with_extension("tmp");
-            fs::write(&tmp_path, data)?;
-            fs::rename(&tmp_path, &out_path)?;
+            write_atomic(out_path, data.as_bytes())?;
 
             println!();
             println!("WAR block exported to: {}", out_path.display());
@@ -494,19 +614,17 @@ pub(crate) async fn cmd_export(
                 hex::encode(&pub_key)
             };
             let war_report = build_war_report(
-                &events,
-                &vdf_params,
+                events,
+                vdf_params,
                 tier,
-                &total_vdf_time,
+                total_vdf_time,
                 caps.hardware_backed,
-                &tpm_device_id,
+                tpm_device_id,
                 &key_fp,
             );
             let html = report::render_html(&war_report);
 
-            let tmp_path = out_path.with_extension("tmp");
-            fs::write(&tmp_path, &html)?;
-            fs::rename(&tmp_path, &out_path)?;
+            write_atomic(out_path, html.as_bytes())?;
 
             println!();
             println!("Authorship report exported to: {}", out_path.display());
@@ -520,30 +638,22 @@ pub(crate) async fn cmd_export(
             println!("  Open in a browser to view, or print to PDF.");
         }
         _ => {
-            let data = serde_json::to_string_pretty(&packet)?;
-            let tmp_path = out_path.with_extension("tmp");
-            fs::write(&tmp_path, data)?;
-            fs::rename(&tmp_path, &out_path)?;
+            let data = serde_json::to_string_pretty(packet)?;
+            write_atomic(out_path, data.as_bytes())?;
 
             println!();
             println!("Evidence exported to: {}", out_path.display());
             println!("  Checkpoints: {}", events.len());
             println!("  Total VDF time: {:?}", total_vdf_time);
-            println!("  Tier: {} (content-tier: {})", tier, spec_content_tier);
+            println!(
+                "  Tier: {} (content-tier: {})",
+                tier_lower, spec_content_tier
+            );
             println!("  Profile: {}", spec_profile_uri);
             println!("  Attestation tier: T{}", spec_attestation_tier);
             println!("  CBOR tag: {} (evidence packet)", CBOR_TAG_EVIDENCE_PACKET);
         }
     }
-
-    if tier_lower != "basic" {
-        println!(" done.");
-    }
-
-    if stego {
-        embed_steganographic_watermark(file_path, &abs_path_str, &events, dir).await?;
-    }
-
     Ok(())
 }
 
@@ -580,9 +690,8 @@ async fn embed_steganographic_watermark(
     let (watermarked, binding) = result?;
 
     let stego_path = file_path.with_extension("stego.txt");
-    let tmp_path = stego_path.with_extension("tmp");
-    crate::util::write_restrictive(&tmp_path, watermarked.as_bytes())?;
-    fs::rename(&tmp_path, &stego_path)?;
+    crate::util::write_restrictive(&stego_path.with_extension("tmp"), watermarked.as_bytes())?;
+    fs::rename(stego_path.with_extension("tmp"), &stego_path)?;
 
     let binding_path = file_path.with_extension("stego.binding.json");
     let binding_json = serde_json::to_string_pretty(&binding)?;
@@ -732,46 +841,7 @@ fn build_war_report(
         ..Default::default()
     };
 
-    let mut flags = Vec::new();
-    if avg_forensic > 0.7 {
-        flags.push(ReportFlag {
-            category: "Process".into(),
-            flag: "Natural Editing Pattern".into(),
-            detail: format!(
-                "Forensic score {:.2} indicates human editing patterns",
-                avg_forensic
-            ),
-            signal: FlagSignal::Human,
-        });
-    }
-    if paste_count == 0 || (paste_count as f64 / events.len().max(1) as f64) < 0.1 {
-        flags.push(ReportFlag {
-            category: "Process".into(),
-            flag: "Low Paste Ratio".into(),
-            detail: format!(
-                "{} paste operations across {} checkpoints",
-                paste_count,
-                events.len()
-            ),
-            signal: FlagSignal::Human,
-        });
-    }
-    if events.len() >= 3 {
-        flags.push(ReportFlag {
-            category: "Cryptographic".into(),
-            flag: "Chain Integrity".into(),
-            detail: format!("{} checkpoints with verified hash chain", events.len()),
-            signal: FlagSignal::Human,
-        });
-    }
-    if total_min > 5.0 {
-        flags.push(ReportFlag {
-            category: "Temporal".into(),
-            flag: "Extended Composition".into(),
-            detail: format!("Writing spanned {:.0} minutes with VDF proof", total_min),
-            signal: FlagSignal::Human,
-        });
-    }
+    let flags = build_report_flags(avg_forensic, paste_count, events.len(), total_min);
 
     let device_attestation = if hardware_backed {
         format!("{} | TPM-bound Ed25519 key | Device ID verified", device_id)
@@ -779,35 +849,7 @@ fn build_war_report(
         format!("{} | Software-only Ed25519 key", device_id)
     };
 
-    let verdict_desc = match verdict {
-        Verdict::VerifiedHuman => {
-            "Process analysis across multiple evidence dimensions indicates strong evidence of \
-             natural human authorship. Writing exhibits characteristic cognitive constraints, \
-             revision patterns, and temporal consistency incompatible with generative AI output."
-                .to_string()
-        }
-        Verdict::LikelyHuman => {
-            "Process evidence indicates likely human authorship with moderate constraint indicators. \
-             Additional evidence dimensions would strengthen the assessment."
-                .to_string()
-        }
-        Verdict::Inconclusive => {
-            "Insufficient evidence to make a confident determination. Additional checkpoints or \
-             enhanced evidence collection recommended."
-                .to_string()
-        }
-        Verdict::Suspicious => {
-            "Multiple anomalous patterns detected that are inconsistent with typical human \
-             composition behavior. Further investigation recommended."
-                .to_string()
-        }
-        Verdict::LikelySynthetic => {
-            "Evidence patterns strongly suggest synthetic or automated content generation. \
-             Revision patterns, timing characteristics, and editing topology are inconsistent \
-             with natural human authorship."
-                .to_string()
-        }
-    };
+    let verdict_desc = verdict_description(&verdict);
 
     WarReport {
         report_id,
@@ -845,6 +887,89 @@ fn build_war_report(
             "Cannot prove absence of AI involvement in ideation".into(),
         ],
         analyzed_text: None,
+    }
+}
+
+fn build_report_flags(
+    avg_forensic: f64,
+    paste_count: u64,
+    event_count: usize,
+    total_min: f64,
+) -> Vec<report::ReportFlag> {
+    use wld_engine::report::*;
+
+    let mut flags = Vec::new();
+    if avg_forensic > 0.7 {
+        flags.push(ReportFlag {
+            category: "Process".into(),
+            flag: "Natural Editing Pattern".into(),
+            detail: format!(
+                "Forensic score {:.2} indicates human editing patterns",
+                avg_forensic
+            ),
+            signal: FlagSignal::Human,
+        });
+    }
+    if paste_count == 0 || (paste_count as f64 / event_count.max(1) as f64) < 0.1 {
+        flags.push(ReportFlag {
+            category: "Process".into(),
+            flag: "Low Paste Ratio".into(),
+            detail: format!(
+                "{} paste operations across {} checkpoints",
+                paste_count, event_count
+            ),
+            signal: FlagSignal::Human,
+        });
+    }
+    if event_count >= 3 {
+        flags.push(ReportFlag {
+            category: "Cryptographic".into(),
+            flag: "Chain Integrity".into(),
+            detail: format!("{} checkpoints with verified hash chain", event_count),
+            signal: FlagSignal::Human,
+        });
+    }
+    if total_min > 5.0 {
+        flags.push(ReportFlag {
+            category: "Temporal".into(),
+            flag: "Extended Composition".into(),
+            detail: format!("Writing spanned {:.0} minutes with VDF proof", total_min),
+            signal: FlagSignal::Human,
+        });
+    }
+    flags
+}
+
+fn verdict_description(verdict: &report::Verdict) -> String {
+    use wld_engine::report::Verdict;
+    match verdict {
+        Verdict::VerifiedHuman => {
+            "Process analysis across multiple evidence dimensions indicates strong evidence of \
+             natural human authorship. Writing exhibits characteristic cognitive constraints, \
+             revision patterns, and temporal consistency incompatible with generative AI output."
+                .into()
+        }
+        Verdict::LikelyHuman => {
+            "Process evidence indicates likely human authorship with moderate constraint indicators. \
+             Additional evidence dimensions would strengthen the assessment."
+                .into()
+        }
+        Verdict::Inconclusive => {
+            "Insufficient evidence to make a confident determination. Additional checkpoints or \
+             enhanced evidence collection recommended."
+                .into()
+        }
+        Verdict::Suspicious => {
+            "Multiple anomalous patterns detected that are inconsistent with typical human \
+             composition behavior. Further investigation recommended."
+                .into()
+        }
+        Verdict::LikelySynthetic => {
+            "Evidence patterns strongly suggest synthetic or automated content generation. \
+             Revision patterns, timing characteristics, and editing topology are inconsistent \
+             with natural human authorship."
+                .into()
+        }
     }
 }
 
@@ -903,7 +1028,7 @@ fn make_session(
         start: DateTime::from_timestamp_nanos(first.timestamp_ns),
         duration_min,
         event_count,
-        words_drafted: Some((size_change.max(0) as u64) / 5), // rough estimate: 5 chars/word
+        words_drafted: Some((size_change.max(0) as u64) / 5),
         device: Some(first.machine_id.clone()),
         summary: format!(
             "{} revision events, {} net characters changed",

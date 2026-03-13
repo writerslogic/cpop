@@ -50,6 +50,7 @@ pub enum Ar4siStatus {
 }
 
 impl Ar4siStatus {
+    /// Convert a raw i8 value to the corresponding status variant.
     pub fn from_i8(v: i8) -> Self {
         match v {
             2 => Self::Affirming,
@@ -59,6 +60,7 @@ impl Ar4siStatus {
         }
     }
 
+    /// Return the lowercase string name of this status.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::None => "none",
@@ -172,7 +174,9 @@ impl TrustworthinessVector {
 /// Verifier identity per EAR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifierId {
+    /// Build identifier string (e.g. "wld-engine/0.3.6")
     pub build: String,
+    /// Developer/organization name
     pub developer: String,
 }
 
@@ -188,14 +192,19 @@ impl Default for VerifierId {
 /// Seal claims extracted from a WAR block for embedding in EAR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealClaims {
+    /// H1: document/checkpoint/declaration binding hash
     #[serde(with = "hex_bytes_32")]
     pub h1: [u8; 32],
+    /// H2: jitter/identity binding hash
     #[serde(with = "hex_bytes_32")]
     pub h2: [u8; 32],
+    /// H3: VDF/document binding hash (signed)
     #[serde(with = "hex_bytes_32")]
     pub h3: [u8; 32],
+    /// Ed25519 signature over H3
     #[serde(with = "hex_bytes_64")]
     pub signature: [u8; 64],
+    /// Author's Ed25519 public key
     #[serde(with = "hex_bytes_32")]
     pub public_key: [u8; 32],
 }

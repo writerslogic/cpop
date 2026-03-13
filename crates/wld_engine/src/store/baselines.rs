@@ -16,6 +16,7 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Persist a signed baseline digest for an identity fingerprint.
     pub fn save_baseline_digest(
         &self,
         fingerprint: &[u8],
@@ -30,6 +31,7 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Load the stored baseline digest and signature for an identity fingerprint.
     pub fn get_baseline_digest(
         &self,
         fingerprint: &[u8],
@@ -47,6 +49,7 @@ impl SecureStore {
         }
     }
 
+    /// Update a physical baseline signal using Welford's online algorithm.
     pub fn update_baseline(&self, signal: &str, value: f64) -> anyhow::Result<()> {
         let res = self.conn.query_row(
             "SELECT sample_count, mean, m2 FROM physical_baselines WHERE signal_name = ?",
@@ -79,6 +82,7 @@ impl SecureStore {
         Ok(())
     }
 
+    /// Return all physical baselines as (signal_name, mean, std_dev) triples.
     pub fn get_baselines(&self) -> anyhow::Result<Vec<(String, f64, f64)>> {
         let mut stmt = self
             .conn

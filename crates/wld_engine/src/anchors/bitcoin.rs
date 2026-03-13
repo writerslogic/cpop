@@ -3,6 +3,7 @@
 use super::{AnchorError, AnchorProvider, Proof, ProofStatus, ProviderType};
 use async_trait::async_trait;
 
+/// Anchor provider that embeds hashes in Bitcoin OP_RETURN transactions.
 pub struct BitcoinProvider {
     rpc_url: String,
     rpc_user: String,
@@ -11,14 +12,19 @@ pub struct BitcoinProvider {
     client: reqwest::Client,
 }
 
+/// Bitcoin network selector.
 #[derive(Debug, Clone, Copy)]
 pub enum BitcoinNetwork {
+    /// Production Bitcoin network.
     Mainnet,
+    /// Public test network.
     Testnet,
+    /// Local regression testing network.
     Regtest,
 }
 
 impl BitcoinProvider {
+    /// Create a provider with explicit RPC credentials and network.
     pub fn new(
         rpc_url: String,
         rpc_user: String,
@@ -34,6 +40,7 @@ impl BitcoinProvider {
         }
     }
 
+    /// Create from `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, `BITCOIN_RPC_PASSWORD` env vars.
     pub fn from_env() -> Result<Self, AnchorError> {
         let rpc_url = std::env::var("BITCOIN_RPC_URL")
             .map_err(|_| AnchorError::Unavailable("BITCOIN_RPC_URL not set".into()))?;

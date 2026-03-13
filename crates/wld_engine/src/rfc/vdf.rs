@@ -41,6 +41,7 @@ pub struct VdfProofRfc {
 }
 
 impl VdfProofRfc {
+    /// Create a VDF proof from all required fields.
     pub fn new(
         challenge: [u8; 32],
         output: [u8; 64],
@@ -57,6 +58,7 @@ impl VdfProofRfc {
         }
     }
 
+    /// Compute the minimum expected wall time from calibration data.
     pub fn minimum_elapsed_ms(&self) -> u64 {
         // Integer arithmetic avoids f64 precision / NaN edge cases
         if self.calibration.iterations_per_second > 0 {
@@ -69,6 +71,7 @@ impl VdfProofRfc {
         }
     }
 
+    /// Return `true` if claimed duration is consistent with calibration (5% tolerance).
     pub fn is_duration_consistent(&self) -> bool {
         let minimum = self.minimum_elapsed_ms();
         // 5% tolerance for timing variance
@@ -95,6 +98,7 @@ impl VdfProofRfc {
         }
     }
 
+    /// Validate all fields and return a list of errors (empty if valid).
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -137,6 +141,7 @@ impl VdfProofRfc {
         errors
     }
 
+    /// Return `true` if `validate()` produces no errors.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
@@ -172,6 +177,7 @@ pub struct CalibrationAttestation {
 }
 
 impl CalibrationAttestation {
+    /// Create a calibration attestation without authority.
     pub fn new(
         iterations_per_second: u64,
         hardware_class: String,
@@ -187,6 +193,7 @@ impl CalibrationAttestation {
         }
     }
 
+    /// Create a calibration attestation with a named authority.
     pub fn with_authority(
         iterations_per_second: u64,
         hardware_class: String,
@@ -203,6 +210,7 @@ impl CalibrationAttestation {
         }
     }
 
+    /// Return the age of this calibration in seconds.
     pub fn age_seconds(&self, current_time: u64) -> u64 {
         current_time.saturating_sub(self.timestamp)
     }
@@ -235,21 +243,27 @@ impl CalibrationAttestation {
         errors
     }
 
+    /// Return `true` if structural validation passes.
     pub fn is_valid(&self) -> bool {
         self.validate_structure().is_empty()
     }
 }
 
+/// VDF algorithm identifier.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum VdfAlgorithm {
+    /// Wesolowski VDF (default).
     #[default]
     Wesolowski,
+    /// Pietrzak VDF.
     Pietrzak,
+    /// RSA-2048 based VDF.
     Rsa2048,
 }
 
+/// Extended VDF proof with algorithm selection and optional checkpoints.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VdfProofExtended {
     pub proof: VdfProofRfc,

@@ -21,6 +21,7 @@ pub enum EnfsiTier {
 }
 
 impl EnfsiTier {
+    /// Classify a likelihood ratio into the corresponding ENFSI tier.
     pub fn from_lr(lr: f64) -> Self {
         if lr < 1.0 {
             Self::Against
@@ -37,6 +38,7 @@ impl EnfsiTier {
         }
     }
 
+    /// Return the human-readable label for this tier.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Against => "Against",
@@ -52,14 +54,20 @@ impl EnfsiTier {
 /// Verdict classification based on assessment score.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Verdict {
+    /// Score 80-100: strong human authorship indicators.
     VerifiedHuman,
+    /// Score 60-79: moderate human authorship indicators.
     LikelyHuman,
+    /// Score 40-59: insufficient evidence to determine.
     Inconclusive,
+    /// Score 20-39: anomalous patterns detected.
     Suspicious,
+    /// Score 0-19: synthetic generation indicators.
     LikelySynthetic,
 }
 
 impl Verdict {
+    /// Map an assessment score (0-100) to a verdict classification.
     pub fn from_score(score: u32) -> Self {
         match score {
             80..=100 => Self::VerifiedHuman,
@@ -70,6 +78,7 @@ impl Verdict {
         }
     }
 
+    /// Return the display label for this verdict.
     pub fn label(&self) -> &'static str {
         match self {
             Self::VerifiedHuman => "VERIFIED HUMAN",
@@ -80,6 +89,7 @@ impl Verdict {
         }
     }
 
+    /// Return a descriptive subtitle for the verdict.
     pub fn subtitle(&self) -> &'static str {
         match self {
             Self::VerifiedHuman => "Strong Constraint Indicators",
@@ -90,6 +100,7 @@ impl Verdict {
         }
     }
 
+    /// Return the CSS color hex string for this verdict.
     pub fn css_color(&self) -> &'static str {
         match self {
             Self::VerifiedHuman => "#2e7d32",
@@ -156,14 +167,19 @@ pub struct ReportFlag {
     pub signal: FlagSignal,
 }
 
+/// Signal direction of a detected flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FlagSignal {
+    /// Indicates human authorship behavior.
     Human,
+    /// Neither human nor synthetic signal.
     Neutral,
+    /// Indicates synthetic generation behavior.
     Synthetic,
 }
 
 impl FlagSignal {
+    /// Return the display label for this signal.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Human => "Human",
@@ -172,6 +188,7 @@ impl FlagSignal {
         }
     }
 
+    /// Return the CSS color hex string for this signal.
     pub fn css_color(&self) -> &'static str {
         match self {
             Self::Human => "#2e7d32",
@@ -226,6 +243,7 @@ pub struct ForgeryInfo {
     pub components: Vec<ForgeryComponent>,
 }
 
+/// A single component contributing to forgery cost estimation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgeryComponent {
     pub name: String,

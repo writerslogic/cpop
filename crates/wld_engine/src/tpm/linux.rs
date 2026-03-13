@@ -43,10 +43,12 @@ struct LinuxState {
     counter_init: bool,
 }
 
+/// Linux TPM 2.0 provider via tss-esapi.
 pub struct LinuxTpmProvider {
     inner: Mutex<LinuxState>,
 }
 
+/// Initialize the Linux TPM provider, returning `None` if no TPM is available.
 pub fn try_init() -> Option<LinuxTpmProvider> {
     let tcti = TctiNameConf::Device("/dev/tpmrm0".parse().unwrap_or_default());
     let context = Context::new(tcti)

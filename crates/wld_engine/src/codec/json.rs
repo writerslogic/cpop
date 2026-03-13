@@ -116,4 +116,66 @@ mod tests {
 
         assert_eq!(decoded_pretty, decoded_compact);
     }
+
+    #[test]
+    fn test_decode_invalid_json() {
+        let garbage = b"not valid json {{{";
+        let result: Result<TestData> = decode(garbage);
+        assert!(matches!(result, Err(CodecError::JsonDecode(_))));
+    }
+
+    #[test]
+    fn test_encode_to_decode_from_json() {
+        let original = TestData {
+            name: "stream".to_string(),
+            count: 55,
+            items: vec!["one".to_string(), "two".to_string()],
+        };
+
+        let mut buf = Vec::new();
+        encode_to(&original, &mut buf).unwrap();
+        let decoded: TestData = decode_from(&buf[..]).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_encode_to_compact_writer() {
+        let data = TestData {
+            name: "cw".to_string(),
+            count: 0,
+            items: vec![],
+        };
+
+        let mut pretty_buf = Vec::new();
+        encode_to(&data, &mut pretty_buf).unwrap();
+
+        let mut compact_buf = Vec::new();
+        encode_to_compact(&data, &mut compact_buf).unwrap();
+
+        assert!(compact_buf.len() < pretty_buf.len());
+
+        let decoded: TestData = decode(&compact_buf).unwrap();
+        assert_eq!(data, decoded);
+    }
+
+    #[test]
+    fn test_from_string_invalid() {
+        let result: Result<TestData> = from_string("}{bad");
+        assert!(matches!(result, Err(CodecError::JsonDecode(_))));
+    }
+
+    #[test]
+    fn test_to_string_compact_roundtrip() {
+        let data = TestData {
+            name: "compact_str".to_string(),
+            count: 999,
+            items: vec!["z".to_string()],
+        };
+
+        let compact = to_string_compact(&data).unwrap();
+        assert!(!compact.contains('\n'));
+
+        let decoded: TestData = from_string(&compact).unwrap();
+        assert_eq!(data, decoded);
+    }
 }

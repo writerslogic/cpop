@@ -4,11 +4,14 @@ use anyhow::{anyhow, Result};
 use security_framework::item::{ItemClass, ItemSearchOptions, Limit, Reference, SearchResult};
 use security_framework::key::{Algorithm, SecKey};
 
+/// Handle to an ECDSA signing key stored in the macOS Secure Enclave.
 pub struct SecureEnclaveIdentity {
+    /// Reference to the Secure Enclave key.
     pub key: SecKey,
 }
 
 impl SecureEnclaveIdentity {
+    /// Load a Secure Enclave key by its Keychain label.
     pub fn load(label: &str) -> Result<Self> {
         let mut search = ItemSearchOptions::default();
         search.class(ItemClass::key());
@@ -28,6 +31,7 @@ impl SecureEnclaveIdentity {
         Err(anyhow!("No valid key reference found in Secure Enclave"))
     }
 
+    /// Sign a 32-byte hash using ECDSA via the Secure Enclave.
     pub fn sign(&self, hash: &[u8; 32]) -> Result<Vec<u8>> {
         let signature = self
             .key

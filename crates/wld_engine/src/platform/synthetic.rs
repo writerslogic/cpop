@@ -103,7 +103,7 @@ impl StatisticalAnomalyDetector {
     }
 
     fn calculate_mean_std(&self) -> (f64, f64) {
-        if self.iki_window.is_empty() {
+        if self.iki_window.len() < 2 {
             return (0.0, 0.0);
         }
 
@@ -116,6 +116,7 @@ impl StatisticalAnomalyDetector {
             .sum::<f64>()
             / n;
         let std = variance.sqrt();
+        let std = if std.is_finite() { std } else { 0.0 };
 
         (mean, std)
     }

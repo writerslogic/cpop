@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// IPC message handler that dispatches requests to the sentinel.
 pub struct SentinelIpcHandler {
     sentinel: Arc<Sentinel>,
     start_time: SystemTime,
@@ -15,6 +16,7 @@ pub struct SentinelIpcHandler {
 }
 
 impl SentinelIpcHandler {
+    /// Create a handler backed by the given sentinel instance.
     pub fn new(sentinel: Arc<Sentinel>) -> Self {
         Self {
             sentinel,

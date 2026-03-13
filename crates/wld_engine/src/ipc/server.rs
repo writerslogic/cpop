@@ -239,6 +239,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
     }
 }
 
+/// Platform-aware IPC server (Unix socket or Windows named pipe).
 pub struct IpcServer {
     #[cfg(not(target_os = "windows"))]
     listener: UnixListener,
@@ -248,6 +249,7 @@ pub struct IpcServer {
 }
 
 impl IpcServer {
+    /// Bind to a Unix domain socket at the given path (mode 0600).
     #[cfg(not(target_os = "windows"))]
     pub fn bind(path: PathBuf) -> Result<Self> {
         if path.exists() {
@@ -268,6 +270,7 @@ impl IpcServer {
         })
     }
 
+    /// Bind to a Windows named pipe derived from the given path.
     #[cfg(target_os = "windows")]
     pub fn bind(path: PathBuf) -> Result<Self> {
         let pipe_name = format!(

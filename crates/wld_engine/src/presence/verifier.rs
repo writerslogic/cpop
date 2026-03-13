@@ -11,6 +11,7 @@ use subtle::ConstantTimeEq;
 use super::helpers::hash_response;
 use super::types::{Challenge, ChallengeStatus, ChallengeType, Config, Session};
 
+/// Issue and verify interactive presence challenges during authoring sessions.
 pub struct Verifier {
     config: Config,
     session: Option<Session>,
@@ -18,6 +19,7 @@ pub struct Verifier {
 }
 
 impl Verifier {
+    /// Create a verifier with the given challenge configuration.
     pub fn new(config: Config) -> Self {
         Self {
             config,
@@ -26,6 +28,7 @@ impl Verifier {
         }
     }
 
+    /// Begin a new presence verification session.
     pub fn start_session(&mut self) -> Result<Session, String> {
         if self.session.as_ref().map(|s| s.active).unwrap_or(false) {
             return Err("session already active".to_string());
@@ -54,6 +57,7 @@ impl Verifier {
         Ok(session)
     }
 
+    /// Finalize the active session and compute aggregate statistics.
     pub fn end_session(&mut self) -> Result<Session, String> {
         let mut session = self
             .session
@@ -85,6 +89,7 @@ impl Verifier {
         Ok(session)
     }
 
+    /// Generate and record a new random challenge for the active session.
     pub fn issue_challenge(&mut self) -> Result<Challenge, String> {
         let active = self
             .session
@@ -140,6 +145,7 @@ impl Verifier {
         Ok(challenge)
     }
 
+    /// Submit a response to a pending challenge; return `true` if correct.
     pub fn respond_to_challenge(
         &mut self,
         challenge_id: &str,
@@ -190,6 +196,7 @@ impl Verifier {
         Ok(false)
     }
 
+    /// Compute the next challenge time with randomized jitter.
     pub fn next_challenge_time(&mut self) -> Option<DateTime<Utc>> {
         let session = self.session.as_ref()?;
         if !session.active {
@@ -220,12 +227,14 @@ impl Verifier {
         Some(next)
     }
 
+    /// Return `true` if the next challenge time has passed.
     pub fn should_issue_challenge(&mut self) -> bool {
         self.next_challenge_time()
             .map(|time| Utc::now() > time)
             .unwrap_or(false)
     }
 
+    /// Return a reference to the current session, if any.
     pub fn active_session(&self) -> Option<&Session> {
         self.session.as_ref()
     }

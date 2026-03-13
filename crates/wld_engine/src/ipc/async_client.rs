@@ -17,22 +17,31 @@ type PlatformStream = tokio::net::windows::named_pipe::NamedPipeClient;
 /// Error type for async IPC client operations
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncIpcClientError {
+    /// TCP/socket connection could not be established.
     #[error("connection failed: {0}")]
     ConnectionFailed(#[source] std::io::Error),
+    /// Write to the transport stream failed.
     #[error("send failed: {0}")]
     SendFailed(#[source] std::io::Error),
+    /// Read from the transport stream failed.
     #[error("receive failed: {0}")]
     ReceiveFailed(#[source] std::io::Error),
+    /// Message could not be serialized to wire format.
     #[error("serialization failed: {0}")]
     SerializationFailed(String),
+    /// Received bytes could not be deserialized into an IPC message.
     #[error("deserialization failed: {0}")]
     DeserializationFailed(String),
+    /// Remote peer closed the connection.
     #[error("connection closed by peer")]
     ConnectionClosed,
+    /// Operation attempted before establishing a connection.
     #[error("not connected")]
     NotConnected,
+    /// Wire frame exceeds the maximum allowed size.
     #[error("message too large: {0} bytes (max: {1})")]
     MessageTooLarge(usize, usize),
+    /// Handshake or protocol-level error.
     #[error("protocol error: {0}")]
     ProtocolError(String),
 }
@@ -72,6 +81,7 @@ pub struct AsyncIpcClient {
 }
 
 impl AsyncIpcClient {
+    /// Create a disconnected client instance.
     pub fn new() -> Self {
         Self {
             stream: None,

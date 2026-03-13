@@ -4,6 +4,7 @@ use super::{AnchorError, AnchorProvider, Proof, ProofStatus, ProviderType};
 use async_trait::async_trait;
 use base64::Engine;
 
+/// Anchor provider backed by a remote notary service API.
 pub struct NotaryProvider {
     endpoint: String,
     api_key: Option<String>,
@@ -11,6 +12,7 @@ pub struct NotaryProvider {
 }
 
 impl NotaryProvider {
+    /// Create a provider with the given endpoint and optional API key.
     pub fn new(endpoint: String, api_key: Option<String>) -> Self {
         Self {
             endpoint,
@@ -19,6 +21,7 @@ impl NotaryProvider {
         }
     }
 
+    /// Create from `NOTARY_ENDPOINT` and optional `NOTARY_API_KEY` env vars.
     pub fn from_env() -> Result<Self, AnchorError> {
         let endpoint = std::env::var("NOTARY_ENDPOINT")
             .map_err(|_| AnchorError::Unavailable("NOTARY_ENDPOINT not set".into()))?;

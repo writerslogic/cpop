@@ -15,6 +15,7 @@ use super::types::PUFProvider;
 
 const SOFTWARE_PUF_SEED_NAME: &str = "puf_seed";
 
+/// Software-based PUF using a persisted random seed for key derivation.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SoftwarePUF {
     device_id: String,
@@ -24,11 +25,13 @@ pub struct SoftwarePUF {
 }
 
 impl SoftwarePUF {
+    /// Create a new software PUF using the default data directory.
     pub fn new() -> Result<Self, KeyHierarchyError> {
         let seed_path = writerslogic_dir().join(SOFTWARE_PUF_SEED_NAME);
         Self::new_with_path(seed_path)
     }
 
+    /// Create a new software PUF with a custom seed file path.
     pub fn new_with_path(seed_path: impl AsRef<Path>) -> Result<Self, KeyHierarchyError> {
         let seed_path = seed_path.as_ref().to_path_buf();
         let mut puf = SoftwarePUF {
@@ -40,6 +43,7 @@ impl SoftwarePUF {
         Ok(puf)
     }
 
+    /// Create a software PUF from an existing 32-byte seed and device ID.
     pub fn new_from_seed(
         device_id: impl Into<String>,
         seed: Vec<u8>,
@@ -59,7 +63,7 @@ impl SoftwarePUF {
 
     fn load_or_create_seed(&mut self) -> Result<(), KeyHierarchyError> {
         if let Ok(Some(seed)) = crate::identity::SecureStorage::load_seed() {
-            let mut seed = Zeroizing::new(seed);
+            let mut seed = seed;
             if seed.len() == 32 {
                 self.seed = std::mem::take(&mut *seed);
                 self.device_id = self.compute_device_id();
@@ -130,14 +134,17 @@ impl SoftwarePUF {
         format!("swpuf-{}", hex::encode(&digest[0..4]))
     }
 
+    /// Return a zeroizing clone of the raw seed bytes.
     pub fn seed(&self) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(self.seed.clone())
     }
 
+    /// Return the filesystem path where the seed is stored.
     pub fn seed_path(&self) -> PathBuf {
         self.seed_path.clone()
     }
 
+    /// Return the seed as a fixed-size 32-byte zeroizing array.
     pub fn get_seed(&self) -> Zeroizing<[u8; 32]> {
         let mut arr = Zeroizing::new([0u8; 32]);
         if self.seed.len() == 32 {
@@ -146,11 +153,13 @@ impl SoftwarePUF {
         arr
     }
 
+    /// Encode the seed as a BIP-39 mnemonic phrase for backup/recovery.
     pub fn get_mnemonic(&self) -> Result<String, KeyHierarchyError> {
         crate::identity::mnemonic::MnemonicHandler::entropy_to_phrase(&self.seed)
             .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))
     }
 
+    /// Recover a software PUF from a BIP-39 mnemonic phrase.
     pub fn recover_from_mnemonic(
         seed_path: &Path,
         phrase: &str,

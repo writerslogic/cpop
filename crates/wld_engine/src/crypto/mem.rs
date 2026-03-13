@@ -30,8 +30,9 @@ impl<const N: usize> ProtectedKey<N> {
     fn lock_memory(&mut self) {
         #[cfg(unix)]
         unsafe {
-            // Best-effort; falls back to zeroize-only if mlock limit reached
-            let _ = mlock(self.0.as_ptr() as *const libc::c_void, N);
+            if mlock(self.0.as_ptr() as *const libc::c_void, N) != 0 {
+                log::warn!("mlock failed: {}", std::io::Error::last_os_error());
+            }
         }
     }
 

@@ -84,8 +84,11 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
 /// Contiguous run of fast keystrokes.
 #[derive(Debug, Clone)]
 pub struct TypingBurst {
+    /// Index into the IKI array where this burst begins.
     pub start_idx: usize,
+    /// Number of consecutive fast keystrokes in this burst.
     pub length: usize,
+    /// Mean inter-key interval within this burst (nanoseconds).
     pub avg_iki_ns: f64,
 }
 

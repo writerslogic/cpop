@@ -6,13 +6,18 @@ use std::collections::HashMap;
 /// Character-level n-gram model for perplexity-based authorship anomaly detection.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PerplexityModel {
+    /// N-gram order (context length in characters).
     pub n: usize,
+    /// Per-context character frequency counts.
     pub counts: HashMap<String, HashMap<char, usize>>,
+    /// Total observations per context string.
     pub totals: HashMap<String, usize>,
+    /// Total characters ingested during training.
     pub sample_count: usize,
 }
 
 impl PerplexityModel {
+    /// Create an empty model with the given n-gram order.
     pub fn new(n: usize) -> Self {
         Self {
             n,
@@ -39,7 +44,7 @@ impl PerplexityModel {
                 *self
                     .counts
                     .get_mut(buf.as_str())
-                    .unwrap()
+                    .expect("counts key exists when totals key exists")
                     .entry(next_char)
                     .or_default() += 1;
             } else {
@@ -94,5 +99,94 @@ impl PerplexityModel {
         }
 
         (-log_prob_sum / count as f64).exp()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_model_defaults() {
+        let model = PerplexityModel::new(3);
+        assert_eq!(model.n, 3);
+        assert_eq!(model.sample_count, 0);
+        assert!(model.counts.is_empty());
+        assert!(model.totals.is_empty());
+    }
+
+    #[test]
+    fn test_train_populates_ngrams() {
+        let mut model = PerplexityModel::new(2);
+        model.train("hello world");
+
+        assert!(model.sample_count > 0);
+        assert!(!model.counts.is_empty());
+        assert!(model.counts.contains_key("he"));
+        assert!(model.counts.contains_key("ll"));
+    }
+
+    #[test]
+    fn test_train_short_text_noop() {
+        let mut model = PerplexityModel::new(5);
+        model.train("hi"); // len 2 <= n=5, counts not populated
+
+        assert!(model.counts.is_empty());
+    }
+
+    #[test]
+    fn test_perplexity_undertrained_returns_one() {
+        let mut model = PerplexityModel::new(2);
+        model.train("short");
+
+        let ppl = model.calculate_perplexity("test text");
+        assert!((ppl - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_perplexity_familiar_text_lower_than_random() {
+        let mut model = PerplexityModel::new(2);
+        let training = "the quick brown fox jumps over the lazy dog ".repeat(50);
+        model.train(&training);
+
+        let ppl_same = model.calculate_perplexity("the quick brown fox jumps over the lazy dog");
+        let ppl_random = model.calculate_perplexity("xzqw jklm npqr stvw yzab cdef ghij");
+
+        assert!(
+            ppl_same < ppl_random,
+            "Perplexity of familiar text ({ppl_same}) should be lower than random ({ppl_random})"
+        );
+    }
+
+    #[test]
+    fn test_perplexity_short_input_returns_one() {
+        let mut model = PerplexityModel::new(3);
+        let training = "the quick brown fox jumps over the lazy dog ".repeat(50);
+        model.train(&training);
+
+        let ppl = model.calculate_perplexity("ab");
+        assert!((ppl - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_incremental_training() {
+        let mut model = PerplexityModel::new(2);
+        model.train("hello ");
+        let count_after_first = model.sample_count;
+
+        model.train("world ");
+        assert!(model.sample_count > count_after_first);
+        assert!(model.counts.contains_key("wo"));
+    }
+
+    #[test]
+    fn test_perplexity_is_positive_and_finite() {
+        let mut model = PerplexityModel::new(2);
+        let training = "abcdefghijklmnopqrstuvwxyz ".repeat(50);
+        model.train(&training);
+
+        let ppl = model.calculate_perplexity("abcdefghij");
+        assert!(ppl > 0.0, "Perplexity must be positive, got {ppl}");
+        assert!(ppl.is_finite(), "Perplexity must be finite, got {ppl}");
     }
 }

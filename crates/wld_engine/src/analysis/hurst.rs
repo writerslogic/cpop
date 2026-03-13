@@ -52,19 +52,25 @@ pub enum HurstInterpretation {
 impl HurstAnalysis {
     /// RFC-compliant validation range for human input.
     pub const MIN_VALID: f64 = 0.55;
+    /// Upper bound of the RFC-valid Hurst exponent range.
     pub const MAX_VALID: f64 = 0.85;
+    /// Tolerance around 0.5 for classifying as white noise.
     pub const WHITE_NOISE_TOLERANCE: f64 = 0.05;
 
+    /// Return true if the exponent falls within biologically plausible bounds.
     pub fn is_biologically_plausible(&self) -> bool {
         self.exponent >= Self::MIN_VALID && self.exponent <= Self::MAX_VALID
     }
 
+    /// Return true if the exponent is indistinguishable from white noise.
     pub fn is_white_noise(&self) -> bool {
         (self.exponent - 0.5).abs() < Self::WHITE_NOISE_TOLERANCE
     }
 
+    /// Threshold above which the series is suspiciously deterministic.
     pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
 
+    /// Return true if the exponent suggests scripted or deterministic input.
     pub fn is_suspiciously_predictable(&self) -> bool {
         self.exponent > Self::SUSPICIOUSLY_PREDICTABLE
     }
@@ -72,9 +78,7 @@ impl HurstAnalysis {
 
 const RS_MIN_DATA_POINTS: usize = 20;
 const RS_MIN_WINDOW: usize = 8;
-#[allow(dead_code)]
 const DFA_MIN_DATA_POINTS: usize = 32;
-#[allow(dead_code)]
 const DFA_MIN_SCALE: usize = 8;
 
 /// Calculate Hurst exponent using R/S (Rescaled Range) analysis
@@ -188,7 +192,6 @@ fn calculate_rs_for_window(data: &[f64], window_size: usize) -> f64 {
 
 /// Calculate Hurst exponent using Detrended Fluctuation Analysis (DFA).
 /// More robust to non-stationarities than R/S.
-#[allow(dead_code)]
 pub fn calculate_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
     if n < DFA_MIN_DATA_POINTS {

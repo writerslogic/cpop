@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 /// Forgery cost estimation for a complete evidence packet.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ForgeryCostEstimate {
+    /// Per-component forgery cost breakdown.
     pub components: Vec<ComponentCost>,
     /// Overall difficulty: geometric mean of component costs (log-scale).
     pub overall_difficulty: f64,

@@ -9,13 +9,18 @@ use subtle::ConstantTimeEq;
 use super::session::{compute_jitter_value, Parameters, Sample};
 use crate::error::Error;
 
+/// Detailed result of jitter chain verification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationResult {
+    /// Whether the entire chain passed verification.
     pub valid: bool,
+    /// Number of samples that individually passed.
     pub samples_verified: u64,
+    /// Per-sample error descriptions.
     pub errors: Vec<String>,
 }
 
+/// Verify an entire seeded jitter chain, failing on the first invalid sample.
 pub fn verify_chain(
     samples: &[Sample],
     seed: &[u8],
@@ -37,6 +42,7 @@ pub fn verify_chain(
     Ok(())
 }
 
+/// Verify a single sample's hash, chain link, ordering, and jitter value.
 pub fn verify_sample(
     sample: &Sample,
     prev_sample: Option<&Sample>,
@@ -88,6 +94,7 @@ pub fn verify_sample(
     Ok(())
 }
 
+/// Verify a full chain, collecting all errors instead of stopping at the first.
 pub fn verify_chain_detailed(
     samples: &[Sample],
     seed: &[u8],
@@ -123,6 +130,7 @@ pub fn verify_chain_detailed(
     result
 }
 
+/// Convenience wrapper: verify a chain using a fixed 32-byte seed array.
 pub fn verify_chain_with_seed(
     samples: &[Sample],
     seed: [u8; 32],
@@ -131,14 +139,20 @@ pub fn verify_chain_with_seed(
     verify_chain(samples, &seed, params)
 }
 
+/// JSON-serializable container for a versioned jitter chain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainData {
+    /// Format version (currently 1).
     pub version: i32,
+    /// Jitter parameters used during capture.
     pub params: Parameters,
+    /// Complete chain of jitter samples.
     pub samples: Vec<Sample>,
+    /// When this chain data was serialized.
     pub created_at: DateTime<Utc>,
 }
 
+/// Serialize a sample chain with parameters to JSON bytes.
 pub fn encode_chain(samples: &[Sample], params: Parameters) -> crate::error::Result<Vec<u8>> {
     let data = ChainData {
         version: 1,
@@ -149,6 +163,7 @@ pub fn encode_chain(samples: &[Sample], params: Parameters) -> crate::error::Res
     serde_json::to_vec(&data).map_err(|e| Error::validation(e.to_string()))
 }
 
+/// Deserialize a JSON-encoded chain, returning samples and parameters.
 pub fn decode_chain(data: &[u8]) -> crate::error::Result<(Vec<Sample>, Parameters)> {
     let chain: ChainData =
         serde_json::from_slice(data).map_err(|e| Error::validation(e.to_string()))?;

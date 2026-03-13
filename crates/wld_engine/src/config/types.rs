@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Top-level engine configuration with subsystem settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WLDConfig {
     #[serde(default = "default_data_dir")]
@@ -166,6 +167,7 @@ impl Default for ResearchConfig {
     }
 }
 
+/// Presence challenge timing configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresenceConfig {
     #[serde(default = "default_interval")]
@@ -183,6 +185,7 @@ impl Default for PresenceConfig {
     }
 }
 
+/// Verifiable delay function iteration bounds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VdfConfig {
     #[serde(default = "default_ips")]
@@ -203,6 +206,7 @@ impl Default for VdfConfig {
     }
 }
 
+/// Sentinel daemon monitoring and session management settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SentinelConfig {
     #[serde(default = "default_false")]
@@ -268,6 +272,7 @@ impl Default for SentinelConfig {
 }
 
 impl SentinelConfig {
+    /// Set the root directory, deriving shadow and WAL paths from it.
     pub fn with_writerslogic_dir(mut self, dir: impl AsRef<Path>) -> Self {
         let dir = dir.as_ref().to_path_buf();
         self.shadow_dir = dir.join("shadow");
@@ -276,6 +281,7 @@ impl SentinelConfig {
         self
     }
 
+    /// Check whether an application is allowed for tracking by bundle ID or name.
     pub fn is_app_allowed(&self, bundle_id: &str, app_name: &str) -> bool {
         for blocked in &self.blocked_apps {
             if blocked == bundle_id || blocked == app_name {
@@ -293,6 +299,7 @@ impl SentinelConfig {
         self.track_unknown_apps
     }
 
+    /// Validate sentinel config values (nonzero intervals, consistent bounds).
     pub fn validate(&self) -> Result<()> {
         use anyhow::bail;
 
@@ -318,6 +325,7 @@ impl SentinelConfig {
         Ok(())
     }
 
+    /// Create writerslogic, shadow, and WAL directories if they don't exist.
     pub fn ensure_directories(&self) -> Result<()> {
         fs::create_dir_all(&self.writerslogic_dir)?;
         fs::create_dir_all(&self.shadow_dir)?;

@@ -24,6 +24,7 @@ pub struct PoPAssertion {
     pub jitter_seals: Vec<JitterSeal>,
 }
 
+/// Per-checkpoint jitter seal entry within a PoP assertion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JitterSeal {
     pub sequence: u64,
@@ -32,6 +33,7 @@ pub struct JitterSeal {
 }
 
 impl PoPAssertion {
+    /// Build a PoP assertion from an evidence packet and its raw CBOR bytes.
     pub fn from_evidence(packet: &EvidencePacket, original_bytes: &[u8]) -> Self {
         let hash = Sha256::digest(original_bytes);
 
@@ -61,6 +63,7 @@ pub struct ActionsAssertion {
     pub actions: Vec<Action>,
 }
 
+/// Single C2PA action entry (e.g., "c2pa.created").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Action {
     pub action: String,
@@ -80,6 +83,7 @@ pub enum SoftwareAgent {
     Info(ClaimGeneratorInfo),
 }
 
+/// Optional parameters for a C2PA action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -203,11 +207,19 @@ const JUMBF_JSON_UUID: [u8; 16] = [
     0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
 ];
 
+/// JUMBF label for the PoP evidence assertion.
 pub const ASSERTION_LABEL_POP: &str = "org.pop.evidence";
+/// JUMBF label for the C2PA actions assertion.
 pub const ASSERTION_LABEL_ACTIONS: &str = "c2pa.actions";
+/// JUMBF label for the C2PA hard-binding hash assertion.
 pub const ASSERTION_LABEL_HASH_DATA: &str = "c2pa.hash.data";
 
-const CLAIM_GENERATOR: &str = "WritersLogic/0.3.0 wld_protocol/0.1.0";
+const CLAIM_GENERATOR: &str = concat!(
+    "WritersLogic/",
+    env!("CARGO_PKG_VERSION"),
+    " wld_protocol/",
+    env!("CARGO_PKG_VERSION")
+);
 
 /// IANA-registered COSE_Key label for unprotected headers.
 const COSE_HEADER_LABEL_COSE_KEY: i64 = -1;
@@ -286,6 +298,7 @@ pub struct C2paManifestBuilder {
 }
 
 impl C2paManifestBuilder {
+    /// Create a builder from a decoded evidence packet, its raw bytes, and the document hash.
     pub fn new(
         evidence_packet: EvidencePacket,
         evidence_bytes: Vec<u8>,
@@ -305,21 +318,25 @@ impl C2paManifestBuilder {
         }
     }
 
+    /// Set the document filename for the hard-binding assertion.
     pub fn document_filename(mut self, name: impl Into<String>) -> Self {
         self.document_filename = Some(name.into());
         self
     }
 
+    /// Set the dc:title metadata field in the claim.
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
     }
 
+    /// Build and encode the manifest as a complete JUMBF binary sidecar.
     pub fn build_jumbf(self, signer: &dyn PoPSigner) -> Result<Vec<u8>> {
         let manifest = self.build_manifest(signer)?;
         encode_jumbf(&manifest)
     }
 
+    /// Build the manifest structure with assertions, claim, and COSE signature.
     pub fn build_manifest(self, signer: &dyn PoPSigner) -> Result<C2paManifest> {
         let pop_assertion =
             PoPAssertion::from_evidence(&self.evidence_packet, &self.evidence_bytes);
@@ -332,7 +349,7 @@ impl C2paManifestBuilder {
                 when: Some(now),
                 software_agent: Some(SoftwareAgent::Info(ClaimGeneratorInfo {
                     name: "WritersLogic".to_string(),
-                    version: Some("0.3.0".to_string()),
+                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 })),
                 parameters: Some(ActionParameters {
                     description: Some(
@@ -397,11 +414,11 @@ impl C2paManifestBuilder {
             claim_generator_info: vec![
                 ClaimGeneratorInfo {
                     name: "WritersLogic".to_string(),
-                    version: Some("0.3.0".to_string()),
+                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 },
                 ClaimGeneratorInfo {
                     name: "wld_protocol".to_string(),
-                    version: Some("0.1.0".to_string()),
+                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 },
             ],
             instance_id: format!("xmp:iid:{}", hex::encode(&self.evidence_packet.packet_id)),
@@ -541,6 +558,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    /// Return true if no validation errors were found.
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }

@@ -44,12 +44,19 @@ impl Default for Config {
 /// Reason a checkpoint was triggered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TriggerReason {
+    /// Keystroke count exceeded the maximum interval.
     MaxKeystrokes,
+    /// Typing pause exceeded the threshold duration.
     TypingPause,
+    /// Accumulated entropy exceeded the bit threshold.
     EntropyThreshold,
+    /// Document size delta exceeded the threshold.
     SizeDelta,
+    /// Maximum time interval since last checkpoint elapsed.
     MaxTimeInterval,
+    /// Manually requested by the user or caller.
     Manual,
+    /// Session ended, forcing a final checkpoint.
     SessionEnd,
 }
 
@@ -77,10 +84,12 @@ pub struct CheckpointTrigger {
 }
 
 impl CheckpointTrigger {
+    /// Create a trigger with default configuration.
     pub fn new() -> Self {
         Self::with_config(Config::default())
     }
 
+    /// Create a trigger with the given configuration.
     pub fn with_config(config: Config) -> Self {
         Self {
             config,
@@ -94,6 +103,7 @@ impl CheckpointTrigger {
         }
     }
 
+    /// Record a keystroke and return a trigger event if a checkpoint threshold is met.
     pub fn record_keystroke(
         &mut self,
         jitter_micros: u32,
@@ -140,6 +150,7 @@ impl CheckpointTrigger {
         None
     }
 
+    /// Check if the max time interval has elapsed and trigger if so.
     pub fn check_time_trigger(&mut self, current_doc_size: i64) -> Option<TriggerEvent> {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_checkpoint);
@@ -153,30 +164,37 @@ impl CheckpointTrigger {
         None
     }
 
+    /// Force a manual checkpoint trigger.
     pub fn manual_trigger(&mut self, current_doc_size: i64) -> TriggerEvent {
         self.create_trigger(TriggerReason::Manual, current_doc_size)
     }
 
+    /// Create a trigger event for session end.
     pub fn session_end_trigger(&mut self, current_doc_size: i64) -> TriggerEvent {
         self.create_trigger(TriggerReason::SessionEnd, current_doc_size)
     }
 
+    /// Return the rolling entropy hash accumulator.
     pub fn entropy_hash(&self) -> [u8; 32] {
         self.entropy_hash
     }
 
+    /// Return the number of keystrokes since the last checkpoint.
     pub fn keystrokes_since_checkpoint(&self) -> u64 {
         self.keystrokes_since_checkpoint
     }
 
+    /// Return the total keystroke count across all checkpoints.
     pub fn total_keystrokes(&self) -> u64 {
         self.total_keystrokes
     }
 
+    /// Return the accumulated entropy bits since the last checkpoint.
     pub fn accumulated_entropy(&self) -> f64 {
         self.accumulated_entropy
     }
 
+    /// Reset keystroke and entropy counters after a checkpoint is created.
     pub fn reset_for_checkpoint(&mut self, doc_size: i64) {
         self.keystrokes_since_checkpoint = 0;
         self.accumulated_entropy = 0.0;

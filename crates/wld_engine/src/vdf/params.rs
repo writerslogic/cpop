@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use crate::vdf::VdfProof;
 use crate::MutexRecover;
 
+/// VDF/SWF computation parameters: iteration rate and bounds.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct Parameters {
     pub iterations_per_second: u64,
@@ -16,6 +17,7 @@ pub struct Parameters {
     pub max_iterations: u64,
 }
 
+/// Return default VDF parameters (1M iter/s, 100K min, 3.6B max).
 pub fn default_parameters() -> Parameters {
     Parameters {
         iterations_per_second: 1_000_000,
@@ -24,6 +26,7 @@ pub fn default_parameters() -> Parameters {
     }
 }
 
+/// Benchmark SHA-256 hash rate for the given duration, returning calibrated parameters.
 pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
     if duration < Duration::from_millis(100) {
         return Err("calibration duration too short".to_string());
@@ -52,6 +55,7 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
     })
 }
 
+/// Compute a VDF proof targeting the given wall-clock duration.
 pub fn compute(
     input: [u8; 32],
     duration: Duration,
@@ -60,14 +64,17 @@ pub fn compute(
     VdfProof::compute(input, duration, params)
 }
 
+/// Compute a VDF proof with an exact iteration count.
 pub fn compute_iterations(input: [u8; 32], iterations: u64) -> VdfProof {
     VdfProof::compute_iterations(input, iterations)
 }
 
+/// Verify a VDF proof by recomputing the hash chain.
 pub fn verify(proof: &VdfProof) -> bool {
     proof.verify()
 }
 
+/// Verify a VDF proof, reporting progress via callback.
 pub fn verify_with_progress<F>(proof: &VdfProof, progress: Option<F>) -> bool
 where
     F: FnMut(f64),
@@ -75,6 +82,7 @@ where
     proof.verify_with_progress(progress)
 }
 
+/// Derive VDF input from content hash, previous hash, and ordinal.
 pub fn chain_input(content_hash: [u8; 32], previous_hash: [u8; 32], ordinal: u64) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-vdf-v1");
@@ -155,11 +163,13 @@ pub fn swf_seed_core(prev_hash: &[u8; 32], local_nonce: &[u8; 32]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+/// Parallel VDF proof verifier using a worker thread pool.
 pub struct BatchVerifier {
     workers: usize,
 }
 
 impl BatchVerifier {
+    /// Create a verifier with the given worker count (0 = auto-detect).
     pub fn new(workers: usize) -> Self {
         let workers = if workers == 0 {
             std::thread::available_parallelism()
@@ -171,6 +181,7 @@ impl BatchVerifier {
         Self { workers }
     }
 
+    /// Verify all proofs in parallel, returning per-index results.
     pub fn verify_all(&self, proofs: &[Option<VdfProof>]) -> Vec<VerifyResult> {
         let results = Arc::new(Mutex::new(vec![
             VerifyResult {
@@ -233,6 +244,7 @@ impl BatchVerifier {
     }
 }
 
+/// Result of a single VDF proof verification.
 #[derive(Debug, Clone)]
 pub struct VerifyResult {
     pub index: usize,

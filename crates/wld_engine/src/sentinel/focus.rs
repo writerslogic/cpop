@@ -32,8 +32,7 @@ pub struct PollingSentinelFocusTracker<P: WindowProvider + ?Sized> {
     running: Arc<RwLock<bool>>,
     focus_tx: mpsc::Sender<FocusEvent>,
     focus_rx: Arc<Mutex<Option<mpsc::Receiver<FocusEvent>>>>,
-    #[allow(dead_code)]
-    change_tx: mpsc::Sender<ChangeEvent>,
+    _change_tx: mpsc::Sender<ChangeEvent>,
     change_rx: Arc<Mutex<Option<mpsc::Receiver<ChangeEvent>>>>,
     poll_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
@@ -49,7 +48,7 @@ impl<P: WindowProvider + ?Sized> PollingSentinelFocusTracker<P> {
             running: Arc::new(RwLock::new(false)),
             focus_tx,
             focus_rx: Arc::new(Mutex::new(Some(focus_rx))),
-            change_tx,
+            _change_tx: change_tx,
             change_rx: Arc::new(Mutex::new(Some(change_rx))),
             poll_handle: Arc::new(Mutex::new(None)),
         }

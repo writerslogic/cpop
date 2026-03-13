@@ -19,4 +19,5 @@ pub mod wasm;
 
 pub use crate::error::{Error, Result};
 
+/// Current PoP protocol version number.
 pub const PROTOCOL_VERSION: u32 = 1;

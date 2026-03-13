@@ -120,21 +120,25 @@ fixed_point! {
 pub struct Microdollars(pub u64);
 
 impl Microdollars {
+    /// Create from a raw microdollar value.
     #[inline]
     pub const fn new(value: u64) -> Self {
         Microdollars(value)
     }
 
+    /// Convert from dollars to microdollars (1 USD = 1,000,000).
     pub fn from_dollars(value: f64) -> Self {
         let scaled = (value * 1_000_000.0).round() as i64;
         Microdollars(scaled.max(0) as u64)
     }
 
+    /// Return the raw microdollar value.
     #[inline]
     pub const fn raw(&self) -> u64 {
         self.0
     }
 
+    /// Convert to dollars as `f64`.
     #[inline]
     pub fn to_dollars(&self) -> f64 {
         self.0 as f64 / 1_000_000.0

@@ -8,6 +8,7 @@ use super::types::{
     CheckpointSignature, KeyHierarchyEvidence, SessionBindingReport, SessionCertificate,
 };
 
+/// Verify the Ed25519 signature on a session certificate against the master key.
 pub fn verify_session_certificate(cert: &SessionCertificate) -> Result<(), KeyHierarchyError> {
     let cert_data = build_cert_data(
         cert.session_id,
@@ -30,6 +31,7 @@ pub fn verify_session_certificate(cert: &SessionCertificate) -> Result<(), KeyHi
         .map_err(|_| KeyHierarchyError::InvalidCert)
 }
 
+/// Verify ordinal sequence, Ed25519 signatures, and counter monotonicity for all checkpoints.
 pub fn verify_checkpoint_signatures(
     signatures: &[CheckpointSignature],
 ) -> Result<(), KeyHierarchyError> {
@@ -130,6 +132,7 @@ pub fn verify_session_binding(
     Ok(report)
 }
 
+/// Verify the full key hierarchy: certificate, identity binding, fingerprint, and checkpoint chain.
 pub fn verify_key_hierarchy(evidence: &KeyHierarchyEvidence) -> Result<(), KeyHierarchyError> {
     let cert = evidence
         .session_certificate
@@ -177,15 +180,16 @@ pub fn validate_cert_byte_lengths(
         return Err("invalid certificate signature size".to_string());
     }
 
-    let vk = VerifyingKey::from_bytes(master_pubkey.try_into().unwrap())
+    let vk = VerifyingKey::from_bytes(master_pubkey.try_into().expect("length checked"))
         .map_err(|e| format!("invalid master public key: {e}"))?;
-    let sig = Signature::from_bytes(cert_signature.try_into().unwrap());
+    let sig = Signature::from_bytes(cert_signature.try_into().expect("length checked"));
     vk.verify(session_pubkey, &sig)
         .map_err(|e| format!("certificate signature verification failed: {e}"))?;
 
     Ok(())
 }
 
+/// Verify a single ratchet key's Ed25519 signature over a checkpoint hash.
 pub fn verify_ratchet_signature(
     ratchet_pubkey: &[u8],
     checkpoint_hash: &[u8],

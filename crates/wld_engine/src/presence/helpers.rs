@@ -17,6 +17,7 @@ pub fn hash_response(response: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
+/// Aggregate multiple sessions into a single presence evidence summary.
 pub fn compile_evidence(sessions: &[Session]) -> Evidence {
     let mut evidence = Evidence {
         sessions: sessions.to_vec(),

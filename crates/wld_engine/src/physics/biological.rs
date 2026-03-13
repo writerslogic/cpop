@@ -2,9 +2,11 @@
 
 use crate::jitter::SimpleJitterSample;
 
+/// Analyzer for biological typing cadence regularity.
 pub struct BiologicalCadence;
 
 impl BiologicalCadence {
+    /// Score cadence regularity from jitter samples (0.0 = erratic, 1.0 = steady).
     pub fn analyze(samples: &[SimpleJitterSample]) -> f64 {
         if samples.len() < 2 {
             return 0.0;

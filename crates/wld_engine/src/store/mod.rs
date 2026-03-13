@@ -15,6 +15,7 @@ mod tests;
 
 pub use types::SecureEvent;
 
+/// HMAC-integrity-protected SQLite event store with hash chaining.
 pub struct SecureStore {
     pub(crate) conn: Connection,
     pub(crate) hmac_key: Vec<u8>,
@@ -22,6 +23,7 @@ pub struct SecureStore {
 }
 
 impl SecureStore {
+    /// Open or create a secure store at `path`, initializing schema and verifying integrity.
     pub fn open<P: AsRef<Path>>(path: P, hmac_key: Vec<u8>) -> anyhow::Result<Self> {
         let conn = Connection::open(path)?;
 

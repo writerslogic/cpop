@@ -73,6 +73,7 @@ impl AppraisalPolicy {
         self.thresholds.iter().all(|t| t.met)
     }
 
+    /// Collect references to all thresholds that were not met.
     pub fn failed_thresholds(&self) -> Vec<&super::types::TrustThreshold> {
         self.thresholds.iter().filter(|t| !t.met).collect()
     }

@@ -46,6 +46,7 @@ const SE_ATTESTATION_KEY_TAG: &str = "com.writerslogic.secureenclave.attestation
 #[allow(dead_code)]
 const SE_ENCRYPTION_KEY_TAG: &str = "com.writerslogic.secureenclave.encryption";
 
+/// Self-attestation proof binding a public key to this device.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyAttestation {
@@ -59,6 +60,7 @@ pub struct KeyAttestation {
     pub metadata: HashMap<String, String>,
 }
 
+/// Metadata about a Secure Enclave key.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecureEnclaveKeyInfo {
@@ -90,6 +92,7 @@ struct HardwareInfo {
     os_version: Option<String>,
 }
 
+/// macOS Secure Enclave TPM provider (ECDSA P-256).
 pub struct SecureEnclaveProvider {
     state: Mutex<SecureEnclaveState>,
     cached_device_id: String,
@@ -99,6 +102,7 @@ pub struct SecureEnclaveProvider {
 unsafe impl Send for SecureEnclaveProvider {}
 unsafe impl Sync for SecureEnclaveProvider {}
 
+/// Initialize the Secure Enclave provider, returning `None` if unavailable.
 pub fn try_init() -> Option<SecureEnclaveProvider> {
     if !is_secure_enclave_available() {
         return None;
@@ -150,15 +154,13 @@ fn init_state(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
     Ok(())
 }
 
-#[allow(clippy::field_reassign_with_default)]
 fn collect_hardware_info() -> HardwareInfo {
-    let mut info = HardwareInfo::default();
-
-    info.uuid = hardware_uuid();
-    info.model = get_model_identifier();
-    info.os_version = get_os_version();
-
-    info
+    HardwareInfo {
+        uuid: hardware_uuid(),
+        model: get_model_identifier(),
+        os_version: get_os_version(),
+        ..HardwareInfo::default()
+    }
 }
 
 /// sysctl is safer than IOKit for model detection.
@@ -623,6 +625,7 @@ impl SecureEnclaveProvider {
         })
     }
 
+    /// Verify a key attestation against the expected challenge.
     pub fn verify_key_attestation(
         &self,
         attestation: &KeyAttestation,
@@ -664,6 +667,7 @@ impl SecureEnclaveProvider {
         verify_ecdsa_signature(verify_key, &expected_data, &attestation.signature)
     }
 
+    /// Return metadata about the primary signing key.
     pub fn get_key_info(&self) -> SecureEnclaveKeyInfo {
         let state = self.state.lock_recover();
         SecureEnclaveKeyInfo {
@@ -675,6 +679,7 @@ impl SecureEnclaveProvider {
         }
     }
 
+    /// Return metadata about the attestation key, if created.
     pub fn get_attestation_key_info(&self) -> Option<SecureEnclaveKeyInfo> {
         let state = self.state.lock_recover();
         state
@@ -689,6 +694,7 @@ impl SecureEnclaveProvider {
             })
     }
 
+    /// Collect hardware info (model, OS version, device ID) as key-value pairs.
     pub fn get_hardware_info(&self) -> HashMap<String, String> {
         let state = self.state.lock_recover();
         let mut info = HashMap::new();
@@ -708,10 +714,12 @@ impl SecureEnclaveProvider {
         info
     }
 
+    /// Return the current monotonic counter value.
     pub fn get_counter(&self) -> u64 {
         self.state.lock_recover().counter
     }
 
+    /// Increment and persist the monotonic counter, returning the new value.
     pub fn increment_counter(&self) -> u64 {
         let mut state = self.state.lock_recover();
         state.counter += 1;
@@ -719,6 +727,7 @@ impl SecureEnclaveProvider {
         state.counter
     }
 
+    /// Return true if Secure Enclave hardware is available on this system.
     pub fn is_hardware_available() -> bool {
         is_secure_enclave_available()
     }

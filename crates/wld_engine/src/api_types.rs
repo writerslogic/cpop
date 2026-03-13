@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use typeshare::typeshare;
 
+/// Engine status snapshot for GUI/CLI consumers.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusResponse {
@@ -22,6 +23,7 @@ pub struct StatusResponse {
     pub tpm_info: String,
 }
 
+/// File currently being monitored by the sentinel.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TrackedFile {
@@ -31,6 +33,7 @@ pub struct TrackedFile {
     pub last_checkpoint: String, // ISO 8601
 }
 
+/// Writing metrics for the current session and streaks.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetricsResponse {
@@ -45,6 +48,7 @@ pub struct MetricsResponse {
     pub cadence_data: Vec<CadencePoint>,
 }
 
+/// Single data point in a typing cadence time series.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CadencePoint {
@@ -52,18 +56,21 @@ pub struct CadencePoint {
     pub intensity: f64,
 }
 
+/// Activity heatmap data organized by week.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ActivityResponse {
     pub weeks: Vec<WeekData>,
 }
 
+/// One week of daily activity data.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WeekData {
     pub days: Vec<DayData>,
 }
 
+/// Single day checkpoint and intensity record.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DayData {
@@ -72,6 +79,7 @@ pub struct DayData {
     pub intensity: u32,
 }
 
+/// Forensic analysis results for a document's authorship evidence.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ForensicsResponse {
@@ -83,6 +91,7 @@ pub struct ForensicsResponse {
     pub primary: PrimaryMetrics,
 }
 
+/// Core forensic metrics used for authorship verdict.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrimaryMetrics {

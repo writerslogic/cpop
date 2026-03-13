@@ -3,56 +3,80 @@
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 
+/// CBOR tag for PoP evidence packets (0x43504F50 = "CPOP").
 pub const CBOR_TAG_EVIDENCE_PACKET: u64 = 1129336656;
+/// CBOR tag for attestation results (0x43574152 = "CWAR").
 pub const CBOR_TAG_ATTESTATION_RESULT: u64 = 1129791826;
 
 /// IANA Private Enterprise Number for WritersLogic Inc.
 /// Registered under SMI Network Management Private Enterprise Codes.
 pub const IANA_PEN: u32 = 65074;
 
+/// Supported hash algorithms for content and checkpoint digests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum HashAlgorithm {
+    /// SHA-256 (32-byte digest).
     Sha256 = 1,
+    /// SHA-384 (48-byte digest).
     Sha384 = 2,
+    /// SHA-512 (64-byte digest).
     Sha512 = 3,
 }
 
+/// Hardware attestation strength tier per draft-condrey-rats-pop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum AttestationTier {
+    /// Pure software signing, no hardware root of trust.
     SoftwareOnly = 1,
+    /// Software key with remote attestation evidence.
     AttestedSoftware = 2,
+    /// Key bound to TPM/Secure Enclave.
     HardwareBound = 3,
+    /// Hardware-hardened with anti-tamper protections.
     HardwareHardened = 4,
 }
 
+/// Evidence content richness tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum ContentTier {
+    /// Minimal evidence (checkpoints and hashes only).
     Core = 1,
+    /// Additional behavioral metrics included.
     Enhanced = 2,
+    /// Full forensic payload with jitter and HID data.
     Maximum = 3,
 }
 
+/// Sequential work function algorithm for VDF checkpoint proofs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum ProofAlgorithm {
-    /// Iterated SHA-256 sequential work function
+    /// Iterated SHA-256 sequential work function.
     SwfSha256 = 10,
+    /// Argon2id-based sequential work function.
     SwfArgon2id = 20,
+    /// Argon2id with cross-checkpoint entanglement.
     SwfArgon2idEntangled = 21,
 }
 
+/// High-level attestation verdict for an evidence packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u64)]
 pub enum Verdict {
+    /// Evidence verified as authentic human authorship.
     Authentic = 1,
+    /// Insufficient data to reach a definitive conclusion.
     Inconclusive = 2,
+    /// Anomalies detected; manual review recommended.
     Suspicious = 3,
+    /// Evidence is structurally or cryptographically invalid.
     Invalid = 4,
 }
 
+/// Algorithm-tagged cryptographic digest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashValue {
     #[serde(rename = "1")]
@@ -67,6 +91,7 @@ impl HashValue {
         self.algorithm == other.algorithm && self.digest.ct_eq(&other.digest).into()
     }
 
+    /// Return the expected digest length in bytes for the algorithm.
     pub fn expected_digest_len(&self) -> usize {
         match self.algorithm {
             HashAlgorithm::Sha256 => 32,
@@ -75,6 +100,7 @@ impl HashValue {
         }
     }
 
+    /// Check that the digest length matches the algorithm.
     pub fn validate(&self) -> bool {
         self.digest.len() == self.expected_digest_len()
     }
@@ -90,6 +116,7 @@ impl PartialEq for HashValue {
 
 impl Eq for HashValue {}
 
+/// Reference to the document under attestation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentRef {
     #[serde(rename = "1")]
@@ -102,6 +129,7 @@ pub struct DocumentRef {
     pub char_count: u64,
 }
 
+/// Single checkpoint in the causality chain, binding content state to a timestamp.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
     #[serde(rename = "1")]
@@ -122,6 +150,7 @@ pub struct Checkpoint {
     pub jitter_hash: Option<HashValue>,
 }
 
+/// Top-level PoP evidence packet containing document ref, checkpoints, and metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidencePacket {
     #[serde(rename = "1")]
@@ -142,6 +171,7 @@ pub struct EvidencePacket {
     pub baseline_verification: Option<crate::baseline::BaselineVerification>,
 }
 
+/// Verifier-issued attestation result for a validated evidence packet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationResult {
     #[serde(rename = "1")]

@@ -147,6 +147,7 @@ impl ActivityFingerprint {
         self.mouse_idle_stats = Some(stats);
     }
 
+    /// Return a reference to mouse idle jitter stats, if attached.
     pub fn mouse_idle_stats(&self) -> Option<&crate::platform::MouseIdleStats> {
         self.mouse_idle_stats.as_ref()
     }
@@ -553,6 +554,7 @@ impl Default for CircadianPattern {
 }
 
 impl CircadianPattern {
+    /// Record a keystroke at the given hour (0-23).
     pub fn record(&mut self, hour: u8) {
         if hour < 24 {
             self.hourly_activity[hour as usize] += 1.0;
@@ -692,6 +694,7 @@ impl ActivityFingerprintAccumulator {
         }
     }
 
+    /// Create an accumulator with the given maximum sample capacity.
     pub fn with_capacity(max_samples: usize) -> Self {
         Self {
             samples: VecDeque::with_capacity(max_samples),
@@ -726,10 +729,12 @@ impl ActivityFingerprintAccumulator {
         self.samples.iter().cloned().collect()
     }
 
+    /// Return the number of samples currently buffered.
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
 
+    /// Clear all samples and reset the cached fingerprint.
     pub fn reset(&mut self) {
         self.samples.clear();
         *self.cached_fingerprint.lock_recover() = ActivityFingerprint::default();

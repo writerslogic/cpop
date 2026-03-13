@@ -15,6 +15,7 @@ use super::serialization::{
 use super::types::*;
 
 impl Wal {
+    /// Open or create a WAL file, replaying existing entries to restore state.
     pub fn open(
         path: impl AsRef<Path>,
         session_id: [u8; 32],
@@ -60,6 +61,7 @@ impl Wal {
         })
     }
 
+    /// Append a new entry, extending the hash chain and signing.
     pub fn append(&self, entry_type: EntryType, payload: Vec<u8>) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
         if state.closed {
@@ -229,6 +231,7 @@ impl Wal {
         })
     }
 
+    /// Truncate entries before `before_seq`, rewriting the file with a new header.
     pub fn truncate(&self, before_seq: u64) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
         let mut all_entries = Vec::new();
@@ -321,16 +324,19 @@ impl Wal {
         Ok(())
     }
 
+    /// Return the total byte size of the WAL file.
     pub fn size(&self) -> u64 {
         let state = self.inner.lock_recover();
         state.byte_count
     }
 
+    /// Return the number of entries in the WAL.
     pub fn entry_count(&self) -> u64 {
         let state = self.inner.lock_recover();
         state.entry_count
     }
 
+    /// Return the sequence number of the last written entry.
     pub fn last_sequence(&self) -> u64 {
         let state = self.inner.lock_recover();
         if state.next_sequence == 0 {
@@ -340,6 +346,7 @@ impl Wal {
         }
     }
 
+    /// Flush and close the WAL, preventing further appends.
     pub fn close(&self) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
         if state.closed {
@@ -350,11 +357,13 @@ impl Wal {
         Ok(())
     }
 
+    /// Return the filesystem path of the WAL file.
     pub fn path(&self) -> PathBuf {
         let state = self.inner.lock_recover();
         state.path.clone()
     }
 
+    /// Check whether a WAL file exists at the given path.
     pub fn exists(path: impl AsRef<Path>) -> bool {
         path.as_ref().exists()
     }

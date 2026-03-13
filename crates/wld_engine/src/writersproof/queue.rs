@@ -101,10 +101,12 @@ impl OfflineQueue {
         Ok(entries)
     }
 
+    /// Return the number of queued entries.
     pub fn len(&self) -> Result<usize> {
         Ok(self.list()?.len())
     }
 
+    /// Return `true` if the queue contains no entries.
     pub fn is_empty(&self) -> Result<bool> {
         Ok(self.len()? == 0)
     }
@@ -175,6 +177,7 @@ impl OfflineQueue {
         Ok(())
     }
 
+    /// Remove a queued entry by ID.
     pub fn remove_entry(&self, id: &str) -> Result<()> {
         Self::validate_id(id)?;
         let path = self.queue_dir.join(format!("{id}.json"));

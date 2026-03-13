@@ -58,7 +58,7 @@ pub(super) fn compute_zone_jitter(
     mac.update(&[interval_bucket]);
     mac.update(&prev_jitter.to_be_bytes());
     let hash = mac.finalize().into_bytes();
-    let raw = u32::from_be_bytes(hash[0..4].try_into().unwrap());
+    let raw = u32::from_be_bytes(hash[0..4].try_into().expect("4-byte slice"));
     session::MIN_JITTER + (raw % session::JITTER_RANGE)
 }
 

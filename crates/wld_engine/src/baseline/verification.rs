@@ -2,6 +2,7 @@
 
 use wld_protocol::baseline::{BaselineDigest, SessionBehavioralSummary};
 
+/// Score a session against the baseline digest, returning 0.0..1.0 similarity.
 pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavioralSummary) -> f64 {
     let b_coeff = calculate_bhattacharyya(&digest.aggregate_iki_histogram, &session.iki_histogram);
 

@@ -18,6 +18,7 @@ pub struct KeystrokeEvent {
 }
 
 impl KeystrokeEvent {
+    /// Create a hardware-sourced keystroke with minimal fields.
     pub fn new(timestamp_ns: i64, keycode: u16, zone: u8) -> Self {
         Self {
             timestamp_ns,
@@ -30,6 +31,7 @@ impl KeystrokeEvent {
         }
     }
 
+    /// Create a keystroke with an explicit hardware verification flag.
     pub fn with_verification(timestamp_ns: i64, keycode: u16, zone: u8, is_hardware: bool) -> Self {
         Self {
             timestamp_ns,
@@ -42,6 +44,7 @@ impl KeystrokeEvent {
         }
     }
 
+    /// Create a keystroke with full device identification.
     pub fn with_device(
         timestamp_ns: i64,
         keycode: u16,
@@ -76,6 +79,7 @@ pub struct MouseEvent {
 }
 
 impl MouseEvent {
+    /// Create a non-idle, hardware-sourced mouse event.
     pub fn new(timestamp_ns: i64, x: f64, y: f64, dx: f64, dy: f64) -> Self {
         Self {
             timestamp_ns,
@@ -89,6 +93,7 @@ impl MouseEvent {
         }
     }
 
+    /// Create an idle jitter mouse event (micro-movement during typing).
     pub fn idle_jitter(timestamp_ns: i64, x: f64, y: f64, dx: f64, dy: f64) -> Self {
         Self {
             timestamp_ns,
@@ -102,10 +107,12 @@ impl MouseEvent {
         }
     }
 
+    /// Compute the Euclidean magnitude of the movement delta.
     pub fn movement_magnitude(&self) -> f64 {
         (self.dx * self.dx + self.dy * self.dy).sqrt()
     }
 
+    /// Return true if the movement magnitude is below the micro-movement threshold.
     pub fn is_micro_movement(&self) -> bool {
         self.movement_magnitude() < 3.0
     }

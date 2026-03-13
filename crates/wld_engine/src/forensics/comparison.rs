@@ -30,43 +30,38 @@ pub struct DimensionScores {
 }
 
 /// Compare two profiles for authorship consistency (Gaussian kernel similarity).
-#[allow(clippy::field_reassign_with_default)]
 pub fn compare_profiles(
     profile_a: &AuthorshipProfile,
     profile_b: &AuthorshipProfile,
 ) -> ProfileComparison {
-    let mut scores = DimensionScores::default();
-
-    scores.monotonic_append_similarity = gaussian_similarity(
-        profile_a.metrics.monotonic_append_ratio,
-        profile_b.metrics.monotonic_append_ratio,
-        0.15,
-    );
-
-    scores.entropy_similarity = gaussian_similarity(
-        profile_a.metrics.edit_entropy,
-        profile_b.metrics.edit_entropy,
-        0.5,
-    );
-
-    // Compare in log-space; guard against ln(0) = -inf and ln(neg) = NaN
-    scores.interval_similarity = gaussian_similarity(
-        safe_ln(profile_a.metrics.median_interval),
-        safe_ln(profile_b.metrics.median_interval),
-        0.5,
-    );
-
-    scores.pos_neg_ratio_similarity = gaussian_similarity(
-        profile_a.metrics.positive_negative_ratio,
-        profile_b.metrics.positive_negative_ratio,
-        0.1,
-    );
-
-    scores.deletion_clustering_similarity = gaussian_similarity(
-        profile_a.metrics.deletion_clustering,
-        profile_b.metrics.deletion_clustering,
-        0.2,
-    );
+    let scores = DimensionScores {
+        monotonic_append_similarity: gaussian_similarity(
+            profile_a.metrics.monotonic_append_ratio,
+            profile_b.metrics.monotonic_append_ratio,
+            0.15,
+        ),
+        entropy_similarity: gaussian_similarity(
+            profile_a.metrics.edit_entropy,
+            profile_b.metrics.edit_entropy,
+            0.5,
+        ),
+        // Compare in log-space; guard against ln(0) = -inf and ln(neg) = NaN
+        interval_similarity: gaussian_similarity(
+            safe_ln(profile_a.metrics.median_interval),
+            safe_ln(profile_b.metrics.median_interval),
+            0.5,
+        ),
+        pos_neg_ratio_similarity: gaussian_similarity(
+            profile_a.metrics.positive_negative_ratio,
+            profile_b.metrics.positive_negative_ratio,
+            0.1,
+        ),
+        deletion_clustering_similarity: gaussian_similarity(
+            profile_a.metrics.deletion_clustering,
+            profile_b.metrics.deletion_clustering,
+            0.2,
+        ),
+    };
 
     let similarity_score = 0.25 * scores.monotonic_append_similarity
         + 0.20 * scores.entropy_similarity

@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Track keyboard zone transitions and build a typing profile histogram.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneTrackingEngine {
     pub(crate) prev_zone: i32,
@@ -20,6 +21,7 @@ impl Default for ZoneTrackingEngine {
 }
 
 impl ZoneTrackingEngine {
+    /// Create a new engine with no prior zone state.
     pub fn new() -> Self {
         Self {
             prev_zone: -1,
@@ -28,11 +30,13 @@ impl ZoneTrackingEngine {
         }
     }
 
+    /// Record a keycode, returning the encoded zone transition byte.
     pub fn record_keycode(&mut self, keycode: u16) -> u8 {
         let zone = keycode_to_zone(keycode);
         self.record_zone(zone)
     }
 
+    /// Record a zone transition directly, returning the encoded transition byte.
     pub fn record_zone(&mut self, zone: i32) -> u8 {
         if zone < 0 {
             return 0xFF;
@@ -54,10 +58,12 @@ impl ZoneTrackingEngine {
         zone_transition
     }
 
+    /// Return a reference to the accumulated typing profile.
     pub fn profile(&self) -> &TypingProfile {
         &self.profile
     }
 
+    /// Return the most recently recorded zone, or -1 if none.
     pub fn prev_zone(&self) -> i32 {
         self.prev_zone
     }

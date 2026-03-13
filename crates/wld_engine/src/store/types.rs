@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+/// Single HMAC-protected event record in the hash chain.
 #[derive(Debug, Clone)]
 pub struct SecureEvent {
     pub id: Option<i64>,

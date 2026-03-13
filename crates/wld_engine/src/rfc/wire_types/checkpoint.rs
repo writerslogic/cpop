@@ -128,6 +128,7 @@ impl CheckpointWire {
         HashValue::sha256(digest.to_vec())
     }
 
+    /// Validate digest lengths, size limits, and nested structure.
     pub fn validate(&self) -> Result<(), String> {
         self.content_hash.validate_digest_length()?;
         self.prev_hash.validate_digest_length()?;

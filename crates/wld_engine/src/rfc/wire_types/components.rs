@@ -483,7 +483,9 @@ pub struct ToolReceipt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Receipt {
+    /// AI tool output receipt with COSE_Sign1 signature.
     Tool(ToolReceipt),
+    /// Cross-tool composition receipt without external signature.
     SelfReceipt(SelfReceipt),
 }
 

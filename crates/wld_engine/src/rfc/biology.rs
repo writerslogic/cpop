@@ -18,18 +18,22 @@ use serde::{Deserialize, Serialize};
 #[repr(u8)]
 #[derive(Default)]
 pub enum ValidationStatus {
+    /// Validated against empirical data.
     #[serde(rename = "empirical")]
     Empirical = 1,
 
+    /// Theoretically sound but not empirically validated.
     #[serde(rename = "theoretical")]
     Theoretical = 2,
 
+    /// Claim not validated.
     #[serde(rename = "unsupported")]
     #[default]
     Unsupported = 3,
 }
 
 impl ValidationStatus {
+    /// Return the string representation of this status.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Empirical => "empirical",
@@ -202,6 +206,7 @@ pub struct PinkNoiseAnalysis {
 }
 
 impl PinkNoiseAnalysis {
+    /// Return `true` if slope and fit quality fall within human typing ranges.
     pub fn is_human_like(&self) -> bool {
         self.spectral_slope >= 0.8 && self.spectral_slope <= 1.2 && self.r_squared > 0.7
     }
@@ -238,10 +243,12 @@ pub struct ErrorTopology {
 }
 
 impl ErrorTopology {
+    /// Compute the weighted error topology score from component values.
     pub fn calculate_score(gap_ratio: f64, error_clustering: f64, adjacent_key_score: f64) -> f64 {
         0.4 * gap_ratio + 0.4 * error_clustering + 0.2 * adjacent_key_score
     }
 
+    /// Create a new topology with auto-calculated score and pass/fail.
     pub fn new(gap_ratio: f64, error_clustering: f64, adjacent_key_score: f64) -> Self {
         let score = Self::calculate_score(gap_ratio, error_clustering, adjacent_key_score);
         Self {
@@ -294,25 +301,34 @@ pub struct AnomalyFlag {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum AnomalyType {
+    /// H ~ 0.5 (no long-range dependence).
     #[serde(rename = "white_noise_hurst")]
     WhiteNoiseHurst = 1,
+    /// H ~ 1.0 (too predictable).
     #[serde(rename = "predictable_hurst")]
     PredictableHurst = 2,
+    /// CV < 0.15 (too consistent).
     #[serde(rename = "robotic_cadence")]
     RoboticCadence = 3,
+    /// Pink noise slope outside [0.8, 1.2].
     #[serde(rename = "spectral_anomaly")]
     SpectralAnomaly = 4,
+    /// Error topology score below 0.75.
     #[serde(rename = "error_topology_fail")]
     ErrorTopologyFail = 5,
+    /// Not enough samples for analysis.
     #[serde(rename = "insufficient_data")]
     InsufficientData = 6,
+    /// Suspicious time gaps detected.
     #[serde(rename = "temporal_discontinuity")]
     TemporalDiscontinuity = 7,
+    /// Superhuman typing speed detected.
     #[serde(rename = "velocity_anomaly")]
     VelocityAnomaly = 8,
 }
 
 impl BiologyInvariantClaim {
+    /// Create an unscored claim with default validation status.
     pub fn new(measurements: BiologyMeasurements, parameters: BiologyScoringParameters) -> Self {
         Self {
             validation_status: ValidationStatus::Unsupported,
@@ -327,38 +343,45 @@ impl BiologyInvariantClaim {
         }
     }
 
+    /// Attach a Hurst exponent measurement.
     pub fn with_hurst(mut self, h: f64) -> Self {
         self.hurst_exponent = Some(h);
         self
     }
 
+    /// Attach a pink noise analysis result.
     pub fn with_pink_noise(mut self, analysis: PinkNoiseAnalysis) -> Self {
         self.pink_noise = Some(analysis);
         self
     }
 
+    /// Attach an error topology analysis result.
     pub fn with_error_topology(mut self, topology: ErrorTopology) -> Self {
         self.error_topology = Some(topology);
         self
     }
 
+    /// Append an anomaly flag, creating the list if needed.
     pub fn add_anomaly(&mut self, flag: AnomalyFlag) {
         self.anomaly_flags.get_or_insert_with(Vec::new).push(flag);
     }
 
+    /// Compute millibits score and validation status from available components.
     pub fn calculate_score(&mut self) {
         let mut score = 0.0;
         let mut components = 0;
 
         if let Some(h) = self.hurst_exponent {
-            // Optimal H ≈ 0.7, score drops for H < 0.55 or H > 0.85
-            let h_score = if (0.55..=0.85).contains(&h) {
-                1.0 - ((h - 0.7).abs() / 0.15)
-            } else {
-                0.0
-            };
-            score += h_score * self.parameters.hurst_weight;
-            components += 1;
+            if h.is_finite() {
+                // Optimal H ≈ 0.7, score drops for H < 0.55 or H > 0.85
+                let h_score = if (0.55..=0.85).contains(&h) {
+                    1.0 - ((h - 0.7).abs() / 0.15)
+                } else {
+                    0.0
+                };
+                score += h_score * self.parameters.hurst_weight;
+                components += 1;
+            }
         }
 
         if let Some(ref pn) = self.pink_noise {
@@ -367,17 +390,21 @@ impl BiologyInvariantClaim {
             } else {
                 0.0
             };
-            score += pn_score * self.parameters.pink_noise_weight;
-            components += 1;
+            if pn_score.is_finite() {
+                score += pn_score * self.parameters.pink_noise_weight;
+                components += 1;
+            }
         }
 
         if let Some(ref et) = self.error_topology {
-            score += et.score * self.parameters.error_topology_weight;
-            components += 1;
+            if et.score.is_finite() {
+                score += et.score * self.parameters.error_topology_weight;
+                components += 1;
+            }
         }
 
         let cv = self.measurements.coefficient_of_variation;
-        let cv_score = if (0.15..=0.6).contains(&cv) {
+        let cv_score = if cv.is_finite() && (0.15..=0.6).contains(&cv) {
             1.0 - ((cv - 0.35).abs() / 0.25).min(1.0)
         } else {
             0.0
@@ -420,20 +447,24 @@ impl BiologyInvariantClaim {
         };
     }
 
+    /// Return `true` if the millibits score meets the human threshold.
     pub fn is_human_like(&self) -> bool {
         (self.millibits as f64 / 10000.0) >= self.parameters.human_threshold
     }
 
+    /// Return the number of recorded anomaly flags.
     pub fn anomaly_count(&self) -> usize {
         self.anomaly_flags.as_ref().map_or(0, |v| v.len())
     }
 
+    /// Return `true` if any anomaly has severity >= 3 (alert level).
     pub fn has_alerts(&self) -> bool {
         self.anomaly_flags
             .as_ref()
             .is_some_and(|flags| flags.iter().any(|f| f.severity >= 3))
     }
 
+    /// Validate all fields and return a list of errors (empty if valid).
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -529,6 +560,7 @@ impl BiologyInvariantClaim {
         errors
     }
 
+    /// Return `true` if `validate()` produces no errors.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
@@ -540,7 +572,11 @@ impl From<&crate::analysis::pink_noise::PinkNoiseAnalysis> for PinkNoiseAnalysis
             spectral_slope: analysis.spectral_slope,
             r_squared: analysis.r_squared,
             low_freq_power: 1.0,
-            high_freq_power: 10f64.powf(-analysis.spectral_slope),
+            high_freq_power: if analysis.spectral_slope.is_finite() {
+                10f64.powf(-analysis.spectral_slope)
+            } else {
+                0.0
+            },
             within_human_range: analysis.is_valid,
         }
     }
@@ -565,6 +601,7 @@ impl From<&crate::analysis::hurst::HurstAnalysis> for Option<f64> {
 }
 
 impl BiologyInvariantClaim {
+    /// Build a scored claim from analysis results, auto-detecting anomalies.
     pub fn from_analysis(
         measurements: BiologyMeasurements,
         hurst: Option<&crate::analysis::hurst::HurstAnalysis>,

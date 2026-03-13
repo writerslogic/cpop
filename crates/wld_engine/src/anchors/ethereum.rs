@@ -34,6 +34,7 @@ pub struct EthereumProvider {
 }
 
 impl EthereumProvider {
+    /// Create a provider with explicit RPC URL, contract, private key, and chain ID.
     pub fn new(
         rpc_url: String,
         contract_address: String,

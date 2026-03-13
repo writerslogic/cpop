@@ -23,21 +23,33 @@ use std::sync::Arc;
 /// PCR 0 = firmware, PCR 4 = boot manager, PCR 7 = Secure Boot state.
 pub(crate) const DEFAULT_QUOTE_PCRS: &[u32] = &[0, 4, 7];
 
+/// Hardware or software TPM attestation provider.
 pub trait Provider: Send + Sync {
+    /// Report supported capabilities of this provider.
     fn capabilities(&self) -> Capabilities;
+    /// Return a stable device identifier.
     fn device_id(&self) -> String;
+    /// Return the provider's public key bytes.
     fn public_key(&self) -> Vec<u8>;
     /// The COSE signing algorithm this provider uses.
     fn algorithm(&self) -> coset::iana::Algorithm;
+    /// Generate a TPM quote over the given nonce and PCR selection.
     fn quote(&self, nonce: &[u8], pcrs: &[u32]) -> Result<Quote, TPMError>;
+    /// Bind data to this device with a signed attestation.
     fn bind(&self, data: &[u8]) -> Result<Binding, TPMError>;
+    /// Sign arbitrary data with the provider's key.
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>, TPMError>;
+    /// Verify a previously created binding.
     fn verify(&self, binding: &Binding) -> Result<(), TPMError>;
+    /// Seal data under the current PCR state.
     fn seal(&self, data: &[u8], policy: &[u8]) -> Result<Vec<u8>, TPMError>;
+    /// Unseal previously sealed data.
     fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>, TPMError>;
+    /// Read the TPM clock info (millis, reset/restart counts, safe flag).
     fn clock_info(&self) -> Result<ClockInfo, TPMError>;
 }
 
+/// Shared handle to a TPM provider.
 pub type ProviderHandle = Arc<dyn Provider + Send + Sync>;
 
 /// Build the canonical binding payload: data_hash || timestamp_nanos || device_id.
@@ -87,6 +99,7 @@ pub(crate) fn parse_sealed_blob(sealed: &[u8]) -> Result<(&[u8], &[u8]), TPMErro
     Ok((pub_bytes, priv_bytes))
 }
 
+/// Generate a full attestation report combining verifier and attestation nonces with evidence.
 pub fn generate_attestation_report(
     provider: &dyn Provider,
     verifier_nonce: &[u8],
@@ -115,6 +128,7 @@ pub fn generate_attestation_report(
     })
 }
 
+/// Detect and initialize the best available TPM provider for this platform.
 pub fn detect_provider() -> ProviderHandle {
     #[cfg(target_os = "macos")]
     if let Some(provider) = secure_enclave::try_init() {

@@ -26,30 +26,43 @@ pub(crate) const JITTER_RANGE: u32 = MAX_JITTER - MIN_JITTER;
 pub(crate) const INTERVAL_BUCKET_SIZE_MS: i64 = 50;
 pub(crate) const NUM_INTERVAL_BUCKETS: i64 = 10;
 
+/// Configuration for jitter chain sampling behavior.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Parameters {
+    /// Minimum jitter delay in microseconds.
     pub min_jitter_micros: u32,
+    /// Maximum jitter delay in microseconds.
     pub max_jitter_micros: u32,
+    /// Record a sample every N keystrokes.
     pub sample_interval: u64,
+    /// Whether to inject jitter delays into keystroke processing.
     pub inject_enabled: bool,
 }
 
+/// Return default jitter parameters (500-3000us range, 10-keystroke interval).
 pub fn default_parameters() -> Parameters {
     Parameters {
         min_jitter_micros: 500,
         max_jitter_micros: 3000,
-        sample_interval: 50,
+        sample_interval: 10,
         inject_enabled: true,
     }
 }
 
+/// Seeded jitter chain sample linking keystroke count, document state, and timing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sample {
+    /// Wall-clock time when this sample was recorded.
     pub timestamp: DateTime<Utc>,
+    /// Cumulative keystroke count at sample time.
     pub keystroke_count: u64,
+    /// SHA-256 hash of the document at sample time.
     pub document_hash: [u8; 32],
+    /// HMAC-derived jitter delay in microseconds.
     pub jitter_micros: u32,
+    /// SHA-256 hash binding all sample fields.
     pub hash: [u8; 32],
+    /// Hash of the preceding sample (zeros for the first sample).
     pub previous_hash: [u8; 32],
 }
 
@@ -66,11 +79,16 @@ impl Sample {
     }
 }
 
+/// Active jitter chain recording session bound to a single document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
+    /// Unique hex-encoded session identifier.
     pub id: String,
+    /// When this session began.
     pub started_at: DateTime<Utc>,
+    /// When this session was finalized, if at all.
     pub ended_at: Option<DateTime<Utc>>,
+    /// Canonical path of the monitored document.
     pub document_path: String,
     #[serde(skip)]
     pub(crate) seed: [u8; 32],
@@ -93,6 +111,7 @@ impl Drop for Session {
 }
 
 impl Session {
+    /// Start a new jitter session for the given document path.
     pub fn new(document_path: impl AsRef<Path>, params: Parameters) -> crate::error::Result<Self> {
         if params.sample_interval == 0 {
             return Err(Error::validation("sample_interval must be > 0"));
@@ -119,6 +138,7 @@ impl Session {
         })
     }
 
+    /// Start a new jitter session with a caller-specified session ID.
     pub fn new_with_id(
         document_path: impl AsRef<Path>,
         params: Parameters,
@@ -149,6 +169,7 @@ impl Session {
         })
     }
 
+    /// Record a keystroke, returning (jitter_micros, sample_emitted).
     pub fn record_keystroke(&mut self) -> crate::error::Result<(u32, bool)> {
         self.keystroke_count = self.keystroke_count.saturating_add(1);
         if !self
@@ -187,18 +208,22 @@ impl Session {
         Ok((jitter, true))
     }
 
+    /// Finalize this session by recording the end timestamp.
     pub fn end(&mut self) {
         self.ended_at = Some(Utc::now());
     }
 
+    /// Return the total number of keystrokes recorded in this session.
     pub fn keystroke_count(&self) -> u64 {
         self.keystroke_count
     }
 
+    /// Return the number of jitter samples in the chain.
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
 
+    /// Return the elapsed duration of this session.
     pub fn duration(&self) -> Duration {
         let end = self.ended_at.unwrap_or_else(Utc::now);
         end.signed_duration_since(self.started_at)
@@ -206,6 +231,7 @@ impl Session {
             .unwrap_or(Duration::from_secs(0))
     }
 
+    /// Export session data as a self-contained evidence packet.
     pub fn export(&self) -> Evidence {
         let end = self.ended_at.unwrap_or_else(Utc::now);
         let mut evidence = Evidence {
@@ -221,33 +247,38 @@ impl Session {
         evidence
     }
 
-    #[allow(clippy::field_reassign_with_default)]
     fn compute_stats(&self) -> Statistics {
-        let mut stats = Statistics::default();
-        stats.total_keystrokes = self.keystroke_count;
-        stats.total_samples = self.samples.len().min(i32::MAX as usize) as i32;
-
         let end = self.ended_at.unwrap_or_else(Utc::now);
-        stats.duration = end
+        let duration = end
             .signed_duration_since(self.started_at)
             .to_std()
             .unwrap_or(Duration::from_secs(0));
 
-        if stats.duration.as_secs_f64() > 0.0 {
-            let minutes = stats.duration.as_secs_f64() / 60.0;
+        let keystrokes_per_min = {
+            let minutes = duration.as_secs_f64() / 60.0;
             if minutes > 0.0 {
-                stats.keystrokes_per_min = self.keystroke_count as f64 / minutes;
+                self.keystroke_count as f64 / minutes
+            } else {
+                0.0
             }
-        }
+        };
 
-        let mut seen = std::collections::HashSet::new();
-        for sample in &self.samples {
-            seen.insert(sample.document_hash);
-        }
-        stats.unique_doc_hashes = seen.len().min(i32::MAX as usize) as i32;
-        stats.chain_valid = self.verify_chain().is_ok();
+        let unique_doc_hashes = self
+            .samples
+            .iter()
+            .map(|s| s.document_hash)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            .min(i32::MAX as usize) as i32;
 
-        stats
+        Statistics {
+            total_keystrokes: self.keystroke_count,
+            total_samples: self.samples.len().min(i32::MAX as usize) as i32,
+            duration,
+            keystrokes_per_min,
+            unique_doc_hashes,
+            chain_valid: self.verify_chain().is_ok(),
+        }
     }
 
     pub(crate) fn verify_chain(&self) -> crate::error::Result<()> {
@@ -271,6 +302,7 @@ impl Session {
         Ok(())
     }
 
+    /// Persist session state to disk atomically (write-then-rename).
     pub fn save(&self, path: impl AsRef<Path>) -> crate::error::Result<()> {
         let mut data = SessionData {
             id: self.id.clone(),
@@ -309,6 +341,7 @@ impl Session {
         Ok(())
     }
 
+    /// Load and verify a session from a JSON file on disk.
     pub fn load(path: impl AsRef<Path>) -> crate::error::Result<Self> {
         let bytes = Zeroizing::new(fs::read(path).map_err(|e| Error::validation(e.to_string()))?);
         let mut data: SessionData =
@@ -423,28 +456,44 @@ impl Session {
     }
 }
 
+/// Exported jitter session evidence with samples and computed statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Evidence {
+    /// Session identifier.
     pub session_id: String,
+    /// When the session began.
     pub started_at: DateTime<Utc>,
+    /// When the session ended.
     pub ended_at: DateTime<Utc>,
+    /// Path of the monitored document.
     pub document_path: String,
+    /// Jitter parameters used during capture.
     pub params: Parameters,
+    /// Complete chain of jitter samples.
     pub samples: Vec<Sample>,
+    /// Computed session statistics.
     pub statistics: Statistics,
 }
 
+/// Summary statistics computed from a jitter session.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Statistics {
+    /// Total keystrokes recorded during the session.
     pub total_keystrokes: u64,
+    /// Number of jitter samples in the chain.
     pub total_samples: i32,
+    /// Wall-clock duration of the session.
     pub duration: Duration,
+    /// Average keystrokes per minute.
     pub keystrokes_per_min: f64,
+    /// Count of distinct document hashes observed.
     pub unique_doc_hashes: i32,
+    /// Whether the sample chain passed integrity verification.
     pub chain_valid: bool,
 }
 
 impl Evidence {
+    /// Verify chain integrity: hashes, links, monotonic timestamps and counts.
     pub fn verify(&self) -> crate::error::Result<()> {
         for (i, sample) in self.samples.iter().enumerate() {
             if sample.compute_hash().ct_eq(&sample.hash).unwrap_u8() == 0 {
@@ -476,14 +525,17 @@ impl Evidence {
         Ok(())
     }
 
+    /// Serialize this evidence packet to pretty-printed JSON bytes.
     pub fn encode(&self) -> crate::error::Result<Vec<u8>> {
         serde_json::to_vec_pretty(self).map_err(|e| Error::validation(e.to_string()))
     }
 
+    /// Deserialize an evidence packet from JSON bytes.
     pub fn decode(data: &[u8]) -> crate::error::Result<Evidence> {
         serde_json::from_slice(data).map_err(|e| Error::validation(e.to_string()))
     }
 
+    /// Compute keystrokes per minute from session statistics.
     pub fn typing_rate(&self) -> f64 {
         if self.statistics.duration.as_secs_f64() > 0.0 {
             self.statistics.total_keystrokes as f64
@@ -493,10 +545,12 @@ impl Evidence {
         }
     }
 
+    /// Return the count of distinct document hashes observed during the session.
     pub fn document_evolution(&self) -> i32 {
         self.statistics.unique_doc_hashes
     }
 
+    /// Check whether the typing rate and document evolution suggest human authorship.
     pub fn is_plausible_human_typing(&self) -> bool {
         let rate = self.typing_rate();
         if rate < 10.0 && self.statistics.total_keystrokes > 100 {
@@ -512,16 +566,25 @@ impl Evidence {
     }
 }
 
+/// On-disk JSON representation of a jitter session (includes hex-encoded seed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
+    /// Session identifier.
     pub id: String,
+    /// When the session began.
     pub started_at: DateTime<Utc>,
+    /// When the session ended, if finalized.
     pub ended_at: Option<DateTime<Utc>>,
+    /// Canonical path of the monitored document.
     pub document_path: String,
     pub(crate) seed: String,
+    /// Jitter parameters used during capture.
     pub params: Parameters,
+    /// Complete chain of jitter samples.
     pub samples: Vec<Sample>,
+    /// Total keystrokes recorded.
     pub keystroke_count: u64,
+    /// Most recent jitter value emitted.
     pub last_jitter: u32,
 }
 
@@ -540,7 +603,7 @@ pub(super) fn compute_jitter_value(
     mac.update(&prev_jitter);
 
     let hash = mac.finalize().into_bytes();
-    let raw = u32::from_be_bytes(hash[0..4].try_into().unwrap());
+    let raw = u32::from_be_bytes(hash[0..4].try_into().expect("4-byte slice"));
     let jitter_range = params
         .max_jitter_micros
         .saturating_sub(params.min_jitter_micros);

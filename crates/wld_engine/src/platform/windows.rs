@@ -147,6 +147,7 @@ fn looks_like_path(s: &str) -> bool {
         || (s.contains('.') && !s.contains(' '))
 }
 
+/// Low-level keyboard hook monitor feeding a jitter session.
 pub struct KeystrokeMonitor {
     session: Arc<Mutex<SimpleJitterSession>>,
     _hook: isize,
@@ -155,6 +156,7 @@ pub struct KeystrokeMonitor {
 static GLOBAL_SESSION: Mutex<Option<Arc<Mutex<SimpleJitterSession>>>> = Mutex::new(None);
 
 impl KeystrokeMonitor {
+    /// Install the keyboard hook and begin feeding keystrokes to the session.
     pub fn start(session: Arc<Mutex<SimpleJitterSession>>) -> Result<Self> {
         *GLOBAL_SESSION.lock_recover() = Some(Arc::clone(&session));
         unsafe {
@@ -183,7 +185,13 @@ unsafe extern "system" fn low_level_keyboard_proc(
         }
         let kbd = *ptr;
         let now = chrono::Utc::now().timestamp_nanos_safe();
-        let session = GLOBAL_SESSION.lock().ok().and_then(|g| g.clone());
+        let session = match GLOBAL_SESSION.lock() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => {
+                log::error!("GLOBAL_SESSION mutex poisoned: {}", poisoned);
+                None
+            }
+        };
         if let Some(session_arc) = session {
             if let Ok(mut s) = session_arc.lock() {
                 s.add_sample(now, (kbd.vkCode % 8) as u8);
@@ -259,7 +267,9 @@ impl KeystrokeCapture for WindowsKeystrokeCapture {
 
         if let Some(hook_handle) = self.hook.take() {
             unsafe {
-                let _ = UnhookWindowsHookEx(hook_handle.0);
+                if let Err(e) = UnhookWindowsHookEx(hook_handle.0) {
+                    log::warn!("UnhookWindowsHookEx failed for keyboard hook: {e}");
+                }
             }
         }
 
@@ -504,7 +514,9 @@ impl MouseCapture for WindowsMouseCapture {
 
         if let Some(hook_handle) = self.hook.take() {
             unsafe {
-                let _ = UnhookWindowsHookEx(hook_handle.0);
+                if let Err(e) = UnhookWindowsHookEx(hook_handle.0) {
+                    log::warn!("UnhookWindowsHookEx failed for mouse hook: {e}");
+                }
             }
         }
 

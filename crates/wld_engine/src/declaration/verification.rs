@@ -12,6 +12,7 @@ use super::helpers::{
 use super::types::{AIExtent, Declaration, DeclarationJitter, DeclarationSummary};
 
 impl Declaration {
+    /// Verify the Ed25519 signature against the signing payload.
     pub fn verify(&self) -> bool {
         if self.author_public_key.len() != 32 || self.signature.len() != 64 {
             return false;
@@ -36,10 +37,12 @@ impl Declaration {
             .is_ok()
     }
 
+    /// Return true if any AI tools are declared.
     pub fn has_ai_usage(&self) -> bool {
         !self.ai_tools.is_empty()
     }
 
+    /// Return the highest AI extent across all declared tools.
     pub fn max_ai_extent(&self) -> AIExtent {
         let mut max = AIExtent::None;
         for tool in &self.ai_tools {
@@ -50,14 +53,17 @@ impl Declaration {
         max
     }
 
+    /// Serialize to pretty-printed JSON bytes.
     pub fn encode(&self) -> crate::error::Result<Vec<u8>> {
         serde_json::to_vec_pretty(self).map_err(|e| Error::validation(format!("encode: {e}")))
     }
 
+    /// Deserialize a declaration from JSON bytes.
     pub fn decode(data: &[u8]) -> crate::error::Result<Declaration> {
         serde_json::from_slice(data).map_err(|e| Error::validation(format!("decode: {e}")))
     }
 
+    /// Generate a compact summary including signature validity.
     pub fn summary(&self) -> DeclarationSummary {
         let tools: Vec<String> = self.ai_tools.iter().map(|t| t.tool.clone()).collect();
 
@@ -135,6 +141,7 @@ impl Declaration {
         hasher.finalize().to_vec()
     }
 
+    /// Return true if a hardware jitter seal is attached.
     pub fn has_jitter_seal(&self) -> bool {
         self.jitter_sealed.is_some()
     }
@@ -182,6 +189,7 @@ impl DeclarationJitter {
         }
     }
 
+    /// Create jitter evidence from pre-computed values.
     pub fn new(
         jitter_hash: [u8; 32],
         keystroke_count: u64,

@@ -12,6 +12,7 @@ use super::timestamp_nanos_u64;
 use super::verification::verify_sample;
 use crate::error::Error;
 
+/// Encode a single sample into a 116-byte big-endian binary representation.
 pub fn encode_sample_binary(sample: &Sample) -> Vec<u8> {
     let mut buf = vec![0u8; 116];
     let mut offset = 0usize;
@@ -31,6 +32,7 @@ pub fn encode_sample_binary(sample: &Sample) -> Vec<u8> {
     buf
 }
 
+/// Decode a 116-byte big-endian binary blob into a [`Sample`].
 pub fn decode_sample_binary(data: &[u8]) -> crate::error::Result<Sample> {
     if data.len() != 116 {
         return Err(Error::validation(format!(
@@ -79,6 +81,7 @@ pub fn decode_sample_binary(data: &[u8]) -> crate::error::Result<Sample> {
     })
 }
 
+/// Encode a full sample chain (header + samples) into binary format.
 pub fn encode_chain_binary(
     samples: &[Sample],
     params: Parameters,
@@ -123,6 +126,7 @@ pub fn encode_chain_binary(
     Ok(buf)
 }
 
+/// Decode a binary-encoded chain into samples and parameters.
 pub fn decode_chain_binary(data: &[u8]) -> crate::error::Result<(Vec<Sample>, Parameters)> {
     if data.len() < 18 {
         return Err(Error::validation("data too short for chain header"));
@@ -204,6 +208,7 @@ pub fn decode_chain_binary(data: &[u8]) -> crate::error::Result<(Vec<Sample>, Pa
     ))
 }
 
+/// Return true if two sample chains are field-by-field identical.
 pub fn compare_chains(a: &[Sample], b: &[Sample]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -216,6 +221,7 @@ pub fn compare_chains(a: &[Sample], b: &[Sample]) -> bool {
     true
 }
 
+/// Return true if two samples are field-by-field identical.
 pub fn compare_samples(a: &Sample, b: &Sample) -> bool {
     a.timestamp == b.timestamp
         && a.keystroke_count == b.keystroke_count
@@ -225,6 +231,7 @@ pub fn compare_samples(a: &Sample, b: &Sample) -> bool {
         && a.previous_hash == b.previous_hash
 }
 
+/// Return the index where two chains first diverge, or -1 if identical.
 pub fn find_chain_divergence(a: &[Sample], b: &[Sample]) -> i64 {
     let min_len = a.len().min(b.len());
     for i in 0..min_len {
@@ -238,10 +245,12 @@ pub fn find_chain_divergence(a: &[Sample], b: &[Sample]) -> i64 {
     -1
 }
 
+/// Collect the hash from each sample into a vector.
 pub fn extract_chain_hashes(samples: &[Sample]) -> Vec<[u8; 32]> {
     samples.iter().map(|s| s.hash).collect()
 }
 
+/// Verify that `new_samples` chain correctly from `existing_samples`.
 pub fn verify_chain_continuity(
     existing_samples: &[Sample],
     new_samples: &[Sample],
@@ -284,10 +293,12 @@ pub fn verify_chain_continuity(
     Ok(())
 }
 
+/// Return the hash of the last sample, or all-zeros if the chain is empty.
 pub fn hash_chain_root(samples: &[Sample]) -> [u8; 32] {
     samples.last().map(|s| s.hash).unwrap_or([0u8; 32])
 }
 
+/// Validate that a sample has a plausible timestamp and non-zero hash.
 pub fn validate_sample_format(sample: &Sample) -> crate::error::Result<()> {
     if sample.timestamp.timestamp() <= 0 {
         return Err(Error::validation("timestamp is zero or pre-epoch"));
@@ -301,6 +312,7 @@ pub fn validate_sample_format(sample: &Sample) -> crate::error::Result<()> {
     Ok(())
 }
 
+/// Serialize a sample into the canonical byte layout used for signing.
 pub fn marshal_sample_for_signing(sample: &Sample) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.extend_from_slice(b"witnessd-sample-v1\n");

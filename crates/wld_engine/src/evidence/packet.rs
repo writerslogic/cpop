@@ -19,6 +19,7 @@ use crate::DateTimeNanosExt;
 use super::types::Packet;
 
 impl Packet {
+    /// Verify packet integrity: chain hashes, VDF proofs, declaration, hardware, and key hierarchy.
     pub fn verify(&self, _vdf_params: vdf::Parameters) -> crate::error::Result<()> {
         if let Some(last) = self.checkpoints.last() {
             let expected_chain_hash = last.hash.clone();
@@ -208,6 +209,7 @@ impl Packet {
         Ok(())
     }
 
+    /// Sum elapsed time across all checkpoints.
     pub fn total_elapsed_time(&self) -> Duration {
         let mut total = Duration::from_secs(0);
         for cp in &self.checkpoints {
@@ -393,14 +395,17 @@ impl Packet {
         Ok(())
     }
 
+    /// Return true if a verifier nonce is set.
     pub fn has_verifier_nonce(&self) -> bool {
         self.verifier_nonce.is_some()
     }
 
+    /// Return true if the packet has both a signature and public key.
     pub fn is_signed(&self) -> bool {
         self.packet_signature.is_some() && self.signing_public_key.is_some()
     }
 
+    /// Return the verifier nonce, if set.
     pub fn get_verifier_nonce(&self) -> Option<&[u8; 32]> {
         self.verifier_nonce.as_ref()
     }

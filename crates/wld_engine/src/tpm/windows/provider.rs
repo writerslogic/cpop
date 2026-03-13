@@ -15,6 +15,7 @@ use super::helpers::{
 };
 use super::types::*;
 
+/// Windows TPM 2.0 provider via TBS (TPM Base Services).
 pub struct WindowsTpmProvider {
     context: TbsContext,
     public_key: Vec<u8>,
@@ -25,6 +26,7 @@ struct WindowsTpmState {
     counter: u64,
 }
 
+/// Initialize the Windows TPM provider, returning `None` if no TPM 2.0 is present.
 pub fn try_init() -> Option<WindowsTpmProvider> {
     match TbsContext::new() {
         Ok(context) => match context.get_device_info() {

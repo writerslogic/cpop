@@ -130,58 +130,72 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
+    /// Create a checkpoint chain error.
     pub fn checkpoint(msg: impl Into<String>) -> Self {
         Error::Checkpoint(msg.into())
     }
 
+    /// Create an evidence generation/verification error.
     pub fn evidence(msg: impl Into<String>) -> Self {
         Error::Evidence(msg.into())
     }
 
+    /// Create a VDF computation/verification error.
     pub fn vdf(msg: impl Into<String>) -> Self {
         Error::Vdf(msg.into())
     }
 
+    /// Create a data validation error.
     pub fn validation(msg: impl Into<String>) -> Self {
         Error::Validation(msg.into())
     }
 
+    /// Create a cryptographic operation error.
     pub fn crypto(msg: impl Into<String>) -> Self {
         Error::Crypto(msg.into())
     }
 
+    /// Create a configuration error.
     pub fn config(msg: impl Into<String>) -> Self {
         Error::Config(msg.into())
     }
 
+    /// Create a resource-not-found error.
     pub fn not_found(msg: impl Into<String>) -> Self {
         Error::NotFound(msg.into())
     }
 
+    /// Create an invalid-state error.
     pub fn invalid_state(msg: impl Into<String>) -> Self {
         Error::InvalidState(msg.into())
     }
 
+    /// Create a platform-specific error.
     pub fn platform(msg: impl Into<String>) -> Self {
         Error::Platform(msg.into())
     }
 
+    /// Create an identity/key management error.
     pub fn identity(msg: impl Into<String>) -> Self {
         Error::Identity(msg.into())
     }
 
+    /// Create a physics/entropy error.
     pub fn physics(msg: impl Into<String>) -> Self {
         Error::Physics(msg.into())
     }
 
+    /// Create an RFC structure error.
     pub fn rfc(msg: impl Into<String>) -> Self {
         Error::Rfc(msg.into())
     }
 
+    /// Create a signature verification error.
     pub fn signature(msg: impl Into<String>) -> Self {
         Error::Signature(msg.into())
     }
 
+    /// Create an internal error (should not occur in normal operation).
     pub fn internal(msg: impl Into<String>) -> Self {
         Error::Internal(msg.into())
     }

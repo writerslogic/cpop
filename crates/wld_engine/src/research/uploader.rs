@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::collector::ResearchCollector;
 use super::types::{UploadResult, DEFAULT_UPLOAD_INTERVAL_SECS};
 
+/// Background task that periodically uploads buffered research sessions.
 pub struct ResearchUploader {
     collector: Arc<tokio::sync::Mutex<ResearchCollector>>,
     running: Arc<AtomicBool>,
@@ -14,6 +15,7 @@ pub struct ResearchUploader {
 }
 
 impl ResearchUploader {
+    /// Create an uploader with the default upload interval.
     pub fn new(collector: Arc<tokio::sync::Mutex<ResearchCollector>>) -> Self {
         Self {
             collector,
@@ -22,6 +24,7 @@ impl ResearchUploader {
         }
     }
 
+    /// Create an uploader with a custom upload interval.
     pub fn with_interval(
         collector: Arc<tokio::sync::Mutex<ResearchCollector>>,
         interval: Duration,
@@ -33,6 +36,7 @@ impl ResearchUploader {
         }
     }
 
+    /// Spawn the periodic upload loop as a Tokio task.
     pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let collector = Arc::clone(&self.collector);
         let running = Arc::clone(&self.running);
@@ -70,14 +74,17 @@ impl ResearchUploader {
         })
     }
 
+    /// Signal the background upload loop to stop.
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
 
+    /// Return `true` if the background upload loop is active.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Trigger an immediate upload outside the periodic schedule.
     pub async fn upload_now(&self) -> Result<UploadResult, String> {
         let mut guard = self.collector.lock().await;
         guard.upload().await

@@ -104,11 +104,13 @@ impl ContinuationSection {
         self.cumulative_summary.total_entropy_bits += entropy_bits;
     }
 
+    /// Attach a series-binding signature.
     pub fn with_signature(mut self, signature: String) -> Self {
         self.series_binding_signature = Some(signature);
         self
     }
 
+    /// Return true if this is the first packet in the series.
     pub fn is_first(&self) -> bool {
         self.packet_sequence == 0
     }

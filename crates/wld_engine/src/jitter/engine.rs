@@ -12,29 +12,45 @@ use super::profile::interval_to_bucket;
 use super::zones::keycode_to_zone;
 use super::zones::{encode_zone_transition, ZoneTransition};
 
+/// Zone-committed jitter sample captured during real-time keystroke monitoring.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JitterSample {
+    /// Monotonic sequence number within the session.
     pub ordinal: u64,
+    /// Wall-clock time of the keystroke.
     pub timestamp: DateTime<Utc>,
+    /// SHA-256 hash of the document at capture time.
     pub doc_hash: [u8; 32],
+    /// Encoded zone transition (from << 3 | to), or 0xFF if none.
     pub zone_transition: u8,
+    /// Keystroke interval bucket index (0..9).
     pub interval_bucket: u8,
+    /// HMAC-derived jitter delay in microseconds.
     pub jitter_micros: u32,
+    /// CPU counter measurement for clock skew evidence.
     pub clock_skew: u64,
+    /// SHA-256 hash binding all sample fields.
     pub sample_hash: [u8; 32],
 }
 
+/// Accumulated typing behavior profile from zone transition statistics.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct TypingProfile {
+    /// Histogram of same-finger transitions by interval bucket.
     pub same_finger_hist: [u32; 10],
+    /// Histogram of same-hand (different finger) transitions by interval bucket.
     pub same_hand_hist: [u32; 10],
+    /// Histogram of hand-alternating transitions by interval bucket.
     pub alternating_hist: [u32; 10],
+    /// Ratio of alternating transitions to total transitions.
     pub hand_alternation: f32,
+    /// Total number of zone transitions recorded.
     pub total_transitions: u64,
     #[serde(skip)]
     pub(super) alternating_count: u64,
 }
 
+/// Real-time zone-committed jitter engine for keystroke monitoring sessions.
 pub struct JitterEngine {
     secret: [u8; 32],
     ordinal: u64,
@@ -51,6 +67,7 @@ impl Drop for JitterEngine {
 }
 
 impl JitterEngine {
+    /// Create a new jitter engine seeded with the given 32-byte secret.
     pub fn new(secret: [u8; 32]) -> Self {
         Self {
             secret,
@@ -62,6 +79,7 @@ impl JitterEngine {
         }
     }
 
+    /// Process a keystroke event, returning the jitter delay and an optional sample.
     pub fn on_keystroke(
         &mut self,
         key_code: u16,
@@ -106,6 +124,7 @@ impl JitterEngine {
         (jitter, Some(sample))
     }
 
+    /// Return the accumulated typing profile.
     pub fn profile(&self) -> TypingProfile {
         self.profile
     }

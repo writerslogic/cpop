@@ -17,23 +17,38 @@ use super::zones::{
     text_to_zone_sequence, ZoneTransition,
 };
 
+/// Aggregate result of content-based jitter chain verification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentVerificationResult {
+    /// Overall validity (chain integrity AND zone compatibility).
     pub valid: bool,
+    /// Whether the hash chain is internally consistent.
     pub chain_valid: bool,
+    /// Whether recorded zone transitions match document content.
     pub zones_compatible: bool,
+    /// Whether the typing profile appears human-plausible.
     pub profile_plausible: bool,
+    /// KL divergence between expected and recorded zone distributions.
     pub zone_divergence: f64,
+    /// JS divergence between expected and recorded transition histograms.
     pub transition_divergence: f64,
+    /// Cosine similarity score between expected and recorded profiles.
     pub profile_score: f64,
+    /// Typing profile extracted from recorded jitter samples.
     pub recorded_profile: TypingProfile,
+    /// Typing profile derived from document content analysis.
     pub expected_profile: TypingProfile,
+    /// Zone transition histogram extracted from recorded samples.
     pub recorded_transitions: ZoneTransitionHistogram,
+    /// Zone transition histogram derived from document content.
     pub expected_transitions: ZoneTransitionHistogram,
+    /// Fatal errors encountered during verification.
     pub errors: Vec<String>,
+    /// Non-fatal warnings about suspicious patterns.
     pub warnings: Vec<String>,
 }
 
+/// Verify a jitter sample chain against the actual document content.
 pub fn verify_with_content(samples: &[JitterSample], content: &[u8]) -> ContentVerificationResult {
     let mut result = ContentVerificationResult {
         valid: true,
@@ -97,6 +112,7 @@ pub fn verify_with_content(samples: &[JitterSample], content: &[u8]) -> ContentV
     result
 }
 
+/// Verify jitter values against a shared secret, confirming deterministic derivation.
 pub fn verify_with_secret(
     samples: &[JitterSample],
     mut secret: [u8; 32],
@@ -188,6 +204,7 @@ impl VerificationEngine {
     }
 }
 
+/// Derive an expected typing profile from document content via zone analysis.
 pub fn analyze_document_zones(content: &[u8]) -> TypingProfile {
     let transitions = text_to_zone_sequence(&String::from_utf8_lossy(content));
     let mut profile = TypingProfile::default();
@@ -216,6 +233,7 @@ pub fn analyze_document_zones(content: &[u8]) -> TypingProfile {
     profile
 }
 
+/// Build a typing profile from recorded jitter samples' zone transitions.
 pub fn extract_recorded_zones(samples: &[JitterSample]) -> TypingProfile {
     let mut profile = TypingProfile::default();
 
@@ -252,6 +270,7 @@ pub fn extract_recorded_zones(samples: &[JitterSample]) -> TypingProfile {
     profile
 }
 
+/// Compute KL divergence between expected and recorded zone category distributions.
 pub fn zone_kl_divergence(expected: TypingProfile, recorded: TypingProfile) -> f64 {
     let mut exp_same_finger = 0u64;
     let mut exp_same_hand = 0u64;
@@ -301,6 +320,7 @@ pub fn zone_kl_divergence(expected: TypingProfile, recorded: TypingProfile) -> f
     kl
 }
 
+/// 64-bin histogram of encoded zone transition frequencies.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoneTransitionHistogram(pub [u32; 64]);
 
@@ -337,6 +357,7 @@ impl<'de> Deserialize<'de> for ZoneTransitionHistogram {
     }
 }
 
+/// Build a zone transition histogram from recorded jitter samples.
 pub fn extract_transition_histogram(samples: &[JitterSample]) -> ZoneTransitionHistogram {
     let mut hist = [0u32; 64];
     for sample in samples {
@@ -350,6 +371,7 @@ pub fn extract_transition_histogram(samples: &[JitterSample]) -> ZoneTransitionH
     ZoneTransitionHistogram(hist)
 }
 
+/// Derive an expected zone transition histogram from document content.
 pub fn expected_transition_histogram(content: &[u8]) -> ZoneTransitionHistogram {
     let mut hist = [0u32; 64];
     for trans in text_to_zone_sequence(&String::from_utf8_lossy(content)) {
@@ -361,6 +383,7 @@ pub fn expected_transition_histogram(content: &[u8]) -> ZoneTransitionHistogram 
     ZoneTransitionHistogram(hist)
 }
 
+/// Compute Jensen-Shannon divergence between two zone transition histograms.
 pub fn transition_histogram_divergence(
     expected: ZoneTransitionHistogram,
     recorded: ZoneTransitionHistogram,
@@ -404,6 +427,7 @@ fn safe_log(x: f64) -> f64 {
     }
 }
 
+/// Verify hash integrity, monotonic timestamps, and ordinal ordering of a jitter chain.
 pub fn verify_jitter_chain(samples: &[JitterSample]) -> crate::error::Result<()> {
     if samples.is_empty() {
         return Err(Error::validation("empty sample chain"));

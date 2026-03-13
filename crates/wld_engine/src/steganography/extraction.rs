@@ -9,6 +9,7 @@ pub struct ZwcExtractor {
 }
 
 impl ZwcExtractor {
+    /// Create an extractor with the given parameters.
     pub fn new(params: ZwcParams) -> Self {
         Self { params }
     }

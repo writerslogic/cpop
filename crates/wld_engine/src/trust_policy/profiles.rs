@@ -5,7 +5,7 @@ use super::types::{
     TrustThreshold,
 };
 
-/// Chain integrity + timing + content + hardware attestation.
+/// Build a basic verification policy: chain integrity + timing + content + hardware attestation.
 pub fn basic() -> AppraisalPolicy {
     AppraisalPolicy::new("urn:ietf:params:pop:policy:basic", "1.0")
         .with_computation(TrustComputation::WeightedAverage)
@@ -48,7 +48,7 @@ pub fn basic() -> AppraisalPolicy {
         })
 }
 
-/// Weighted average, min score 0.70, presence required.
+/// Build an academic-submission policy: weighted average, min score 0.70, presence required.
 pub fn academic() -> AppraisalPolicy {
     AppraisalPolicy::new("urn:ietf:params:pop:policy:academic", "1.0")
         .with_computation(TrustComputation::WeightedAverage)
@@ -75,7 +75,7 @@ pub fn academic() -> AppraisalPolicy {
         })
 }
 
-/// Minimum-of-factors model, hardware attestation required.
+/// Build a legal/forensic policy: minimum-of-factors model, hardware attestation required.
 pub fn legal() -> AppraisalPolicy {
     AppraisalPolicy::new("urn:ietf:params:pop:policy:legal", "1.0")
         .with_computation(TrustComputation::MinimumOfFactors)

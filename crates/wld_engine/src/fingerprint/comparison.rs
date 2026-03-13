@@ -36,6 +36,7 @@ pub enum ComparisonVerdict {
 }
 
 impl ComparisonVerdict {
+    /// Classify a similarity score into a verdict category.
     pub fn from_similarity(similarity: f64) -> Self {
         if similarity > 0.85 {
             Self::SameAuthor
@@ -50,6 +51,7 @@ impl ComparisonVerdict {
         }
     }
 
+    /// Return a human-readable description of this verdict.
     pub fn description(&self) -> &'static str {
         match self {
             Self::SameAuthor => "Very likely the same author",
@@ -150,11 +152,13 @@ impl ProfileMatcher {
         }
     }
 
+    /// Set the minimum similarity threshold (clamped to 0.0-1.0).
     pub fn with_threshold(mut self, threshold: f64) -> Self {
         self.threshold = threshold.clamp(0.0, 1.0);
         self
     }
 
+    /// Set the maximum number of results to return.
     pub fn with_max_results(mut self, max: usize) -> Self {
         self.max_results = max;
         self
@@ -254,6 +258,7 @@ impl BatchComparator {
         }
     }
 
+    /// Set the clustering similarity threshold.
     pub fn with_threshold(mut self, threshold: f64) -> Self {
         self.cluster_threshold = threshold;
         self

@@ -82,6 +82,7 @@ fn check_input_device_access() -> bool {
     }
 }
 
+/// Query current input device permission status.
 pub fn get_permission_status() -> PermissionStatus {
     let input_devices = check_input_device_access();
     PermissionStatus {
@@ -92,6 +93,7 @@ pub fn get_permission_status() -> PermissionStatus {
     }
 }
 
+/// Log instructions for granting input device access, then return current status.
 pub fn request_all_permissions() -> PermissionStatus {
     let status = get_permission_status();
     if !status.input_devices {
@@ -108,10 +110,12 @@ pub fn request_all_permissions() -> PermissionStatus {
     status
 }
 
+/// Check whether the process can read input devices.
 pub fn has_required_permissions() -> bool {
     check_input_device_access()
 }
 
+/// Metadata for a Linux evdev input device.
 #[derive(Debug, Clone)]
 pub struct LinuxInputDevice {
     pub path: PathBuf,
@@ -125,6 +129,7 @@ pub struct LinuxInputDevice {
 }
 
 impl LinuxInputDevice {
+    /// Return true if heuristics suggest this is a virtual/software device.
     pub fn appears_virtual(&self) -> bool {
         is_virtual_device(
             &self.name,
@@ -180,6 +185,7 @@ fn enumerate_input_devices(
     Ok(result)
 }
 
+/// Enumerate physical and virtual keyboard devices via evdev.
 pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
     enumerate_input_devices(
         |dev| {
@@ -220,6 +226,7 @@ fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id:
     false
 }
 
+/// Detect the currently focused application via X11 or /proc fallback.
 pub fn get_active_focus() -> Result<FocusInfo> {
     #[cfg(feature = "x11")]
     if let Ok(focus) = get_x11_focus() {
@@ -346,6 +353,7 @@ fn get_x11_focus() -> Result<FocusInfo> {
     })
 }
 
+/// Linux keystroke capture via evdev device readers.
 pub struct LinuxKeystrokeCapture {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<KeystrokeEvent>>,
@@ -356,6 +364,7 @@ pub struct LinuxKeystrokeCapture {
 }
 
 impl LinuxKeystrokeCapture {
+    /// Create a new idle keystroke capture instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -592,6 +601,7 @@ impl Drop for LinuxKeystrokeCapture {
     }
 }
 
+/// Linux focus monitor using X11 or /proc polling.
 pub struct LinuxFocusMonitor {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<FocusInfo>>,
@@ -599,6 +609,7 @@ pub struct LinuxFocusMonitor {
 }
 
 impl LinuxFocusMonitor {
+    /// Create a new focus monitor instance.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -663,10 +674,12 @@ impl FocusMonitor for LinuxFocusMonitor {
     }
 }
 
+/// HID keyboard enumerator for Linux evdev devices.
 #[derive(Default)]
 pub struct LinuxHIDEnumerator;
 
 impl LinuxHIDEnumerator {
+    /// Create a new HID enumerator.
     pub fn new() -> Self {
         Self
     }
@@ -699,6 +712,7 @@ impl HIDEnumerator for LinuxHIDEnumerator {
     }
 }
 
+/// Enumerate physical and virtual mouse devices via evdev.
 pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
     enumerate_input_devices(
         |dev| {
@@ -741,6 +755,7 @@ fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: 
     false
 }
 
+/// Linux mouse capture via evdev device readers with idle jitter support.
 pub struct LinuxMouseCapture {
     running: Arc<AtomicBool>,
     sender: Option<mpsc::Sender<MouseEvent>>,
@@ -753,6 +768,7 @@ pub struct LinuxMouseCapture {
 }
 
 impl LinuxMouseCapture {
+    /// Create a new mouse capture instance in idle-only mode.
     pub fn new() -> Result<Self> {
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
@@ -826,6 +842,11 @@ impl LinuxMouseCapture {
 
                                 let magnitude =
                                     (pending_dx * pending_dx + pending_dy * pending_dy).sqrt();
+                                let magnitude = if magnitude.is_finite() {
+                                    magnitude
+                                } else {
+                                    0.0
+                                };
                                 let is_micro = magnitude < 5.0;
 
                                 let mouse_event = MouseEvent {

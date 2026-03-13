@@ -12,6 +12,7 @@ use rand::RngCore;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wld_jitter::{EntropySource, PhysJitter};
 
+/// Incrementally build a signed PoP evidence packet with causality-chained checkpoints.
 pub struct PoPBuilder {
     version: u32,
     profile_uri: String,
@@ -27,6 +28,7 @@ pub struct PoPBuilder {
 }
 
 impl PoPBuilder {
+    /// Create a new builder for the given document, generating a random packet ID.
     pub fn new(document: DocumentRef, signer: Box<dyn PoPSigner>) -> Result<Self> {
         let mut packet_id = [0u8; 16];
         OsRng.fill_bytes(&mut packet_id);
@@ -53,16 +55,19 @@ impl PoPBuilder {
         })
     }
 
+    /// Set the hardware attestation tier for this evidence packet.
     pub fn with_attestation_tier(mut self, tier: AttestationTier) -> Self {
         self.attestation_tier = tier;
         self
     }
 
+    /// Attach baseline behavioral verification data to this evidence packet.
     pub fn with_baseline_verification(mut self, bv: crate::baseline::BaselineVerification) -> Self {
         self.baseline_verification = Some(bv);
         self
     }
 
+    /// Append a checkpoint for the current document content, extending the causality chain.
     pub fn add_checkpoint(&mut self, content: &[u8], char_count: u64) -> Result<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -108,6 +113,7 @@ impl PoPBuilder {
         Ok(())
     }
 
+    /// Finalize the evidence packet, CBOR-encode it, and wrap in a COSE_Sign1 envelope.
     pub fn finalize(self) -> Result<Vec<u8>> {
         let packet = EvidencePacket {
             version: self.version,
@@ -125,15 +131,18 @@ impl PoPBuilder {
     }
 }
 
+/// Verify COSE-signed evidence packets: signature, causality chain, and temporal consistency.
 pub struct PoPVerifier {
     verifying_key: VerifyingKey,
 }
 
 impl PoPVerifier {
+    /// Create a verifier bound to the given Ed25519 public key.
     pub fn new(verifying_key: VerifyingKey) -> Self {
         Self { verifying_key }
     }
 
+    /// Verify signature, decode the packet, and validate causality chain integrity.
     pub fn verify(&self, cose_data: &[u8]) -> Result<EvidencePacket> {
         let payload = verify_evidence_cose(cose_data, &self.verifying_key)?;
         let packet = decode_evidence(&payload)?;

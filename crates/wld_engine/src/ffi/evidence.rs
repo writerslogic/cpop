@@ -7,6 +7,7 @@ use crate::rfc::wire_types::{
     ProofAlgorithm, ProofParams,
 };
 
+/// Verify an evidence packet at the given path and return integrity results.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_verify_evidence(path: String) -> FfiVerifyResult {
     let (_, tier_num, tier_label) = detect_attestation_tier_info();
@@ -86,6 +87,7 @@ pub fn ffi_verify_evidence(path: String) -> FfiVerifyResult {
     }
 }
 
+/// Export stored events for a file as a CBOR evidence packet at the given tier.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiResult {
     let file_path = match crate::sentinel::helpers::validate_path(&path) {
@@ -279,6 +281,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
     }
 }
 
+/// Return a compact reference string for the latest event on a tracked file.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_compact_ref(path: String) -> String {
     let path = match crate::sentinel::helpers::validate_path(&path) {
@@ -310,6 +313,7 @@ pub fn ffi_get_compact_ref(path: String) -> String {
     )
 }
 
+/// Create a manual checkpoint for a file, hashing its current content.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
     let file_path = match crate::sentinel::helpers::validate_path(&path) {

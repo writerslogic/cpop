@@ -10,36 +10,44 @@ use std::io::{Read, Write};
 
 use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CWAR};
 
+/// Serialize a value to deterministic CBOR bytes.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
     ciborium::into_writer(value, &mut buffer).map_err(|e| CodecError::CborEncode(e.to_string()))?;
     Ok(buffer)
 }
 
+/// Deserialize a value from CBOR bytes.
 pub fn decode<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     ciborium::from_reader(data).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
+/// Serialize a value as CBOR into a writer.
 pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
     ciborium::into_writer(value, writer).map_err(|e| CodecError::CborEncode(e.to_string()))
 }
 
+/// Deserialize a value from a CBOR reader.
 pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R) -> Result<T> {
     ciborium::from_reader(reader).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
+/// Encode with CPOP semantic tag (evidence packet).
 pub fn encode_cpop<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     encode_tagged(value, CBOR_TAG_CPOP)
 }
 
+/// Encode with CWAR semantic tag (attestation result).
 pub fn encode_cwar<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     encode_tagged(value, CBOR_TAG_CWAR)
 }
 
+/// Encode with compact evidence reference semantic tag.
 pub fn encode_compact_ref<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     encode_tagged(value, CBOR_TAG_COMPACT_REF)
 }
 
+/// Wrap a serialized value in a CBOR semantic tag.
 pub fn encode_tagged<T: Serialize>(value: &T, tag: u64) -> Result<Vec<u8>> {
     let inner = encode(value)?;
     let inner_value: Value =
@@ -54,6 +62,7 @@ pub fn encode_tagged<T: Serialize>(value: &T, tag: u64) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
+/// Decode CBOR data, verifying the expected semantic tag.
 pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Result<T> {
     let value: Value =
         ciborium::from_reader(data).map_err(|e| CodecError::CborDecode(e.to_string()))?;
@@ -78,18 +87,22 @@ pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Res
     }
 }
 
+/// Decode a CPOP-tagged evidence packet.
 pub fn decode_cpop<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     decode_tagged(data, CBOR_TAG_CPOP)
 }
 
+/// Decode a CWAR-tagged attestation result.
 pub fn decode_cwar<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     decode_tagged(data, CBOR_TAG_CWAR)
 }
 
+/// Decode a compact evidence reference.
 pub fn decode_compact_ref<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
     decode_tagged(data, CBOR_TAG_COMPACT_REF)
 }
 
+/// Check whether CBOR data carries the expected semantic tag.
 pub fn has_tag(data: &[u8], expected_tag: u64) -> bool {
     if let Ok(value) = ciborium::from_reader::<Value, _>(data) {
         matches!(value, Value::Tag(tag, _) if tag == expected_tag)
@@ -98,6 +111,7 @@ pub fn has_tag(data: &[u8], expected_tag: u64) -> bool {
     }
 }
 
+/// Extract the outermost CBOR semantic tag, if present.
 pub fn extract_tag(data: &[u8]) -> Option<u64> {
     if let Ok(value) = ciborium::from_reader::<Value, _>(data) {
         match value {
@@ -237,5 +251,89 @@ mod tests {
                 actual: CBOR_TAG_CPOP
             })
         ));
+    }
+
+    #[test]
+    fn test_has_tag_on_untagged_data() {
+        let packet = TestPacket {
+            version: 1,
+            data: vec![10, 20],
+        };
+        let encoded = encode(&packet).unwrap();
+        assert!(!has_tag(&encoded, CBOR_TAG_CPOP));
+        assert!(!has_tag(&encoded, CBOR_TAG_CWAR));
+    }
+
+    #[test]
+    fn test_has_tag_on_invalid_cbor() {
+        // Garbage bytes that aren't valid CBOR
+        assert!(!has_tag(&[0xFF, 0xFE, 0xFD], CBOR_TAG_CPOP));
+        assert!(!has_tag(&[], CBOR_TAG_CPOP));
+    }
+
+    #[test]
+    fn test_extract_tag_on_invalid_cbor() {
+        assert_eq!(extract_tag(&[0xFF, 0xFE, 0xFD]), None);
+        assert_eq!(extract_tag(&[]), None);
+    }
+
+    #[test]
+    fn test_decode_tagged_on_untagged_data_returns_missing_tag() {
+        let packet = TestPacket {
+            version: 1,
+            data: vec![],
+        };
+        let encoded = encode(&packet).unwrap();
+        let result: Result<TestPacket> = decode_tagged(&encoded, CBOR_TAG_CPOP);
+        assert!(matches!(result, Err(CodecError::MissingTag)));
+    }
+
+    #[test]
+    fn test_decode_invalid_cbor_returns_error() {
+        let garbage = &[0xFF, 0xFE, 0xFD, 0xFC];
+        let result: Result<TestPacket> = decode(garbage);
+        assert!(matches!(result, Err(CodecError::CborDecode(_))));
+    }
+
+    #[test]
+    fn test_compact_ref_roundtrip() {
+        let packet = TestPacket {
+            version: 3,
+            data: vec![99, 100],
+        };
+
+        let encoded = encode_compact_ref(&packet).unwrap();
+        assert!(has_tag(&encoded, CBOR_TAG_COMPACT_REF));
+        assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_COMPACT_REF));
+
+        let decoded: TestPacket = decode_compact_ref(&encoded).unwrap();
+        assert_eq!(packet, decoded);
+    }
+
+    #[test]
+    fn test_cwar_roundtrip() {
+        let packet = TestPacket {
+            version: 2,
+            data: vec![7, 8, 9],
+        };
+
+        let encoded = encode_cwar(&packet).unwrap();
+        assert!(has_tag(&encoded, CBOR_TAG_CWAR));
+
+        let decoded: TestPacket = decode_cwar(&encoded).unwrap();
+        assert_eq!(packet, decoded);
+    }
+
+    #[test]
+    fn test_encode_to_decode_from_cbor() {
+        let packet = TestPacket {
+            version: 5,
+            data: vec![1, 2, 3],
+        };
+
+        let mut buf = Vec::new();
+        encode_to(&packet, &mut buf).unwrap();
+        let decoded: TestPacket = decode_from(&buf[..]).unwrap();
+        assert_eq!(packet, decoded);
     }
 }

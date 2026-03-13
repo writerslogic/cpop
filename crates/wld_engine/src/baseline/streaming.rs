@@ -2,10 +2,15 @@
 
 use wld_protocol::baseline::StreamingStats;
 
+/// Welford's online algorithm extensions for `StreamingStats`.
 pub trait StreamingStatsExt {
+    /// Create a zeroed stats accumulator.
     fn new_empty() -> Self;
+    /// Incorporate a new sample using Welford's algorithm.
     fn update(&mut self, value: f64);
+    /// Return the sample standard deviation.
     fn std_dev(&self) -> f64;
+    /// Return the sample variance (Bessel-corrected).
     fn variance(&self) -> f64;
 }
 

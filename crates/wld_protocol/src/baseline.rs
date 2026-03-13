@@ -17,6 +17,7 @@ pub enum ConfidenceTier {
 }
 
 impl ConfidenceTier {
+    /// Map a cumulative session count to the appropriate confidence tier.
     pub fn from_session_count(count: u64) -> Self {
         match count {
             0..=4 => Self::PopulationReference,
@@ -42,6 +43,7 @@ pub struct StreamingStats {
     pub max: f64,
 }
 
+/// Per-session behavioral metrics for baseline comparison.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBehavioralSummary {
     /// 9-bin IKI histogram (edges: 0, 50, 100, 150, 200, 300, 500, 1000, 2000ms)
@@ -60,6 +62,7 @@ pub struct SessionBehavioralSummary {
     pub keystroke_count: u64,
 }
 
+/// Aggregate behavioral digest computed over multiple sessions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaselineDigest {
     #[serde(rename = "1")]
@@ -90,6 +93,7 @@ pub struct BaselineDigest {
     pub identity_fingerprint: Vec<u8>,
 }
 
+/// Baseline verification payload embedded in evidence packets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaselineVerification {
     /// None during enrollment phase.

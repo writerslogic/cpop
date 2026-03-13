@@ -9,19 +9,24 @@ use super::{default_parameters, VdfProof};
 
 const DEFAULT_NTP_SOURCES: &[&str] = &["pool.ntp.org", "time.apple.com"];
 
+/// Source of a forensic timestamp: network-verified, VDF-anchored, or offline.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TimeAnchor {
+    /// NTP/Roughtime verified timestamp.
     Network {
         timestamp: DateTime<Utc>,
         sources: Vec<String>,
     },
+    /// Offline: elapsed time bound by VDF proof output.
     Physical {
         duration_since_anchor: Duration,
         vdf_proof: [u8; 32],
     },
+    /// No time anchor available.
     Offline,
 }
 
+/// Forensic time source that prefers Roughtime, falling back to VDF-anchored local time.
 pub struct TimeKeeper {
     last_network_sync: Option<DateTime<Utc>>,
     start_instant: Instant,
@@ -34,6 +39,7 @@ impl Default for TimeKeeper {
 }
 
 impl TimeKeeper {
+    /// Create a new timekeeper, recording the current monotonic instant.
     pub fn new() -> Self {
         Self {
             last_network_sync: None,

@@ -43,41 +43,61 @@ const JITTER_KS_OPTIMAL: f64 = 0.8;
 const ENTANGLEMENT_MARGINAL_SCORE: f64 = 0.6;
 const ENTANGLEMENT_FAILED_SCORE: f64 = 0.2;
 
+/// Input data for cross-modal consistency analysis.
 pub struct CrossModalInput<'a> {
+    /// Edit events captured during the session.
     pub events: &'a [EventData],
+    /// Timing jitter samples, if available.
     pub jitter_samples: Option<&'a [SimpleJitterSample]>,
+    /// Final document length in characters.
     pub document_length: i64,
+    /// Total keystrokes recorded independently of jitter.
     pub total_keystrokes: i64,
+    /// Number of checkpoints in the evidence chain.
     pub checkpoint_count: u64,
+    /// Wall-clock duration of the authoring session (seconds).
     pub session_duration_sec: f64,
 }
 
+/// Result of cross-modal consistency analysis across evidence channels.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CrossModalResult {
     /// Overall consistency score [0.0, 1.0]; higher = more consistent.
     pub score: f64,
+    /// Individual check results for each cross-modal test.
     pub checks: Vec<CrossModalCheck>,
+    /// Aggregate verdict based on failed check count.
     pub verdict: CrossModalVerdict,
 }
 
+/// Result of a single cross-modal consistency check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossModalCheck {
+    /// Identifier for this check (e.g., "content_growth_rate").
     pub name: String,
+    /// Whether the check passed its threshold.
     pub passed: bool,
+    /// Normalized score [0.0, 1.0] for this check.
     pub score: f64,
+    /// Human-readable explanation of the result.
     pub detail: String,
 }
 
+/// Aggregate verdict from cross-modal consistency analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CrossModalVerdict {
+    /// All channels are mutually consistent.
     Consistent,
+    /// One or two checks failed; evidence is suspect but not conclusive.
     Marginal,
     /// Multiple channels are inconsistent -- likely forgery.
     Inconsistent,
+    /// Not enough data to perform cross-modal analysis.
     #[default]
     Insufficient,
 }
 
+/// Run all cross-modal consistency checks and produce an aggregate result.
 pub fn analyze_cross_modal(input: &CrossModalInput<'_>) -> CrossModalResult {
     let mut checks = Vec::new();
 
@@ -279,8 +299,8 @@ fn check_temporal_span_alignment(
     let score = if max_drift <= DRIFT_PERFECT_SEC {
         1.0
     } else if max_drift <= MAX_TEMPORAL_DRIFT_SEC {
-        1.0 - (max_drift - DRIFT_PERFECT_SEC) / (MAX_TEMPORAL_DRIFT_SEC - DRIFT_PERFECT_SEC)
-            * DRIFT_MODERATE_PENALTY
+        let denom = (MAX_TEMPORAL_DRIFT_SEC - DRIFT_PERFECT_SEC).max(f64::EPSILON);
+        1.0 - (max_drift - DRIFT_PERFECT_SEC) / denom * DRIFT_MODERATE_PENALTY
     } else {
         (DRIFT_LARGE_MAX_SCORE - (max_drift - MAX_TEMPORAL_DRIFT_SEC) / DRIFT_LARGE_DIVISOR)
             .clamp(0.0, DRIFT_LARGE_MAX_SCORE)

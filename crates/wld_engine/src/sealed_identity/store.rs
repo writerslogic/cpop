@@ -20,12 +20,14 @@ use crate::tpm::{ClockInfo, ProviderHandle};
 
 use super::types::*;
 
+/// Manage TPM-sealed identity keys with anti-rollback counter protection.
 pub struct SealedIdentityStore {
     provider: ProviderHandle,
     store_path: PathBuf,
 }
 
 impl SealedIdentityStore {
+    /// Create a store with the given TPM provider and data directory.
     pub fn new(provider: ProviderHandle, data_dir: &Path) -> Self {
         let store_path = data_dir.join(SEALED_BLOB_FILENAME);
         Self {
@@ -34,6 +36,7 @@ impl SealedIdentityStore {
         }
     }
 
+    /// Create a store by auto-detecting the best available TPM provider.
     pub fn auto_detect(data_dir: &Path) -> Self {
         let provider = crate::tpm::detect_provider();
         Self::new(provider, data_dir)
@@ -189,6 +192,7 @@ impl SealedIdentityStore {
         Ok(())
     }
 
+    /// Return `true` if the sealed blob exists and is bound to this device.
     pub fn is_bound(&self) -> bool {
         if !self.store_path.exists() {
             return false;
@@ -199,6 +203,7 @@ impl SealedIdentityStore {
         }
     }
 
+    /// Load and return the public identity (key + fingerprint) from the sealed blob.
     pub fn public_identity(&self) -> Result<MasterIdentity, SealedIdentityError> {
         let blob = self.load_blob()?;
         Ok(MasterIdentity {
@@ -222,12 +227,14 @@ impl SealedIdentityStore {
                     let challenge =
                         Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
                     let puf_response = puf.get_response(&challenge)?;
-                    let seed = crate::keyhierarchy::hkdf_expand(
+                    let mut derived = crate::keyhierarchy::hkdf_expand(
                         &puf_response,
                         IDENTITY_DOMAIN.as_bytes(),
                         b"master-seed",
                     )?;
-                    seed.to_vec()
+                    let v = derived.to_vec();
+                    derived.zeroize();
+                    v
                 }
             }
         } else {
@@ -264,6 +271,7 @@ impl SealedIdentityStore {
         Ok(())
     }
 
+    /// Determine the attestation tier based on provider hardware capabilities.
     pub fn attestation_tier(&self) -> AttestationTier {
         let caps = self.provider.capabilities();
         if caps.hardware_backed && caps.supports_sealing {
@@ -275,10 +283,12 @@ impl SealedIdentityStore {
         }
     }
 
+    /// Read the TPM clock info (boot count, restart count, uptime).
     pub fn clock_info(&self) -> Result<ClockInfo, SealedIdentityError> {
         self.provider.clock_info().map_err(SealedIdentityError::Tpm)
     }
 
+    /// Return a reference to the underlying TPM provider handle.
     pub fn provider(&self) -> &ProviderHandle {
         &self.provider
     }

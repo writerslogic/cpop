@@ -14,6 +14,7 @@ use crate::forensics::{ForensicVerdict, ForensicsEngine};
 #[cfg(feature = "wasm")]
 use ed25519_dalek::VerifyingKey;
 
+/// WASM-exported result of PoP evidence verification and forensic analysis.
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub struct VerificationResult {

@@ -26,6 +26,7 @@ static IDENTITY_CACHE: OnceLock<([u8; 16], String)> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static MIGRATION_ONCE: Once = Once::new();
 
+/// Platform keychain/keyring abstraction for storing identity secrets.
 pub struct SecureStorage;
 
 #[cfg(not(target_os = "macos"))]
@@ -354,31 +355,36 @@ impl SecureStorage {
         });
     }
 
+    /// Store the identity seed in the platform keychain.
     pub fn save_seed(seed: &[u8]) -> Result<()> {
         Self::save(SEED_ACCOUNT, seed)
     }
 
-    pub fn load_seed() -> Result<Option<Vec<u8>>> {
+    /// Load the identity seed from the platform keychain, with caching.
+    pub fn load_seed() -> Result<Option<Zeroizing<Vec<u8>>>> {
         if let Some(cached) = SEED_CACHE.get() {
-            return Ok(Some(cached.as_slice().to_vec()));
+            return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
         }
         let res = Self::load(SEED_ACCOUNT)?;
         if let Some(data) = res {
             let _ = SEED_CACHE.set(ProtectedBuf::new(data.to_vec()));
-            Ok(Some(data.to_vec()))
+            Ok(Some(data))
         } else {
             Ok(None)
         }
     }
 
+    /// Delete the identity seed from the platform keychain.
     pub fn delete_seed() -> Result<()> {
         Self::delete(SEED_ACCOUNT)
     }
 
+    /// Store the HMAC key in the platform keychain.
     pub fn save_hmac_key(key: &[u8]) -> Result<()> {
         Self::save(HMAC_ACCOUNT, key)
     }
 
+    /// Load the HMAC key from the platform keychain, with caching.
     pub fn load_hmac_key() -> Result<Option<Zeroizing<Vec<u8>>>> {
         if let Some(cached) = HMAC_CACHE.get() {
             return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
@@ -392,10 +398,12 @@ impl SecureStorage {
         }
     }
 
+    /// Store the mnemonic phrase in the platform keychain.
     pub fn save_mnemonic(phrase: &str) -> Result<()> {
         Self::save(MNEMONIC_ACCOUNT, phrase.as_bytes())
     }
 
+    /// Load the mnemonic phrase from the platform keychain, with caching.
     pub fn load_mnemonic() -> Result<Option<String>> {
         if let Some(cached) = MNEMONIC_CACHE.get() {
             return Ok(Some(cached.clone()));
@@ -411,12 +419,14 @@ impl SecureStorage {
         }
     }
 
+    /// Store the device ID and machine ID in the platform keychain.
     pub fn save_device_identity(device_id: &[u8; 16], machine_id: &str) -> Result<()> {
         Self::save(DEVICE_ID_ACCOUNT, device_id)?;
         Self::save(MACHINE_ID_ACCOUNT, machine_id.as_bytes())?;
         Ok(())
     }
 
+    /// Load the device identity (device_id, machine_id) from the platform keychain.
     pub fn load_device_identity() -> Result<Option<([u8; 16], String)>> {
         if let Some(cached) = IDENTITY_CACHE.get() {
             return Ok(Some(cached.clone()));
@@ -441,16 +451,19 @@ impl SecureStorage {
         }
     }
 
+    /// Delete the device identity from the platform keychain.
     pub fn delete_device_identity() -> Result<()> {
         Self::delete(DEVICE_ID_ACCOUNT)?;
         Self::delete(MACHINE_ID_ACCOUNT)?;
         Ok(())
     }
 
+    /// Store the fingerprint key in the platform keychain.
     pub fn save_fingerprint_key(key: &[u8]) -> Result<()> {
         Self::save(FINGERPRINT_KEY_ACCOUNT, key)
     }
 
+    /// Load the fingerprint key from the platform keychain, with caching.
     pub fn load_fingerprint_key() -> Result<Option<Vec<u8>>> {
         if let Some(cached) = FINGERPRINT_KEY_CACHE.get() {
             return Ok(Some(cached.as_slice().to_vec()));

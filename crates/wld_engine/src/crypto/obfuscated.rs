@@ -26,6 +26,7 @@ pub struct Obfuscated<T> {
 }
 
 impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
+    /// Serialize and XOR-mask the value with a fresh rolling key.
     pub fn new(value: &T) -> Self {
         let mut serialized = bincode::serde::encode_to_vec(value, bincode::config::standard())
             .expect("serialization failed");
@@ -40,6 +41,7 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
         }
     }
 
+    /// Unmask and deserialize the stored value.
     pub fn reveal(&self) -> T {
         let mut unmasked = Self::xor_data(&self.masked_data, self.mask_key);
 

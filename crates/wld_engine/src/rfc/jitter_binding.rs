@@ -346,6 +346,7 @@ pub struct LabyrinthStructure {
 }
 
 impl JitterBinding {
+    /// Create a jitter binding from its required components.
     pub fn new(
         entropy_commitment: EntropyCommitment,
         sources: Vec<SourceDescriptor>,
@@ -363,16 +364,19 @@ impl JitterBinding {
         }
     }
 
+    /// Attach raw interval data (Enhanced/Maximum tiers).
     pub fn with_raw_intervals(mut self, intervals: RawIntervals) -> Self {
         self.raw_intervals = Some(intervals);
         self
     }
 
+    /// Attach Galton Invariant and Reflex Gate probe results.
     pub fn with_active_probes(mut self, probes: ActiveProbes) -> Self {
         self.active_probes = Some(probes);
         self
     }
 
+    /// Attach Takens' delay-coordinate embedding analysis.
     pub fn with_labyrinth(mut self, labyrinth: LabyrinthStructure) -> Self {
         self.labyrinth_structure = Some(labyrinth);
         self
@@ -531,6 +535,7 @@ impl JitterBinding {
         errors
     }
 
+    /// Return `true` if all validation checks pass.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }

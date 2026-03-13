@@ -7,26 +7,35 @@ use wld_engine::DaemonManager;
 
 use crate::util::ensure_dirs;
 
+/// Acquire the PID file, printing "already running" and returning `Ok(true)` if
+/// another instance holds the lock.
+fn acquire_or_report(daemon_manager: &DaemonManager) -> Result<bool> {
+    let acquired = daemon_manager
+        .acquire_pid_file(std::process::id())
+        .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
+    if !acquired {
+        let status = daemon_manager.status();
+        if let Some(pid) = status.pid {
+            println!("Daemon is already running (PID: {}).", pid);
+        } else {
+            println!("Daemon is already running.");
+        }
+        println!();
+        println!("Use 'wld status' for details or 'wld stop' to stop.");
+    }
+    Ok(!acquired)
+}
+
 pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
     let config = ensure_dirs()?;
 
     let daemon_manager = DaemonManager::new(&config.data_dir);
 
+    if acquire_or_report(&daemon_manager)? {
+        return Ok(());
+    }
+
     if foreground {
-        let acquired = daemon_manager
-            .acquire_pid_file(std::process::id())
-            .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
-        if !acquired {
-            let status = daemon_manager.status();
-            if let Some(pid) = status.pid {
-                println!("Daemon is already running (PID: {}).", pid);
-            } else {
-                println!("Daemon is already running.");
-            }
-            println!();
-            println!("Use 'wld status' for details or 'wld stop' to stop.");
-            return Ok(());
-        }
         eprintln!("Starting WritersLogic daemon in foreground...");
         eprintln!("Press Ctrl+C to stop.");
         eprintln!();
@@ -39,21 +48,6 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         }
         result
     } else {
-        let acquired = daemon_manager
-            .acquire_pid_file(std::process::id())
-            .map_err(|e| anyhow!("Failed to acquire PID file: {}", e))?;
-        if !acquired {
-            let status = daemon_manager.status();
-            if let Some(pid) = status.pid {
-                println!("Daemon is already running (PID: {}).", pid);
-            } else {
-                println!("Daemon is already running.");
-            }
-            println!();
-            println!("Use 'wld status' for details or 'wld stop' to stop.");
-            return Ok(());
-        }
-
         eprintln!("Starting WritersLogic daemon...");
 
         let exe = std::env::current_exe().context("Failed to determine current executable path")?;

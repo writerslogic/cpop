@@ -14,6 +14,7 @@ pub struct ObfuscatedString {
 }
 
 impl ObfuscatedString {
+    /// XOR-mask the string with a random 8-byte nonce.
     pub fn new(s: &str) -> Self {
         let mut nonce = [0u8; 8];
         rand::rng().fill_bytes(&mut nonce);
@@ -24,6 +25,7 @@ impl ObfuscatedString {
         Self { nonce, data }
     }
 
+    /// Unmask and return the plaintext string.
     pub fn reveal(&self) -> String {
         let mut data = self.data.clone();
         Self::xor(&mut data, &self.nonce);

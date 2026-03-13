@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Raw keystroke metrics used to detect copy-type transcription attacks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionData {
     pub total_keystrokes: usize,
@@ -20,11 +21,13 @@ pub struct TranscriptionData {
     pub final_char_count: usize,
 }
 
+/// Detect transcription attacks by analyzing linearity, revision density, and cursor behavior.
 pub struct TranscriptionDetector {
     data: TranscriptionData,
 }
 
 impl TranscriptionDetector {
+    /// Create a detector from a clone of the given transcription data.
     pub fn from_data(data: &TranscriptionData) -> Self {
         Self { data: data.clone() }
     }
@@ -71,6 +74,7 @@ impl TranscriptionDetector {
         signals.iter().filter(|&&s| s).count() >= 2
     }
 
+    /// Run full transcription analysis and return metrics with explanation.
     pub fn analyze(&self) -> TranscriptionAnalysis {
         let linearity = self.calculate_linearity_score();
         let revision_density = self.calculate_revision_density();
@@ -105,6 +109,7 @@ impl TranscriptionDetector {
     }
 }
 
+/// Result of transcription detection analysis with all computed metrics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionAnalysis {
     pub linearity_score: f64,

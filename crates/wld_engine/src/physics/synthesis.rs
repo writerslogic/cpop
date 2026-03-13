@@ -8,12 +8,19 @@ use sha2::{Digest, Sha256};
 
 /// The "Contextual Salt" generated from multi-source physical synthesis.
 pub struct PhysicalContext {
+    /// CPU counter delta measurement.
     pub clock_skew: u64,
+    /// TSC ticks during a 1ms busy-wait (thermal proxy).
     pub thermal_proxy: u32,
+    /// Hardware PUF fingerprint.
     pub silicon_puf: [u8; 32],
+    /// Filesystem I/O latency in nanoseconds.
     pub io_latency_ns: u64,
+    /// Hash of ambient system entropy.
     pub ambient_hash: [u8; 32],
+    /// Whether a hypervisor was detected.
     pub is_virtualized: bool,
+    /// SHA-256 hash synthesizing all physical measurements.
     pub combined_hash: [u8; 32],
 }
 
