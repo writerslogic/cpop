@@ -155,8 +155,8 @@ impl Chain {
 
         checkpoint.validate_timestamp()?;
         checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint.clone());
-        Ok(checkpoint)
+        self.checkpoints.push(checkpoint);
+        Ok(self.checkpoints.last().expect("just pushed").clone())
     }
 
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
@@ -211,8 +211,8 @@ impl Chain {
 
         checkpoint.validate_timestamp()?;
         checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint.clone());
-        Ok(checkpoint)
+        self.checkpoints.push(checkpoint);
+        Ok(self.checkpoints.last().expect("just pushed").clone())
     }
 
     /// Commit with full RFC-compliant structures (draft-condrey-rats-pop-01).
@@ -351,8 +351,8 @@ impl Chain {
 
         checkpoint.validate_timestamp()?;
         checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint.clone());
-        Ok(checkpoint)
+        self.checkpoints.push(checkpoint);
+        Ok(self.checkpoints.last().expect("just pushed").clone())
     }
 
     /// Verify the chain, returning `Err` on failure.

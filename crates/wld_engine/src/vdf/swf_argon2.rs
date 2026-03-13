@@ -298,8 +298,11 @@ fn fiat_shamir_challenge(
 fn select_indices(sample_seed: &[u8; 32], num_leaves: u64, count: usize) -> Vec<u64> {
     use hkdf::Hkdf;
 
+    use std::collections::HashSet;
+
     let hk = Hkdf::<Sha256>::from_prk(sample_seed).expect("sample seed is valid PRK length");
     let mut indices = Vec::with_capacity(count);
+    let mut seen = HashSet::with_capacity(count);
     let mut j: u32 = 0;
 
     // Rejection sampling to eliminate modulo bias
@@ -316,7 +319,7 @@ fn select_indices(sample_seed: &[u8; 32], num_leaves: u64, count: usize) -> Vec<
             continue;
         }
         let idx = (raw % n) as u64;
-        if !indices.contains(&idx) {
+        if seen.insert(idx) {
             indices.push(idx);
         }
     }

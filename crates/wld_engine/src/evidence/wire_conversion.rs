@@ -24,9 +24,21 @@ const JITTER_QUANTIZATION_MS: u64 = 5;
 
 /// Convert a checkpoint chain to a spec-conformant `EvidencePacketWire`.
 pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
+    // Single pass: detect jitter presence and physical-state coverage for tier selection
+    let (has_jitter, all_have_physical) =
+        chain
+            .checkpoints
+            .iter()
+            .fold((false, true), |(any_jitter, all_phys), cp| {
+                let has_j = cp.rfc_jitter.is_some();
+                let has_p = cp
+                    .jitter_binding
+                    .as_ref()
+                    .is_some_and(|jb| jb.physics_seed.is_some());
+                (any_jitter || has_j, all_phys && has_p)
+            });
     // ENHANCED/MAXIMUM tiers use entangled algorithm 21 per §entangled-mode-requirement
-    let has_jitter_any = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
-    let use_entangled = has_jitter_any;
+    let use_entangled = has_jitter;
 
     let checkpoints: Vec<CheckpointWire> = chain
         .checkpoints
@@ -53,13 +65,7 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
 
     let attestation_tier = Some(AttestationTier::SoftwareOnly);
     // ENHANCED = jitter binding; MAXIMUM = jitter + physical state on all checkpoints
-    let has_jitter = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
-    let all_have_physical = has_jitter
-        && chain.checkpoints.iter().all(|cp| {
-            cp.jitter_binding
-                .as_ref()
-                .is_some_and(|jb| jb.physics_seed.is_some())
-        });
+    let all_have_physical = has_jitter && all_have_physical;
     let content_tier = if all_have_physical {
         Some(ContentTier::Maximum)
     } else if has_jitter {

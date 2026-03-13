@@ -54,15 +54,6 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
 
     metrics.median_iki_ns = compute_median(&ikis);
 
-    let mut data = Data::new(ikis.clone());
-    metrics.percentiles = [
-        data.percentile(10),
-        data.percentile(25),
-        data.percentile(50),
-        data.percentile(75),
-        data.percentile(90),
-    ];
-
     metrics.is_robotic = metrics.coefficient_of_variation < ROBOTIC_CV_THRESHOLD;
 
     let (bursts, pauses) = detect_bursts_and_pauses(&ikis);
@@ -77,6 +68,15 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     if !pauses.is_empty() {
         metrics.avg_pause_duration_ns = pauses.iter().sum::<f64>() / pauses.len() as f64;
     }
+
+    let mut data = Data::new(ikis);
+    metrics.percentiles = [
+        data.percentile(10),
+        data.percentile(25),
+        data.percentile(50),
+        data.percentile(75),
+        data.percentile(90),
+    ];
 
     metrics
 }

@@ -4,6 +4,7 @@
 
 use super::{AuthorFingerprint, ProfileId};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Pairwise fingerprint comparison result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,6 +276,10 @@ impl BatchComparator {
             return self.find_clusters(&fingerprints[..500]);
         }
 
+        // O(1) lookup by ProfileId, avoiding repeated linear scans.
+        let fp_by_id: HashMap<&ProfileId, &AuthorFingerprint> =
+            fingerprints.iter().map(|f| (&f.id, f)).collect();
+
         let mut assigned = vec![false; n];
         let mut clusters = Vec::new();
 
@@ -307,10 +312,7 @@ impl BatchComparator {
                 let mut count = 0;
                 for (idx, m1) in cluster.members.iter().enumerate() {
                     for m2 in cluster.members.iter().skip(idx + 1) {
-                        if let (Some(f1), Some(f2)) = (
-                            fingerprints.iter().find(|f| &f.id == m1),
-                            fingerprints.iter().find(|f| &f.id == m2),
-                        ) {
+                        if let (Some(&f1), Some(&f2)) = (fp_by_id.get(m1), fp_by_id.get(m2)) {
                             total_sim += compare_fingerprints(f1, f2).similarity;
                             count += 1;
                         }

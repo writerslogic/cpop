@@ -475,9 +475,9 @@ impl LinuxKeystrokeCapture {
 
         let device_info = devices.read_recover().get(&path).cloned();
         let is_physical = device_info.as_ref().is_some_and(|d| d.is_physical);
-        let device_id = device_info
+        let device_id: Option<Arc<str>> = device_info
             .as_ref()
-            .map(|d| format!("{:04x}:{:04x}", d.vendor_id, d.product_id));
+            .map(|d| Arc::from(format!("{:04x}:{:04x}", d.vendor_id, d.product_id)));
         let transport_type = device_info
             .as_ref()
             .map(|d| TransportType::from_linux_phys(d.phys.as_deref()));
@@ -800,9 +800,9 @@ impl LinuxMouseCapture {
 
         let device_info = devices.read_recover().get(&path).cloned();
         let is_physical = device_info.as_ref().is_some_and(|d| d.is_physical);
-        let device_id = device_info
+        let device_id: Option<Arc<str>> = device_info
             .as_ref()
-            .map(|d| format!("{:04x}:{:04x}", d.vendor_id, d.product_id));
+            .map(|d| Arc::from(format!("{:04x}:{:04x}", d.vendor_id, d.product_id)));
 
         let mut pending_dx: f64 = 0.0;
         let mut pending_dy: f64 = 0.0;

@@ -2,6 +2,7 @@
 
 use crate::platform::device::TransportType;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Captured keystroke with timing, source device, and hardware verification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,7 +12,7 @@ pub struct KeystrokeEvent {
     pub zone: u8,
     pub char_value: Option<char>,
     pub is_hardware: bool,
-    pub device_id: Option<String>,
+    pub device_id: Option<Arc<str>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_type: Option<TransportType>,
 }
@@ -46,7 +47,7 @@ impl KeystrokeEvent {
         keycode: u16,
         zone: u8,
         is_hardware: bool,
-        device_id: Option<String>,
+        device_id: Option<Arc<str>>,
         transport_type: Option<TransportType>,
     ) -> Self {
         Self {
@@ -71,7 +72,7 @@ pub struct MouseEvent {
     pub dy: f64,
     pub is_idle: bool,
     pub is_hardware: bool,
-    pub device_id: Option<String>,
+    pub device_id: Option<Arc<str>>,
 }
 
 impl MouseEvent {
