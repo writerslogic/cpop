@@ -29,7 +29,7 @@ The format supports tiered evidence per the `content-tier` specification:
 | JSON Key | CDDL Key | Type | Description |
 |:---------|:---------|:-----|:------------|
 | `version` | 1 | uint | Protocol version (MUST be 1) |
-| `profile_uri` | 2 | uri | EAT profile URI (`urn:ietf:params:rats:eat:profile:pop:1.0`) |
+| `profile_uri` | 2 | uri | PoP profile URI (`urn:ietf:params:pop:profile:1.0`) |
 | `packet_id` | 3 | uuid | Unique identifier for this evidence packet |
 | `created_at` | 4 | timestamp | Packet generation time (UTC) |
 | `document` | 5 | object | Reference to the witnessed document ([DocumentRef](#documentref)) |
