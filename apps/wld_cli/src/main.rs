@@ -19,7 +19,6 @@ mod cmd_session;
 mod cmd_status;
 mod cmd_track;
 mod cmd_verify;
-mod cmd_watch;
 mod output;
 mod smart_defaults;
 mod spec;
@@ -73,13 +72,13 @@ async fn run() -> Result<()> {
         }
     }
 
+    // Auto-initialize if needed (for commands that require it)
     let needs_init = matches!(
         &cli.command,
         Some(Commands::Log { .. })
             | Some(Commands::Export { .. })
             | Some(Commands::Verify { .. })
             | Some(Commands::Track { .. })
-            | Some(Commands::Watch { .. })
             | Some(Commands::Calibrate)
             | Some(Commands::List)
             | Some(Commands::Fingerprint { .. })
@@ -90,10 +89,12 @@ async fn run() -> Result<()> {
     if needs_init {
         if let Ok(dir) = util::writerslogic_dir() {
             if !dir.join("signing_key").exists() {
-                eprintln!("WritersLogic is not initialized.");
+                if !out.quiet {
+                    eprintln!("First run — initializing WritersLogic...");
+                    eprintln!();
+                }
+                cmd_init::cmd_init()?;
                 eprintln!();
-                eprintln!("Run 'wld init' to get started.");
-                std::process::exit(1);
             }
         }
     }
@@ -148,9 +149,6 @@ async fn run() -> Result<()> {
         Some(Commands::List) => {
             cmd_status::cmd_list(&out)?;
         }
-        Some(Commands::Watch { action, folder }) => {
-            cmd_watch::cmd_watch_smart(action, folder).await?;
-        }
         Some(Commands::Start { foreground }) => {
             cmd_daemon::cmd_start(foreground).await?;
         }
@@ -172,12 +170,7 @@ async fn run() -> Result<()> {
         None => {
             if let Some(path) = cli.path {
                 let resolved = smart_defaults::normalize_path(&path)?;
-                if resolved.is_dir() {
-                    cmd_watch::cmd_watch_smart(None, Some(resolved.clone())).await?;
-                    cmd_watch::cmd_watch_smart(Some(crate::cli::WatchAction::Start), None).await?;
-                } else {
-                    cmd_track::cmd_track_smart(None, Some(resolved)).await?;
-                }
+                cmd_track::cmd_track_smart(None, Some(resolved)).await?;
             } else {
                 cmd_status::show_quick_status(&out)?;
             }

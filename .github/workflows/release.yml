@@ -105,7 +105,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }} -p wld_cli
 
       - name: Sign macOS binaries
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -149,7 +149,7 @@ jobs:
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
 
       - name: Notarize macOS binaries
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}

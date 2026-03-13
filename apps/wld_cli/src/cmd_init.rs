@@ -118,17 +118,30 @@ pub(crate) fn cmd_init() -> Result<()> {
         println!("  Database: events.db (tamper-evident)");
     }
 
+    // Auto-calibrate VDF
+    let mut config = crate::util::ensure_dirs()?;
+    if config.vdf.iterations_per_second == 0 {
+        println!("Calibrating VDF for your CPU...");
+        let calibrated = wld_engine::vdf::params::calibrate(std::time::Duration::from_secs(2))
+            .map_err(|e| anyhow!("Calibration failed: {}", e))?;
+        config.vdf.iterations_per_second = calibrated.iterations_per_second;
+        config.vdf.min_iterations = calibrated.min_iterations;
+        config.vdf.max_iterations = calibrated.max_iterations;
+        config.persist()?;
+        println!(
+            "  VDF speed: {} iterations/sec",
+            calibrated.iterations_per_second
+        );
+    }
+
     println!();
     println!("============================================================");
     println!("  WritersLogic initialized successfully!");
     println!("============================================================");
     println!();
-    println!("NEXT STEPS:");
-    println!("  1. Calibrate VDF:  wld calibrate");
-    println!("  2. Checkpoint:     wld commit <file> -m \"message\"");
-    println!("  3. Track writing:  wld <file>");
-    println!("  4. Watch folder:   wld <folder>");
-    println!("  5. Export proof:   wld export <file> -t standard");
+    println!("Start tracking with:");
+    println!("  wld <file>           Track a single file");
+    println!("  wld <folder>         Track all files in a folder");
 
     Ok(())
 }

@@ -55,3 +55,4 @@ vendor/
 # Supabase (deployment config — keep private)
 supabase/
 todo.md
+docs/demo-script.md

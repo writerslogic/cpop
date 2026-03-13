@@ -86,7 +86,7 @@ install_wld() {
     fi
     info "Latest version: $version"
 
-    archive_name="wld-${version}-${platform}.tar.gz"
+    archive_name="writerslogic-${version}-${platform}.tar.gz"
     url="https://github.com/${REPO}/releases/download/${version}/${archive_name}"
 
     info "Downloading $archive_name..."
@@ -121,17 +121,19 @@ install_wld() {
 
     info "WritersLogic installed successfully!"
     echo ""
-    echo "To get started:"
-    echo "  wld init        # Initialize WritersLogic"
-    echo "  wld calibrate   # Calibrate VDF for your machine"
-    echo "  wld --help      # Show all commands"
-    echo ""
 
-    # Verify installation
+    # Verify installation and auto-initialize
     if command -v wld &> /dev/null; then
         info "Installed version: $(wld --version)"
+        echo ""
+        info "Initializing WritersLogic..."
+        wld init || warn "Auto-initialization failed. Run 'wld init' manually."
     else
         warn "wld installed but not in PATH. Add $INSTALL_DIR to your PATH."
+        echo ""
+        echo "After adding to PATH, run:"
+        echo "  wld init        # Initialize (or just use any command — it auto-initializes)"
+        echo "  wld --help      # Show all commands"
     fi
 }
 

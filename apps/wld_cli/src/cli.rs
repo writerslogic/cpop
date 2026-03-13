@@ -20,14 +20,16 @@ use std::path::PathBuf;
 )]
 #[command(after_help = "\
 GETTING STARTED:\n  \
-    1. Initialize:  wld init\n  \
-    2. Calibrate:   wld calibrate\n  \
-    3. Checkpoint:  wld commit <file> -m \"message\"\n  \
-    4. Export:      wld export <file> -t standard\n\n\
-SHORTCUTS:\n  \
-    wld <file>       Track keystrokes on a file\n  \
-    wld <folder>     Watch a folder for changes\n  \
-    wld commit       Checkpoint (select from recent files)\n\n\
+    wld <file>         Start tracking a file (auto-initializes on first run)\n  \
+    wld <folder>       Track all files in a folder\n  \
+    wld commit         Checkpoint (select from recent files)\n  \
+    wld export <file>  Export evidence packet\n\n\
+EXAMPLES:\n  \
+    wld essay.txt                Track keystrokes on essay.txt\n  \
+    wld novel.scriv              Track a Scrivener project\n  \
+    wld ./thesis/                Track all files in thesis/\n  \
+    wld commit essay.txt -m \"Draft 1\"\n  \
+    wld export essay.txt -t standard\n\n\
 WHEN TO CHECKPOINT:\n  \
     - After completing a section or paragraph\n  \
     - Before and after major edits\n  \
@@ -40,7 +42,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// File to track or folder to watch (shorthand for `wld track <file>` / `wld watch <folder>`)
+    /// File, folder, or project to track (shorthand for `wld track start <path>`)
     pub path: Option<PathBuf>,
 
     /// Output results as JSON (for scripting and CI pipelines)
@@ -54,12 +56,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Initialize WritersLogic (keys, database, identity)
+    /// Initialize WritersLogic (keys, database, VDF calibration)
     #[command(after_help = "\
 WHAT IT CREATES:\n  \
     ~/.writerslogic/signing_key     Your private key (keep secure!)\n  \
     ~/.writerslogic/events.db       Tamper-evident checkpoint database\n\n\
-NEXT: Run 'wld calibrate' to optimize for your CPU.")]
+Also calibrates VDF speed for your CPU.\n\
+This runs automatically on first use — you rarely need to call it manually.")]
     Init {},
     /// Create a cryptographic checkpoint of a document
     #[command(
@@ -143,27 +146,34 @@ EXAMPLES:\n  \
         #[command(subcommand)]
         action: PresenceAction,
     },
-    /// Track keystrokes on a document (timing + behavioral evidence)
+    /// Track keystrokes on a file, folder, or project
     #[command(after_help = "\
 EXAMPLES:\n  \
-    wld track essay.txt          Start tracking a file\n  \
+    wld track essay.txt          Track a single file\n  \
+    wld track ./thesis/          Track all files in a folder\n  \
+    wld track novel.scriv        Track a Scrivener project\n  \
     wld track stop               Stop and save session\n  \
     wld track status             Check active session\n  \
     wld track export <id>        Export session evidence\n\n\
+SUPPORTED PROJECTS:\n  \
+    .scriv         Scrivener projects\n  \
+    .textbundle    TextBundle packages\n  \
+    directories    Any folder with text files\n\n\
 PRIVACY: Only counts keystrokes and timing - NOT what you type.")]
     #[command(args_conflicts_with_subcommands = true)]
     Track {
         #[command(subcommand)]
         action: Option<TrackAction>,
-        /// File to track (shorthand for `wld track start <file>`)
+        /// File, folder, or project to track (shorthand for `wld track start <path>`)
         file: Option<PathBuf>,
     },
-    /// Calibrate VDF speed for your CPU
+    /// Re-calibrate VDF speed for your CPU
     #[command(after_help = "\
 WHY: VDF proofs need to know your CPU speed to calculate elapsed time.\n\n\
 WHEN TO RE-CALIBRATE:\n  \
     - After upgrading your CPU\n  \
-    - When moving to a different machine")]
+    - When moving to a different machine\n\n\
+NOTE: Calibration runs automatically during `wld init` and on first track.")]
     Calibrate,
     /// Show WritersLogic status
     Status,
@@ -179,20 +189,6 @@ EXAMPLES:\n  \
     Completions {
         /// Shell to generate completions for
         shell: clap_complete::Shell,
-    },
-    /// Watch a folder and auto-checkpoint on file changes
-    #[command(after_help = "\
-EXAMPLES:\n  \
-    wld watch add ./documents\n  \
-    wld watch add ./thesis -p \"*.tex,*.bib\"\n  \
-    wld watch start\n  \
-    wld watch                  (start watching if folders configured)\n\n\
-DEFAULT PATTERNS: *.txt,*.md,*.rtf,*.doc,*.docx")]
-    #[command(args_conflicts_with_subcommands = true)]
-    Watch {
-        #[command(subcommand)]
-        action: Option<WatchAction>,
-        folder: Option<PathBuf>,
     },
     /// Start the WritersLogic daemon
     #[command(after_help = "\
@@ -277,21 +273,6 @@ EXAMPLES:\n  \
     },
 }
 
-#[derive(Subcommand, Clone)]
-pub enum WatchAction {
-    Add {
-        path: Option<PathBuf>,
-        #[arg(short, long, default_value = "*.txt,*.md,*.rtf,*.doc,*.docx")]
-        patterns: String,
-    },
-    Remove {
-        path: PathBuf,
-    },
-    List,
-    Start,
-    Status,
-}
-
 #[derive(Subcommand)]
 pub enum PresenceAction {
     Start,
@@ -302,18 +283,25 @@ pub enum PresenceAction {
 
 #[derive(Subcommand)]
 pub enum TrackAction {
+    /// Start tracking a file, folder, or project
     Start {
-        file: PathBuf,
+        /// File, folder, or writing app project (.scriv, .textbundle)
+        path: PathBuf,
+        /// Glob patterns to filter files (e.g. "*.txt,*.md") — directory mode only
+        #[arg(short, long, default_value = "")]
+        patterns: String,
         #[cfg(feature = "wld_jitter")]
         #[arg(long, help = "Use hardware entropy when available")]
         wld_jitter: bool,
     },
+    /// Stop the active tracking session
     Stop,
+    /// Show active session status
     Status,
+    /// List saved tracking sessions
     List,
-    Export {
-        session_id: String,
-    },
+    /// Export session evidence
+    Export { session_id: String },
 }
 
 #[derive(Subcommand)]

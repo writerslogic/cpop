@@ -544,47 +544,6 @@ fn test_cli_session_list() {
 }
 
 #[test]
-fn test_cli_watch_list_empty() {
-    let env = CliTestEnv::new();
-    env.init();
-
-    let stdout = env.run_expect_success(&["watch", "list"], None);
-    assert!(
-        stdout.contains("No folders") || stdout.contains("watch"),
-        "Should indicate no watched folders"
-    );
-}
-
-#[test]
-fn test_cli_watch_add_remove() {
-    let env = CliTestEnv::new();
-    env.init();
-
-    let watch_dir = env.dir.path().join("docs");
-    fs::create_dir_all(&watch_dir).unwrap();
-
-    let stdout = env.run_expect_success(&["watch", "add", watch_dir.to_str().unwrap()], None);
-    assert!(
-        stdout.contains("Added") || stdout.contains("watch"),
-        "Should confirm add"
-    );
-
-    let stdout = env.run_expect_success(&["watch", "list"], None);
-    assert!(
-        stdout.contains("docs") || stdout.contains("Watched"),
-        "Should show watched folder"
-    );
-
-    env.run_expect_success(&["watch", "remove", watch_dir.to_str().unwrap()], None);
-
-    let stdout = env.run_expect_success(&["watch", "list"], None);
-    assert!(
-        stdout.contains("No folders") || !stdout.contains("docs"),
-        "Folder should be removed"
-    );
-}
-
-#[test]
 fn test_cli_identity_json() {
     let env = CliTestEnv::new();
     env.init();

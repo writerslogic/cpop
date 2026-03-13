@@ -2,10 +2,12 @@
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use glob::Pattern;
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +24,211 @@ use crate::util::{
     ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store,
     validate_session_id,
 };
+
+/// Known text/document file extensions that should be tracked.
+const TEXT_EXTENSIONS: &[&str] = &[
+    "txt", "md", "markdown", "rtf", "rtfd", "tex", "latex", "bib", "docx", "odt", "org", "rst",
+    "adoc", "asciidoc", "fountain", "fdx", "mmd", "textile", "html", "htm", "xml", "json", "yaml",
+    "yml", "toml", "rs", "py", "js", "ts", "go", "c", "cpp", "h", "hpp", "java", "rb", "swift",
+    "kt", "cs", "sh", "zsh", "bash", "css", "scss", "less", "svg", "sql", "graphql", "proto",
+    "cfg", "ini", "conf", "env",
+];
+
+/// Directories to skip when recursively scanning.
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "target",
+    "build",
+    "dist",
+    "__pycache__",
+    ".DS_Store",
+    ".Trash",
+    ".cache",
+    ".tmp",
+    "Snapshots", // Scrivener snapshots
+];
+
+/// Target classification for tracking.
+enum TrackTarget {
+    SingleFile(PathBuf),
+    Directory(PathBuf),
+    ScrivenerPackage(PathBuf),
+    TextBundle(PathBuf),
+}
+
+impl TrackTarget {
+    fn root(&self) -> &Path {
+        match self {
+            Self::SingleFile(p)
+            | Self::Directory(p)
+            | Self::ScrivenerPackage(p)
+            | Self::TextBundle(p) => p,
+        }
+    }
+
+    fn display_name(&self) -> String {
+        let root = self.root();
+        let name = root.file_name().unwrap_or_default().to_string_lossy();
+        match self {
+            Self::SingleFile(_) => name.into_owned(),
+            Self::Directory(_) => format!("{}/", name),
+            Self::ScrivenerPackage(_) => format!("{} (Scrivener)", name),
+            Self::TextBundle(_) => format!("{} (TextBundle)", name),
+        }
+    }
+
+    fn is_single_file(&self) -> bool {
+        matches!(self, Self::SingleFile(_))
+    }
+
+    fn mode_str(&self) -> &'static str {
+        match self {
+            Self::SingleFile(_) => "file",
+            Self::Directory(_) => "directory",
+            Self::ScrivenerPackage(_) => "scrivener",
+            Self::TextBundle(_) => "textbundle",
+        }
+    }
+}
+
+fn classify_target(path: &Path) -> Result<TrackTarget> {
+    if !path.exists() {
+        return Err(anyhow!(
+            "Not found: {}\n\nCheck that the path exists.",
+            path.display()
+        ));
+    }
+
+    let abs = fs::canonicalize(path)
+        .with_context(|| format!("Cannot resolve path: {}", path.display()))?;
+
+    if abs.is_file() {
+        return Ok(TrackTarget::SingleFile(abs));
+    }
+
+    if !abs.is_dir() {
+        return Err(anyhow!("Not a file or directory: {}", path.display()));
+    }
+
+    let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext {
+        "scriv" => Ok(TrackTarget::ScrivenerPackage(abs)),
+        "textbundle" => Ok(TrackTarget::TextBundle(abs)),
+        _ => Ok(TrackTarget::Directory(abs)),
+    }
+}
+
+fn is_trackable_file(path: &Path) -> bool {
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+
+    if name.starts_with('.') || name.ends_with('~') || name.ends_with(".tmp") {
+        return false;
+    }
+
+    // Check parent directories for ignored names
+    for ancestor in path.ancestors().skip(1) {
+        if let Some(dir_name) = ancestor.file_name().and_then(|n| n.to_str()) {
+            if IGNORED_DIRS.contains(&dir_name) {
+                return false;
+            }
+        }
+    }
+
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => TEXT_EXTENSIONS.contains(&ext.to_lowercase().as_str()),
+        None => false,
+    }
+}
+
+fn is_within_target(path: &Path, target: &TrackTarget) -> bool {
+    match target {
+        TrackTarget::SingleFile(f) => path == f.as_path(),
+        TrackTarget::Directory(root)
+        | TrackTarget::ScrivenerPackage(root)
+        | TrackTarget::TextBundle(root) => path.starts_with(root),
+    }
+}
+
+/// Collect all trackable files in a target.
+fn collect_trackable_files(target: &TrackTarget) -> Vec<PathBuf> {
+    match target {
+        TrackTarget::SingleFile(f) => vec![f.clone()],
+        TrackTarget::Directory(root) => walk_trackable_files(root),
+        TrackTarget::ScrivenerPackage(root) => {
+            // Scrivener stores content in Files/Data/<UUID>/content.rtf
+            let data_dir = root.join("Files").join("Data");
+            if data_dir.exists() {
+                walk_trackable_files(&data_dir)
+            } else {
+                // Fallback: older Scrivener format or non-standard layout
+                walk_trackable_files(root)
+            }
+        }
+        TrackTarget::TextBundle(root) => {
+            // TextBundle has text.txt or text.md at the root
+            let mut files = Vec::new();
+            for name in &["text.txt", "text.md", "text.markdown"] {
+                let p = root.join(name);
+                if p.exists() {
+                    files.push(p);
+                }
+            }
+            if files.is_empty() {
+                walk_trackable_files(root)
+            } else {
+                files
+            }
+        }
+    }
+}
+
+fn walk_trackable_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') || IGNORED_DIRS.contains(&name) {
+                    continue;
+                }
+            }
+
+            if path.is_dir() {
+                stack.push(path);
+            } else if is_trackable_file(&path) {
+                files.push(path);
+            }
+        }
+    }
+
+    files.sort();
+    files
+}
+
+/// Check if a path matches glob patterns (for directory/watch mode).
+fn matches_patterns(path: &Path, patterns: &[Pattern]) -> bool {
+    if patterns.is_empty() {
+        return is_trackable_file(path);
+    }
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+    patterns.iter().any(|p| p.matches(name))
+}
 
 fn auto_checkpoint_file(
     file_path: &Path,
@@ -145,8 +352,8 @@ fn finalize_session(
     session: &Arc<Mutex<JitterSession>>,
     session_path: &Path,
     current_file: &Path,
-    checkpoint_count: u32,
-    file: &Path,
+    checkpoint_counts: &HashMap<PathBuf, u32>,
+    target: &TrackTarget,
 ) -> Result<()> {
     if let Some(ref mut capture) = capture_box {
         let _ = capture.stop();
@@ -166,50 +373,48 @@ fn finalize_session(
     };
 
     let _ = fs::remove_file(current_file);
+    let total_checkpoints: u32 = checkpoint_counts.values().sum();
 
     println!();
     println!("=== Session Complete ===");
     println!("Duration: {:?}", duration);
     println!("Keystrokes: {}", keystroke_count);
     println!("Jitter samples: {}", sample_count);
-    println!("Checkpoints: {}", checkpoint_count);
+    println!("Checkpoints: {}", total_checkpoints);
+
+    if !target.is_single_file() && checkpoint_counts.len() > 1 {
+        println!("Files:");
+        let mut sorted: Vec<_> = checkpoint_counts.iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(a.1));
+        for (path, count) in sorted {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            println!("  {}: {} checkpoints", name, count);
+        }
+    }
+
     if duration.as_secs() > 0 && keystroke_count > 0 {
         let rate = keystroke_count as f64 / (duration.as_secs_f64() / 60.0);
         println!("Typing rate: {:.0} keystrokes/min", rate);
     }
+
     println!();
-    println!("Export evidence with: wld export {}", file.display());
+    println!(
+        "Export evidence with: wld export {}",
+        target.root().display()
+    );
 
     Ok(())
 }
 
 #[allow(unused_variables)]
 async fn cmd_track_start(
-    file: &Path,
+    path: &Path,
     tracking_dir: &Path,
     current_file: &Path,
     use_wld_jitter: bool,
+    patterns: Option<Vec<String>>,
 ) -> Result<()> {
-    if !file.exists() {
-        return Err(anyhow!(
-            "File not found: {}\n\n\
-             Check that the file exists and the path is correct.",
-            file.display()
-        ));
-    }
-
-    let metadata = fs::metadata(file)
-        .with_context(|| format!("Cannot read file metadata: {}", file.display()))?;
-    if !metadata.is_file() {
-        return Err(anyhow!(
-            "Not a regular file: {}\n\n\
-             Only regular files can be tracked.",
-            file.display()
-        ));
-    }
-
-    let abs_path = fs::canonicalize(file)
-        .with_context(|| format!("Cannot resolve path: {}", file.display()))?;
+    let target = classify_target(path)?;
 
     if current_file.exists() {
         return Err(anyhow!(
@@ -234,17 +439,37 @@ async fn cmd_track_start(
     }
     let vdf_params = load_vdf_params(&config);
 
+    // Parse glob patterns if provided
+    let glob_patterns: Vec<Pattern> = patterns
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| {
+            Pattern::new(p)
+                .map_err(|e| eprintln!("Warning: invalid glob pattern '{}': {}", p, e))
+                .ok()
+        })
+        .collect();
+
     let jitter_params = default_jitter_params();
-    let session = JitterSession::new(&abs_path, jitter_params)
+    let session = JitterSession::new(target.root(), jitter_params)
         .map_err(|e| anyhow!("Error creating session: {}", e))?;
     let session_id = session.id.clone();
     let session_path = tracking_dir.join(format!("{}.session.json", session_id));
 
+    // Collect initial files
+    let initial_files = collect_trackable_files(&target);
+    let file_list: Vec<String> = initial_files
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+
     let session_info = serde_json::json!({
         "id": session_id,
-        "document_path": abs_path.to_string_lossy(),
+        "document_path": target.root().to_string_lossy(),
         "started_at": chrono::Utc::now().to_rfc3339(),
         "hybrid": false,
+        "mode": target.mode_str(),
+        "tracked_files": file_list,
     });
     let tmp_path = current_file.with_extension("tmp");
     fs::write(&tmp_path, serde_json::to_string_pretty(&session_info)?)?;
@@ -258,7 +483,18 @@ async fn cmd_track_start(
     let (mut capture_box, keystroke_handle) = setup_keystroke_capture(&session);
 
     let (watcher_tx, watcher_rx) = std_mpsc::channel();
-    let file_parent = abs_path.parent().unwrap_or(&abs_path).to_path_buf();
+
+    // Determine what to watch and how
+    let (watch_path, watch_mode) = match &target {
+        TrackTarget::SingleFile(f) => {
+            let parent = f.parent().unwrap_or(f).to_path_buf();
+            (parent, RecursiveMode::NonRecursive)
+        }
+        TrackTarget::Directory(root)
+        | TrackTarget::ScrivenerPackage(root)
+        | TrackTarget::TextBundle(root) => (root.clone(), RecursiveMode::Recursive),
+    };
+
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
             if let Ok(event) = res {
@@ -267,20 +503,35 @@ async fn cmd_track_start(
         },
         NotifyConfig::default().with_poll_interval(Duration::from_secs(2)),
     )?;
-    watcher.watch(&file_parent, RecursiveMode::NonRecursive)?;
+    watcher.watch(&watch_path, watch_mode)?;
 
     let mut db = open_secure_store()?;
     let device_id = get_device_id()?;
     let machine_id = get_machine_id();
-    let mut checkpoint_count: u32 = 0;
+    let mut checkpoint_counts: HashMap<PathBuf, u32> = HashMap::new();
 
-    match auto_checkpoint_file(&abs_path, &mut db, &vdf_params, &device_id, &machine_id) {
-        Ok(true) => {
-            checkpoint_count += 1;
-            println!("Initial checkpoint created.");
+    // Initial checkpoints for all tracked files
+    for file in &initial_files {
+        match auto_checkpoint_file(file, &mut db, &vdf_params, &device_id, &machine_id) {
+            Ok(true) => {
+                *checkpoint_counts.entry(file.clone()).or_insert(0) += 1;
+            }
+            Ok(false) => {}
+            Err(e) => eprintln!(
+                "Warning: initial checkpoint failed for {}: {}",
+                file.file_name().unwrap_or_default().to_string_lossy(),
+                e
+            ),
         }
-        Ok(false) => {}
-        Err(e) => eprintln!("Warning: initial checkpoint failed: {}", e),
+    }
+
+    let total_initial: u32 = checkpoint_counts.values().sum();
+    if total_initial > 0 {
+        if total_initial == 1 {
+            println!("Initial checkpoint created.");
+        } else {
+            println!("{} initial checkpoints created.", total_initial);
+        }
     }
 
     let running = Arc::new(AtomicBool::new(true));
@@ -291,10 +542,10 @@ async fn cmd_track_start(
     .ok();
 
     println!();
-    println!(
-        "Tracking: {}",
-        abs_path.file_name().unwrap_or_default().to_string_lossy()
-    );
+    println!("Tracking: {}", target.display_name());
+    if !target.is_single_file() {
+        println!("Files: {}", initial_files.len());
+    }
     println!(
         "PRIVACY: Captures timing intervals and keystroke counts — NOT key values or content."
     );
@@ -303,7 +554,7 @@ async fn cmd_track_start(
     println!("Press Ctrl+C to stop.");
     println!();
 
-    let mut last_checkpoint = Instant::now();
+    let mut last_checkpoint_map: HashMap<PathBuf, Instant> = HashMap::new();
     let debounce = Duration::from_secs(5);
     let save_interval = Duration::from_secs(5);
     let mut last_save = Instant::now();
@@ -321,44 +572,67 @@ async fn cmd_track_start(
             Ok(event) => {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     for path in &event.paths {
-                        if path == &abs_path {
-                            let now = Instant::now();
-                            if now.duration_since(last_checkpoint) >= debounce {
-                                match auto_checkpoint_file(
-                                    &abs_path,
-                                    &mut db,
-                                    &vdf_params,
-                                    &device_id,
-                                    &machine_id,
-                                ) {
-                                    Ok(true) => {
-                                        checkpoint_count += 1;
-                                        last_checkpoint = now;
-                                        let ks = session
-                                            .lock()
-                                            .map(|s| s.keystroke_count())
-                                            .unwrap_or(0);
-                                        println!(
-                                            "[{}] Checkpoint #{} — {} keystrokes",
-                                            Utc::now().format("%H:%M:%S"),
-                                            checkpoint_count,
-                                            ks
-                                        );
-                                    }
-                                    Ok(false) => {}
-                                    Err(e) => {
-                                        let msg = e.to_string();
-                                        if msg.contains("database is locked")
-                                            || msg.contains("SQLITE_BUSY")
-                                        {
-                                            eprintln!(
-                                                "[{}] Skipped checkpoint (database busy, will retry on next save)",
-                                                Utc::now().format("%H:%M:%S")
-                                            );
-                                        } else {
-                                            eprintln!("Checkpoint error: {}", e);
-                                        }
-                                    }
+                        // For single file, match exactly; for dirs, check containment + trackability
+                        let should_track = if target.is_single_file() {
+                            path == target.root()
+                        } else if glob_patterns.is_empty() {
+                            is_within_target(path, &target)
+                                && path.is_file()
+                                && is_trackable_file(path)
+                        } else {
+                            is_within_target(path, &target)
+                                && path.is_file()
+                                && matches_patterns(path, &glob_patterns)
+                        };
+
+                        if !should_track {
+                            continue;
+                        }
+
+                        let now = Instant::now();
+                        if let Some(last) = last_checkpoint_map.get(path) {
+                            if now.duration_since(*last) < debounce {
+                                continue;
+                            }
+                        }
+
+                        match auto_checkpoint_file(
+                            path,
+                            &mut db,
+                            &vdf_params,
+                            &device_id,
+                            &machine_id,
+                        ) {
+                            Ok(true) => {
+                                *checkpoint_counts.entry(path.clone()).or_insert(0) += 1;
+                                last_checkpoint_map.insert(path.clone(), now);
+                                let total: u32 = checkpoint_counts.values().sum();
+                                let ks = session.lock().map(|s| s.keystroke_count()).unwrap_or(0);
+                                let file_display = if target.is_single_file() {
+                                    format!("{} keystrokes", ks)
+                                } else {
+                                    let name =
+                                        path.file_name().unwrap_or_default().to_string_lossy();
+                                    format!("{} — {} keystrokes", name, ks)
+                                };
+                                println!(
+                                    "[{}] Checkpoint #{} — {}",
+                                    Utc::now().format("%H:%M:%S"),
+                                    total,
+                                    file_display,
+                                );
+                            }
+                            Ok(false) => {}
+                            Err(e) => {
+                                let msg = e.to_string();
+                                if msg.contains("database is locked") || msg.contains("SQLITE_BUSY")
+                                {
+                                    eprintln!(
+                                        "[{}] Skipped checkpoint (database busy)",
+                                        Utc::now().format("%H:%M:%S")
+                                    );
+                                } else {
+                                    eprintln!("Checkpoint error: {}", e);
                                 }
                             }
                         }
@@ -385,22 +659,22 @@ async fn cmd_track_start(
         &session,
         &session_path,
         current_file,
-        checkpoint_count,
-        file,
+        &checkpoint_counts,
+        &target,
     )
 }
 
 pub(crate) async fn cmd_track_smart(
     action: Option<TrackAction>,
-    file: Option<PathBuf>,
+    path: Option<PathBuf>,
 ) -> Result<()> {
     let config = ensure_dirs()?;
     let dir = config.data_dir;
     let tracking_dir = dir.join("tracking");
     let current_file = tracking_dir.join("current_session.json");
 
-    if let Some(f) = file {
-        return cmd_track_start(&f, &tracking_dir, &current_file, false).await;
+    if let Some(p) = path {
+        return cmd_track_start(&p, &tracking_dir, &current_file, false, None).await;
     }
 
     let action = match action {
@@ -412,7 +686,9 @@ pub(crate) async fn cmd_track_smart(
                 println!("No active tracking session.");
                 println!();
                 println!("Usage:");
-                println!("  wld <file>               Start tracking a file");
+                println!("  wld <file>               Track a single file");
+                println!("  wld <folder>             Track all files in a folder");
+                println!("  wld <project.scriv>      Track a Scrivener project");
                 println!("  wld track stop           Stop active session");
                 println!("  wld track status         Check session status");
                 println!("  wld track list           List saved sessions");
@@ -424,12 +700,29 @@ pub(crate) async fn cmd_track_smart(
 
     match action {
         #[cfg(feature = "wld_jitter")]
-        TrackAction::Start { file, wld_jitter } => {
-            cmd_track_start(&file, &tracking_dir, &current_file, wld_jitter).await?;
+        TrackAction::Start {
+            path: file,
+            wld_jitter,
+            patterns,
+        } => {
+            let pat = if patterns.is_empty() {
+                None
+            } else {
+                Some(patterns.split(',').map(|s| s.trim().to_string()).collect())
+            };
+            cmd_track_start(&file, &tracking_dir, &current_file, wld_jitter, pat).await?;
         }
         #[cfg(not(feature = "wld_jitter"))]
-        TrackAction::Start { file } => {
-            cmd_track_start(&file, &tracking_dir, &current_file, false).await?;
+        TrackAction::Start {
+            path: file,
+            patterns,
+        } => {
+            let pat = if patterns.is_empty() {
+                None
+            } else {
+                Some(patterns.split(',').map(|s| s.trim().to_string()).collect())
+            };
+            cmd_track_start(&file, &tracking_dir, &current_file, false, pat).await?;
         }
 
         TrackAction::Stop => {
@@ -447,6 +740,10 @@ pub(crate) async fn cmd_track_smart(
                 .get("hybrid")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let mode = session_info
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("file");
 
             fs::remove_file(&current_file)?;
 
@@ -479,14 +776,28 @@ pub(crate) async fn cmd_track_smart(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                println!("Stopping tracking session...");
+                println!("Stopping tracking session ({})...", mode);
                 println!("Duration: {:?}", duration);
                 println!("Keystrokes: {}", session.keystroke_count());
                 println!("Samples: {}", session.sample_count());
 
                 if let Ok(db) = open_secure_store() {
-                    if let Ok(events) = db.get_events_for_file(doc_path) {
-                        println!("Checkpoints: {}", events.len());
+                    if mode == "file" {
+                        if let Ok(events) = db.get_events_for_file(doc_path) {
+                            println!("Checkpoints: {}", events.len());
+                        }
+                    } else if let Some(files) =
+                        session_info.get("tracked_files").and_then(|v| v.as_array())
+                    {
+                        let mut total = 0usize;
+                        for f in files {
+                            if let Some(fp) = f.as_str() {
+                                if let Ok(events) = db.get_events_for_file(fp) {
+                                    total += events.len();
+                                }
+                            }
+                        }
+                        println!("Checkpoints: {}", total);
                     }
                 }
             } else {
@@ -516,6 +827,10 @@ pub(crate) async fn cmd_track_smart(
                 .get("hybrid")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let mode = session_info
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("file");
 
             let doc_path = session_info
                 .get("document_path")
@@ -567,7 +882,14 @@ pub(crate) async fn cmd_track_smart(
             let keystroke_count = session.keystroke_count();
             let sample_count = session.sample_count();
 
-            println!("=== Active Tracking Session ===");
+            let mode_label = match mode {
+                "directory" => " (directory)",
+                "scrivener" => " (Scrivener)",
+                "textbundle" => " (TextBundle)",
+                _ => "",
+            };
+
+            println!("=== Active Tracking Session{} ===", mode_label);
             println!("Session ID: {}", session.id);
             println!("Document: {}", session.document_path);
             println!(
@@ -584,8 +906,42 @@ pub(crate) async fn cmd_track_smart(
             }
 
             if let Ok(db) = open_secure_store() {
-                if let Ok(events) = db.get_events_for_file(doc_path) {
-                    println!("Checkpoints: {}", events.len());
+                if mode == "file" {
+                    if let Ok(events) = db.get_events_for_file(doc_path) {
+                        println!("Checkpoints: {}", events.len());
+                    }
+                } else if let Some(files) =
+                    session_info.get("tracked_files").and_then(|v| v.as_array())
+                {
+                    let mut total = 0usize;
+                    let mut file_counts: Vec<(String, usize)> = Vec::new();
+                    for f in files {
+                        if let Some(fp) = f.as_str() {
+                            if let Ok(events) = db.get_events_for_file(fp) {
+                                let count = events.len();
+                                if count > 0 {
+                                    let name = Path::new(fp)
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .into_owned();
+                                    file_counts.push((name, count));
+                                }
+                                total += count;
+                            }
+                        }
+                    }
+                    println!("Files tracked: {}", files.len());
+                    println!("Total checkpoints: {}", total);
+                    if file_counts.len() > 1 {
+                        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+                        for (name, count) in file_counts.iter().take(10) {
+                            println!("  {}: {}", name, count);
+                        }
+                        if file_counts.len() > 10 {
+                            println!("  ... and {} more", file_counts.len() - 10);
+                        }
+                    }
                 }
             }
         }

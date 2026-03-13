@@ -273,7 +273,7 @@ pub fn show_quick_status(
 
         println!();
         println!("Commands: commit, log, export, verify");
-        println!("Shortcuts: wld <file> (track), wld <folder> (watch)");
+        println!("Shortcuts: wld <file>, wld <folder>");
     }
 }
 
