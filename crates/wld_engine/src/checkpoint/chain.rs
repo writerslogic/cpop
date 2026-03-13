@@ -118,37 +118,7 @@ impl Chain {
     }
 
     pub fn commit(&mut self, message: Option<String>) -> Result<Checkpoint> {
-        let (content_hash, content_size) =
-            crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
-        let ordinal = self.checkpoints.len() as u64;
-
-        let previous_hash;
-        let mut last_timestamp = None;
-        if let Some(prev) = self.checkpoints.last() {
-            previous_hash = prev.hash;
-            last_timestamp = Some(prev.timestamp);
-        } else {
-            previous_hash = genesis_prev_hash(content_hash, content_size, &self.document_path)?;
-        }
-
-        let mut checkpoint =
-            Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
-        let now = checkpoint.timestamp;
-
-        if ordinal > 0 {
-            let elapsed = now
-                .signed_duration_since(last_timestamp.unwrap_or(now))
-                .to_std()
-                .unwrap_or(Duration::from_secs(0));
-            let vdf_input = vdf::chain_input(content_hash, previous_hash, ordinal);
-            let proof = vdf::compute(vdf_input, elapsed, self.vdf_params)?;
-            checkpoint.vdf = Some(proof);
-        }
-
-        checkpoint.validate_timestamp()?;
-        checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint.clone());
-        Ok(checkpoint)
+        self.commit_internal(message, None)
     }
 
     pub fn commit_with_vdf_duration(
@@ -156,22 +126,39 @@ impl Chain {
         message: Option<String>,
         vdf_duration: Duration,
     ) -> Result<Checkpoint> {
+        self.commit_internal(message, Some(vdf_duration))
+    }
+
+    /// Shared commit logic. If `vdf_duration` is None, elapsed time since
+    /// the last checkpoint is used instead.
+    fn commit_internal(
+        &mut self,
+        message: Option<String>,
+        vdf_duration: Option<Duration>,
+    ) -> Result<Checkpoint> {
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
         let ordinal = self.checkpoints.len() as u64;
 
-        let previous_hash = if let Some(prev) = self.checkpoints.last() {
-            prev.hash
-        } else {
-            genesis_prev_hash(content_hash, content_size, &self.document_path)?
+        let last_cp = self.checkpoints.last();
+        let previous_hash = match last_cp {
+            Some(cp) => cp.hash,
+            None => genesis_prev_hash(content_hash, content_size, &self.document_path)?,
         };
 
         let mut checkpoint =
             Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
 
         if ordinal > 0 {
+            let duration = vdf_duration.unwrap_or_else(|| {
+                let now = checkpoint.timestamp;
+                let last_ts = last_cp.map(|cp| cp.timestamp).unwrap_or(now);
+                now.signed_duration_since(last_ts)
+                    .to_std()
+                    .unwrap_or(Duration::from_secs(0))
+            });
             let vdf_input = vdf::chain_input(content_hash, previous_hash, ordinal);
-            let proof = vdf::compute(vdf_input, vdf_duration, self.vdf_params)?;
+            let proof = vdf::compute(vdf_input, duration, self.vdf_params)?;
             checkpoint.vdf = Some(proof);
         }
 
@@ -353,12 +340,14 @@ impl Chain {
             vdf::swf_seed_genesis(&doc_cbor, &jitter_or_nonce)
         } else if let Some(ref jb) = rfc_jitter {
             // ENHANCED+: H("PoP-SWF-Seed-v1" || prev-hash || CBOR(intervals) || CBOR(physical-state))
-            let intervals_cbor =
-                crate::codec::cbor::encode(&jb.summary.sample_count).unwrap_or_default();
+            let intervals_cbor = crate::codec::cbor::encode(&jb.summary.sample_count)
+                .map_err(|e| Error::checkpoint(format!("SWF intervals CBOR: {e}")))?;
             // PhysicalContext isn't Serialize; encode combined_hash as stand-in
-            let phys_cbor = physics
-                .map(|p| crate::codec::cbor::encode(&p.combined_hash.to_vec()).unwrap_or_default())
-                .unwrap_or_default();
+            let phys_cbor = match physics {
+                Some(p) => crate::codec::cbor::encode(&p.combined_hash.to_vec())
+                    .map_err(|e| Error::checkpoint(format!("SWF physics CBOR: {e}")))?,
+                None => vec![],
+            };
             vdf::swf_seed_enhanced(&previous_hash, &intervals_cbor, &phys_cbor)
         } else {
             // CORE fallback: H("PoP-SWF-Seed-v1" || prev-hash || local-nonce)

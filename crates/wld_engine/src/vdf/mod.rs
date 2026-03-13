@@ -21,5 +21,7 @@ pub use proof::VdfProof;
 pub type SwfParameters = Parameters;
 pub type SwfProof = VdfProof;
 pub use roughtime_client::RoughtimeClient;
-pub use swf_argon2::{Argon2SwfParams, Argon2SwfProof};
+pub use swf_argon2::{
+    enhanced_params, maximum_params, params_for_tier, Argon2SwfParams, Argon2SwfProof,
+};
 pub use timekeeper::{TimeAnchor, TimeKeeper};

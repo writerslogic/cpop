@@ -58,21 +58,16 @@ impl SealedIdentityStore {
         }
 
         let identity = derive_master_identity(puf)?;
-        let challenge = Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
-        let puf_response = puf.get_response(&challenge)?;
-        let mut seed = crate::keyhierarchy::hkdf_expand(
-            &puf_response,
-            IDENTITY_DOMAIN.as_bytes(),
-            b"master-seed",
-        )?;
+        let signing_key = crate::keyhierarchy::derive_master_private_key(puf)?;
+        let seed = zeroize::Zeroizing::new(signing_key.to_bytes());
 
         let caps = self.provider.capabilities();
         let sealed_seed = if caps.supports_sealing {
             self.provider
-                .seal(&seed, &[])
+                .seal(&*seed, &[])
                 .map_err(|e| SealedIdentityError::SealFailed(e.to_string()))?
         } else {
-            self.software_wrap(&seed)?
+            self.software_wrap(&*seed)?
         };
 
         let clock = self.provider.clock_info().ok();
@@ -106,8 +101,6 @@ impl SealedIdentityStore {
         };
 
         self.persist_blob(&blob)?;
-
-        seed.zeroize();
 
         Ok(identity)
     }

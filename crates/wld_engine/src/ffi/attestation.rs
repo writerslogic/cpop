@@ -178,43 +178,53 @@ pub fn ffi_get_device_public_key() -> FfiDeviceKey {
 }
 
 fn get_model() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("sysctl")
-            .args(["-n", "hw.model"])
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "Mac".to_string())
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "Windows PC".to_string()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "Linux PC".to_string()
-    }
+    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("sysctl")
+                    .args(["-n", "hw.model"])
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_else(|| "Mac".to_string())
+            }
+            #[cfg(target_os = "windows")]
+            {
+                "Windows PC".to_string()
+            }
+            #[cfg(target_os = "linux")]
+            {
+                "Linux PC".to_string()
+            }
+        })
+        .clone()
 }
 
 fn get_os_version() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("sw_vers")
-            .args(["-productVersion"])
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| format!("macOS {}", s.trim()))
-            .unwrap_or_else(|| "macOS".to_string())
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "Windows".to_string()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "Linux".to_string()
-    }
+    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("sw_vers")
+                    .args(["-productVersion"])
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|s| format!("macOS {}", s.trim()))
+                    .unwrap_or_else(|| "macOS".to_string())
+            }
+            #[cfg(target_os = "windows")]
+            {
+                "Windows".to_string()
+            }
+            #[cfg(target_os = "linux")]
+            {
+                "Linux".to_string()
+            }
+        })
+        .clone()
 }

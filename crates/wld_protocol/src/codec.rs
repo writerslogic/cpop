@@ -6,36 +6,31 @@ use crate::rfc::{
 };
 use ciborium::tag::Required;
 
-pub fn encode_evidence(packet: &EvidencePacket) -> Result<Vec<u8>> {
+fn encode_tagged<T: serde::Serialize, const TAG: u64>(value: &T) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    ciborium::ser::into_writer(
-        &Required::<&EvidencePacket, CBOR_TAG_EVIDENCE_PACKET>(packet),
-        &mut bytes,
-    )
-    .map_err(|e| Error::Serialization(e.to_string()))?;
+    ciborium::ser::into_writer(&Required::<&T, TAG>(value), &mut bytes)
+        .map_err(|e| Error::Serialization(e.to_string()))?;
     Ok(bytes)
+}
+
+fn decode_tagged<T: serde::de::DeserializeOwned, const TAG: u64>(bytes: &[u8]) -> Result<T> {
+    let tagged: Required<T, TAG> =
+        ciborium::de::from_reader(bytes).map_err(|e| Error::Serialization(e.to_string()))?;
+    Ok(tagged.0)
+}
+
+pub fn encode_evidence(packet: &EvidencePacket) -> Result<Vec<u8>> {
+    encode_tagged::<_, CBOR_TAG_EVIDENCE_PACKET>(packet)
 }
 
 pub fn decode_evidence(bytes: &[u8]) -> Result<EvidencePacket> {
-    let tag_packet: Required<EvidencePacket, CBOR_TAG_EVIDENCE_PACKET> =
-        ciborium::de::from_reader(bytes).map_err(|e| Error::Serialization(e.to_string()))?;
-
-    Ok(tag_packet.0)
+    decode_tagged::<_, CBOR_TAG_EVIDENCE_PACKET>(bytes)
 }
 
 pub fn encode_attestation(result: &AttestationResult) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    ciborium::ser::into_writer(
-        &Required::<&AttestationResult, CBOR_TAG_ATTESTATION_RESULT>(result),
-        &mut bytes,
-    )
-    .map_err(|e| Error::Serialization(e.to_string()))?;
-    Ok(bytes)
+    encode_tagged::<_, CBOR_TAG_ATTESTATION_RESULT>(result)
 }
 
 pub fn decode_attestation(bytes: &[u8]) -> Result<AttestationResult> {
-    let tag_result: Required<AttestationResult, CBOR_TAG_ATTESTATION_RESULT> =
-        ciborium::de::from_reader(bytes).map_err(|e| Error::Serialization(e.to_string()))?;
-
-    Ok(tag_result.0)
+    decode_tagged::<_, CBOR_TAG_ATTESTATION_RESULT>(bytes)
 }

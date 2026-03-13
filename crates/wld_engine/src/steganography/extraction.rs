@@ -62,7 +62,10 @@ impl ZwcExtractor {
     /// Checks structural consistency: correct ZWC count, correct positions.
     pub fn verify_binding(&self, watermarked_text: &str, binding: &ZwcBinding) -> ZwcVerification {
         let extracted = self.extract_tag(watermarked_text);
-        let stored_tag: Vec<u8> = hex::decode(&binding.tag_hex).unwrap_or_default();
+        let stored_tag: Vec<u8> = hex::decode(&binding.tag_hex).unwrap_or_else(|e| {
+            log::warn!("ZWC binding tag_hex is invalid hex: {e}");
+            vec![]
+        });
 
         let valid = extracted.len() == binding.zwc_count && extracted == stored_tag;
 

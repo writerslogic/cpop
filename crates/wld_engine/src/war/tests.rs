@@ -116,8 +116,8 @@ fn test_block_ascii_encode_decode() {
     let block = Block::from_packet(&packet).expect("create block");
 
     let ascii = block.encode_ascii();
-    assert!(ascii.contains("BEGIN WITNESSD AUTHORSHIP RECORD"));
-    assert!(ascii.contains("END WITNESSD AUTHORSHIP RECORD"));
+    assert!(ascii.contains("BEGIN CPOP WAR"));
+    assert!(ascii.contains("END CPOP WAR"));
     assert!(ascii.contains("BEGIN SEAL"));
     assert!(ascii.contains("END SEAL"));
     assert!(ascii.contains("Version: WAR/1.0"));
@@ -254,7 +254,7 @@ fn test_block_ascii_encode_with_verifier_nonce() {
     let block = Block::from_packet(&packet).expect("create block");
     let ascii = block.encode_ascii();
 
-    assert!(ascii.contains("BEGIN WITNESSD AUTHORSHIP RECORD"));
+    assert!(ascii.contains("BEGIN CPOP WAR"));
     assert!(ascii.contains("Verifier-Nonce:"));
     assert!(ascii.contains(&hex::encode(nonce)));
 }
@@ -266,7 +266,7 @@ fn test_block_ascii_encode_without_verifier_nonce() {
     let block = Block::from_packet(&packet).expect("create block");
     let ascii = block.encode_ascii();
 
-    assert!(ascii.contains("BEGIN WITNESSD AUTHORSHIP RECORD"));
+    assert!(ascii.contains("BEGIN CPOP WAR"));
     assert!(!ascii.contains("Verifier-Nonce:"));
 }
 

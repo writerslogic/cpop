@@ -14,6 +14,7 @@ impl WLDConfig {
             let raw = fs::read_to_string(&config_path)?;
             let mut config: WLDConfig = serde_json::from_str(&raw)?;
             config.data_dir = data_dir.to_path_buf();
+            config.validate()?;
             return Ok(config);
         }
 

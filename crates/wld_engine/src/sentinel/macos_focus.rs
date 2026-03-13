@@ -66,77 +66,29 @@ impl MacOSFocusMonitor {
 
     /// Query the focused window's `AXDocument` attribute for its `file://` URL.
     fn get_document_path_via_ax(&self, pid: i32) -> Option<String> {
-        unsafe {
-            use core_foundation::base::{CFType, TCFType};
-            use core_foundation::string::CFString;
-
-            #[link(name = "ApplicationServices", kind = "framework")]
-            extern "C" {
-                fn AXUIElementCreateApplication(pid: i32) -> *mut std::ffi::c_void;
-                fn AXUIElementCopyAttributeValue(
-                    element: *mut std::ffi::c_void,
-                    attribute: core_foundation::string::CFStringRef,
-                    value: *mut *const std::ffi::c_void,
-                ) -> i32;
-                fn CFRelease(cf: *mut std::ffi::c_void);
+        let raw = self.query_focused_window_attribute(pid, "AXDocument")?;
+        if raw.starts_with("file://") {
+            let path = raw.trim_start_matches("file://");
+            let decoded = urlencoding::decode(path).unwrap_or_default().into_owned();
+            if !decoded.is_empty() {
+                return Some(decoded);
             }
-
-            let app_element = AXUIElementCreateApplication(pid);
-            if app_element.is_null() {
-                return None;
-            }
-
-            let attr_focused = CFString::new("AXFocusedWindow");
-            let mut focused_window: *const std::ffi::c_void = std::ptr::null();
-            let err = AXUIElementCopyAttributeValue(
-                app_element,
-                attr_focused.as_concrete_TypeRef(),
-                &mut focused_window,
-            );
-
-            if err != 0 || focused_window.is_null() {
-                CFRelease(app_element);
-                return None;
-            }
-
-            let attr_doc = CFString::new("AXDocument");
-            let mut doc_value: *const std::ffi::c_void = std::ptr::null();
-            let err = AXUIElementCopyAttributeValue(
-                focused_window as *mut _,
-                attr_doc.as_concrete_TypeRef(),
-                &mut doc_value,
-            );
-
-            let result = if err == 0 && !doc_value.is_null() {
-                let cf_type = CFType::wrap_under_create_rule(doc_value as _);
-                let url_str = if let Some(cf_str) = cf_type.downcast::<CFString>() {
-                    cf_str.to_string()
-                } else {
-                    format!("{:?}", cf_type)
-                };
-                if url_str.starts_with("file://") {
-                    let path = url_str.trim_start_matches("file://");
-                    let decoded = urlencoding::decode(path).unwrap_or_default().into_owned();
-                    if !decoded.is_empty() {
-                        Some(decoded)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            CFRelease(focused_window as *mut _);
-            CFRelease(app_element);
-            result
         }
+        None
     }
 
     /// Query the focused window's `AXTitle` attribute.
     fn get_window_title_via_ax(&self, pid: i32) -> Option<String> {
+        let title = self.query_focused_window_attribute(pid, "AXTitle")?;
+        if !title.is_empty() {
+            Some(title)
+        } else {
+            None
+        }
+    }
+
+    /// Query an arbitrary accessibility attribute from the focused window of a given pid.
+    fn query_focused_window_attribute(&self, pid: i32, attribute: &str) -> Option<String> {
         unsafe {
             use core_foundation::base::{CFType, TCFType};
             use core_foundation::string::CFString;
@@ -170,25 +122,20 @@ impl MacOSFocusMonitor {
                 return None;
             }
 
-            let attr_title = CFString::new("AXTitle");
-            let mut title_value: *const std::ffi::c_void = std::ptr::null();
+            let attr = CFString::new(attribute);
+            let mut value: *const std::ffi::c_void = std::ptr::null();
             let err = AXUIElementCopyAttributeValue(
                 focused_window as *mut _,
-                attr_title.as_concrete_TypeRef(),
-                &mut title_value,
+                attr.as_concrete_TypeRef(),
+                &mut value,
             );
 
-            let result = if err == 0 && !title_value.is_null() {
-                let cf_type = CFType::wrap_under_create_rule(title_value as _);
-                let title = if let Some(cf_str) = cf_type.downcast::<CFString>() {
-                    cf_str.to_string()
+            let result = if err == 0 && !value.is_null() {
+                let cf_type = CFType::wrap_under_create_rule(value as _);
+                if let Some(cf_str) = cf_type.downcast::<CFString>() {
+                    Some(cf_str.to_string())
                 } else {
-                    format!("{:?}", cf_type)
-                };
-                if !title.is_empty() {
-                    Some(title)
-                } else {
-                    None
+                    Some(format!("{:?}", cf_type))
                 }
             } else {
                 None

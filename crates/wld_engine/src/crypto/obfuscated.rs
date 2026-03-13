@@ -27,12 +27,14 @@ pub struct Obfuscated<T> {
 
 impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     pub fn new(value: &T) -> Self {
-        let serialized = bincode::serde::encode_to_vec(value, bincode::config::standard())
+        let mut serialized = bincode::serde::encode_to_vec(value, bincode::config::standard())
             .expect("serialization failed");
         let mask_key = next_key();
+        let masked_data = Self::xor_data(&serialized, mask_key);
+        serialized.zeroize();
 
         Self {
-            masked_data: Self::xor_data(&serialized, mask_key),
+            masked_data,
             mask_key,
             _phantom: std::marker::PhantomData,
         }

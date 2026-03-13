@@ -18,6 +18,7 @@ mod tests;
 pub use crypto::{compute_entangled_nonce, fingerprint_for_public_key, hkdf_expand};
 pub use error::KeyHierarchyError;
 pub use identity::derive_master_identity;
+pub(crate) use identity::derive_master_private_key;
 pub use manager::{ChainSigner, SessionManager};
 pub use migration::{
     migrate_from_legacy_key, start_session_from_legacy_key, verify_legacy_migration,

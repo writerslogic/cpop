@@ -9,7 +9,7 @@ impl Block {
     pub fn encode_ascii(&self) -> String {
         let mut output = String::new();
 
-        output.push_str("-----BEGIN WITNESSD AUTHORSHIP RECORD-----\n");
+        output.push_str("-----BEGIN CPOP WAR-----\n");
         output.push_str(&format!("Version: {}\n", self.version.as_str()));
         output.push_str(&format!("Author: {}\n", self.author));
         output.push_str(&format!("Document-ID: {}\n", hex::encode(self.document_id)));
@@ -34,7 +34,7 @@ impl Block {
         }
 
         output.push_str("-----END SEAL-----\n");
-        output.push_str("-----END WITNESSD AUTHORSHIP RECORD-----\n");
+        output.push_str("-----END CPOP WAR-----\n");
 
         output
     }
@@ -43,13 +43,22 @@ impl Block {
     pub fn decode_ascii(text: &str) -> Result<Self, String> {
         let lines: Vec<&str> = text.lines().collect();
 
+        // Accept CPOP WAR (current), POP WAR (previous), and legacy format
         let start = lines
             .iter()
-            .position(|l| l.contains("BEGIN WITNESSD AUTHORSHIP RECORD"))
+            .position(|l| {
+                l.contains("BEGIN CPOP WAR")
+                    || l.contains("BEGIN POP WAR")
+                    || l.contains("BEGIN WITNESSD AUTHORSHIP RECORD")
+            })
             .ok_or("missing WAR block header")?;
         let end = lines
             .iter()
-            .position(|l| l.contains("END WITNESSD AUTHORSHIP RECORD"))
+            .position(|l| {
+                l.contains("END CPOP WAR")
+                    || l.contains("END POP WAR")
+                    || l.contains("END WITNESSD AUTHORSHIP RECORD")
+            })
             .ok_or("missing WAR block footer")?;
 
         if start >= end {

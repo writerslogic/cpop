@@ -520,22 +520,30 @@ fn sign_c2pa_claim(claim_cbor: &[u8], signer: &dyn PoPSigner) -> Result<Vec<u8>>
 
 /// Build a single assertion JUMBF superbox with JSON content.
 fn build_assertion_jumbf_json<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>> {
-    let json_bytes = serde_json::to_vec(value).map_err(|e| Error::Serialization(e.to_string()))?;
-    let mut w = JumbfWriter::new();
-    let off = w.begin_superbox();
-    w.write_description(&JUMBF_JSON_UUID, Some(label), 0x03);
-    w.write_content_json(&json_bytes);
-    w.end_superbox(off);
-    Ok(w.finish())
+    let content = serde_json::to_vec(value).map_err(|e| Error::Serialization(e.to_string()))?;
+    build_assertion_jumbf(label, &JUMBF_JSON_UUID, &content, false)
 }
 
 /// Build a single assertion JUMBF superbox with CBOR content.
 fn build_assertion_jumbf_cbor<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>> {
-    let cbor_bytes = ciborium_to_vec(value)?;
+    let content = ciborium_to_vec(value)?;
+    build_assertion_jumbf(label, &JUMBF_CBOR_UUID, &content, true)
+}
+
+fn build_assertion_jumbf(
+    label: &str,
+    uuid: &[u8; 16],
+    content: &[u8],
+    is_cbor: bool,
+) -> Result<Vec<u8>> {
     let mut w = JumbfWriter::new();
     let off = w.begin_superbox();
-    w.write_description(&JUMBF_CBOR_UUID, Some(label), 0x03);
-    w.write_content_cbor(&cbor_bytes);
+    w.write_description(uuid, Some(label), 0x03);
+    if is_cbor {
+        w.write_content_cbor(content);
+    } else {
+        w.write_content_json(content);
+    }
     w.end_superbox(off);
     Ok(w.finish())
 }
@@ -815,7 +823,7 @@ mod tests {
     fn test_evidence_packet() -> EvidencePacket {
         EvidencePacket {
             version: 1,
-            profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+            profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
             packet_id: vec![0xAA; 16],
             created: 1710000000000,
             document: DocumentRef {

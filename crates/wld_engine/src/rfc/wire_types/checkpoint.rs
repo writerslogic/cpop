@@ -92,67 +92,52 @@ const MAX_ACTIVE_PROBES: usize = 100;
 /// Max entangled MAC length (HMAC-SHA256 = 32 bytes).
 const MAX_ENTANGLED_MAC_LEN: usize = 64;
 
-/// Subset of CheckpointWire fields for hash computation (excludes `checkpoint_hash`).
-///
-/// Per draft-condrey-rats-pop: `checkpoint-hash = SHA-256(CBOR(checkpoint \ {8}))`.
-#[derive(Serialize)]
-struct CheckpointHashInput<'a> {
-    #[serde(rename = "1")]
-    sequence: u64,
-    #[serde(rename = "2", with = "fixed_bytes_16")]
-    checkpoint_id: [u8; 16],
-    #[serde(rename = "3")]
-    timestamp: u64,
-    #[serde(rename = "4")]
-    content_hash: &'a HashValue,
-    #[serde(rename = "5")]
-    char_count: u64,
-    #[serde(rename = "6")]
-    delta: &'a EditDelta,
-    #[serde(rename = "7")]
-    prev_hash: &'a HashValue,
-    #[serde(rename = "9")]
-    process_proof: &'a ProcessProof,
-    #[serde(rename = "10", skip_serializing_if = "Option::is_none")]
-    jitter_binding: Option<&'a JitterBindingWire>,
-    #[serde(rename = "11", skip_serializing_if = "Option::is_none")]
-    physical_state: Option<&'a PhysicalState>,
-    #[serde(
-        rename = "12",
-        skip_serializing_if = "Option::is_none",
-        with = "serde_bytes_opt"
-    )]
-    entangled_mac: Option<Vec<u8>>,
-}
-
 impl CheckpointWire {
-    /// Compute the spec-conformant checkpoint hash.
+    /// Compute the spec-conformant checkpoint hash per draft-condrey-rats-pop S6.6.
     ///
-    /// Per draft-condrey-rats-pop:
-    /// `checkpoint-hash = SHA-256("PoP-Checkpoint-v1" || CBOR-encode(checkpoint \ {8}))`,
-    /// i.e. prepend the DST, then CBOR-encode all fields except `checkpoint_hash`, then SHA-256.
+    /// ```text
+    /// checkpoint-hash = H(
+    ///     "PoP-Checkpoint-v1" ||
+    ///     prev-hash.digest ||
+    ///     content-hash.digest ||
+    ///     CBOR-encode(edit-delta) ||
+    ///     CBOR-encode(jitter-binding) ||   ; if present
+    ///     CBOR-encode(physical-state) ||   ; if present
+    ///     process-proof.merkle-root
+    /// )
+    /// ```
     pub fn compute_hash(&self) -> HashValue {
         use sha2::{Digest, Sha256};
 
-        let input = CheckpointHashInput {
-            sequence: self.sequence,
-            checkpoint_id: self.checkpoint_id,
-            timestamp: self.timestamp,
-            content_hash: &self.content_hash,
-            char_count: self.char_count,
-            delta: &self.delta,
-            prev_hash: &self.prev_hash,
-            process_proof: &self.process_proof,
-            jitter_binding: self.jitter_binding.as_ref(),
-            physical_state: self.physical_state.as_ref(),
-            entangled_mac: self.entangled_mac.clone(),
-        };
-
-        let cbor_bytes =
-            crate::codec::cbor::encode(&input).expect("CBOR encode checkpoint hash input");
         let mut hasher = Sha256::new();
+
+        // DST prefix
         hasher.update(b"PoP-Checkpoint-v1");
-        hasher.update(&cbor_bytes);
+
+        // Raw digest bytes for hash-value fields
+        hasher.update(&self.prev_hash.digest);
+        hasher.update(&self.content_hash.digest);
+
+        // CBOR-encode edit-delta
+        let delta_cbor = crate::codec::cbor::encode(&self.delta).expect("CBOR encode edit-delta");
+        hasher.update(&delta_cbor);
+
+        // Optional: CBOR-encode jitter-binding (ENHANCED+)
+        if let Some(ref jitter) = self.jitter_binding {
+            let jitter_cbor =
+                crate::codec::cbor::encode(jitter).expect("CBOR encode jitter-binding");
+            hasher.update(&jitter_cbor);
+        }
+
+        // Optional: CBOR-encode physical-state (ENHANCED+)
+        if let Some(ref phys) = self.physical_state {
+            let phys_cbor = crate::codec::cbor::encode(phys).expect("CBOR encode physical-state");
+            hasher.update(&phys_cbor);
+        }
+
+        // Merkle root raw bytes from process-proof
+        hasher.update(&self.process_proof.merkle_root);
+
         let digest: [u8; 32] = hasher.finalize().into();
         HashValue::sha256(digest.to_vec())
     }

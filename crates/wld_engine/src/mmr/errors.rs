@@ -18,6 +18,8 @@ pub enum MmrError {
     HashMismatch,
     #[error("mmr: node not found")]
     NodeNotFound,
+    #[error("mmr: proof component exceeds u16::MAX elements")]
+    ProofTooLarge,
     #[error("mmr: io error: {0}")]
     Io(#[from] std::io::Error),
 }

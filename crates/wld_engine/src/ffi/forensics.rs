@@ -2,7 +2,17 @@
 
 use crate::ffi::helpers::open_store;
 use crate::ffi::types::{FfiCalibrationResult, FfiForensicResult, FfiProcessScore};
+use crate::vdf::Parameters;
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// Globally cached calibration result so `ffi_get_status` can report it.
+static CALIBRATED_PARAMS: Mutex<Option<Parameters>> = Mutex::new(None);
+
+/// Read the cached calibrated parameters (if any).
+pub(crate) fn calibrated_params() -> Option<Parameters> {
+    CALIBRATED_PARAMS.lock().ok().and_then(|g| *g)
+}
 
 /// Weights for composite process score (sum = 1.0).
 ///
@@ -228,11 +238,16 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_calibrate_swf() -> FfiCalibrationResult {
     match crate::vdf::calibrate(Duration::from_secs(1)) {
-        Ok(params) => FfiCalibrationResult {
-            success: true,
-            iterations_per_second: params.iterations_per_second,
-            error_message: None,
-        },
+        Ok(params) => {
+            if let Ok(mut cached) = CALIBRATED_PARAMS.lock() {
+                *cached = Some(params);
+            }
+            FfiCalibrationResult {
+                success: true,
+                iterations_per_second: params.iterations_per_second,
+                error_message: None,
+            }
+        }
         Err(e) => FfiCalibrationResult {
             success: false,
             iterations_per_second: 0,

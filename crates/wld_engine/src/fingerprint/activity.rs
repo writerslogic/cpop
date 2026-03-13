@@ -310,43 +310,38 @@ impl ZoneProfile {
             return profile;
         }
 
+        // Single pass: accumulate zone counts, transitions, and IKI histograms
         let mut zone_counts = [0usize; 8];
-        for sample in samples {
-            let zone = (sample.zone as usize).min(7);
-            zone_counts[zone] += 1;
+        let mut transitions = vec![0usize; ZONE_TRANSITIONS];
+
+        zone_counts[(samples[0].zone as usize).min(7)] += 1;
+        for w in samples.windows(2) {
+            let z0 = (w[0].zone as usize).min(7);
+            let z1 = (w[1].zone as usize).min(7);
+            zone_counts[z1] += 1;
+            transitions[z0 * 8 + z1] += 1;
+
+            let iki_ms = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0;
+            let bucket = ((iki_ms / 50.0) as usize).min(19);
+            if z0 == z1 {
+                profile.same_finger_histogram[bucket] += 1.0;
+            } else if (z0 < 4) == (z1 < 4) {
+                profile.same_hand_histogram[bucket] += 1.0;
+            } else {
+                profile.alternating_histogram[bucket] += 1.0;
+            }
         }
+
         let total: usize = zone_counts.iter().sum();
         if total > 0 {
             for (i, &count) in zone_counts.iter().enumerate() {
                 profile.zone_frequencies[i] = count as f64 / total as f64;
             }
         }
-
-        let mut transitions = vec![0usize; ZONE_TRANSITIONS];
-        for w in samples.windows(2) {
-            let from = (w[0].zone as usize).min(7);
-            let to = (w[1].zone as usize).min(7);
-            transitions[from * 8 + to] += 1;
-        }
         let trans_total: usize = transitions.iter().sum();
         if trans_total > 0 {
             for (i, &count) in transitions.iter().enumerate() {
                 profile.zone_transitions[i] = count as f64 / trans_total as f64;
-            }
-        }
-
-        for w in samples.windows(2) {
-            let z1 = w[0].zone as usize;
-            let z2 = w[1].zone as usize;
-            let iki_ms = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0;
-            let bucket = ((iki_ms / 50.0) as usize).min(19);
-
-            if z1 == z2 {
-                profile.same_finger_histogram[bucket] += 1.0;
-            } else if (z1 < 4) == (z2 < 4) {
-                profile.same_hand_histogram[bucket] += 1.0;
-            } else {
-                profile.alternating_histogram[bucket] += 1.0;
             }
         }
 

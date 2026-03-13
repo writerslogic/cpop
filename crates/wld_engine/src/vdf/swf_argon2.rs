@@ -24,13 +24,43 @@ pub struct Argon2SwfParams {
 }
 
 impl Default for Argon2SwfParams {
+    /// CORE profile defaults per draft-condrey-rats-pop §mandatory-swf-params.
     fn default() -> Self {
         Self {
-            time_cost: 3,
+            time_cost: 1,
             memory_cost: 65536, // 64 MiB
             parallelism: 1,
-            iterations: 10,
+            iterations: 90,
         }
+    }
+}
+
+/// ENHANCED profile per draft-condrey-rats-pop §7.5 table.
+pub fn enhanced_params() -> Argon2SwfParams {
+    Argon2SwfParams {
+        time_cost: 1,
+        memory_cost: 65536, // 64 MiB
+        parallelism: 1,
+        iterations: 150,
+    }
+}
+
+/// MAXIMUM profile per draft-condrey-rats-pop §7.5 table.
+pub fn maximum_params() -> Argon2SwfParams {
+    Argon2SwfParams {
+        time_cost: 1,
+        memory_cost: 65536, // 64 MiB
+        parallelism: 1,
+        iterations: 210,
+    }
+}
+
+/// Select SWF parameters for a given content tier (1=CORE, 2=ENHANCED, 3=MAXIMUM).
+pub fn params_for_tier(content_tier: u8) -> Argon2SwfParams {
+    match content_tier {
+        3 => maximum_params(),
+        2 => enhanced_params(),
+        _ => Argon2SwfParams::default(), // CORE
     }
 }
 
@@ -64,8 +94,9 @@ pub struct MerkleSampleProof {
     pub sibling_path: Vec<[u8; 32]>,
 }
 
-/// Number of Merkle samples selected by Fiat-Shamir challenge.
-const SAMPLE_COUNT: usize = 8;
+/// Default Merkle samples for CORE tier (k=20).
+/// ENHANCED=50, MAXIMUM=100 per draft-condrey-rats-pop §4.4.
+const DEFAULT_SAMPLE_COUNT: usize = 20;
 
 /// Compute an Argon2id SWF proof.
 ///
@@ -73,6 +104,15 @@ const SAMPLE_COUNT: usize = 8;
 /// Merkle tree over the outputs, derives a Fiat-Shamir challenge, and
 /// returns sampled inclusion proofs.
 pub fn compute(input: [u8; 32], params: Argon2SwfParams) -> Result<Argon2SwfProof, String> {
+    compute_with_samples(input, params, DEFAULT_SAMPLE_COUNT)
+}
+
+/// Compute with explicit sample count (k=20 CORE, k=50 ENHANCED, k=100 MAXIMUM).
+pub fn compute_with_samples(
+    input: [u8; 32],
+    params: Argon2SwfParams,
+    sample_count: usize,
+) -> Result<Argon2SwfProof, String> {
     let argon2 = build_argon2(&params)?;
 
     let start = Instant::now();
@@ -80,29 +120,50 @@ pub fn compute(input: [u8; 32], params: Argon2SwfParams) -> Result<Argon2SwfProo
     let mut current = input;
 
     for i in 0..params.iterations {
-        let mut salt = [0u8; 16];
-        salt[..8].copy_from_slice(&i.to_be_bytes());
-        salt[8..].copy_from_slice(&current[..8]);
+        // Salt per draft-condrey-rats-pop §4.2:
+        //   state_0:   salt = H(0x00 || "PoP-salt-v1" || seed)
+        //   state_i:   salt = H(0x01 || "PoP-salt-v1" || I2OSP(i, 4))
+        let salt_hash = if i == 0 {
+            let mut h = Sha256::new();
+            h.update([0x00u8]);
+            h.update(b"PoP-salt-v1");
+            h.update(input);
+            h.finalize()
+        } else {
+            let mut h = Sha256::new();
+            h.update([0x01u8]);
+            h.update(b"PoP-salt-v1");
+            h.update((i as u32).to_be_bytes()); // I2OSP(i, 4)
+            h.finalize()
+        };
+        // Full 32-byte SHA-256 output as salt per §7.1
+        let salt = salt_hash.as_slice();
 
         let mut output = [0u8; 32];
         argon2
-            .hash_password_into(&current, &salt, &mut output)
+            .hash_password_into(&current, salt, &mut output)
             .map_err(|e| format!("Argon2id iteration {i}: {e}"))?;
 
-        let leaf = Sha256::digest(output).into();
+        // RFC 6962 leaf: H(0x00 || data)
+        let leaf = {
+            let mut h = Sha256::new();
+            h.update([0x00u8]);
+            h.update(output);
+            h.finalize().into()
+        };
         leaves.push(leaf);
         current = output;
     }
 
-    let merkle_root = build_merkle_root(&leaves);
+    let merkle_root = build_merkle_root(&leaves, params.iterations);
 
-    // Fiat-Shamir challenge: deterministic sample selection
-    let challenge = fiat_shamir_challenge(&merkle_root, &input, params.iterations);
+    // Fiat-Shamir challenge per §4.4
+    let challenge = fiat_shamir_challenge(&merkle_root, &input, &params);
 
-    let indices = select_indices(&challenge, params.iterations, SAMPLE_COUNT);
+    let indices = select_indices(&challenge, params.iterations, sample_count);
 
     // Rebuild tree for proof generation
-    let tree = build_merkle_tree(&leaves);
+    let tree = build_merkle_tree(&leaves, params.iterations);
     let sampled_proofs = indices
         .iter()
         .map(|&idx| {
@@ -129,15 +190,19 @@ pub fn compute(input: [u8; 32], params: Argon2SwfParams) -> Result<Argon2SwfProo
 /// 1. Fiat-Shamir challenge is correctly derived
 /// 2. Each sampled Merkle proof verifies against the root
 pub fn verify(proof: &Argon2SwfProof) -> Result<bool, String> {
-    // 1. Verify Fiat-Shamir challenge
-    let expected_challenge =
-        fiat_shamir_challenge(&proof.merkle_root, &proof.input, proof.params.iterations);
+    verify_with_samples(proof, proof.sampled_proofs.len())
+}
+
+/// Verify with explicit expected sample count.
+pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Result<bool, String> {
+    // 1. Verify Fiat-Shamir challenge per §4.4
+    let expected_challenge = fiat_shamir_challenge(&proof.merkle_root, &proof.input, &proof.params);
     if proof.challenge != expected_challenge {
         return Ok(false);
     }
 
     // 2. Verify expected sample indices match
-    let expected_indices = select_indices(&proof.challenge, proof.params.iterations, SAMPLE_COUNT);
+    let expected_indices = select_indices(&proof.challenge, proof.params.iterations, sample_count);
     for (sample, &expected_idx) in proof.sampled_proofs.iter().zip(expected_indices.iter()) {
         if sample.leaf_index != expected_idx {
             return Ok(false);
@@ -164,7 +229,7 @@ pub fn calibrate(params: &Argon2SwfParams, duration: Duration) -> Result<u64, St
     let argon2 = build_argon2(params)?;
 
     let mut current = [0u8; 32];
-    let salt = [0u8; 16];
+    let salt = [0u8; 32];
     let mut iterations = 0u64;
     let start = Instant::now();
 
@@ -203,62 +268,114 @@ fn build_argon2(params: &Argon2SwfParams) -> Result<Argon2<'static>, String> {
 
 // --- Fiat-Shamir ---
 
-/// Derive a Fiat-Shamir challenge from the Merkle root and proof input.
-fn fiat_shamir_challenge(merkle_root: &[u8; 32], input: &[u8; 32], iterations: u64) -> [u8; 32] {
+/// Derive Fiat-Shamir sample seed per draft-condrey-rats-pop §7.3:
+///   H("PoP-Fiat-Shamir-v1" || I2OSP(proof_algorithm, 2) ||
+///     CBOR-encode(proof_params) || process_proof_input || merkle_root)
+fn fiat_shamir_challenge(
+    merkle_root: &[u8; 32],
+    input: &[u8; 32],
+    params: &Argon2SwfParams,
+) -> [u8; 32] {
+    /// proof_algorithm = 20 (SwfArgon2id) per §7.3
+    const PROOF_ALGORITHM: u16 = 20;
+
+    // CBOR-encode proof_params as map {1: time_cost, 2: memory_cost,
+    // 3: parallelism, 4: iterations}
+    let params_map = ciborium::Value::Map(vec![
+        (1.into(), ciborium::Value::Integer(params.time_cost.into())),
+        (
+            2.into(),
+            ciborium::Value::Integer(params.memory_cost.into()),
+        ),
+        (
+            3.into(),
+            ciborium::Value::Integer(params.parallelism.into()),
+        ),
+        (4.into(), ciborium::Value::Integer(params.iterations.into())),
+    ]);
+    let mut params_cbor = Vec::new();
+    ciborium::into_writer(&params_map, &mut params_cbor).expect("CBOR encoding proof params");
+
     let mut hasher = Sha256::new();
-    hasher.update(b"witnessd-fiat-shamir-v1");
-    hasher.update(merkle_root);
+    hasher.update(b"PoP-Fiat-Shamir-v1");
+    hasher.update(PROOF_ALGORITHM.to_be_bytes());
+    hasher.update(&params_cbor);
     hasher.update(input);
-    hasher.update(iterations.to_be_bytes());
+    hasher.update(merkle_root);
     hasher.finalize().into()
 }
 
-/// Select `count` unique leaf indices from the challenge hash.
-fn select_indices(challenge: &[u8; 32], num_leaves: u64, count: usize) -> Vec<u64> {
+/// Select `count` unique leaf indices via HKDF-Expand per §7.3:
+///   okm_j = HKDF-Expand(sample_seed, I2OSP(j, 4), 4)
+///   index_j = OS2IP(okm_j) mod (steps + 1)
+fn select_indices(sample_seed: &[u8; 32], num_leaves: u64, count: usize) -> Vec<u64> {
+    use hkdf::Hkdf;
+
+    let hk = Hkdf::<Sha256>::from_prk(sample_seed).expect("sample seed is valid PRK length");
     let mut indices = Vec::with_capacity(count);
-    let mut hasher_seed = *challenge;
+    let mut j: u32 = 0;
+
+    // Rejection threshold to eliminate modulo bias:
+    // reject values >= (2^32 - (2^32 % num_leaves))
+    let n = num_leaves.min(u32::MAX as u64) as u32;
+    let reject_above = u32::MAX - (u32::MAX % n);
 
     while indices.len() < count && indices.len() < num_leaves as usize {
-        let idx = u64::from_be_bytes(hasher_seed[..8].try_into().unwrap()) % num_leaves;
+        let mut okm = [0u8; 4];
+        hk.expand(&j.to_be_bytes(), &mut okm)
+            .expect("4 bytes is valid HKDF-Expand length");
+        j += 1;
+        let raw = u32::from_be_bytes(okm);
+        if raw >= reject_above {
+            continue; // reject to avoid modulo bias
+        }
+        let idx = (raw % n) as u64;
         if !indices.contains(&idx) {
             indices.push(idx);
         }
-        hasher_seed = Sha256::digest(hasher_seed).into();
     }
 
     indices
 }
 
-// --- Merkle tree ---
+// --- Merkle tree (RFC 6962 domain-separated) ---
 
-fn build_merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+/// Sentinel padding value per spec §4.3: H(0x02 || I2OSP(steps + 1, 4))
+fn padding_value(steps: u64) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update([0x02u8]);
+    h.update(((steps + 1) as u32).to_be_bytes());
+    h.finalize().into()
+}
+
+fn build_merkle_root(leaves: &[[u8; 32]], steps: u64) -> [u8; 32] {
     if leaves.is_empty() {
         return [0u8; 32];
     }
-    let tree = build_merkle_tree(leaves);
+    let tree = build_merkle_tree(leaves, steps);
     tree[1] // root is at index 1 in 1-indexed tree
 }
 
-/// Build a complete binary Merkle tree (1-indexed array).
-/// tree[1] = root, tree[n..2n] = leaves (right-padded).
-fn build_merkle_tree(leaves: &[[u8; 32]]) -> Vec<[u8; 32]> {
+/// Build a complete binary Merkle tree (1-indexed array) with RFC 6962 tags.
+/// tree[1] = root, tree[n..2n] = leaves (padded per spec).
+fn build_merkle_tree(leaves: &[[u8; 32]], steps: u64) -> Vec<[u8; 32]> {
     let n = leaves.len().next_power_of_two();
     let mut tree = vec![[0u8; 32]; 2 * n];
 
-    // Place leaves
+    // Place leaves (already hashed with 0x00 prefix during compute)
     for (i, leaf) in leaves.iter().enumerate() {
         tree[n + i] = *leaf;
     }
-    // Pad remaining leaves with last leaf (or zeros)
-    if let Some(last) = leaves.last() {
-        for i in leaves.len()..n {
-            tree[n + i] = *last;
-        }
+    // Pad with sentinel: H(0x02 || I2OSP(steps + 1, 4))
+    let pad = padding_value(steps);
+    for i in leaves.len()..n {
+        tree[n + i] = pad;
     }
 
-    // Build up
+    // Build internal nodes: H(0x01 || left || right)
     for i in (1..n).rev() {
         let mut hasher = Sha256::new();
+        hasher.update([0x01u8]);
         hasher.update(tree[2 * i]);
         hasher.update(tree[2 * i + 1]);
         tree[i] = hasher.finalize().into();
@@ -291,7 +408,9 @@ fn verify_merkle_proof(
     let mut idx = leaf_idx;
 
     for sibling in sibling_path {
+        // RFC 6962 internal node: H(0x01 || left || right)
         let mut hasher = Sha256::new();
+        hasher.update([0x01u8]);
         if idx % 2 == 0 {
             hasher.update(current);
             hasher.update(sibling);
@@ -328,16 +447,18 @@ mod tests {
     fn test_deterministic_fiat_shamir() {
         let root = [1u8; 32];
         let input = [2u8; 32];
-        let c1 = fiat_shamir_challenge(&root, &input, 10);
-        let c2 = fiat_shamir_challenge(&root, &input, 10);
+        let params = test_params();
+        let c1 = fiat_shamir_challenge(&root, &input, &params);
+        let c2 = fiat_shamir_challenge(&root, &input, &params);
         assert_eq!(c1, c2);
     }
 
     #[test]
     fn test_fiat_shamir_sensitive_to_root() {
         let input = [2u8; 32];
-        let c1 = fiat_shamir_challenge(&[1u8; 32], &input, 10);
-        let c2 = fiat_shamir_challenge(&[3u8; 32], &input, 10);
+        let params = test_params();
+        let c1 = fiat_shamir_challenge(&[1u8; 32], &input, &params);
+        let c2 = fiat_shamir_challenge(&[3u8; 32], &input, &params);
         assert_ne!(c1, c2);
     }
 
@@ -370,8 +491,9 @@ mod tests {
     #[test]
     fn test_merkle_tree_roundtrip() {
         let leaves: Vec<[u8; 32]> = (0..4u8).map(|i| [i; 32]).collect();
-        let root = build_merkle_root(&leaves);
-        let tree = build_merkle_tree(&leaves);
+        let steps = 4u64;
+        let root = build_merkle_root(&leaves, steps);
+        let tree = build_merkle_tree(&leaves, steps);
 
         for (i, leaf) in leaves.iter().enumerate() {
             let path = merkle_proof(&tree, i, leaves.len());
@@ -396,6 +518,43 @@ mod tests {
         let indices = select_indices(&challenge, 100, 8);
         let unique: std::collections::HashSet<_> = indices.iter().collect();
         assert_eq!(unique.len(), indices.len(), "indices should be unique");
+    }
+
+    #[test]
+    fn test_core_default_params_match_spec() {
+        let p = Argon2SwfParams::default();
+        assert_eq!(p.time_cost, 1);
+        assert_eq!(p.memory_cost, 65536);
+        assert_eq!(p.parallelism, 1);
+        assert_eq!(p.iterations, 90);
+    }
+
+    #[test]
+    fn test_enhanced_params_match_spec() {
+        let p = enhanced_params();
+        assert_eq!(p.time_cost, 1);
+        assert_eq!(p.memory_cost, 65536);
+        assert_eq!(p.parallelism, 1);
+        assert_eq!(p.iterations, 150);
+    }
+
+    #[test]
+    fn test_maximum_params_match_spec() {
+        let p = maximum_params();
+        assert_eq!(p.time_cost, 1);
+        assert_eq!(p.memory_cost, 65536);
+        assert_eq!(p.parallelism, 1);
+        assert_eq!(p.iterations, 210);
+    }
+
+    #[test]
+    fn test_params_for_tier_selects_correctly() {
+        assert_eq!(params_for_tier(1).iterations, 90);
+        assert_eq!(params_for_tier(2).iterations, 150);
+        assert_eq!(params_for_tier(3).iterations, 210);
+        // Unknown tiers fall back to CORE
+        assert_eq!(params_for_tier(0).iterations, 90);
+        assert_eq!(params_for_tier(255).iterations, 90);
     }
 
     #[test]

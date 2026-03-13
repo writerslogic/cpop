@@ -23,7 +23,7 @@ fn create_mock_packet(checkpoint_count: usize) -> EvidencePacket {
 
     EvidencePacket {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id: vec![0u8; 16],
         created: 1700000000,
         document: DocumentRef {

@@ -5,7 +5,7 @@ use wld_protocol::rfc::{DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
 fn test_evidence_packet_roundtrip() {
     let packet = EvidencePacket {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id: vec![0u8; 16],
         created: 123456789,
         document: DocumentRef {

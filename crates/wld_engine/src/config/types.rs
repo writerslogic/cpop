@@ -296,24 +296,24 @@ impl SentinelConfig {
     pub fn validate(&self) -> Result<()> {
         use anyhow::bail;
 
-        if self.checkpoint_interval_secs == 0 {
-            bail!("checkpoint_interval_secs must be > 0");
+        fn require_nonzero(val: u64, name: &str) -> Result<()> {
+            if val == 0 {
+                bail!("{name} must be > 0");
+            }
+            Ok(())
         }
-        if self.heartbeat_interval_secs == 0 {
-            bail!("heartbeat_interval_secs must be > 0");
-        }
+
+        require_nonzero(self.checkpoint_interval_secs, "checkpoint_interval_secs")?;
+        require_nonzero(self.heartbeat_interval_secs, "heartbeat_interval_secs")?;
+        require_nonzero(self.poll_interval_ms, "poll_interval_ms")?;
+        require_nonzero(self.debounce_duration_ms, "debounce_duration_ms")?;
+
         if self.idle_timeout_secs < self.checkpoint_interval_secs {
             bail!(
                 "idle_timeout_secs ({}) must be >= checkpoint_interval_secs ({})",
                 self.idle_timeout_secs,
                 self.checkpoint_interval_secs
             );
-        }
-        if self.poll_interval_ms == 0 {
-            bail!("poll_interval_ms must be > 0");
-        }
-        if self.debounce_duration_ms == 0 {
-            bail!("debounce_duration_ms must be > 0");
         }
         Ok(())
     }
@@ -322,6 +322,35 @@ impl SentinelConfig {
         fs::create_dir_all(&self.writerslogic_dir)?;
         fs::create_dir_all(&self.shadow_dir)?;
         fs::create_dir_all(&self.wal_dir)?;
+        Ok(())
+    }
+}
+
+impl WLDConfig {
+    /// Validate all config values after load/deserialization.
+    pub fn validate(&self) -> Result<()> {
+        use anyhow::bail;
+
+        if self.retention_days == 0 {
+            bail!("retention_days must be > 0");
+        }
+        if self.vdf.iterations_per_second == 0 {
+            bail!("vdf.iterations_per_second must be > 0");
+        }
+        if self.vdf.min_iterations > self.vdf.max_iterations {
+            bail!(
+                "vdf.min_iterations ({}) must be <= max_iterations ({})",
+                self.vdf.min_iterations,
+                self.vdf.max_iterations
+            );
+        }
+        if self.presence.challenge_interval_secs == 0 {
+            bail!("presence.challenge_interval_secs must be > 0");
+        }
+        if self.presence.response_window_secs == 0 {
+            bail!("presence.response_window_secs must be > 0");
+        }
+        self.sentinel.validate()?;
         Ok(())
     }
 }

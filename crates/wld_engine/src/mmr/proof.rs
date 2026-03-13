@@ -60,7 +60,12 @@ impl InclusionProof {
         Ok(())
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Result<Vec<u8>, MmrError> {
+        let path_len =
+            u16::try_from(self.merkle_path.len()).map_err(|_| MmrError::ProofTooLarge)?;
+        let peaks_len = u16::try_from(self.peaks.len()).map_err(|_| MmrError::ProofTooLarge)?;
+        let peak_pos = u16::try_from(self.peak_position).map_err(|_| MmrError::ProofTooLarge)?;
+
         let path_size = self.merkle_path.len() * 33;
         let peaks_size = self.peaks.len() * 32;
         let total = 1 + 1 + 8 + 32 + 2 + path_size + 2 + peaks_size + 2 + 8 + 32;
@@ -74,7 +79,7 @@ impl InclusionProof {
         offset += 8;
         buf[offset..offset + 32].copy_from_slice(&self.leaf_hash);
         offset += 32;
-        buf[offset..offset + 2].copy_from_slice(&(self.merkle_path.len() as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&path_len.to_be_bytes());
         offset += 2;
         for elem in &self.merkle_path {
             buf[offset..offset + 32].copy_from_slice(&elem.hash);
@@ -82,18 +87,18 @@ impl InclusionProof {
             buf[offset] = if elem.is_left { 1 } else { 0 };
             offset += 1;
         }
-        buf[offset..offset + 2].copy_from_slice(&(self.peaks.len() as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&peaks_len.to_be_bytes());
         offset += 2;
         for peak in &self.peaks {
             buf[offset..offset + 32].copy_from_slice(peak);
             offset += 32;
         }
-        buf[offset..offset + 2].copy_from_slice(&(self.peak_position as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&peak_pos.to_be_bytes());
         offset += 2;
         buf[offset..offset + 8].copy_from_slice(&self.mmr_size.to_be_bytes());
         offset += 8;
         buf[offset..offset + 32].copy_from_slice(&self.root);
-        buf
+        Ok(buf)
     }
 
     pub fn deserialize(data: &[u8]) -> Result<Self, MmrError> {
@@ -332,8 +337,14 @@ impl RangeProof {
         Ok(())
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Result<Vec<u8>, MmrError> {
         let leaves_count = self.leaf_hashes.len();
+        let leaves_len = u16::try_from(leaves_count).map_err(|_| MmrError::ProofTooLarge)?;
+        let path_len =
+            u16::try_from(self.sibling_path.len()).map_err(|_| MmrError::ProofTooLarge)?;
+        let peaks_len = u16::try_from(self.peaks.len()).map_err(|_| MmrError::ProofTooLarge)?;
+        let peak_pos = u16::try_from(self.peak_position).map_err(|_| MmrError::ProofTooLarge)?;
+
         let indices_size = leaves_count * 8;
         let hashes_size = leaves_count * 32;
         let path_size = self.sibling_path.len() * 33;
@@ -362,7 +373,7 @@ impl RangeProof {
         offset += 8;
         buf[offset..offset + 8].copy_from_slice(&self.end_leaf.to_be_bytes());
         offset += 8;
-        buf[offset..offset + 2].copy_from_slice(&(leaves_count as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&leaves_len.to_be_bytes());
         offset += 2;
         for idx in &self.leaf_indices {
             buf[offset..offset + 8].copy_from_slice(&idx.to_be_bytes());
@@ -372,7 +383,7 @@ impl RangeProof {
             buf[offset..offset + 32].copy_from_slice(hash);
             offset += 32;
         }
-        buf[offset..offset + 2].copy_from_slice(&(self.sibling_path.len() as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&path_len.to_be_bytes());
         offset += 2;
         for elem in &self.sibling_path {
             buf[offset..offset + 32].copy_from_slice(&elem.hash);
@@ -380,18 +391,18 @@ impl RangeProof {
             buf[offset] = if elem.is_left { 1 } else { 0 };
             offset += 1;
         }
-        buf[offset..offset + 2].copy_from_slice(&(self.peaks.len() as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&peaks_len.to_be_bytes());
         offset += 2;
         for peak in &self.peaks {
             buf[offset..offset + 32].copy_from_slice(peak);
             offset += 32;
         }
-        buf[offset..offset + 2].copy_from_slice(&(self.peak_position as u16).to_be_bytes());
+        buf[offset..offset + 2].copy_from_slice(&peak_pos.to_be_bytes());
         offset += 2;
         buf[offset..offset + 8].copy_from_slice(&self.mmr_size.to_be_bytes());
         offset += 8;
         buf[offset..offset + 32].copy_from_slice(&self.root);
-        buf
+        Ok(buf)
     }
 
     pub fn deserialize(data: &[u8]) -> Result<Self, MmrError> {

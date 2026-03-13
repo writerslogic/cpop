@@ -334,9 +334,7 @@ impl Sentinel {
                             mouse_idle_stats.write_recover().record(&event);
                         }
 
-                        if let Ok(mut engine) = mouse_stego_engine.write() {
-                            engine.next_jitter();
-                        }
+                        mouse_stego_engine.write_recover().next_jitter();
                     }
 
                     Some(event) = focus_rx.recv() => {

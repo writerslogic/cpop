@@ -305,7 +305,7 @@ impl ProfileDeclaration {
     pub fn core() -> Self {
         Self {
             tier: 1,
-            uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+            uri: "urn:ietf:params:pop:profile:1.0".to_string(),
             enabled_features: None,
             implementation_id: None,
         }
@@ -315,7 +315,7 @@ impl ProfileDeclaration {
     pub fn enhanced() -> Self {
         Self {
             tier: 2,
-            uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+            uri: "urn:ietf:params:pop:profile:1.0".to_string(),
             enabled_features: None,
             implementation_id: None,
         }
@@ -325,7 +325,7 @@ impl ProfileDeclaration {
     pub fn maximum() -> Self {
         Self {
             tier: 3,
-            uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+            uri: "urn:ietf:params:pop:profile:1.0".to_string(),
             enabled_features: None,
             implementation_id: None,
         }

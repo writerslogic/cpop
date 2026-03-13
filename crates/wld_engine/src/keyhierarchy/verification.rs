@@ -34,6 +34,7 @@ pub fn verify_checkpoint_signatures(
     signatures: &[CheckpointSignature],
 ) -> Result<(), KeyHierarchyError> {
     let mut prev_counter: Option<u64> = None;
+    let mut prev_was_adjacent = false;
 
     for (i, sig) in signatures.iter().enumerate() {
         if sig.ordinal != i as u64 {
@@ -60,16 +61,23 @@ pub fn verify_checkpoint_signatures(
                         sig.ordinal, current, prev,
                     )));
                 }
-                if let Some(delta) = sig.counter_delta {
-                    if delta != current - prev {
-                        return Err(KeyHierarchyError::Crypto(format!(
-                            "counter delta mismatch at ordinal {}: delta {} != {} - {}",
-                            sig.ordinal, delta, current, prev,
-                        )));
+                // Only validate delta against the immediately preceding counter
+                if prev_was_adjacent {
+                    if let Some(delta) = sig.counter_delta {
+                        if delta != current - prev {
+                            return Err(KeyHierarchyError::Crypto(format!(
+                                "counter delta mismatch at ordinal {}: \
+                                 delta {} != {} - {}",
+                                sig.ordinal, delta, current, prev,
+                            )));
+                        }
                     }
                 }
             }
             prev_counter = Some(current);
+            prev_was_adjacent = true;
+        } else {
+            prev_was_adjacent = false;
         }
     }
     Ok(())

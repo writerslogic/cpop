@@ -69,7 +69,7 @@ pub struct PCRSelection {
 pub fn default_pcr_selection() -> PCRSelection {
     PCRSelection {
         hash: HashAlgorithm::Sha256,
-        pcrs: vec![0, 4, 7],
+        pcrs: super::DEFAULT_QUOTE_PCRS.to_vec(),
     }
 }
 

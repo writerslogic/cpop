@@ -90,7 +90,7 @@ impl AppraisalPolicy {
                 }
                 FactorType::TypingRateConsistency => {
                     let cov = metrics.checkpoint_interval_cov;
-                    let score = if cov <= 0.0 {
+                    let score = if !cov.is_finite() || cov <= 0.0 {
                         0.0
                     } else if cov < COV_LOW_THRESHOLD {
                         cov / COV_LOW_THRESHOLD * COV_BELOW_LOW_WEIGHT
@@ -130,7 +130,11 @@ impl AppraisalPolicy {
             };
 
             factor.observed_value = observed;
-            factor.normalized_score = normalized.clamp(0.0, 1.0);
+            factor.normalized_score = if normalized.is_finite() {
+                normalized.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             factor.contribution = factor.weight * factor.normalized_score;
         }
 

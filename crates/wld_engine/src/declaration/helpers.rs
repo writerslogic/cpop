@@ -5,12 +5,7 @@ use sha2::Sha256;
 use super::types::{AIExtent, AIPurpose, CollaboratorRole, ModalityType};
 
 pub(super) fn extent_rank(extent: &AIExtent) -> i32 {
-    match extent {
-        AIExtent::None => 0,
-        AIExtent::Minimal => 1,
-        AIExtent::Moderate => 2,
-        AIExtent::Substantial => 3,
-    }
+    extent.clone() as i32
 }
 
 pub(super) fn modality_type_str(modality: &ModalityType) -> &'static str {

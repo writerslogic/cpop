@@ -149,8 +149,12 @@ impl LinuxInputDevice {
 }
 
 /// Enumerate all keyboard input devices.
-pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
-    let mut keyboards = Vec::new();
+/// Enumerate input devices matching a predicate, with a virtual-device filter.
+fn enumerate_input_devices(
+    matches: impl Fn(&Device) -> bool,
+    is_virtual: impl Fn(&str, Option<&str>, u16, u16) -> bool,
+) -> Result<Vec<LinuxInputDevice>> {
+    let mut result = Vec::new();
 
     let entries = fs::read_dir("/dev/input")?;
     for entry in entries.flatten() {
@@ -164,11 +168,7 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
             Err(_) => continue,
         };
 
-        let is_keyboard = device
-            .supported_keys()
-            .is_some_and(|keys| keys.contains(Key::KEY_A));
-
-        if !is_keyboard {
+        if !matches(&device) {
             continue;
         }
 
@@ -180,20 +180,28 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
         let vendor_id = input_id.vendor();
         let product_id = input_id.product();
 
-        let info = LinuxInputDevice {
+        result.push(LinuxInputDevice {
             path: path.clone(),
             name: name.clone(),
             phys: phys.clone(),
             uniq,
             vendor_id,
             product_id,
-            is_physical: !is_virtual_device(&name, phys.as_deref(), vendor_id, product_id),
-        };
-
-        keyboards.push(info);
+            is_physical: !is_virtual(&name, phys.as_deref(), vendor_id, product_id),
+        });
     }
 
-    Ok(keyboards)
+    Ok(result)
+}
+
+pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
+    enumerate_input_devices(
+        |dev| {
+            dev.supported_keys()
+                .is_some_and(|keys| keys.contains(Key::KEY_A))
+        },
+        is_virtual_device,
+    )
 }
 
 /// Check if a device appears to be virtual based on its properties.
@@ -719,50 +727,14 @@ impl HIDEnumerator for LinuxHIDEnumerator {
 
 /// Enumerate all mouse/pointing input devices.
 pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
-    let mut mice = Vec::new();
-
-    let entries = fs::read_dir("/dev/input")?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.to_string_lossy().contains("event") {
-            continue;
-        }
-
-        let device = match Device::open(&path) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
-        let is_mouse = device.supported_relative_axes().is_some_and(|axes| {
-            axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
-        });
-
-        if !is_mouse {
-            continue;
-        }
-
-        let name = device.name().unwrap_or("Unknown").to_string();
-        let phys = device.physical_path().map(|s| s.to_string());
-        let uniq = device.unique_name().map(|s| s.to_string());
-
-        let input_id = device.input_id();
-        let vendor_id = input_id.vendor();
-        let product_id = input_id.product();
-
-        let info = LinuxInputDevice {
-            path: path.clone(),
-            name: name.clone(),
-            phys: phys.clone(),
-            uniq,
-            vendor_id,
-            product_id,
-            is_physical: !is_virtual_mouse(&name, phys.as_deref(), vendor_id, product_id),
-        };
-
-        mice.push(info);
-    }
-
-    Ok(mice)
+    enumerate_input_devices(
+        |dev| {
+            dev.supported_relative_axes().is_some_and(|axes| {
+                axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
+            })
+        },
+        is_virtual_mouse,
+    )
 }
 
 /// Check if a mouse device appears to be virtual based on its properties.

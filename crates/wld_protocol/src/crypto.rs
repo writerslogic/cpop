@@ -30,17 +30,7 @@ pub fn compute_causality_lock(
     prev_hash: &[u8],
     current_hash: &[u8],
 ) -> Result<HashValue> {
-    let mut mac = HmacSha256::new_from_slice(key)
-        .map_err(|e| Error::Crypto(format!("HMAC key error: {}", e)))?;
-
-    mac.update(b"causality_v1");
-    hmac_update_field(&mut mac, prev_hash);
-    hmac_update_field(&mut mac, current_hash);
-
-    Ok(HashValue {
-        algorithm: HashAlgorithm::Sha256,
-        digest: mac.finalize().into_bytes().to_vec(),
-    })
+    compute_causality_lock_inner(key, b"causality_v1", prev_hash, current_hash, &[])
 }
 
 /// Binds physical entropy (jitter) to the content chain.
@@ -51,13 +41,25 @@ pub fn compute_causality_lock_v2(
     current_hash: &[u8],
     phys_entropy: &[u8],
 ) -> Result<HashValue> {
+    compute_causality_lock_inner(key, b"causality_v2", prev_hash, current_hash, phys_entropy)
+}
+
+fn compute_causality_lock_inner(
+    key: &[u8],
+    dst: &[u8],
+    prev_hash: &[u8],
+    current_hash: &[u8],
+    phys_entropy: &[u8],
+) -> Result<HashValue> {
     let mut mac = HmacSha256::new_from_slice(key)
         .map_err(|e| Error::Crypto(format!("HMAC key error: {}", e)))?;
 
-    mac.update(b"causality_v2");
+    mac.update(dst);
     hmac_update_field(&mut mac, prev_hash);
     hmac_update_field(&mut mac, current_hash);
-    hmac_update_field(&mut mac, phys_entropy);
+    if !phys_entropy.is_empty() {
+        hmac_update_field(&mut mac, phys_entropy);
+    }
 
     Ok(HashValue {
         algorithm: HashAlgorithm::Sha256,

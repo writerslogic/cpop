@@ -76,6 +76,12 @@ pub fn ffi_init() -> FfiResult {
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_status() -> FfiStatus {
+    // SWF calibration is independent of engine init — always report it.
+    // Report 0 if not yet calibrated so the UI shows "Not calibrated".
+    let swf_iters = crate::ffi::forensics::calibrated_params()
+        .map(|p| p.iterations_per_second)
+        .unwrap_or(0);
+
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => {
@@ -84,7 +90,7 @@ pub fn ffi_get_status() -> FfiStatus {
                 data_dir: String::new(),
                 tracked_file_count: 0,
                 total_checkpoints: 0,
-                swf_iterations_per_second: 0,
+                swf_iterations_per_second: swf_iters,
                 error_message: Some("Data directory not found".to_string()),
             };
         }
@@ -97,7 +103,7 @@ pub fn ffi_get_status() -> FfiStatus {
             data_dir: data_dir.display().to_string(),
             tracked_file_count: 0,
             total_checkpoints: 0,
-            swf_iterations_per_second: 0,
+            swf_iterations_per_second: swf_iters,
             error_message: None,
         };
     }
@@ -110,7 +116,7 @@ pub fn ffi_get_status() -> FfiStatus {
                 data_dir: data_dir.display().to_string(),
                 tracked_file_count: 0,
                 total_checkpoints: 0,
-                swf_iterations_per_second: 0,
+                swf_iterations_per_second: swf_iters,
                 error_message: Some(e),
             };
         }
@@ -124,7 +130,7 @@ pub fn ffi_get_status() -> FfiStatus {
         data_dir: data_dir.display().to_string(),
         tracked_file_count: files.len() as u32,
         total_checkpoints,
-        swf_iterations_per_second: crate::vdf::default_parameters().iterations_per_second,
+        swf_iterations_per_second: swf_iters,
         error_message: None,
     }
 }

@@ -10,7 +10,9 @@ use super::types::{MasterIdentity, PUFProvider, VERSION};
 
 use chrono::Utc;
 
-pub fn derive_master_identity(puf: &dyn PUFProvider) -> Result<MasterIdentity, KeyHierarchyError> {
+/// Derive the master signing key from the PUF challenge-response.
+/// Shared by both `derive_master_identity` and `derive_master_private_key`.
+fn derive_signing_key(puf: &dyn PUFProvider) -> Result<SigningKey, KeyHierarchyError> {
     let challenge = Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
     let puf_response = puf.get_response(&challenge)?;
 
@@ -19,7 +21,11 @@ pub fn derive_master_identity(puf: &dyn PUFProvider) -> Result<MasterIdentity, K
         IDENTITY_DOMAIN.as_bytes(),
         b"master-seed",
     )?);
-    let signing_key = SigningKey::from_bytes(&seed);
+    Ok(SigningKey::from_bytes(&seed))
+}
+
+pub fn derive_master_identity(puf: &dyn PUFProvider) -> Result<MasterIdentity, KeyHierarchyError> {
+    let signing_key = derive_signing_key(puf)?;
     let public_key = signing_key.verifying_key().to_bytes().to_vec();
 
     let fingerprint = Sha256::digest(&public_key);
@@ -37,14 +43,5 @@ pub fn derive_master_identity(puf: &dyn PUFProvider) -> Result<MasterIdentity, K
 pub(crate) fn derive_master_private_key(
     puf: &dyn PUFProvider,
 ) -> Result<SigningKey, KeyHierarchyError> {
-    let challenge = Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
-    let puf_response = puf.get_response(&challenge)?;
-
-    let seed = Zeroizing::new(hkdf_expand(
-        &puf_response,
-        IDENTITY_DOMAIN.as_bytes(),
-        b"master-seed",
-    )?);
-    let signing_key = SigningKey::from_bytes(&seed);
-    Ok(signing_key)
+    derive_signing_key(puf)
 }

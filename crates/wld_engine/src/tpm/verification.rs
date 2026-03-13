@@ -100,50 +100,62 @@ pub fn verify_quote(quote: &Quote) -> Result<(), TPMError> {
 }
 
 fn verify_signature(public_key: &[u8], payload: &[u8], signature: &[u8]) -> Result<(), TPMError> {
-    // Try Ed25519 (32-byte raw public key)
-    if public_key.len() == 32 && signature.len() == 64 {
-        if let Ok(key_bytes) = <[u8; 32]>::try_from(public_key) {
-            if let Ok(vk) = ed25519_dalek::VerifyingKey::from_bytes(&key_bytes) {
-                if let Ok(sig_bytes) = <[u8; 64]>::try_from(signature) {
-                    let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
-                    return vk
-                        .verify(payload, &sig)
-                        .map_err(|_| TPMError::InvalidSignature);
-                }
-            }
-        }
-    }
+    try_verify_ed25519(public_key, payload, signature)
+        .or_else(|| try_verify_ecdsa_p256(public_key, payload, signature))
+        .or_else(|| try_verify_rsa(public_key, payload, signature))
+        .unwrap_or(Err(TPMError::UnsupportedPublicKey))
+}
 
-    // Try ECDSA P-256 (SEC1 uncompressed 65-byte or compressed 33-byte public key)
-    if let Ok(vk) = p256::ecdsa::VerifyingKey::from_sec1_bytes(public_key) {
-        // Raw r||s (64 bytes)
-        if signature.len() == 64 {
-            if let Ok(sig) = p256::ecdsa::Signature::from_slice(signature) {
-                return vk
-                    .verify(payload, &sig)
-                    .map_err(|_| TPMError::InvalidSignature);
-            }
-        }
-        // DER-encoded signature
-        if let Ok(sig) = p256::ecdsa::DerSignature::from_bytes(signature) {
-            return vk
-                .verify(payload, &sig)
-                .map_err(|_| TPMError::InvalidSignature);
-        }
-        return Err(TPMError::InvalidSignature);
-    }
+fn try_verify_ed25519(
+    public_key: &[u8],
+    payload: &[u8],
+    signature: &[u8],
+) -> Option<Result<(), TPMError>> {
+    let key_bytes: [u8; 32] = public_key.try_into().ok()?;
+    let sig_bytes: [u8; 64] = signature.try_into().ok()?;
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(&key_bytes).ok()?;
+    let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
+    Some(
+        vk.verify(payload, &sig)
+            .map_err(|_| TPMError::InvalidSignature),
+    )
+}
 
-    // Try RSA (DER-encoded public key)
-    if let Ok(key) = rsa::RsaPublicKey::from_pkcs1_der(public_key)
+fn try_verify_ecdsa_p256(
+    public_key: &[u8],
+    payload: &[u8],
+    signature: &[u8],
+) -> Option<Result<(), TPMError>> {
+    let vk = p256::ecdsa::VerifyingKey::from_sec1_bytes(public_key).ok()?;
+    // Raw r||s (64 bytes)
+    if signature.len() == 64 {
+        let sig = p256::ecdsa::Signature::from_slice(signature).ok()?;
+        return Some(
+            vk.verify(payload, &sig)
+                .map_err(|_| TPMError::InvalidSignature),
+        );
+    }
+    // DER-encoded
+    let der_sig = p256::ecdsa::DerSignature::from_bytes(signature).ok()?;
+    Some(
+        vk.verify(payload, &der_sig)
+            .map_err(|_| TPMError::InvalidSignature),
+    )
+}
+
+fn try_verify_rsa(
+    public_key: &[u8],
+    payload: &[u8],
+    signature: &[u8],
+) -> Option<Result<(), TPMError>> {
+    let key = rsa::RsaPublicKey::from_pkcs1_der(public_key)
         .or_else(|_| rsa::RsaPublicKey::from_public_key_der(public_key))
-    {
-        let verifying_key = rsa::pkcs1v15::VerifyingKey::<sha2::Sha256>::new_unprefixed(key);
-        let sig = rsa::pkcs1v15::Signature::try_from(signature)
-            .map_err(|_| TPMError::InvalidSignature)?;
-        return verifying_key
+        .ok()?;
+    let verifying_key = rsa::pkcs1v15::VerifyingKey::<sha2::Sha256>::new_unprefixed(key);
+    let sig = rsa::pkcs1v15::Signature::try_from(signature).ok()?;
+    Some(
+        verifying_key
             .verify(payload, &sig)
-            .map_err(|_| TPMError::InvalidSignature);
-    }
-
-    Err(TPMError::UnsupportedPublicKey)
+            .map_err(|_| TPMError::InvalidSignature),
+    )
 }

@@ -30,6 +30,7 @@ pub struct EthereumProvider {
     signing_key: SigningKey,
     chain_id: u64,
     client: reqwest::Client,
+    cached_address: String,
 }
 
 impl EthereumProvider {
@@ -52,12 +53,15 @@ impl EthereumProvider {
         let signing_key = SigningKey::from_bytes(key_bytes.as_slice().into())
             .map_err(|e| AnchorError::Configuration(format!("Invalid secp256k1 key: {e}")))?;
 
+        let cached_address = derive_eth_address(&signing_key);
+
         Ok(Self {
             rpc_url,
             contract_address: contract_address.to_lowercase(),
             signing_key,
             chain_id,
             client: reqwest::Client::new(),
+            cached_address,
         })
     }
 
@@ -99,18 +103,8 @@ impl EthereumProvider {
         ))
     }
 
-    /// Derive the checksumless Ethereum address from the signing key.
     fn address(&self) -> String {
-        let verifying_key = VerifyingKey::from(&self.signing_key);
-        let public_key_bytes = verifying_key.to_encoded_point(false);
-        let public_key_slice = &public_key_bytes.as_bytes()[1..]; // skip 0x04 uncompressed prefix
-
-        let mut hasher = Keccak::v256();
-        let mut hash = [0u8; 32];
-        hasher.update(public_key_slice);
-        hasher.finalize(&mut hash);
-
-        format!("0x{}", hex::encode(&hash[12..]))
+        self.cached_address.clone()
     }
 
     /// Send a JSON-RPC request to the Ethereum node.
@@ -465,6 +459,20 @@ impl AnchorProvider for EthereumProvider {
 }
 
 /// Parse hex (with or without `0x` prefix) into bytes.
+/// Derive the checksumless Ethereum address from a signing key.
+fn derive_eth_address(signing_key: &SigningKey) -> String {
+    let verifying_key = VerifyingKey::from(signing_key);
+    let public_key_bytes = verifying_key.to_encoded_point(false);
+    let public_key_slice = &public_key_bytes.as_bytes()[1..]; // skip 0x04 uncompressed prefix
+
+    let mut hasher = Keccak::v256();
+    let mut hash = [0u8; 32];
+    hasher.update(public_key_slice);
+    hasher.finalize(&mut hash);
+
+    format!("0x{}", hex::encode(&hash[12..]))
+}
+
 fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
     let clean = hex.trim_start_matches("0x");
     hex::decode(clean).map_err(|e| e.to_string())

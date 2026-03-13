@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 /// Default PCR banks to include in attestation quotes.
 /// PCR 0 = firmware, PCR 4 = boot manager, PCR 7 = Secure Boot state.
-const DEFAULT_QUOTE_PCRS: &[u32] = &[0, 4, 7];
+pub(crate) const DEFAULT_QUOTE_PCRS: &[u32] = &[0, 4, 7];
 
 pub trait Provider: Send + Sync {
     fn capabilities(&self) -> Capabilities;

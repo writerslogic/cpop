@@ -17,12 +17,22 @@ use crate::rfc::wire_types::enums::{AttestationTier, ContentTier, ProofAlgorithm
 use crate::rfc::wire_types::hash::HashValue;
 use crate::rfc::wire_types::packet::EvidencePacketWire;
 
-const PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
+const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
+
+/// Minimum jitter quantization per draft-condrey-rats-pop §11.4 (privacy).
+const JITTER_QUANTIZATION_MS: u64 = 5;
 
 /// Convert a checkpoint chain to a spec-conformant `EvidencePacketWire`.
 pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
-    let checkpoints: Vec<CheckpointWire> =
-        chain.checkpoints.iter().map(checkpoint_to_wire).collect();
+    // Determine entangled mode: ENHANCED/MAXIMUM use algorithm 21 per §entangled-mode-requirement
+    let has_jitter_any = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
+    let use_entangled = has_jitter_any; // ENHANCED or MAXIMUM → algorithm 21
+
+    let checkpoints: Vec<CheckpointWire> = chain
+        .checkpoints
+        .iter()
+        .map(|cp| checkpoint_to_wire(cp, use_entangled))
+        .collect();
 
     let last_cp = chain.checkpoints.last();
     let content_hash = last_cp.map(|cp| cp.content_hash).unwrap_or([0u8; 32]);
@@ -42,7 +52,18 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
     };
 
     let attestation_tier = Some(AttestationTier::SoftwareOnly);
-    let content_tier = if chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some()) {
+    // Determine content tier: ENHANCED requires jitter binding, MAXIMUM requires
+    // jitter + physical state on every checkpoint.
+    let has_jitter = chain.checkpoints.iter().any(|cp| cp.rfc_jitter.is_some());
+    let all_have_physical = has_jitter
+        && chain.checkpoints.iter().all(|cp| {
+            cp.jitter_binding
+                .as_ref()
+                .is_some_and(|jb| jb.physics_seed.is_some())
+        });
+    let content_tier = if all_have_physical {
+        Some(ContentTier::Maximum)
+    } else if has_jitter {
         Some(ContentTier::Enhanced)
     } else {
         Some(ContentTier::Core)
@@ -67,11 +88,16 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
     }
 }
 
-fn checkpoint_to_wire(cp: &Checkpoint) -> CheckpointWire {
+fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
     let process_proof = if let Some(swf) = &cp.argon2_swf {
-        // Argon2id SWF (algorithm=20) — spec-conformant
+        // §entangled-mode-requirement: ENHANCED/MAXIMUM → algorithm 21
+        let algorithm = if use_entangled {
+            ProofAlgorithm::SwfArgon2idEntangled
+        } else {
+            ProofAlgorithm::SwfArgon2id
+        };
         ProcessProof {
-            algorithm: ProofAlgorithm::SwfArgon2id,
+            algorithm,
             params: ProofParams {
                 time_cost: swf.params.time_cost as u64,
                 memory_cost: swf.params.memory_cost as u64,
@@ -129,22 +155,36 @@ fn checkpoint_to_wire(cp: &Checkpoint) -> CheckpointWire {
 
     // Build jitter-binding wire structure with HKDF-derived seal (ENHANCED+ tier)
     let merkle_root = &process_proof.merkle_root;
+    let swf_input = &process_proof.input;
     let has_merkle_root = merkle_root.len() >= 32 && merkle_root.iter().any(|&b| b != 0);
 
     let (jitter_binding_wire, physical_state_wire) = if let Some(rfc_jitter) = &cp.rfc_jitter {
-        // Extract interval data: prefer raw_intervals, fall back to summary sample_count
+        // Extract interval data: prefer raw_intervals, fall back to summary sample_count.
+        // §11.4: quantize to JITTER_QUANTIZATION_MS to limit timing side-channel leakage.
         let intervals: Vec<u64> = rfc_jitter
             .raw_intervals
             .as_ref()
-            .map(|ri| ri.intervals.iter().map(|&v| v as u64).collect())
+            .map(|ri| {
+                ri.intervals
+                    .iter()
+                    .map(|&v| {
+                        let ms = v as u64;
+                        ((ms + JITTER_QUANTIZATION_MS / 2) / JITTER_QUANTIZATION_MS)
+                            * JITTER_QUANTIZATION_MS
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         let entropy_estimate = (rfc_jitter.summary.entropy_bits * 100.0) as u64;
 
         let jitter_seal = if has_merkle_root {
             // CBOR-encode intervals for seal input
-            let intervals_cbor = crate::codec::cbor::encode(&intervals).unwrap_or_default();
-            crate::crypto::compute_jitter_seal(merkle_root, &intervals_cbor)
+            let intervals_cbor = crate::codec::cbor::encode(&intervals).unwrap_or_else(|e| {
+                log::warn!("CBOR encode intervals for jitter seal failed: {e}");
+                vec![]
+            });
+            crate::crypto::compute_jitter_seal(merkle_root, swf_input, &intervals_cbor)
         } else {
             vec![0u8; 32]
         };
@@ -171,13 +211,23 @@ fn checkpoint_to_wire(cp: &Checkpoint) -> CheckpointWire {
 
     // Compute entangled-mac when jitter-binding and a valid merkle root are present
     let entangled_mac = if let (true, Some(jb)) = (has_merkle_root, jitter_binding_wire.as_ref()) {
-        let jb_cbor = crate::codec::cbor::encode(jb).unwrap_or_default();
+        let jb_cbor = crate::codec::cbor::encode(jb).unwrap_or_else(|e| {
+            log::warn!("CBOR encode jitter-binding for entangled MAC failed: {e}");
+            vec![]
+        });
         let ps_cbor = physical_state_wire
             .as_ref()
-            .and_then(|ps| crate::codec::cbor::encode(ps).ok())
+            .and_then(|ps| {
+                crate::codec::cbor::encode(ps)
+                    .map_err(|e| {
+                        log::warn!("CBOR encode physical-state for entangled MAC failed: {e}")
+                    })
+                    .ok()
+            })
             .unwrap_or_default();
         Some(crate::crypto::compute_entangled_mac(
             merkle_root,
+            swf_input,
             &cp.previous_hash,
             &cp.content_hash,
             &jb_cbor,

@@ -116,7 +116,7 @@ fn test_pop_playback_attack_detection() {
 
     let packet = EvidencePacket {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id,
         created,
         document: DocumentRef {

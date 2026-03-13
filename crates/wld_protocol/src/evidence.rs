@@ -40,7 +40,7 @@ impl PoPBuilder {
 
         Ok(Self {
             version: 1,
-            profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+            profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
             packet_id,
             created: now,
             document,
@@ -216,7 +216,7 @@ impl PoPVerifier {
     }
 
     fn validate_structure(&self, packet: &EvidencePacket) -> Result<()> {
-        const EXPECTED_PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
+        const EXPECTED_PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
         if packet.profile_uri != EXPECTED_PROFILE_URI {
             return Err(Error::Validation(format!(
                 "Invalid profile_uri: expected \"{}\", got \"{}\"",

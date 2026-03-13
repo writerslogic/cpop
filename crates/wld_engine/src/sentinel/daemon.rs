@@ -341,12 +341,15 @@ fn is_process_running(_pid: i32) -> bool {
     false
 }
 
-/// Start the sentinel daemon with IPC server (background mode).
-///
-/// Creates the sentinel, binds the IPC socket, writes PID/state files.
-/// Returns a `DaemonHandle` that owns the IPC shutdown channel and task;
-/// call `DaemonHandle::shutdown()` to stop gracefully.
-pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
+/// Shared daemon setup: create manager, sentinel, IPC server, write PID/state.
+struct DaemonSetup {
+    sentinel: Arc<Sentinel>,
+    ipc_shutdown_tx: mpsc::Sender<()>,
+    ipc_handle: tokio::task::JoinHandle<()>,
+    daemon_mgr: DaemonManager,
+}
+
+async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
     let daemon_mgr = DaemonManager::new(writerslogic_dir);
 
     if daemon_mgr.is_running() {
@@ -357,7 +360,6 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
     }
 
     let config = SentinelConfig::default().with_writerslogic_dir(writerslogic_dir);
-
     let sentinel = Arc::new(Sentinel::new(config)?);
 
     if let Ok(Some(hmac_key)) = crate::identity::SecureStorage::load_hmac_key() {
@@ -370,7 +372,6 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
         .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
 
     let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
-
     let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
 
     let ipc_handle = tokio::spawn(async move {
@@ -393,7 +394,7 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
         identity: None,
     })?;
 
-    Ok(DaemonHandle {
+    Ok(DaemonSetup {
         sentinel,
         ipc_shutdown_tx,
         ipc_handle,
@@ -401,54 +402,29 @@ pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
     })
 }
 
+/// Start the sentinel daemon with IPC server (background mode).
+///
+/// Creates the sentinel, binds the IPC socket, writes PID/state files.
+/// Returns a `DaemonHandle` that owns the IPC shutdown channel and task;
+/// call `DaemonHandle::shutdown()` to stop gracefully.
+pub async fn cmd_start(writerslogic_dir: &Path) -> Result<DaemonHandle> {
+    let setup = setup_daemon(writerslogic_dir).await?;
+
+    Ok(DaemonHandle {
+        sentinel: setup.sentinel,
+        ipc_shutdown_tx: setup.ipc_shutdown_tx,
+        ipc_handle: setup.ipc_handle,
+        daemon_mgr: setup.daemon_mgr,
+    })
+}
+
 /// Run the sentinel daemon in the foreground until SIGTERM/SIGINT.
 pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
-    let daemon_mgr = DaemonManager::new(writerslogic_dir);
-
-    if daemon_mgr.is_running() {
-        let status = daemon_mgr.status();
-        if let Some(pid) = status.pid {
-            return Err(SentinelError::DaemonAlreadyRunning(pid));
-        }
-    }
-
-    let config = SentinelConfig::default().with_writerslogic_dir(writerslogic_dir);
-
-    let sentinel = Arc::new(Sentinel::new(config)?);
-
-    if let Ok(Some(hmac_key)) = crate::identity::SecureStorage::load_hmac_key() {
-        sentinel.set_hmac_key(hmac_key.to_vec());
-    }
-
-    sentinel.start().await?;
-
-    let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
-        .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
-
-    let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
-
-    let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
-
-    daemon_mgr.write_pid()?;
-    daemon_mgr.write_state(&DaemonState {
-        pid: std::process::id() as i32,
-        started_at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        identity: None,
-    })?;
-
-    let sentinel_clone = Arc::clone(&sentinel);
-    let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc_server
-            .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
-            .await
-        {
-            log::error!("IPC server error: {}", e);
-        }
-    });
+    let setup = setup_daemon(writerslogic_dir).await?;
+    let sentinel = setup.sentinel;
+    let ipc_shutdown_tx = setup.ipc_shutdown_tx;
+    let ipc_handle = setup.ipc_handle;
+    let daemon_mgr = setup.daemon_mgr;
 
     #[cfg(unix)]
     {
@@ -476,7 +452,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
     }
 
     let _ = ipc_shutdown_tx.send(()).await;
-    sentinel_clone.stop().await?;
+    sentinel.stop().await?;
     ipc_handle.abort();
 
     daemon_mgr.cleanup();

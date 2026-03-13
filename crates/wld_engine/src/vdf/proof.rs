@@ -60,7 +60,7 @@ impl VdfProof {
     }
 
     pub fn verify(&self) -> bool {
-        compute_chain(self.input, self.iterations) == self.output
+        self.verify_with_progress(None::<fn(f64)>)
     }
 
     pub fn verify_with_progress<F>(&self, mut progress: Option<F>) -> bool

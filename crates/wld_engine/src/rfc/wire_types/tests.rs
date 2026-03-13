@@ -111,7 +111,7 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
 
     EvidencePacketWire {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id: [0xFF; 16],
         created: 1700000000000,
         document: DocumentRef {
@@ -322,7 +322,7 @@ fn test_evidence_packet_with_optional_fields() {
     ]);
 
     packet.profile = Some(ProfileDeclarationWire {
-        profile_id: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_id: "urn:ietf:params:pop:profile:1.0".to_string(),
         feature_flags: vec![1, 3, 5],
     });
 

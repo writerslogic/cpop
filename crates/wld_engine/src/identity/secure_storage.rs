@@ -28,6 +28,11 @@ static MIGRATION_ONCE: Once = Once::new();
 
 pub struct SecureStorage;
 
+#[cfg(not(target_os = "macos"))]
+fn keyring_entry(account: &str) -> Result<Entry> {
+    Entry::new(SERVICE_NAME, account).map_err(|e| anyhow!("Failed to access keyring: {}", e))
+}
+
 impl SecureStorage {
     fn save(account: &str, data: &[u8]) -> Result<()> {
         #[cfg(target_os = "macos")]
@@ -36,9 +41,7 @@ impl SecureStorage {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let entry = Entry::new(SERVICE_NAME, account)
-                .map_err(|e| anyhow!("Failed to access keyring: {}", e))?;
-
+            let entry = keyring_entry(account)?;
             let encoded = general_purpose::STANDARD.encode(data);
             entry
                 .set_password(&encoded)
@@ -55,9 +58,7 @@ impl SecureStorage {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let entry = Entry::new(SERVICE_NAME, account)
-                .map_err(|e| anyhow!("Failed to access keyring: {}", e))?;
-
+            let entry = keyring_entry(account)?;
             match entry.get_password() {
                 Ok(encoded) => {
                     let data = general_purpose::STANDARD
@@ -78,9 +79,7 @@ impl SecureStorage {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let entry = Entry::new(SERVICE_NAME, account)
-                .map_err(|e| anyhow!("Failed to access keyring: {}", e))?;
-
+            let entry = keyring_entry(account)?;
             match entry.delete_password() {
                 Ok(_) => Ok(()),
                 Err(keyring::Error::NoEntry) => Ok(()),

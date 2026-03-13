@@ -101,9 +101,9 @@ impl SoftwarePUF {
     fn generate_seed(&self) -> Result<Vec<u8>, KeyHierarchyError> {
         let mut hasher = Sha256::new();
 
-        let mut random_bytes = [0u8; 32];
-        rand::rng().fill_bytes(&mut random_bytes);
-        hasher.update(random_bytes);
+        let mut random_bytes = Zeroizing::new([0u8; 32]);
+        rand::rng().fill_bytes(&mut *random_bytes);
+        hasher.update(*random_bytes);
         hasher.update(b"witnessd-software-puf-v1");
 
         if let Ok(hostname) = hostname::get() {
@@ -130,16 +130,16 @@ impl SoftwarePUF {
         format!("swpuf-{}", hex::encode(&digest[0..4]))
     }
 
-    pub fn seed(&self) -> Vec<u8> {
-        self.seed.clone()
+    pub fn seed(&self) -> Zeroizing<Vec<u8>> {
+        Zeroizing::new(self.seed.clone())
     }
 
     pub fn seed_path(&self) -> PathBuf {
         self.seed_path.clone()
     }
 
-    pub fn get_seed(&self) -> [u8; 32] {
-        let mut arr = [0u8; 32];
+    pub fn get_seed(&self) -> Zeroizing<[u8; 32]> {
+        let mut arr = Zeroizing::new([0u8; 32]);
         if self.seed.len() == 32 {
             arr.copy_from_slice(&self.seed);
         }

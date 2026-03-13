@@ -128,30 +128,14 @@ pub fn focus_document_sync(
             session.current_hash = Some(hash);
         }
 
-        let wal_path = wal_dir.join(format!("{}.wal", session.session_id));
-        let mut session_id_bytes = [0u8; 32];
-        let hex_str = &session.session_id[..64.min(session.session_id.len())];
-        if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-            if let Some(key) = key {
-                if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
-                    let payload = create_session_start_payload(&session);
-                    if let Err(e) = wal.append(EntryType::SessionStart, payload) {
-                        log::warn!(
-                            "WAL append failed for session {}: {}",
-                            session.session_id,
-                            e
-                        );
-                    }
-                }
-            } else {
-                log::warn!(
-                    "Signing key not initialized, skipping WAL for session {}",
-                    session.session_id
-                );
-            }
-        } else {
-            log::warn!("Invalid session ID hex: {}", session.session_id);
-        }
+        let payload = create_session_start_payload(&session);
+        wal_append_session_event(
+            &session.session_id,
+            wal_dir,
+            key,
+            EntryType::SessionStart,
+            payload,
+        );
 
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Started,
@@ -216,31 +200,14 @@ pub fn handle_change_event_sync(
                 session.current_hash = current_hash.clone();
 
                 if let Some(hash) = current_hash {
-                    let wal_path = wal_dir.join(format!("{}.wal", session.session_id));
-                    let mut session_id_bytes = [0u8; 32];
-                    let hex_str = &session.session_id[..64.min(session.session_id.len())];
-                    if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-                        if let Some(key) = key.clone() {
-                            if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
-                                let payload =
-                                    create_document_hash_payload(&hash, event.size.unwrap_or(0));
-                                if let Err(e) = wal.append(EntryType::DocumentHash, payload) {
-                                    log::warn!(
-                                        "WAL append failed for session {}: {}",
-                                        session.session_id,
-                                        e
-                                    );
-                                }
-                            }
-                        } else {
-                            log::warn!(
-                                "Signing key not initialized, skipping WAL for session {}",
-                                session.session_id
-                            );
-                        }
-                    } else {
-                        log::warn!("Invalid session ID hex: {}", session.session_id);
-                    }
+                    let payload = create_document_hash_payload(&hash, event.size.unwrap_or(0));
+                    wal_append_session_event(
+                        &session.session_id,
+                        wal_dir,
+                        key.clone(),
+                        EntryType::DocumentHash,
+                        payload,
+                    );
                 }
 
                 let _ = session_events_tx.send(SessionEvent {
@@ -332,6 +299,35 @@ pub fn end_all_sessions_sync(
                 log::warn!("shadow buffer cleanup failed for {shadow_id}: {e}");
             }
         }
+    }
+}
+
+/// Append an entry to the session's WAL file, handling hex decode, key check, and errors.
+fn wal_append_session_event(
+    session_id: &str,
+    wal_dir: &Path,
+    key: Option<SigningKey>,
+    entry_type: EntryType,
+    payload: Vec<u8>,
+) {
+    let mut session_id_bytes = [0u8; 32];
+    let hex_str = &session_id[..64.min(session_id.len())];
+    if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
+        if let Some(key) = key {
+            let wal_path = wal_dir.join(format!("{}.wal", session_id));
+            if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
+                if let Err(e) = wal.append(entry_type, payload) {
+                    log::warn!("WAL append failed for session {}: {}", session_id, e);
+                }
+            }
+        } else {
+            log::warn!(
+                "Signing key not initialized, skipping WAL for session {}",
+                session_id
+            );
+        }
+    } else {
+        log::warn!("Invalid session ID hex: {}", session_id);
     }
 }
 

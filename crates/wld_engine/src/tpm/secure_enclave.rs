@@ -118,6 +118,8 @@ struct HardwareInfo {
 
 pub struct SecureEnclaveProvider {
     state: Mutex<SecureEnclaveState>,
+    cached_device_id: String,
+    cached_public_key: Vec<u8>,
 }
 
 unsafe impl Send for SecureEnclaveProvider {}
@@ -147,8 +149,13 @@ pub fn try_init() -> Option<SecureEnclaveProvider> {
         return None;
     }
 
+    let cached_device_id = state.device_id.clone();
+    let cached_public_key = state.public_key.clone();
+
     Some(SecureEnclaveProvider {
         state: Mutex::new(state),
+        cached_device_id,
+        cached_public_key,
     })
 }
 
@@ -457,7 +464,7 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn device_id(&self) -> String {
-        self.state.lock_recover().device_id.clone()
+        self.cached_device_id.clone()
     }
 
     fn algorithm(&self) -> coset::iana::Algorithm {
@@ -465,7 +472,7 @@ impl Provider for SecureEnclaveProvider {
     }
 
     fn public_key(&self) -> Vec<u8> {
-        self.state.lock_recover().public_key.clone()
+        self.cached_public_key.clone()
     }
 
     fn quote(&self, nonce: &[u8], _pcrs: &[u32]) -> Result<Quote, TPMError> {

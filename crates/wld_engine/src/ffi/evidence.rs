@@ -232,7 +232,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
 
     let wire_packet = EvidencePacketWire {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id: latest.device_id,
         created: now_ms,
         document: DocumentRef {
@@ -595,7 +595,7 @@ fn decode_evidence_for_c2pa(
 
     Ok(wld_protocol::rfc::EvidencePacket {
         version: 1,
-        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id,
         created: chrono::Utc::now().timestamp_millis() as u64,
         document: wld_protocol::rfc::DocumentRef {

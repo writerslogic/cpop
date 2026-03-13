@@ -76,13 +76,14 @@ pub enum AIPurpose {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum AIExtent {
-    None,
-    Minimal,
-    Moderate,
-    Substantial,
+    None = 0,
+    Minimal = 1,
+    Moderate = 2,
+    Substantial = 3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

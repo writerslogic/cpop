@@ -430,9 +430,10 @@ fn is_backspace_keycode(keycode: u16) -> bool {
 
 /// Bhattacharyya coefficient between two f32 histograms.
 pub fn histogram_similarity(a: &[f32], b: &[f32]) -> f64 {
-    let a_f64: Vec<f64> = a.iter().map(|&x| x as f64).collect();
-    let b_f64: Vec<f64> = b.iter().map(|&x| x as f64).collect();
-    crate::analysis::stats::bhattacharyya_coefficient(&a_f64, &b_f64)
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| ((x as f64) * (y as f64)).sqrt())
+        .sum()
 }
 
 #[cfg(test)]

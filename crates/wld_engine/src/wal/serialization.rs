@@ -53,6 +53,12 @@ pub(super) fn deserialize_header(data: &[u8]) -> Result<Header, WalError> {
 
 pub(super) fn serialize_entry(entry: &Entry) -> Result<Vec<u8>, WalError> {
     let payload_len = entry.payload.len();
+    if payload_len > u32::MAX as usize {
+        return Err(WalError::Serialization(format!(
+            "payload too large: {} bytes exceeds u32::MAX",
+            payload_len
+        )));
+    }
     // sequence(8) + timestamp(8) + type(1) + payload_len(4) + payload(N) + prev_hash(32) + cumulative_hash(32) + signature(64)
     let size = 8 + 8 + 1 + 4 + payload_len + 32 + 32 + 64;
     let mut buf = vec![0u8; size];

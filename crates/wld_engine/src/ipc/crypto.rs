@@ -71,6 +71,14 @@ pub(crate) struct SecureSession {
     nonce_prefix: [u8; 4],
 }
 
+/// Build a 12-byte AES-GCM nonce from a 4-byte HKDF-derived prefix and an 8-byte sequence number.
+fn construct_nonce(prefix: &[u8; 4], seq: u64) -> [u8; 12] {
+    let mut nonce = [0u8; 12];
+    nonce[0..4].copy_from_slice(prefix);
+    nonce[4..].copy_from_slice(&seq.to_le_bytes());
+    nonce
+}
+
 impl SecureSession {
     /// Derive a session from a P-256 ECDH shared secret with channel binding.
     /// Pubkeys are included in HKDF info to prevent MITM relay attacks.
@@ -116,9 +124,7 @@ impl SecureSession {
     /// Encrypt a JSON message payload. Returns wire bytes: [8-byte seq][12-byte nonce][ciphertext+tag].
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let seq = self.tx_sequence.fetch_add(2, Ordering::SeqCst);
-        let mut nonce_bytes = [0u8; 12];
-        nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
-        nonce_bytes[4..].copy_from_slice(&seq.to_le_bytes());
+        let nonce_bytes = construct_nonce(&self.nonce_prefix, seq);
         let nonce = AesNonce::from_slice(&nonce_bytes);
 
         let ciphertext = self
