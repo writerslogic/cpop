@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use bip39::{Language, Mnemonic};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// 64-byte seed derived from a mnemonic and silicon PUF, zeroized on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
@@ -21,12 +21,13 @@ impl AsRef<[u8]> for SensitiveSeed {
 pub struct MnemonicHandler;
 
 impl MnemonicHandler {
-    /// Generate a random 12-word BIP-39 mnemonic phrase.
-    pub fn generate() -> String {
+    /// Generate a random 12-word BIP-39 mnemonic phrase, zeroized on drop.
+    pub fn generate() -> Zeroizing<String> {
         let mut entropy = [0u8; 16];
         rand::rng().fill(&mut entropy);
         let mnemonic = Mnemonic::from_entropy(&entropy).expect("16-byte entropy is valid BIP-39");
-        mnemonic.to_string()
+        entropy.zeroize();
+        Zeroizing::new(mnemonic.to_string())
     }
 
     /// Derive a 64-byte seed by combining mnemonic entropy with silicon PUF.
@@ -74,10 +75,10 @@ impl MnemonicHandler {
         Ok(mnemonic.to_entropy())
     }
 
-    /// Convert raw entropy bytes into a BIP-39 mnemonic phrase.
-    pub fn entropy_to_phrase(entropy: &[u8]) -> Result<String> {
+    /// Convert raw entropy bytes into a BIP-39 mnemonic phrase, zeroized on drop.
+    pub fn entropy_to_phrase(entropy: &[u8]) -> Result<Zeroizing<String>> {
         let mnemonic = Mnemonic::from_entropy(entropy).map_err(|_| anyhow!("Invalid entropy"))?;
-        Ok(mnemonic.to_string())
+        Ok(Zeroizing::new(mnemonic.to_string()))
     }
 }
 
@@ -90,7 +91,7 @@ mod tests {
         let phrase = MnemonicHandler::generate();
         let words: Vec<&str> = phrase.split_whitespace().collect();
         assert_eq!(words.len(), 12); // 128-bit entropy = 12 words
-        let mnemonic = Mnemonic::parse_in(Language::English, &phrase);
+        let mnemonic = Mnemonic::parse_in(Language::English, &*phrase);
         assert!(mnemonic.is_ok());
     }
 
@@ -140,7 +141,7 @@ mod tests {
     fn test_generate_uniqueness() {
         let p1 = MnemonicHandler::generate();
         let p2 = MnemonicHandler::generate();
-        assert_ne!(p1, p2, "Two generated mnemonics should differ");
+        assert_ne!(*p1, *p2, "Two generated mnemonics should differ");
     }
 
     #[test]
@@ -169,7 +170,7 @@ mod tests {
 
         let recovered = MnemonicHandler::entropy_to_phrase(&entropy).unwrap();
         assert_eq!(
-            phrase, recovered,
+            *phrase, *recovered,
             "entropy -> phrase should recover the original"
         );
     }

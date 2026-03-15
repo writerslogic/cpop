@@ -9,6 +9,7 @@
 use argon2::{Algorithm, Argon2, Params, Version};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
+use subtle::ConstantTimeEq;
 
 /// Argon2id SWF parameters.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -108,6 +109,21 @@ pub const PROOF_ALGORITHM_STANDARD: u16 = 20;
 /// Proof algorithm ID for entangled Argon2id SWF.
 pub const PROOF_ALGORITHM_ENTANGLED: u16 = 21;
 
+/// Validate iteration bounds shared by compute and verify paths.
+fn validate_iterations(iterations: u64) -> Result<(), String> {
+    if iterations == 0 {
+        return Err("iterations must be >= 1".into());
+    }
+    if iterations > u32::MAX as u64 {
+        return Err(format!(
+            "iterations {} exceeds u32::MAX ({})",
+            iterations,
+            u32::MAX
+        ));
+    }
+    Ok(())
+}
+
 /// Compute an Argon2id SWF proof with standard algorithm (20).
 pub fn compute(input: [u8; 32], params: Argon2SwfParams) -> Result<Argon2SwfProof, String> {
     compute_with_algorithm(
@@ -125,6 +141,8 @@ pub fn compute_with_algorithm(
     sample_count: usize,
     proof_algorithm: u16,
 ) -> Result<Argon2SwfProof, String> {
+    validate_iterations(params.iterations)?;
+
     let argon2 = build_argon2(&params)?;
 
     let start = Instant::now();
@@ -210,13 +228,15 @@ pub fn verify(proof: &Argon2SwfProof) -> Result<bool, String> {
 
 /// Verify with explicit expected sample count.
 pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Result<bool, String> {
+    validate_iterations(proof.params.iterations)?;
+
     let expected_challenge = fiat_shamir_challenge(
         &proof.merkle_root,
         &proof.input,
         &proof.params,
         proof.proof_algorithm,
     );
-    if proof.challenge != expected_challenge {
+    if proof.challenge.ct_eq(&expected_challenge).unwrap_u8() == 0 {
         return Ok(false);
     }
 
@@ -227,6 +247,11 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
         }
     }
 
+    // Index 0 must always be present for anchor verification
+    if !proof.sampled_proofs.iter().any(|s| s.leaf_index == 0) {
+        return Ok(false);
+    }
+
     // Build Argon2id instance for state recomputation
     let argon2 = build_argon2(&proof.params)?;
 
@@ -235,14 +260,14 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
     sorted_samples.sort_by_key(|s| s.leaf_index);
 
     for sample in &proof.sampled_proofs {
-        // Verify raw_output → leaf_value binding: H(0x00 || raw_output) == leaf_value
+        // Verify raw_output -> leaf_value binding: H(0x00 || raw_output) == leaf_value
         let expected_leaf: [u8; 32] = {
             let mut h = Sha256::new();
             h.update([0x00u8]);
             h.update(sample.raw_output);
             h.finalize().into()
         };
-        if expected_leaf != sample.leaf_value {
+        if expected_leaf.ct_eq(&sample.leaf_value).unwrap_u8() == 0 {
             return Ok(false);
         }
 
@@ -269,10 +294,16 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
             argon2
                 .hash_password_into(&proof.input, salt_hash.as_slice(), &mut expected_output)
                 .map_err(|e| format!("verify Argon2id index 0: {e}"))?;
-            if expected_output != sample.raw_output {
+            if expected_output.ct_eq(&sample.raw_output).unwrap_u8() == 0 {
                 return Ok(false);
             }
         }
+    }
+
+    // Chain anchor: index 0 must always be verified
+    let has_index_0 = proof.sampled_proofs.iter().any(|s| s.leaf_index == 0);
+    if !has_index_0 {
+        return Ok(false);
     }
 
     // Verify consecutive sampled pairs: state_{i+1} = Argon2id(state_i, salt_{i+1})
@@ -296,7 +327,7 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
                         prev.leaf_index, next.leaf_index
                     )
                 })?;
-            if expected_output != next.raw_output {
+            if expected_output.ct_eq(&next.raw_output).unwrap_u8() == 0 {
                 return Ok(false);
             }
         }
@@ -494,7 +525,7 @@ fn verify_merkle_proof(
         idx /= 2;
     }
 
-    current == *root
+    current.ct_eq(root).unwrap_u8() == 1
 }
 
 #[cfg(test)]
@@ -636,5 +667,44 @@ mod tests {
         for &idx in &indices {
             assert!(idx < 5, "index should be < num_leaves");
         }
+    }
+
+    #[test]
+    fn test_zero_iterations_rejected() {
+        let input = [42u8; 32];
+        let params = Argon2SwfParams {
+            iterations: 0,
+            ..test_params()
+        };
+        let result = compute(input, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("iterations must be >= 1"));
+    }
+
+    #[test]
+    fn test_overflow_iterations_rejected() {
+        let input = [42u8; 32];
+        let params = Argon2SwfParams {
+            iterations: u64::MAX,
+            ..test_params()
+        };
+        let result = compute(input, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds u32::MAX"));
+    }
+
+    #[test]
+    fn test_verify_missing_index_zero_rejected() {
+        let input = [42u8; 32];
+        let params = test_params();
+        let mut proof = compute(input, params).expect("compute");
+        // Remove index 0 from sampled proofs
+        proof.sampled_proofs.retain(|s| s.leaf_index != 0);
+        let valid = verify_with_samples(&proof, proof.sampled_proofs.len());
+        // Should either fail at index mismatch or return Ok(false) for missing index 0
+        assert!(
+            valid.is_ok() && !valid.unwrap(),
+            "proof without index 0 should not verify"
+        );
     }
 }

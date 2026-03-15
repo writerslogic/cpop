@@ -49,6 +49,19 @@ pub fn ffi_init() -> FfiResult {
                 error_message: Some(format!("Failed to write signing key: {}", e)),
             };
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) =
+                std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+            {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("Failed to set key file permissions: {}", e)),
+                };
+            }
+        }
     }
 
     let db_path = data_dir.join("events.db");
