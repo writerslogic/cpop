@@ -306,7 +306,7 @@ impl WarReport {
     /// Generate a report ID in the format WAR-XXXXXXXX.
     pub fn generate_id() -> String {
         let mut bytes = [0u8; 4];
-        let _ = getrandom::getrandom(&mut bytes);
+        getrandom::getrandom(&mut bytes).expect("CSPRNG failure is fatal");
         let hex = hex::encode(bytes).to_uppercase();
         format!("WAR-{}", hex)
     }

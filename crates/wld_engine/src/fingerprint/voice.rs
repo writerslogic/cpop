@@ -108,8 +108,15 @@ impl VoiceFingerprint {
             - (self.correction_rate - other.correction_rate)
                 .abs()
                 .min(1.0);
+        let backspace_sim = self
+            .backspace_signature
+            .similarity(&other.backspace_signature);
 
-        (word_len_sim * 0.25 + punct_sim * 0.25 + ngram_sim * 0.35 + correction_sim * 0.15)
+        (word_len_sim * 0.20
+            + punct_sim * 0.20
+            + ngram_sim * 0.25
+            + correction_sim * 0.15
+            + backspace_sim * 0.20)
             .clamp(0.0, 1.0)
     }
 }
