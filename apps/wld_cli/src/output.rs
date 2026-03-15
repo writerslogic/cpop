@@ -11,4 +11,9 @@ impl OutputMode {
     pub fn new(json: bool, quiet: bool) -> Self {
         Self { json, quiet }
     }
+
+    /// Returns true if informational output should be shown (not json, not quiet).
+    pub fn verbose(&self) -> bool {
+        !self.json && !self.quiet
+    }
 }

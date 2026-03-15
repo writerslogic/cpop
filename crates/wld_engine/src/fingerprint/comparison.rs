@@ -10,8 +10,10 @@ use std::collections::HashMap;
 const SAME_AUTHOR_THRESHOLD: f64 = 0.80;
 /// Similarity above this threshold yields a LikelySameAuthor verdict.
 const LIKELY_SAME_THRESHOLD: f64 = 0.60;
-/// Similarity below this threshold yields a DifferentAuthors verdict.
-const DIFFERENT_AUTHOR_THRESHOLD: f64 = 0.40;
+/// Similarity above this threshold yields an Inconclusive verdict.
+const INCONCLUSIVE_THRESHOLD: f64 = 0.40;
+/// Similarity above this threshold yields a LikelyDifferentAuthors verdict.
+const LIKELY_DIFFERENT_THRESHOLD: f64 = 0.20;
 
 /// Confidence scales linearly with sample count, saturating at this value.
 pub(crate) const CONFIDENCE_SATURATION_SAMPLES: f64 = 200.0;
@@ -47,8 +49,10 @@ impl ComparisonVerdict {
             Self::SameAuthor
         } else if similarity > LIKELY_SAME_THRESHOLD {
             Self::LikelySameAuthor
-        } else if similarity > DIFFERENT_AUTHOR_THRESHOLD {
+        } else if similarity > INCONCLUSIVE_THRESHOLD {
             Self::Inconclusive
+        } else if similarity > LIKELY_DIFFERENT_THRESHOLD {
+            Self::LikelyDifferentAuthors
         } else {
             Self::DifferentAuthors
         }

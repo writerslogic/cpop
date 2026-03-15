@@ -322,6 +322,7 @@ pub(crate) fn cmd_verify(
         return Err(anyhow!(
             "Cannot determine file format: {}\n\n\
              Supported formats:\n  \
+             .cpop      CBOR evidence packet\n  \
              .json      JSON evidence packet\n  \
              .cwar      ASCII-armored CWAR block\n  \
              .db        Local SQLite database\n\n\

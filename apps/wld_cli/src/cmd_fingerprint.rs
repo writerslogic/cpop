@@ -118,12 +118,18 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Re
             let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
 
-            let profile_id: ProfileId = id.unwrap_or_else(|| {
-                manager
-                    .status()
-                    .current_profile_id
-                    .unwrap_or_else(|| "default".to_string())
-            });
+            let profile_id: ProfileId = match id {
+                Some(id) => id,
+                None => match manager.status().current_profile_id {
+                    Some(id) => id,
+                    None => {
+                        return Err(anyhow!(
+                            "No active fingerprint profile. \
+                             Use 'wld fingerprint list' to see available profiles."
+                        ));
+                    }
+                },
+            };
 
             match manager.load(&profile_id) {
                 Ok(fp) => {

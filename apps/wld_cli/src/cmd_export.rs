@@ -111,6 +111,15 @@ pub(crate) async fn cmd_export(
         .ok_or_else(|| anyhow!("No events found for this file"))?;
 
     let tier_lower = tier.to_lowercase();
+    if !matches!(
+        tier_lower.as_str(),
+        "basic" | "standard" | "enhanced" | "maximum"
+    ) {
+        anyhow::bail!(
+            "Unknown evidence tier '{}'. Valid tiers: basic, standard, enhanced, maximum",
+            tier
+        );
+    }
     let keystroke_evidence = if tier_lower == "enhanced" || tier_lower == "maximum" {
         load_keystroke_evidence(dir, &abs_path_str)
     } else {
@@ -442,7 +451,7 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
         "standard" => "Standard",
         "enhanced" => "Enhanced",
         "maximum" => "Maximum",
-        _ => "Basic",
+        _ => unreachable!("tier validated at entry"),
     };
 
     // §7.5: entangled (21) for enhanced/maximum, standard (20) otherwise
