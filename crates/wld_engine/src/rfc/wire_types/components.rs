@@ -690,106 +690,147 @@ pub struct ProfileDeclarationWire {
 ///
 /// ```cddl
 /// streaming-stats = {
-///     1 => float,   ; mean
-///     2 => float,   ; variance
-///     3 => uint,    ; count
-///     ? 4 => float, ; min
-///     ? 5 => float, ; max
+///     1 => uint,     ; count
+///     2 => float32,  ; mean
+///     3 => float32,  ; m2 (Welford's)
+///     4 => float32,  ; min
+///     5 => float32,  ; max
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingStats {
     #[serde(rename = "1")]
-    pub mean: f64,
-
-    #[serde(rename = "2")]
-    pub variance: f64,
-
-    #[serde(rename = "3")]
     pub count: u64,
 
-    #[serde(rename = "4", default, skip_serializing_if = "Option::is_none")]
-    pub min: Option<f64>,
+    #[serde(rename = "2")]
+    pub mean: f64,
 
-    #[serde(rename = "5", default, skip_serializing_if = "Option::is_none")]
-    pub max: Option<f64>,
+    #[serde(rename = "3")]
+    pub m2: f64,
+
+    #[serde(rename = "4")]
+    pub min: f64,
+
+    #[serde(rename = "5")]
+    pub max: f64,
 }
 
-/// Single baseline digest per CDDL `baseline-digest`.
+/// Aggregate baseline digest per CDDL `baseline-digest`.
 ///
 /// ```cddl
 /// baseline-digest = {
-///     1 => tstr,              ; dimension-name
-///     2 => bstr,              ; digest-value
-///     3 => uint,              ; sample-count
-///     ? 4 => streaming-stats, ; reference-stats
-///     ? 10 => confidence-tier,
+///     1  => uint,              ; version (MUST be 1)
+///     2  => uint,              ; session-count
+///     3  => uint,              ; total-keystrokes
+///     4  => streaming-stats,   ; iki-stats
+///     5  => streaming-stats,   ; cv-stats
+///     6  => streaming-stats,   ; hurst-stats
+///     7  => [9* float32],      ; aggregate-iki-histogram
+///     8  => streaming-stats,   ; pause-stats
+///     9  => bstr .size 32,     ; session-merkle-root (MMR)
+///     10 => confidence-tier,   ; baseline maturity
+///     11 => pop-timestamp,     ; computed-at
+///     12 => bstr .size 32,     ; identity-fingerprint
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaselineDigest {
     #[serde(rename = "1")]
-    pub dimension_name: String,
+    pub version: u32,
 
-    #[serde(rename = "2", with = "serde_bytes")]
-    pub digest_value: Vec<u8>,
+    #[serde(rename = "2")]
+    pub session_count: u64,
 
     #[serde(rename = "3")]
-    pub sample_count: u64,
+    pub total_keystrokes: u64,
 
-    #[serde(rename = "4", default, skip_serializing_if = "Option::is_none")]
-    pub reference_stats: Option<StreamingStats>,
+    #[serde(rename = "4")]
+    pub iki_stats: StreamingStats,
 
-    #[serde(rename = "10", default, skip_serializing_if = "Option::is_none")]
-    pub confidence_tier: Option<ConfidenceTier>,
+    #[serde(rename = "5")]
+    pub cv_stats: StreamingStats,
+
+    #[serde(rename = "6")]
+    pub hurst_stats: StreamingStats,
+
+    #[serde(rename = "7")]
+    pub aggregate_iki_histogram: [f64; 9],
+
+    #[serde(rename = "8")]
+    pub pause_stats: StreamingStats,
+
+    #[serde(rename = "9", with = "serde_bytes")]
+    pub session_merkle_root: Vec<u8>,
+
+    #[serde(rename = "10")]
+    pub confidence_tier: ConfidenceTier,
+
+    #[serde(rename = "11")]
+    pub computed_at: u64,
+
+    #[serde(rename = "12", with = "serde_bytes")]
+    pub identity_fingerprint: Vec<u8>,
 }
 
 /// Session behavioral summary per CDDL `session-behavioral-summary`.
 ///
 /// ```cddl
 /// session-behavioral-summary = {
-///     1 => uint,    ; total-keystrokes
-///     2 => uint,    ; total-duration-ms
-///     3 => float,   ; mean-iki-ms
-///     4 => float,   ; iki-std-dev
-///     ? 5 => float, ; similarity-score
+///     1 => [9* float32],   ; iki-histogram
+///     2 => float32,        ; iki-cv
+///     3 => float32,        ; hurst
+///     4 => float32,        ; pause-frequency
+///     5 => uint,           ; duration-secs
+///     6 => uint,           ; keystroke-count
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBehavioralSummary {
+    /// 9-bin IKI histogram (edges: 0, 50, 100, 150, 200, 300, 500, 1000, 2000ms)
     #[serde(rename = "1")]
-    pub total_keystrokes: u64,
+    pub iki_histogram: [f64; 9],
 
-    /// In milliseconds
     #[serde(rename = "2")]
-    pub total_duration_ms: u64,
+    pub iki_cv: f64,
 
-    /// Mean inter-key interval in milliseconds
+    /// Long-range dependency exponent
     #[serde(rename = "3")]
-    pub mean_iki_ms: f64,
+    pub hurst: f64,
 
-    /// Standard deviation of inter-key intervals
     #[serde(rename = "4")]
-    pub iki_std_dev: f64,
+    pub pause_frequency: f64,
 
-    /// Similarity to established baseline (0.0..1.0)
-    #[serde(rename = "5", default, skip_serializing_if = "Option::is_none")]
-    pub similarity_score: Option<f64>,
+    #[serde(rename = "5")]
+    pub duration_secs: u64,
+
+    #[serde(rename = "6")]
+    pub keystroke_count: u64,
 }
 
 /// Baseline verification per CDDL `baseline-verification`.
 ///
 /// ```cddl
 /// baseline-verification = {
-///     1 => [+ baseline-digest],
+///     1 => baseline-digest / null,
 ///     2 => session-behavioral-summary,
+///     ? 3 => bstr,   ; digest-signature (COSE_Sign1)
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaselineVerification {
-    #[serde(rename = "1")]
-    pub digests: Vec<BaselineDigest>,
+    /// None during enrollment phase.
+    #[serde(rename = "1", default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<BaselineDigest>,
 
     #[serde(rename = "2")]
     pub session_summary: SessionBehavioralSummary,
+
+    /// COSE_Sign1 over the CBOR-encoded digest.
+    #[serde(
+        rename = "3",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub digest_signature: Option<Vec<u8>>,
 }

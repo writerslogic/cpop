@@ -132,7 +132,7 @@ async fn run() -> Result<()> {
             format,
             stego,
         }) => {
-            cmd_export::cmd_export(&file, &tier, output, &format, stego).await?;
+            cmd_export::cmd_export(&file, &tier, output, &format, stego, &out).await?;
         }
         Some(Commands::Verify { file, key }) => {
             cmd_verify::cmd_verify(&file, key, &out)?;
@@ -164,7 +164,7 @@ async fn run() -> Result<()> {
             output,
             non_interactive,
         }) => {
-            cmd_attest::cmd_attest(&format, input, output, non_interactive)?;
+            cmd_attest::cmd_attest(&format, input, output, non_interactive, &out)?;
         }
         Some(Commands::Config { action }) => {
             cmd_config::cmd_config(action)?;
@@ -367,7 +367,8 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
         }
         Some(3) => {
             let path: String = Input::new().with_prompt("Path to file").interact_text()?;
-            cmd_export::cmd_export(&PathBuf::from(path), "standard", None, "json", false).await?;
+            cmd_export::cmd_export(&PathBuf::from(path), "standard", None, "json", false, out)
+                .await?;
         }
         Some(4) => {
             let path: String = Input::new()

@@ -73,21 +73,30 @@ fn test_pop_playback_attack_detection() {
     use wld_protocol::codec::encode_evidence;
     use wld_protocol::crypto::sign_evidence_cose;
     use wld_protocol::rfc::{AttestationTier, Checkpoint, EvidencePacket};
+    extern crate ciborium;
 
     let mut key_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key_bytes);
     let signing_key = SigningKey::from_bytes(&key_bytes);
     let verifying_key = signing_key.verifying_key();
 
-    // Create a "Malicious" packet with perfectly uniform 1-second intervals (Scripted/Playback)
     let doc_content = b"Playback attack document";
     let doc_hash = hash_sha256(doc_content);
     let packet_id = vec![1u8; 16];
-    let created = 1000;
+    let created = 1000u64;
+
+    let document = DocumentRef {
+        content_hash: doc_hash,
+        filename: Some("attack.txt".to_string()),
+        byte_length: doc_content.len() as u64,
+        char_count: doc_content.len() as u64,
+    };
+
+    let mut doc_cbor = Vec::new();
+    ciborium::into_writer(&document, &mut doc_cbor).expect("CBOR encode document-ref");
+    let mut last_hash = hash_sha256(&doc_cbor);
 
     let mut checkpoints = Vec::new();
-    let mut last_hash = hash_sha256(&doc_hash.digest);
-
     for i in 0..4u64 {
         let content_hash = hash_sha256(format!("Checkpoint {}", i).as_bytes());
         let checkpoint_hash = wld_protocol::crypto::compute_causality_lock(
@@ -95,12 +104,12 @@ fn test_pop_playback_attack_detection() {
             &last_hash.digest,
             &content_hash.digest,
         )
-        .unwrap();
+        .expect("compute causality lock");
 
         checkpoints.push(Checkpoint {
             sequence: i,
             checkpoint_id: vec![i as u8; 16],
-            timestamp: created + (i + 1), // Exactly 1 second apart
+            timestamp: created + (i + 1) * 1000,
             content_hash,
             char_count: 10,
             prev_hash: last_hash.clone(),
@@ -115,12 +124,7 @@ fn test_pop_playback_attack_detection() {
         profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
         packet_id,
         created,
-        document: DocumentRef {
-            content_hash: doc_hash,
-            filename: Some("attack.txt".to_string()),
-            byte_length: doc_content.len() as u64,
-            char_count: doc_content.len() as u64,
-        },
+        document,
         checkpoints,
         attestation_tier: Some(AttestationTier::HardwareBound),
         baseline_verification: None,

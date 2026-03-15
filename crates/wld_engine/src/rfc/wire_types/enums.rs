@@ -84,6 +84,10 @@ pub enum FeatureId {
     BehavioralEntropy = 50,
     /// Assistive technology mode
     AssistiveMode = 60,
+    /// Edit graph hash
+    EditGraphHash = 51,
+    /// Edit graph histograms
+    EditGraphHistograms = 52,
     /// Hardware attestation (TPM/Secure Enclave)
     HardwareAttestation = 105,
 }

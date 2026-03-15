@@ -17,6 +17,7 @@ use wld_engine::war;
 use wld_engine::wld_protocol::crypto::PoPSigner;
 use wld_engine::wld_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
 
+use crate::output::OutputMode;
 use crate::spec::{
     attestation_tier_value, content_tier_from_cli, profile_uri_from_cli, MIN_CHECKPOINTS_PER_PACKET,
 };
@@ -62,6 +63,7 @@ struct EvidenceOutputContext<'a> {
     total_vdf_time: &'a Duration,
     caps: &'a wld_engine::tpm::Capabilities,
     tpm_device_id: &'a str,
+    out: &'a OutputMode,
 }
 
 pub(crate) async fn cmd_export(
@@ -70,6 +72,7 @@ pub(crate) async fn cmd_export(
     output: Option<PathBuf>,
     format: &str,
     stego: bool,
+    out: &OutputMode,
 ) -> Result<()> {
     let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
     let abs_path_str = abs_path.to_string_lossy().into_owned();
@@ -92,10 +95,12 @@ pub(crate) async fn cmd_export(
     let tpm_device_id = tpm_provider.device_id();
 
     let signer: Box<dyn PoPSigner> = if caps.hardware_backed {
-        println!(
-            "Using hardware provider for evidence signing: {}",
-            tpm_device_id
-        );
+        if !out.quiet && !out.json {
+            println!(
+                "Using hardware provider for evidence signing: {}",
+                tpm_device_id
+            );
+        }
         Box::new(tpm::TpmSigner::new(tpm_provider))
     } else {
         Box::new(load_signing_key(dir)?)
@@ -150,19 +155,21 @@ pub(crate) async fn cmd_export(
         keystroke_evidence: &keystroke_evidence,
     })?;
 
-    if let Ok(identity_data) = fs::read_to_string(dir.join("identity.json")) {
-        if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
-            println!(
-                "Including key hierarchy evidence: {}",
-                identity
-                    .get("fingerprint")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-            );
+    if !out.quiet && !out.json {
+        if let Ok(identity_data) = fs::read_to_string(dir.join("identity.json")) {
+            if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
+                println!(
+                    "Including key hierarchy evidence: {}",
+                    identity
+                        .get("fingerprint")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                );
+            }
         }
     }
 
-    if tier_lower != "basic" {
+    if tier_lower != "basic" && !out.quiet && !out.json {
         print!("Building evidence packet...");
         io::stdout().flush()?;
     }
@@ -187,9 +194,10 @@ pub(crate) async fn cmd_export(
         total_vdf_time: &total_vdf_time,
         caps: &caps,
         tpm_device_id: &tpm_device_id,
+        out,
     })?;
 
-    if tier_lower != "basic" {
+    if tier_lower != "basic" && !out.quiet && !out.json {
         println!(" done.");
     }
 
@@ -599,7 +607,10 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
         total_vdf_time,
         caps,
         tpm_device_id,
+        out,
     } = ctx;
+
+    let verbose = !out.quiet && !out.json;
 
     match *format_lower {
         "cpop" | "cbor" => {
@@ -613,12 +624,14 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
 
             write_atomic(out_path, &cbor_data)?;
 
-            println!();
-            println!("CPOP evidence exported to: {}", out_path.display());
-            println!("  Format: CBOR (CDDL-conformant, tagged)");
-            println!("  CBOR tag: {}", CBOR_TAG_EVIDENCE_PACKET);
-            println!("  Checkpoints: {}", chain.checkpoints.len());
-            println!("  Size: {} bytes", cbor_data.len());
+            if verbose {
+                println!();
+                println!("CPOP evidence exported to: {}", out_path.display());
+                println!("  Format: CBOR (CDDL-conformant, tagged)");
+                println!("  CBOR tag: {}", CBOR_TAG_EVIDENCE_PACKET);
+                println!("  Checkpoints: {}", chain.checkpoints.len());
+                println!("  Size: {} bytes", cbor_data.len());
+            }
         }
         "cwar" | "war" => {
             let evidence_packet: evidence::Packet = serde_json::from_value(ctx.packet.clone())
@@ -630,20 +643,22 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
             let data = war_block.encode_ascii();
             write_atomic(out_path, data.as_bytes())?;
 
-            println!();
-            println!("WAR block exported to: {}", out_path.display());
-            println!("  Version: {}", war_block.version.as_str());
-            println!("  Author: {}", war_block.author);
-            println!("  Signed: {}", if war_block.signed { "yes" } else { "no" });
-            println!("  Checkpoints: {}", events.len());
-            println!("  Total VDF time: {:?}", total_vdf_time);
-            println!("  Tier: {} (content-tier: {})", tier, spec_content_tier);
-            println!("  Profile: {}", spec_profile_uri);
-            println!("  Attestation tier: T{}", spec_attestation_tier);
-            println!(
-                "  CBOR tags: evidence={}, war={}",
-                CBOR_TAG_EVIDENCE_PACKET, CBOR_TAG_ATTESTATION_RESULT
-            );
+            if verbose {
+                println!();
+                println!("WAR block exported to: {}", out_path.display());
+                println!("  Version: {}", war_block.version.as_str());
+                println!("  Author: {}", war_block.author);
+                println!("  Signed: {}", if war_block.signed { "yes" } else { "no" });
+                println!("  Checkpoints: {}", events.len());
+                println!("  Total VDF time: {:?}", total_vdf_time);
+                println!("  Tier: {} (content-tier: {})", tier, spec_content_tier);
+                println!("  Profile: {}", spec_profile_uri);
+                println!("  Attestation tier: T{}", spec_attestation_tier);
+                println!(
+                    "  CBOR tags: evidence={}, war={}",
+                    CBOR_TAG_EVIDENCE_PACKET, CBOR_TAG_ATTESTATION_RESULT
+                );
+            }
         }
         "html" | "report" => {
             let pub_key = signer.public_key();
@@ -669,32 +684,36 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
 
             write_atomic(out_path, html.as_bytes())?;
 
-            println!();
-            println!("Authorship report exported to: {}", out_path.display());
-            println!("  Report ID: {}", war_report.report_id);
-            println!(
-                "  Score: {}/100 ({})",
-                war_report.score,
-                war_report.verdict.label()
-            );
-            println!("  Checkpoints: {}", events.len());
-            println!("  Open in a browser to view, or print to PDF.");
+            if verbose {
+                println!();
+                println!("Authorship report exported to: {}", out_path.display());
+                println!("  Report ID: {}", war_report.report_id);
+                println!(
+                    "  Score: {}/100 ({})",
+                    war_report.score,
+                    war_report.verdict.label()
+                );
+                println!("  Checkpoints: {}", events.len());
+                println!("  Open in a browser to view, or print to PDF.");
+            }
         }
         _ => {
             let data = serde_json::to_string_pretty(packet)?;
             write_atomic(out_path, data.as_bytes())?;
 
-            println!();
-            println!("Evidence exported to: {}", out_path.display());
-            println!("  Checkpoints: {}", events.len());
-            println!("  Total VDF time: {:?}", total_vdf_time);
-            println!(
-                "  Tier: {} (content-tier: {})",
-                tier_lower, spec_content_tier
-            );
-            println!("  Profile: {}", spec_profile_uri);
-            println!("  Attestation tier: T{}", spec_attestation_tier);
-            println!("  CBOR tag: {} (evidence packet)", CBOR_TAG_EVIDENCE_PACKET);
+            if verbose {
+                println!();
+                println!("Evidence exported to: {}", out_path.display());
+                println!("  Checkpoints: {}", events.len());
+                println!("  Total VDF time: {:?}", total_vdf_time);
+                println!(
+                    "  Tier: {} (content-tier: {})",
+                    tier_lower, spec_content_tier
+                );
+                println!("  Profile: {}", spec_profile_uri);
+                println!("  Attestation tier: T{}", spec_attestation_tier);
+                println!("  CBOR tag: {} (evidence packet)", CBOR_TAG_EVIDENCE_PACKET);
+            }
         }
     }
     Ok(())
@@ -752,13 +771,13 @@ async fn embed_steganographic_watermark(
     let binding_json = serde_json::to_string_pretty(&binding)?;
     crate::util::write_restrictive(&binding_path, binding_json.as_bytes())?;
 
-    println!();
-    println!("Steganographic watermark embedded:");
-    println!("  Watermarked document: {}", stego_path.display());
-    println!("  Binding record: {}", binding_path.display());
-    println!("  ZWC characters: {}", binding.zwc_count);
-    println!("  MMR root: {}...", &binding.mmr_root[..16]);
-    println!(
+    eprintln!();
+    eprintln!("Steganographic watermark embedded:");
+    eprintln!("  Watermarked document: {}", stego_path.display());
+    eprintln!("  Binding record: {}", binding_path.display());
+    eprintln!("  ZWC characters: {}", binding.zwc_count);
+    eprintln!("  MMR root: {}...", &binding.mmr_root[..16]);
+    eprintln!(
         "  Tag: {}...",
         &binding.tag_hex[..16.min(binding.tag_hex.len())]
     );

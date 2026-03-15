@@ -240,6 +240,15 @@ impl Packet {
 
     /// Decode a packet, auto-detecting format. Validates CBOR tag if present.
     pub fn decode(data: &[u8]) -> crate::error::Result<Packet> {
+        const MAX_EVIDENCE_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+        if data.len() > MAX_EVIDENCE_SIZE {
+            return Err(Error::evidence(format!(
+                "Evidence data too large: {} bytes (max {})",
+                data.len(),
+                MAX_EVIDENCE_SIZE
+            )));
+        }
+
         let format =
             Format::detect(data).ok_or_else(|| Error::evidence("unable to detect format"))?;
 
@@ -288,6 +297,14 @@ impl Packet {
     ///
     /// Omits `verifier_nonce`, `packet_signature`, and `signing_public_key`
     /// to avoid circular dependencies during signing.
+    // SECURITY TODO: This hash covers only structural fields (version, document hash/size,
+    // chain hash, checkpoint hashes, declaration signature, VDF params). It excludes
+    // behavioral evidence, keystroke metrics, jitter data, hardware attestation, forensic
+    // analysis, and other evidence fields. An attacker could strip those fields without
+    // invalidating the signature. The full `hash()` method covers everything via CBOR
+    // serialization, but `signing_payload()` delegates to this narrower `content_hash()`.
+    // To close this gap, `signing_payload()` should bind to a commitment over all evidence
+    // fields, or `content_hash()` should be extended to include them.
     pub fn content_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-packet-content-v2");

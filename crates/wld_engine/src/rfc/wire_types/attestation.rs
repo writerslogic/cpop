@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::enums::{AbsenceType, AttestationTier, CostUnit, Verdict};
+use super::enums::{AbsenceType, AttestationTier, ConfidenceTier, CostUnit, Verdict};
 use super::hash::{HashValue, TimeWindow};
 use super::CBOR_TAG_ATTESTATION_RESULT;
 use crate::codec::{self, CodecError};
@@ -284,9 +284,9 @@ pub struct AttestationResultWire {
     #[serde(rename = "13", default, skip_serializing_if = "Option::is_none")]
     pub forensic_summary: Option<ForensicSummary>,
 
-    /// Confidence tier (1..=100)
+    /// Confidence tier per CDDL `confidence-tier`
     #[serde(rename = "14", default, skip_serializing_if = "Option::is_none")]
-    pub confidence_tier: Option<u8>,
+    pub confidence_tier: Option<ConfidenceTier>,
 
     /// Effort attribution
     #[serde(rename = "15", default, skip_serializing_if = "Option::is_none")]
@@ -362,10 +362,11 @@ impl AttestationResultWire {
             }
         }
         if let Some(tier) = self.confidence_tier {
-            if tier == 0 || tier > 100 {
+            let raw = tier as u8;
+            if raw == 0 || raw > 4 {
                 return Err(CodecError::Validation(format!(
-                    "confidence_tier out of range: {} (must be 1..=100)",
-                    tier
+                    "confidence_tier out of range: {} (must be 1..=4)",
+                    raw
                 )));
             }
         }

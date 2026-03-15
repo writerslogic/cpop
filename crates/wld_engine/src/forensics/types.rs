@@ -150,7 +150,9 @@ impl ForensicMetrics {
     pub fn map_to_protocol_verdict(&self) -> ForensicVerdict {
         if let Some(forgery) = &self.forgery_analysis {
             if forgery.is_suspicious {
-                return ForensicVerdict::V5ConfirmedForgery;
+                // V4, not V5: a single heuristic flag is insufficient to confirm forgery.
+                // V5ConfirmedForgery requires broken chain integrity (handled in verify()).
+                return ForensicVerdict::V4LikelySynthetic;
             }
         }
 
