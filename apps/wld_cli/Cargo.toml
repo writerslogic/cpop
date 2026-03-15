@@ -29,7 +29,7 @@ wld_jitter = ["wld_engine/wld_jitter"]
 
 [dependencies]
 wld_engine = { path = "../../crates/wld_engine", features = ["ffi"] }
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 clap_complete = "4.4"
 anyhow = "1.0"
 tokio = { version = "1.36", features = ["full"] }
@@ -44,7 +44,7 @@ getrandom = "0.2"
 hostname = "0.4"
 notify = "6.1"
 glob = "0.3"
-tempfile = "3.10"
+tempfile = "3.27"
 url = "2.5"
 zeroize = { version = "1.8", features = ["derive"] }
 subtle = "2.6"
