@@ -364,7 +364,9 @@ fn load_or_create_device_identity(data_dir: &Path) -> Result<([u8; 16], String)>
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+            if let Err(e) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+                log::warn!("Failed to set device identity permissions: {}", e);
+            }
         }
     }
 
@@ -399,7 +401,9 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+            if let Err(e) = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)) {
+                log::warn!("Failed to set HMAC key permissions: {}", e);
+            }
         }
     }
 

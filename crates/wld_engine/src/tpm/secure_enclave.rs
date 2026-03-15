@@ -40,6 +40,7 @@ use std::path::PathBuf;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 use std::time::SystemTime;
+use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 const SE_KEY_TAG: &str = "com.writerslogic.secureenclave.signing";
@@ -365,7 +366,7 @@ fn load_counter(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
             let hmac_key = derive_counter_hmac_key(&state.public_key);
             let expected_hmac = compute_counter_hmac(&hmac_key, &counter_bytes);
 
-            if stored_hmac != expected_hmac {
+            if stored_hmac.ct_eq(&expected_hmac).unwrap_u8() == 0 {
                 log::error!(
                     "Counter HMAC verification failed — possible tampering: {:?}",
                     state.counter_file
@@ -409,7 +410,21 @@ fn save_counter(state: &SecureEnclaveState) {
     let mut buf = Vec::with_capacity(40);
     buf.extend_from_slice(&counter_bytes);
     buf.extend_from_slice(&hmac);
-    let _ = fs::write(&state.counter_file, buf);
+    if let Err(e) = fs::write(&state.counter_file, &buf) {
+        log::error!(
+            "Failed to persist counter to {:?}: {}",
+            state.counter_file,
+            e
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = fs::set_permissions(&state.counter_file, fs::Permissions::from_mode(0o600))
+        {
+            log::warn!("Failed to set counter file permissions: {}", e);
+        }
+    }
 }
 
 impl SecureEnclaveProvider {

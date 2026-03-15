@@ -57,14 +57,18 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o700));
+            if let Err(e) = fs::set_permissions(&log_dir, fs::Permissions::from_mode(0o700)) {
+                eprintln!("Warning: failed to set log directory permissions: {e}");
+            }
         }
         let log_path = log_dir.join("daemon.log");
         let log_file = fs::File::create(&log_path).context("Failed to create daemon log file")?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600));
+            if let Err(e) = fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600)) {
+                eprintln!("Warning: failed to set log file permissions: {e}");
+            }
         }
         let stderr_file = log_file
             .try_clone()

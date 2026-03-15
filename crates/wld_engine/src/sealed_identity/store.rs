@@ -310,7 +310,10 @@ impl SealedIdentityStore {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&self.store_path, fs::Permissions::from_mode(0o600));
+            if let Err(e) = fs::set_permissions(&self.store_path, fs::Permissions::from_mode(0o600))
+            {
+                log::warn!("Failed to set sealed identity permissions: {}", e);
+            }
         }
         Ok(())
     }
