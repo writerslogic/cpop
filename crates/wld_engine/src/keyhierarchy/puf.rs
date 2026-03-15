@@ -94,6 +94,11 @@ impl SoftwarePUF {
             }
             let tmp_path = self.seed_path.with_extension("tmp");
             fs::write(&tmp_path, &seed)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600))?;
+            }
             fs::rename(tmp_path, &self.seed_path)?;
         }
 
@@ -153,8 +158,8 @@ impl SoftwarePUF {
         arr
     }
 
-    /// Encode the seed as a BIP-39 mnemonic phrase for backup/recovery.
-    pub fn get_mnemonic(&self) -> Result<String, KeyHierarchyError> {
+    /// Encode the seed as a BIP-39 mnemonic phrase for backup/recovery, zeroized on drop.
+    pub fn get_mnemonic(&self) -> Result<Zeroizing<String>, KeyHierarchyError> {
         crate::identity::mnemonic::MnemonicHandler::entropy_to_phrase(&self.seed)
             .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))
     }
@@ -183,6 +188,11 @@ impl SoftwarePUF {
                 fs::create_dir_all(parent)?;
             }
             fs::write(seed_path, &seed)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(seed_path, fs::Permissions::from_mode(0o600))?;
+            }
         } else if seed_path.exists() {
             let _ = fs::remove_file(seed_path);
         }

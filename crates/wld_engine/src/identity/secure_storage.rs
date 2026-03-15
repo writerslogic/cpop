@@ -21,7 +21,7 @@ const FINGERPRINT_KEY_ACCOUNT: &str = "fingerprint_key";
 static SEED_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static HMAC_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
 static FINGERPRINT_KEY_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
-static MNEMONIC_CACHE: OnceLock<String> = OnceLock::new();
+static MNEMONIC_CACHE: OnceLock<Zeroizing<String>> = OnceLock::new();
 static IDENTITY_CACHE: OnceLock<([u8; 16], String)> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static MIGRATION_ONCE: Once = Once::new();
@@ -406,13 +406,13 @@ impl SecureStorage {
     /// Load the mnemonic phrase from the platform keychain, with caching.
     pub fn load_mnemonic() -> Result<Option<String>> {
         if let Some(cached) = MNEMONIC_CACHE.get() {
-            return Ok(Some(cached.clone()));
+            return Ok(Some(cached.as_str().to_owned()));
         }
         let bytes = Self::load(MNEMONIC_ACCOUNT)?;
         if let Some(b) = bytes {
             let s = String::from_utf8(b.to_vec())
                 .map_err(|e| anyhow!("Invalid UTF-8 in mnemonic: {}", e))?;
-            let _ = MNEMONIC_CACHE.set(s.clone());
+            let _ = MNEMONIC_CACHE.set(Zeroizing::new(s.clone()));
             Ok(Some(s))
         } else {
             Ok(None)
