@@ -11,8 +11,8 @@ readme = "README.md"
 keywords = ["cli", "authorship", "witnessing", "attestation", "proof-of-process"]
 categories = ["command-line-utilities"]
 rust-version = "1.75.0"
-homepage = "https://github.com/writerslogic/writerslogic"
-documentation = "https://docs.rs/wld_cli"
+homepage = "https://github.com/writerslogic/witnessd"
+documentation = "https://github.com/writerslogic/witnessd/tree/main/apps/wld_cli"
 exclude = ["tests/", "browser-extension/"]
 
 [[bin]]

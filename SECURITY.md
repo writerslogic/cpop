@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.x.x   | :white_check_mark: |
+| 1.0.x   | :white_check_mark: |
+| < 1.0   | :x:                |
 
 Security updates are released as patch versions. We recommend always running
 the latest version.
@@ -104,7 +105,7 @@ chmod 400 /var/lib/writerslogic/signing.key
 wld init --tpm-sealed
 
 # Enable audit logging
-WritersLogic --log-level=info --audit-log=/var/log/writerslogic/audit.log
+wld start --foreground  # daemon logs to ~/.writerslogic/logs/daemon.log
 ```
 
 ### Linux Capabilities
@@ -113,7 +114,7 @@ Instead of running as root, grant specific capabilities:
 
 ```bash
 # Required for TPM access
-sudo setcap cap_sys_admin+ep /usr/local/bin/writerslogic
+sudo setcap cap_sys_admin+ep /usr/local/bin/wld
 
 # Or use the provided udev rules for non-root TPM access
 sudo cp rules.d/99-writerslogic-tpm.rules /etc/udev/rules.d/

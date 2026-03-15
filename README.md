@@ -152,7 +152,7 @@ writerslogic/
 
 ```bash
 cargo test --workspace           # Run all tests
-cargo test -p wld_engine --lib   # Fast engine tests (915 tests)
+cargo test -p wld_engine --lib   # Fast engine tests (~915 tests)
 cargo clippy --workspace -- -D warnings  # Lint (zero warnings maintained)
 cargo fmt --all -- --check       # Format check
 cargo audit && cargo deny check  # Security audit

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-15
+
+### Added
+- Flattened CLI to 10 top-level commands with interactive menu (`wld` with no args)
+- `wld man` command for full built-in manual
+- Shell completions for bash, zsh, fish, elvish, powershell
+- `--json` and `--quiet` output modes on all commands
+- SHA-256 checksum verification in install.sh
+- Version pinning support (`WLD_VERSION=v1.0.0`) in install.sh
+- aarch64-unknown-linux-gnu release target
+- Steganography and WritersProof FFI bindings for GUI apps
+- 5-band fingerprint comparison verdicts (SameAuthor through DifferentAuthors)
+- BackspaceSignature wired into voice fingerprint similarity
+
+### Changed
+- Evidence tier validation rejects unknown tiers at entry with actionable error
+- Fingerprint `show` returns proper error when no active profile exists
+- Voice similarity weights rebalanced to include backspace behavioral signal
+- install.sh no longer auto-runs `wld init`
+- SLSA badge reflects actual build provenance level
+- Release pipeline notarizes macOS binaries before packaging
+
+### Security
+- SWF crypto: bounds checks on iterations, constant-time byte comparisons via `subtle`
+- SWF verification requires index-0 sample in proof
+- Mnemonic phrases wrapped in `Zeroizing<String>` throughout identity/PUF paths
+- Key files written with 0o600 permissions on Unix (PUF seeds, signing keys)
+- CSPRNG failures are now fatal (no silent fallback to zeroed bytes)
+
+### Fixed
+- `wld verify` format list now includes `.cpop`
+- `wld export` tier fallback replaced with validation + clear error
+- `wld fingerprint show` no longer falls back to nonexistent "default" profile
+
 ## [0.3.0] - 2026-03-10
 
 ### Added
@@ -72,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLite-backed persistent storage with WAL/WAR
 - UniFFI bindings for Swift/Kotlin
 
-[Unreleased]: https://github.com/writerslogic/witnessd/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/writerslogic/witnessd/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/writerslogic/witnessd/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/writerslogic/witnessd/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/writerslogic/witnessd/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/writerslogic/writerslogic/releases/tag/v0.1.0
