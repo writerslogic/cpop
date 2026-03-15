@@ -254,6 +254,10 @@ COMMANDS
       completions Generate shell completions
       man         Display this manual
 
+GLOBAL OPTIONS
+    --json          Machine-readable JSON output
+    -q, --quiet     Suppress informational output
+
 EVIDENCE TIERS
     basic       Content hashes + timestamps only (smallest, fastest)
     standard    + VDF time proofs + signed declaration (recommended)
