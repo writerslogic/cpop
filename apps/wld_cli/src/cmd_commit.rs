@@ -14,19 +14,8 @@ use wld_engine::SecureEvent;
 use crate::output::OutputMode;
 use crate::util::{
     ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store,
-    writerslogic_dir,
+    writerslogic_dir, BLOCKED_EXTENSIONS, LARGE_FILE_WARNING_THRESHOLD, MAX_FILE_SIZE,
 };
-
-/// Extensions that are clearly not text documents.
-const BINARY_EXTENSIONS: &[&str] = &[
-    "exe", "dll", "so", "dylib", "o", "a", "lib", "obj", // executables/libraries
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "zst", // archives
-    "jpg", "jpeg", "png", "gif", "bmp", "ico", "webp", "svg", "tiff", // images
-    "mp3", "mp4", "avi", "mov", "wav", "flac", "ogg", "mkv", "wmv", // media
-    "pdf", // binary document (no character-level tracking)
-    "db", "sqlite", "sqlite3", // databases
-    "wasm", "class", "pyc", "pyo", // compiled code
-];
 
 pub(crate) fn cmd_commit(
     file_path: &PathBuf,
@@ -53,7 +42,7 @@ pub(crate) fn cmd_commit(
 
     if let Some(ext) = abs_path.extension().and_then(|e| e.to_str()) {
         let ext_lower = ext.to_lowercase();
-        if BINARY_EXTENSIONS.contains(&ext_lower.as_str()) {
+        if BLOCKED_EXTENSIONS.contains(&ext_lower.as_str()) {
             return Err(anyhow!(
                 "File type '.{}' is not a text document.\n\n\
                  WritersLogic is designed for text documents (txt, md, tex, docx, etc.).\n\
@@ -65,15 +54,16 @@ pub(crate) fn cmd_commit(
 
     let metadata =
         fs::metadata(&abs_path).map_err(|e| anyhow!("Cannot read file metadata: {}", e))?;
-    if metadata.len() > 500_000_000 {
+    if metadata.len() > MAX_FILE_SIZE {
         return Err(anyhow!(
             "File is too large ({:.0} MB).\n\n\
              WritersLogic is designed for text documents, not binary files.\n\
-             Maximum file size: 500 MB",
-            metadata.len() as f64 / 1_000_000.0
+             Maximum file size: {} MB",
+            metadata.len() as f64 / 1_000_000.0,
+            MAX_FILE_SIZE / 1_000_000
         ));
     }
-    if metadata.len() > 50_000_000 && !out.quiet {
+    if metadata.len() > LARGE_FILE_WARNING_THRESHOLD && !out.quiet {
         eprintln!(
             "Warning: Large file ({:.0} MB). Checkpoint may take longer than usual.",
             metadata.len() as f64 / 1_000_000.0

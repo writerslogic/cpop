@@ -10,6 +10,28 @@ use wld_engine::vdf::params::Parameters as VdfParameters;
 use wld_engine::{derive_hmac_key, SecureStore};
 use zeroize::Zeroize;
 
+/// 500 MB — reject files larger than this.
+pub(crate) const MAX_FILE_SIZE: u64 = 500_000_000;
+
+/// 50 MB — warn when a file exceeds this size.
+pub(crate) const LARGE_FILE_WARNING_THRESHOLD: u64 = 50_000_000;
+
+/// File extensions that should NOT be tracked (binary artifacts, media, databases, temp files).
+pub(crate) const BLOCKED_EXTENSIONS: &[&str] = &[
+    // Binary artifacts
+    "exe", "dll", "so", "dylib", "o", "a", "obj", "lib", "class", "pyc", "pyo", "wasm",
+    // Archives
+    "zip", "tar", "gz", "tgz", "bz2", "xz", "zst", "rar", "7z", "dmg", "iso", // Images
+    "jpg", "jpeg", "png", "gif", "bmp", "ico", "tiff", "tif", "webp", "heic", "heif", "raw", "svg",
+    // Audio/Video
+    "mp3", "mp4", "avi", "mov", "wav", "webm", "flac", "aac", "ogg", "mkv", "wmv",
+    // Binary documents
+    "pdf", // Databases
+    "db", "sqlite", "sqlite3", "mdb", // Lock/temp
+    "lock", "tmp", "bak", "swp", "swo", // OS artifacts
+    "DS_Store",
+];
+
 pub fn writerslogic_dir() -> Result<PathBuf> {
     if let Ok(dir) = std::env::var("WLD_DATA_DIR") {
         return Ok(PathBuf::from(dir));
@@ -205,6 +227,67 @@ pub fn write_restrictive(path: &Path, data: &[u8]) -> Result<()> {
         fs::write(path, data).map_err(|e| anyhow!("Failed to write {}: {}", path.display(), e))?;
     }
     Ok(())
+}
+
+pub fn normalize_path(path: &Path) -> Result<PathBuf> {
+    let path_str = path.to_string_lossy();
+    let expanded = if path_str.starts_with("~/") || path_str == "~" {
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+        if path_str == "~" {
+            home
+        } else {
+            home.join(&path_str[2..])
+        }
+    } else {
+        path.to_path_buf()
+    };
+
+    let cleaned = clean_path(&expanded);
+
+    if cleaned.exists() {
+        let canonical = fs::canonicalize(&cleaned)
+            .map_err(|e| anyhow!("Cannot access path {}: {}", cleaned.display(), e))?;
+
+        #[cfg(target_os = "windows")]
+        {
+            let s = canonical.to_string_lossy();
+            if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                return Ok(PathBuf::from(stripped));
+            }
+        }
+
+        Ok(canonical)
+    } else {
+        Ok(cleaned)
+    }
+}
+
+fn clean_path(path: &Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    let trimmed = path_str.trim_end_matches('/');
+    let trimmed = if trimmed.is_empty() && path_str.starts_with('/') {
+        "/"
+    } else if trimmed.is_empty() {
+        "."
+    } else {
+        trimmed
+    };
+
+    let mut result = String::with_capacity(trimmed.len());
+    let mut last_was_slash = false;
+    for c in trimmed.chars() {
+        if c == '/' || c == '\\' {
+            if !last_was_slash {
+                result.push('/');
+            }
+            last_was_slash = true;
+        } else {
+            result.push(c);
+            last_was_slash = false;
+        }
+    }
+
+    PathBuf::from(result)
 }
 
 pub fn load_api_key(dir: &Path) -> Result<String> {

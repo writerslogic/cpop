@@ -24,6 +24,46 @@ use crate::util::{
     ensure_dirs, load_signing_key, load_vdf_params, open_secure_store, validate_session_id,
 };
 
+/// Files larger than this are not re-read just for a Unicode char count;
+/// byte length is used as an approximation instead.
+const CHAR_COUNT_READ_LIMIT: i64 = 10_000_000; // 10 MB
+
+/// Bundled parameters for building an evidence packet.
+struct EvidencePacketContext<'a> {
+    file_path: &'a Path,
+    abs_path_str: &'a str,
+    events: &'a [wld_engine::SecureEvent],
+    latest: &'a wld_engine::SecureEvent,
+    vdf_params: &'a wld_engine::vdf::params::Parameters,
+    tier_lower: &'a str,
+    spec_content_tier: u8,
+    spec_profile_uri: &'a str,
+    spec_attestation_tier: u8,
+    total_vdf_time: &'a Duration,
+    decl: &'a declaration::Declaration,
+    keystroke_evidence: &'a serde_json::Value,
+}
+
+/// Bundled parameters for writing evidence output in any format.
+struct EvidenceOutputContext<'a> {
+    format_lower: &'a str,
+    out_path: &'a Path,
+    file_path: &'a Path,
+    config: &'a wld_engine::config::WLDConfig,
+    events: &'a [wld_engine::SecureEvent],
+    packet: &'a serde_json::Value,
+    signer: &'a dyn PoPSigner,
+    vdf_params: &'a wld_engine::vdf::params::Parameters,
+    tier: &'a str,
+    tier_lower: &'a str,
+    spec_content_tier: u8,
+    spec_profile_uri: &'a str,
+    spec_attestation_tier: u8,
+    total_vdf_time: &'a Duration,
+    caps: &'a wld_engine::tpm::Capabilities,
+    tpm_device_id: &'a str,
+}
+
 pub(crate) async fn cmd_export(
     file_path: &PathBuf,
     tier: &str,
@@ -92,22 +132,23 @@ pub(crate) async fn cmd_export(
 
     let spec_content_tier = content_tier_from_cli(&tier_lower);
     let spec_profile_uri = profile_uri_from_cli(&tier_lower);
-    let spec_attestation_tier = attestation_tier_value(true, caps.hardware_backed);
+    let spec_attestation_tier =
+        attestation_tier_value(caps.supports_attestation, caps.hardware_backed);
 
-    let packet = build_evidence_packet(
+    let packet = build_evidence_packet(&EvidencePacketContext {
         file_path,
-        &abs_path_str,
-        &events,
+        abs_path_str: &abs_path_str,
+        events: &events,
         latest,
-        &vdf_params,
-        &tier_lower,
+        vdf_params: &vdf_params,
+        tier_lower: &tier_lower,
         spec_content_tier,
         spec_profile_uri,
         spec_attestation_tier,
-        &total_vdf_time,
-        &decl,
-        &keystroke_evidence,
-    )?;
+        total_vdf_time: &total_vdf_time,
+        decl: &decl,
+        keystroke_evidence: &keystroke_evidence,
+    })?;
 
     if let Ok(identity_data) = fs::read_to_string(dir.join("identity.json")) {
         if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
@@ -129,24 +170,24 @@ pub(crate) async fn cmd_export(
     let format_lower = format.to_lowercase();
     let out_path = output.unwrap_or_else(|| default_output_path(file_path, &format_lower));
 
-    write_evidence_output(
-        &format_lower,
-        &out_path,
+    write_evidence_output(&EvidenceOutputContext {
+        format_lower: &format_lower,
+        out_path: &out_path,
         file_path,
-        &config,
-        &events,
-        &packet,
-        signer.as_ref(),
-        &vdf_params,
+        config: &config,
+        events: &events,
+        packet: &packet,
+        signer: signer.as_ref(),
+        vdf_params: &vdf_params,
         tier,
-        &tier_lower,
+        tier_lower: &tier_lower,
         spec_content_tier,
         spec_profile_uri,
         spec_attestation_tier,
-        &total_vdf_time,
-        &caps,
-        &tpm_device_id,
-    )?;
+        total_vdf_time: &total_vdf_time,
+        caps: &caps,
+        tpm_device_id: &tpm_device_id,
+    })?;
 
     if tier_lower != "basic" {
         println!(" done.");
@@ -266,11 +307,7 @@ fn load_keystroke_evidence(dir: &Path, abs_path_str: &str) -> serde_json::Value 
         }
     };
 
-    if let Err(e) = validate_session_id(&session_id) {
-        eprintln!("Warning: invalid session ID: {}", e);
-        return serde_json::Value::Null;
-    }
-
+    // session_id already validated by find_matching_session()
     let session_path = tracking_dir.join(format!("{}.session.json", session_id));
     let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
 
@@ -376,22 +413,23 @@ fn resolve_declaration(
     collect_declaration(content_hash, chain_hash, title, signer)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_evidence_packet(
-    file_path: &Path,
-    abs_path_str: &str,
-    events: &[wld_engine::SecureEvent],
-    latest: &wld_engine::SecureEvent,
-    vdf_params: &wld_engine::vdf::params::Parameters,
-    tier_lower: &str,
-    spec_content_tier: u8,
-    spec_profile_uri: &str,
-    spec_attestation_tier: u8,
-    total_vdf_time: &Duration,
-    decl: &declaration::Declaration,
-    keystroke_evidence: &serde_json::Value,
-) -> Result<serde_json::Value> {
-    let strength = match tier_lower {
+fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::Value> {
+    let EvidencePacketContext {
+        file_path,
+        abs_path_str,
+        events,
+        latest,
+        vdf_params,
+        tier_lower,
+        spec_content_tier,
+        spec_profile_uri,
+        spec_attestation_tier,
+        total_vdf_time,
+        decl,
+        keystroke_evidence,
+    } = ctx;
+
+    let strength = match *tier_lower {
         "basic" => "Basic",
         "standard" => "Standard",
         "enhanced" => "Enhanced",
@@ -400,8 +438,8 @@ fn build_evidence_packet(
     };
 
     // §7.5: entangled (21) for enhanced/maximum, standard (20) otherwise
-    let proof_algorithm: u8 = if spec_content_tier >= 2 { 21 } else { 20 };
-    let swf_params = wld_engine::vdf::params_for_tier(spec_content_tier);
+    let proof_algorithm: u8 = if *spec_content_tier >= 2 { 21 } else { 20 };
+    let swf_params = wld_engine::vdf::params_for_tier(*spec_content_tier);
 
     let mut packet_id = [0u8; 16];
     getrandom::getrandom(&mut packet_id)?;
@@ -486,9 +524,13 @@ fn build_evidence_packet(
                 "digest": hex::encode(latest.content_hash)
             },
             "byte_length": latest.file_size.max(0) as u64,
-            "char_count": fs::read_to_string(abs_path_str)
-                .map(|s| s.chars().count() as u64)
-                .unwrap_or(latest.file_size.max(0) as u64),
+            "char_count": if latest.file_size > 0 && latest.file_size < CHAR_COUNT_READ_LIMIT {
+                fs::read_to_string(abs_path_str)
+                    .map(|s| s.chars().count() as u64)
+                    .unwrap_or(latest.file_size.max(0) as u64)
+            } else {
+                latest.file_size.max(0) as u64
+            },
         },
         "checkpoints": checkpoints,
         "vdf_params": {
@@ -539,26 +581,27 @@ fn write_atomic(out_path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_evidence_output(
-    format_lower: &str,
-    out_path: &Path,
-    file_path: &Path,
-    config: &wld_engine::config::WLDConfig,
-    events: &[wld_engine::SecureEvent],
-    packet: &serde_json::Value,
-    signer: &dyn PoPSigner,
-    vdf_params: &wld_engine::vdf::params::Parameters,
-    tier: &str,
-    tier_lower: &str,
-    spec_content_tier: u8,
-    spec_profile_uri: &str,
-    spec_attestation_tier: u8,
-    total_vdf_time: &Duration,
-    caps: &wld_engine::tpm::Capabilities,
-    tpm_device_id: &str,
-) -> Result<()> {
-    match format_lower {
+fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
+    let EvidenceOutputContext {
+        format_lower,
+        out_path,
+        file_path,
+        config,
+        events,
+        packet,
+        signer,
+        vdf_params,
+        tier,
+        tier_lower,
+        spec_content_tier,
+        spec_profile_uri,
+        spec_attestation_tier,
+        total_vdf_time,
+        caps,
+        tpm_device_id,
+    } = ctx;
+
+    match *format_lower {
         "cpop" | "cbor" => {
             let chain = wld_engine::checkpoint::Chain::load(
                 wld_engine::checkpoint::Chain::find_chain(file_path, &config.data_dir)?,
@@ -578,10 +621,10 @@ fn write_evidence_output(
             println!("  Size: {} bytes", cbor_data.len());
         }
         "cwar" | "war" => {
-            let evidence_packet: evidence::Packet = serde_json::from_value(packet.clone())
+            let evidence_packet: evidence::Packet = serde_json::from_value(ctx.packet.clone())
                 .context("Failed to create evidence packet")?;
 
-            let war_block = war::Block::from_packet_signed(&evidence_packet, signer)
+            let war_block = war::Block::from_packet_signed(&evidence_packet, ctx.signer)
                 .map_err(|e| anyhow!("Failed to create WAR block: {}", e))?;
 
             let data = war_block.encode_ascii();
@@ -689,9 +732,21 @@ async fn embed_steganographic_watermark(
     hmac_key.zeroize();
     let (watermarked, binding) = result?;
 
-    let stego_path = file_path.with_extension("stego.txt");
-    crate::util::write_restrictive(&stego_path.with_extension("tmp"), watermarked.as_bytes())?;
-    fs::rename(stego_path.with_extension("tmp"), &stego_path)?;
+    let stego_path = {
+        let stem = file_path.file_stem().unwrap_or_default().to_string_lossy();
+        let ext = file_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if ext.is_empty() {
+            file_path.with_file_name(format!("{}.stego", stem))
+        } else {
+            file_path.with_file_name(format!("{}.stego.{}", stem, ext))
+        }
+    };
+    let stego_tmp = stego_path.with_extension("tmp");
+    crate::util::write_restrictive(&stego_tmp, watermarked.as_bytes())?;
+    fs::rename(&stego_tmp, &stego_path)?;
 
     let binding_path = file_path.with_extension("stego.binding.json");
     let binding_json = serde_json::to_string_pretty(&binding)?;
@@ -991,7 +1046,9 @@ fn detect_sessions(events: &[wld_engine::store::SecureEvent]) -> Vec<report::Rep
     let mut session_start = 0usize;
 
     for i in 1..events.len() {
-        let gap = events[i].timestamp_ns - events[i - 1].timestamp_ns;
+        let gap = events[i]
+            .timestamp_ns
+            .saturating_sub(events[i - 1].timestamp_ns);
         if gap > gap_ns {
             sessions.push(make_session(session_start, i - 1, events, sessions.len()));
             session_start = i;

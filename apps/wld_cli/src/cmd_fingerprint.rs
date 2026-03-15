@@ -5,9 +5,10 @@ use std::io::{self, BufRead, Write};
 use wld_engine::fingerprint::{ConsentManager, ConsentStatus, FingerprintManager, ProfileId};
 
 use crate::cli::FingerprintAction;
+use crate::output::OutputMode;
 use crate::util::ensure_dirs;
 
-pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
+pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Result<()> {
     let config = ensure_dirs()?;
     let fingerprint_dir = &config.fingerprint.storage_path;
 
@@ -18,6 +19,47 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
 
             let consent_manager = ConsentManager::new(&config.data_dir)
                 .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
+
+            let fp_status = manager.status();
+            let min_samples = config.fingerprint.min_samples as usize;
+
+            if out.json {
+                let voice_consent = match consent_manager.status() {
+                    ConsentStatus::Granted => "granted",
+                    ConsentStatus::Denied => "denied",
+                    ConsentStatus::Revoked => "revoked",
+                    ConsentStatus::NotRequested => "not_requested",
+                };
+                let (profile_state, progress) =
+                    if fp_status.activity_samples == 0 && fp_status.current_profile_id.is_none() {
+                        ("none", 0.0)
+                    } else if fp_status.activity_samples < min_samples {
+                        let p = (fp_status.activity_samples as f64 / min_samples as f64 * 100.0)
+                            .min(100.0);
+                        ("building", p)
+                    } else {
+                        ("ready", 100.0)
+                    };
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "activity_enabled": config.fingerprint.activity_enabled,
+                        "voice_enabled": config.fingerprint.voice_enabled,
+                        "voice_consent": voice_consent,
+                        "profile_state": profile_state,
+                        "progress": progress,
+                        "confidence": fp_status.confidence,
+                        "activity_samples": fp_status.activity_samples,
+                        "voice_samples": fp_status.voice_samples,
+                        "current_profile_id": fp_status.current_profile_id,
+                    })
+                );
+                return Ok(());
+            }
+
+            if out.quiet {
+                return Ok(());
+            }
 
             println!("=== Fingerprint Status ===");
             println!();
@@ -50,8 +92,6 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             println!("  (Captures writing style - word patterns, punctuation)");
 
             println!();
-            let fp_status = manager.status();
-            let min_samples = config.fingerprint.min_samples as usize;
 
             if fp_status.activity_samples == 0 && fp_status.current_profile_id.is_none() {
                 println!("Profile: None created yet");
@@ -74,91 +114,6 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
             }
         }
 
-        FingerprintAction::EnableActivity => {
-            let mut config = config;
-            config.fingerprint.activity_enabled = true;
-            config.persist()?;
-            println!("Activity fingerprinting enabled.");
-            println!();
-            println!("This captures typing timing patterns (HOW you type, not WHAT).");
-            println!("Start the daemon with 'wld start' to begin collecting.");
-        }
-
-        FingerprintAction::DisableActivity => {
-            let mut config = config;
-            config.fingerprint.activity_enabled = false;
-            config.persist()?;
-            println!("Activity fingerprinting disabled.");
-        }
-
-        FingerprintAction::EnableVoice => {
-            let mut consent_manager = ConsentManager::new(&config.data_dir)
-                .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
-
-            match consent_manager.status() {
-                ConsentStatus::Granted => {
-                    println!("Voice fingerprinting is already enabled.");
-                    return Ok(());
-                }
-                ConsentStatus::Denied | ConsentStatus::Revoked => {
-                    println!("You previously declined voice fingerprinting.");
-                    println!();
-                }
-                ConsentStatus::NotRequested => {}
-            }
-
-            println!("=== Voice Fingerprinting Consent ===");
-            println!();
-            println!("{}", wld_engine::fingerprint::consent::CONSENT_EXPLANATION);
-            println!();
-
-            print!("Do you consent to voice fingerprinting? (yes/no): ");
-            io::stdout().flush()?;
-
-            let stdin = io::stdin();
-            let mut response = String::new();
-            stdin.lock().read_line(&mut response)?;
-            let response = response.trim().to_lowercase();
-
-            if response == "yes" || response == "y" {
-                consent_manager
-                    .grant_consent()
-                    .map_err(|e| anyhow!("Failed to record consent: {}", e))?;
-
-                let mut config = config;
-                config.fingerprint.voice_enabled = true;
-                config.persist()?;
-
-                println!();
-                println!("Voice fingerprinting enabled.");
-                println!("Your writing style will now be analyzed (no raw text stored).");
-            } else {
-                consent_manager
-                    .deny_consent()
-                    .map_err(|e| anyhow!("Failed to record denial: {}", e))?;
-
-                println!();
-                println!("Voice fingerprinting not enabled.");
-            }
-        }
-
-        FingerprintAction::DisableVoice => {
-            let mut consent_manager = ConsentManager::new(&config.data_dir)
-                .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
-
-            consent_manager
-                .revoke_consent()
-                .map_err(|e| anyhow!("Failed to revoke consent: {}", e))?;
-
-            let mut config = config;
-            config.fingerprint.voice_enabled = false;
-            config.persist()?;
-
-            println!("Voice fingerprinting disabled.");
-            println!("Voice data collection has been stopped.");
-            println!("To delete existing voice data, delete profiles individually.");
-        }
-
         FingerprintAction::Show { id } => {
             let manager = FingerprintManager::new(fingerprint_dir)
                 .map_err(|e| anyhow!("Failed to open fingerprint storage: {}", e))?;
@@ -172,6 +127,34 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
 
             match manager.load(&profile_id) {
                 Ok(fp) => {
+                    if out.json {
+                        let mut obj = serde_json::json!({
+                            "id": fp.id,
+                            "name": fp.name,
+                            "created_at": fp.created_at.to_rfc3339(),
+                            "updated_at": fp.updated_at.to_rfc3339(),
+                            "sample_count": fp.sample_count,
+                            "confidence": fp.confidence,
+                            "activity": {
+                                "iki_mean": fp.activity.iki_distribution.mean,
+                                "iki_std_dev": fp.activity.iki_distribution.std_dev,
+                                "dominant_zone": fp.activity.zone_profile.dominant_zone().to_string(),
+                            },
+                        });
+                        if let Some(voice) = &fp.voice {
+                            obj["voice"] = serde_json::json!({
+                                "total_words": voice.total_words,
+                                "avg_word_length": voice.avg_word_length(),
+                            });
+                        }
+                        println!("{}", obj);
+                        return Ok(());
+                    }
+
+                    if out.quiet {
+                        return Ok(());
+                    }
+
                     println!("=== Fingerprint Profile: {} ===", fp.id);
                     println!();
                     println!("Name: {}", fp.name.as_deref().unwrap_or("(unnamed)"));
@@ -210,6 +193,26 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 .compare(&id1, &id2)
                 .map_err(|e| anyhow!("Failed to compare profiles: {}", e))?;
 
+            if out.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "profile_a": comparison.profile_a,
+                        "profile_b": comparison.profile_b,
+                        "similarity": comparison.similarity,
+                        "activity_similarity": comparison.activity_similarity,
+                        "voice_similarity": comparison.voice_similarity,
+                        "confidence": comparison.confidence,
+                        "verdict": comparison.verdict.description(),
+                    })
+                );
+                return Ok(());
+            }
+
+            if out.quiet {
+                return Ok(());
+            }
+
             println!("=== Fingerprint Comparison ===");
             println!();
             println!("Profile A: {}", comparison.profile_a);
@@ -236,11 +239,33 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 .list_profiles()
                 .map_err(|e| anyhow!("Failed to list profiles: {}", e))?;
 
+            if out.json {
+                let items: Vec<serde_json::Value> = profiles
+                    .iter()
+                    .map(|p| {
+                        serde_json::json!({
+                            "id": p.id,
+                            "sample_count": p.sample_count,
+                            "confidence": p.confidence,
+                            "has_voice": p.has_voice,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::Value::Array(items));
+                return Ok(());
+            }
+
             if profiles.is_empty() {
-                println!("No fingerprint profiles stored.");
-                println!();
-                println!("Start the daemon to begin building your fingerprint:");
-                println!("  wld start");
+                if !out.quiet {
+                    println!("No fingerprint profiles stored.");
+                    println!();
+                    println!("Start the daemon to begin building your fingerprint:");
+                    println!("  wld start");
+                }
+                return Ok(());
+            }
+
+            if out.quiet {
                 return Ok(());
             }
 
@@ -268,7 +293,12 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 let response = response.trim().to_lowercase();
 
                 if response != "yes" && response != "y" {
-                    println!("Cancelled.");
+                    if !out.quiet {
+                        println!("Cancelled.");
+                    }
+                    if out.json {
+                        println!("{}", serde_json::json!({"deleted": false, "id": id}));
+                    }
                     return Ok(());
                 }
             }
@@ -280,7 +310,11 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction) -> Result<()> {
                 .delete(&id)
                 .map_err(|e| anyhow!("Failed to delete profile: {}", e))?;
 
-            println!("Profile '{}' deleted.", id);
+            if out.json {
+                println!("{}", serde_json::json!({"deleted": true, "id": id}));
+            } else if !out.quiet {
+                println!("Profile '{}' deleted.", id);
+            }
         }
     }
 

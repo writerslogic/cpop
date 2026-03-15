@@ -1,10 +1,10 @@
 #!/bin/bash
 # WritersLogic installer
-# Usage: curl -sSf https://raw.githubusercontent.com/writerslogic/writerslogic/main/apps/wld_cli/install.sh | sh
+# Usage: curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd/main/apps/wld_cli/install.sh | sh
 
 set -e
 
-REPO="writerslogic/writerslogic"
+REPO="writerslogic/witnessd"
 BINARY_NAME="wld"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 

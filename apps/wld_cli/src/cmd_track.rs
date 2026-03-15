@@ -20,19 +20,17 @@ use wld_engine::vdf;
 use wld_engine::SecureEvent;
 
 use crate::cli::TrackAction;
+use crate::output::OutputMode;
 use crate::util::{
     ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store,
-    validate_session_id,
+    validate_session_id, BLOCKED_EXTENSIONS, MAX_FILE_SIZE,
 };
 
-/// Known text/document file extensions that should be tracked.
-const TEXT_EXTENSIONS: &[&str] = &[
-    "txt", "md", "markdown", "rtf", "rtfd", "tex", "latex", "bib", "docx", "odt", "org", "rst",
-    "adoc", "asciidoc", "fountain", "fdx", "mmd", "textile", "html", "htm", "xml", "json", "yaml",
-    "yml", "toml", "rs", "py", "js", "ts", "go", "c", "cpp", "h", "hpp", "java", "rb", "swift",
-    "kt", "cs", "sh", "zsh", "bash", "css", "scss", "less", "svg", "sql", "graphql", "proto",
-    "cfg", "ini", "conf", "env",
-];
+/// Minimum seconds between checkpoints on the same file.
+const DEBOUNCE_SECONDS: u64 = 5;
+
+/// Interval in seconds between periodic session saves.
+const SAVE_INTERVAL_SECONDS: u64 = 5;
 
 /// Directories to skip when recursively scanning.
 const IGNORED_DIRS: &[&str] = &[
@@ -121,7 +119,7 @@ fn classify_target(path: &Path) -> Result<TrackTarget> {
     }
 }
 
-fn is_trackable_file(path: &Path) -> bool {
+fn should_track_file(path: &Path) -> bool {
     let name = match path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n,
         None => return false,
@@ -141,8 +139,8 @@ fn is_trackable_file(path: &Path) -> bool {
     }
 
     match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => TEXT_EXTENSIONS.contains(&ext.to_lowercase().as_str()),
-        None => false,
+        Some(ext) => !BLOCKED_EXTENSIONS.contains(&ext.to_lowercase().as_str()),
+        None => true, // Files with no extension are likely text
     }
 }
 
@@ -208,7 +206,7 @@ fn walk_trackable_files(root: &Path) -> Vec<PathBuf> {
 
             if path.is_dir() {
                 stack.push(path);
-            } else if is_trackable_file(&path) {
+            } else if should_track_file(&path) {
                 files.push(path);
             }
         }
@@ -221,7 +219,7 @@ fn walk_trackable_files(root: &Path) -> Vec<PathBuf> {
 /// Check if a path matches glob patterns (for directory/watch mode).
 fn matches_patterns(path: &Path, patterns: &[Pattern]) -> bool {
     if patterns.is_empty() {
-        return is_trackable_file(path);
+        return should_track_file(path);
     }
     let name = match path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n,
@@ -239,7 +237,7 @@ fn auto_checkpoint_file(
 ) -> Result<bool> {
     let abs_path_str = file_path.to_string_lossy().into_owned();
     let file_len = fs::metadata(file_path)?.len();
-    if file_len > 500_000_000 {
+    if file_len > MAX_FILE_SIZE {
         return Ok(false);
     }
     let content = fs::read(file_path)?;
@@ -555,8 +553,8 @@ async fn cmd_track_start(
     println!();
 
     let mut last_checkpoint_map: HashMap<PathBuf, Instant> = HashMap::new();
-    let debounce = Duration::from_secs(5);
-    let save_interval = Duration::from_secs(5);
+    let debounce = Duration::from_secs(DEBOUNCE_SECONDS);
+    let save_interval = Duration::from_secs(SAVE_INTERVAL_SECONDS);
     let mut last_save = Instant::now();
 
     loop {
@@ -578,7 +576,7 @@ async fn cmd_track_start(
                         } else if glob_patterns.is_empty() {
                             is_within_target(path, &target)
                                 && path.is_file()
-                                && is_trackable_file(path)
+                                && should_track_file(path)
                         } else {
                             is_within_target(path, &target)
                                 && path.is_file()
@@ -667,6 +665,7 @@ async fn cmd_track_start(
 pub(crate) async fn cmd_track_smart(
     action: Option<TrackAction>,
     path: Option<PathBuf>,
+    out: &OutputMode,
 ) -> Result<()> {
     let config = ensure_dirs()?;
     let dir = config.data_dir;
@@ -683,16 +682,23 @@ pub(crate) async fn cmd_track_smart(
             if current_file.exists() {
                 TrackAction::Status
             } else {
-                println!("No active tracking session.");
-                println!();
-                println!("Usage:");
-                println!("  wld <file>               Track a single file");
-                println!("  wld <folder>             Track all files in a folder");
-                println!("  wld <project.scriv>      Track a Scrivener project");
-                println!("  wld track stop           Stop active session");
-                println!("  wld track status         Check session status");
-                println!("  wld track list           List saved sessions");
-                println!("  wld track export <id>    Export session evidence");
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({"active": false, "message": "No active tracking session"})
+                    );
+                } else if !out.quiet {
+                    println!("No active tracking session.");
+                    println!();
+                    println!("Usage:");
+                    println!("  wld <file>               Track a single file");
+                    println!("  wld <folder>             Track all files in a folder");
+                    println!("  wld <project.scriv>      Track a Scrivener project");
+                    println!("  wld track stop           Stop active session");
+                    println!("  wld track status         Check session status");
+                    println!("  wld track list           List saved sessions");
+                    println!("  wld track export <id>    Export session evidence");
+                }
                 return Ok(());
             }
         }
@@ -752,15 +758,17 @@ pub(crate) async fn cmd_track_smart(
                 let session_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
                 if let Ok(session) = wld_engine::HybridJitterSession::load(&session_path, None) {
                     let duration = session.duration();
-                    println!("Stopping tracking session...");
-                    println!("Duration: {:?}", duration);
-                    println!("Keystrokes: {}", session.keystroke_count());
-                    println!("Samples: {}", session.sample_count());
-                    println!(
-                        "Hardware entropy ratio: {:.1}%",
-                        session.phys_ratio() * 100.0
-                    );
-                } else {
+                    if !out.quiet {
+                        println!("Stopping tracking session...");
+                        println!("Duration: {:?}", duration);
+                        println!("Keystrokes: {}", session.keystroke_count());
+                        println!("Samples: {}", session.sample_count());
+                        println!(
+                            "Hardware entropy ratio: {:.1}%",
+                            session.phys_ratio() * 100.0
+                        );
+                    }
+                } else if !out.quiet {
                     println!(
                         "Session stopped (session data will be finalized by the running process)."
                     );
@@ -776,42 +784,50 @@ pub(crate) async fn cmd_track_smart(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                println!("Stopping tracking session ({})...", mode);
-                println!("Duration: {:?}", duration);
-                println!("Keystrokes: {}", session.keystroke_count());
-                println!("Samples: {}", session.sample_count());
+                if !out.quiet {
+                    println!("Stopping tracking session ({})...", mode);
+                    println!("Duration: {:?}", duration);
+                    println!("Keystrokes: {}", session.keystroke_count());
+                    println!("Samples: {}", session.sample_count());
 
-                if let Ok(db) = open_secure_store() {
-                    if mode == "file" {
-                        if let Ok(events) = db.get_events_for_file(doc_path) {
-                            println!("Checkpoints: {}", events.len());
-                        }
-                    } else if let Some(files) =
-                        session_info.get("tracked_files").and_then(|v| v.as_array())
-                    {
-                        let mut total = 0usize;
-                        for f in files {
-                            if let Some(fp) = f.as_str() {
-                                if let Ok(events) = db.get_events_for_file(fp) {
-                                    total += events.len();
+                    if let Ok(db) = open_secure_store() {
+                        if mode == "file" {
+                            if let Ok(events) = db.get_events_for_file(doc_path) {
+                                println!("Checkpoints: {}", events.len());
+                            }
+                        } else if let Some(files) =
+                            session_info.get("tracked_files").and_then(|v| v.as_array())
+                        {
+                            let mut total = 0usize;
+                            for f in files {
+                                if let Some(fp) = f.as_str() {
+                                    if let Ok(events) = db.get_events_for_file(fp) {
+                                        total += events.len();
+                                    }
                                 }
                             }
+                            println!("Checkpoints: {}", total);
                         }
-                        println!("Checkpoints: {}", total);
                     }
                 }
-            } else {
+            } else if !out.quiet {
                 println!("Session stopped.");
             }
-            println!();
-            println!("The running process will finalize and save the session.");
+            if !out.quiet {
+                println!();
+                println!("The running process will finalize and save the session.");
+            }
         }
 
         TrackAction::Status => {
             let data = match fs::read_to_string(&current_file) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("No active tracking session.");
+                    if out.json {
+                        println!("{}", serde_json::json!({"active": false}));
+                    } else if !out.quiet {
+                        println!("No active tracking session.");
+                    }
                     return Ok(());
                 }
             };
@@ -848,27 +864,48 @@ pub(crate) async fn cmd_track_smart(
                 let sample_count = session.sample_count();
                 let phys_ratio = session.phys_ratio();
 
-                println!("=== Active Tracking Session (wld_jitter) ===");
-                println!("Session ID: {}", session.id);
-                println!("Document: {}", session.document_path);
-                println!(
-                    "Started: {}",
-                    session.started_at.format("%Y-%m-%dT%H:%M:%S%.3fZ")
-                );
-                println!("Duration: {:?}", duration);
-                println!("Keystrokes: {}", keystroke_count);
-                println!("Jitter samples: {}", sample_count);
-                println!("Hardware entropy ratio: {:.1}%", phys_ratio * 100.0);
+                let checkpoints = open_secure_store()
+                    .ok()
+                    .and_then(|db| db.get_events_for_file(doc_path).ok())
+                    .map(|e| e.len());
 
-                if duration.as_secs() > 0 && keystroke_count > 0 {
-                    let keystrokes_per_min =
-                        keystroke_count as f64 / (duration.as_secs_f64() / 60.0);
-                    println!("Typing rate: {:.0} keystrokes/min", keystrokes_per_min);
-                }
+                if out.json {
+                    let mut obj = serde_json::json!({
+                        "active": true,
+                        "session_id": session.id,
+                        "document": session.document_path,
+                        "started_at": session.started_at.to_rfc3339(),
+                        "duration_secs": duration.as_secs_f64(),
+                        "keystrokes": keystroke_count,
+                        "jitter_samples": sample_count,
+                        "hardware_entropy_ratio": phys_ratio,
+                        "mode": "wld_jitter",
+                    });
+                    if let Some(cp) = checkpoints {
+                        obj["checkpoints"] = serde_json::json!(cp);
+                    }
+                    println!("{}", obj);
+                } else if !out.quiet {
+                    println!("=== Active Tracking Session (wld_jitter) ===");
+                    println!("Session ID: {}", session.id);
+                    println!("Document: {}", session.document_path);
+                    println!(
+                        "Started: {}",
+                        session.started_at.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    );
+                    println!("Duration: {:?}", duration);
+                    println!("Keystrokes: {}", keystroke_count);
+                    println!("Jitter samples: {}", sample_count);
+                    println!("Hardware entropy ratio: {:.1}%", phys_ratio * 100.0);
 
-                if let Ok(db) = open_secure_store() {
-                    if let Ok(events) = db.get_events_for_file(doc_path) {
-                        println!("Checkpoints: {}", events.len());
+                    if duration.as_secs() > 0 && keystroke_count > 0 {
+                        let keystrokes_per_min =
+                            keystroke_count as f64 / (duration.as_secs_f64() / 60.0);
+                        println!("Typing rate: {:.0} keystrokes/min", keystrokes_per_min);
+                    }
+
+                    if let Some(cp) = checkpoints {
+                        println!("Checkpoints: {}", cp);
                     }
                 }
                 return Ok(());
@@ -881,6 +918,64 @@ pub(crate) async fn cmd_track_smart(
             let duration = session.duration();
             let keystroke_count = session.keystroke_count();
             let sample_count = session.sample_count();
+
+            // Open the store once and reuse for both JSON and human-readable output
+            let db = open_secure_store().ok();
+
+            // Per-file checkpoint counts (used in both branches)
+            let tracked_files = session_info.get("tracked_files").and_then(|v| v.as_array());
+
+            let mut file_counts: Vec<(String, usize)> = Vec::new();
+            let checkpoint_count: Option<usize> = if let Some(ref db) = db {
+                if mode == "file" {
+                    db.get_events_for_file(doc_path).ok().map(|e| e.len())
+                } else if let Some(files) = tracked_files.as_ref() {
+                    let mut total = 0usize;
+                    for f in files.iter() {
+                        if let Some(fp) = f.as_str() {
+                            if let Ok(events) = db.get_events_for_file(fp) {
+                                let count = events.len();
+                                if count > 0 {
+                                    let name = Path::new(fp)
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .into_owned();
+                                    file_counts.push((name, count));
+                                }
+                                total += count;
+                            }
+                        }
+                    }
+                    Some(total)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if out.json {
+                let mut obj = serde_json::json!({
+                    "active": true,
+                    "session_id": session.id,
+                    "document": session.document_path,
+                    "started_at": session.started_at.to_rfc3339(),
+                    "duration_secs": duration.as_secs_f64(),
+                    "keystrokes": keystroke_count,
+                    "jitter_samples": sample_count,
+                    "mode": mode,
+                });
+                if let Some(cp) = checkpoint_count {
+                    obj["checkpoints"] = serde_json::json!(cp);
+                }
+                println!("{}", obj);
+                return Ok(());
+            }
+
+            if out.quiet {
+                return Ok(());
+            }
 
             let mode_label = match mode {
                 "directory" => " (directory)",
@@ -905,48 +1000,66 @@ pub(crate) async fn cmd_track_smart(
                 println!("Typing rate: {:.0} keystrokes/min", keystrokes_per_min);
             }
 
-            if let Ok(db) = open_secure_store() {
-                if mode == "file" {
-                    if let Ok(events) = db.get_events_for_file(doc_path) {
-                        println!("Checkpoints: {}", events.len());
-                    }
-                } else if let Some(files) =
-                    session_info.get("tracked_files").and_then(|v| v.as_array())
-                {
-                    let mut total = 0usize;
-                    let mut file_counts: Vec<(String, usize)> = Vec::new();
-                    for f in files {
-                        if let Some(fp) = f.as_str() {
-                            if let Ok(events) = db.get_events_for_file(fp) {
-                                let count = events.len();
-                                if count > 0 {
-                                    let name = Path::new(fp)
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .into_owned();
-                                    file_counts.push((name, count));
-                                }
-                                total += count;
-                            }
-                        }
-                    }
-                    println!("Files tracked: {}", files.len());
+            if mode == "file" {
+                if let Some(cp) = checkpoint_count {
+                    println!("Checkpoints: {}", cp);
+                }
+            } else if let Some(files) = tracked_files {
+                println!("Files tracked: {}", files.len());
+                if let Some(total) = checkpoint_count {
                     println!("Total checkpoints: {}", total);
-                    if file_counts.len() > 1 {
-                        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
-                        for (name, count) in file_counts.iter().take(10) {
-                            println!("  {}: {}", name, count);
-                        }
-                        if file_counts.len() > 10 {
-                            println!("  ... and {} more", file_counts.len() - 10);
-                        }
+                }
+                if file_counts.len() > 1 {
+                    file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+                    for (name, count) in file_counts.iter().take(10) {
+                        println!("  {}: {}", name, count);
+                    }
+                    if file_counts.len() > 10 {
+                        println!("  ... and {} more", file_counts.len() - 10);
                     }
                 }
             }
         }
 
         TrackAction::List => {
+            // Show daemon active sessions (from sentinel)
+            let sentinel_dir = dir.join("sentinel");
+            let sessions_file = sentinel_dir.join("active_sessions.json");
+            let mut has_output = false;
+
+            let daemon_sessions: Vec<serde_json::Value> = if sessions_file.exists() {
+                fs::read_to_string(&sessions_file)
+                    .ok()
+                    .and_then(|data| serde_json::from_str(&data).ok())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            if !daemon_sessions.is_empty() {
+                has_output = true;
+                if !out.json && !out.quiet {
+                    println!("Active daemon sessions:");
+                    for session in &daemon_sessions {
+                        let id = session
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let binding = session
+                            .get("binding_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let samples = session
+                            .get("sample_count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        println!("  {}: {} binding, {} samples", id, binding, samples);
+                    }
+                    println!();
+                }
+            }
+
+            // Show saved tracking sessions
             let entries =
                 fs::read_dir(&tracking_dir).with_context(|| "Error reading tracking directory")?;
 
@@ -977,37 +1090,170 @@ pub(crate) async fn cmd_track_smart(
             #[cfg(not(feature = "wld_jitter"))]
             let total = standard_sessions.len();
 
-            if total == 0 {
+            if out.json {
+                let mut items: Vec<serde_json::Value> = Vec::new();
+                for s in &daemon_sessions {
+                    let mut obj = s.clone();
+                    obj["source"] = serde_json::json!("daemon");
+                    items.push(obj);
+                }
+                for s in &standard_sessions {
+                    items.push(serde_json::json!({
+                        "id": s.id,
+                        "document": s.document_path,
+                        "keystrokes": s.keystroke_count(),
+                        "samples": s.sample_count(),
+                        "duration_secs": s.duration().as_secs_f64(),
+                        "source": "tracking",
+                    }));
+                }
+                #[cfg(feature = "wld_jitter")]
+                for s in &hybrid_sessions {
+                    items.push(serde_json::json!({
+                        "id": s.id,
+                        "document": s.document_path,
+                        "keystrokes": s.keystroke_count(),
+                        "samples": s.sample_count(),
+                        "duration_secs": s.duration().as_secs_f64(),
+                        "hardware_entropy_ratio": s.phys_ratio(),
+                        "source": "hybrid",
+                    }));
+                }
+                println!("{}", serde_json::Value::Array(items));
+                return Ok(());
+            }
+
+            if out.quiet {
+                return Ok(());
+            }
+
+            if total == 0 && !has_output {
                 println!("No saved tracking sessions.");
                 return Ok(());
             }
 
-            println!("Saved tracking sessions:");
+            if total > 0 {
+                println!("Saved tracking sessions:");
 
-            for session in standard_sessions {
-                let duration = session.duration();
-                println!(
-                    "  {}: {} keystrokes, {} samples, {:?}",
-                    session.id,
-                    session.keystroke_count(),
-                    session.sample_count(),
-                    duration
-                );
+                for session in &standard_sessions {
+                    let duration = session.duration();
+                    println!(
+                        "  {}: {} keystrokes, {} samples, {:?}",
+                        session.id,
+                        session.keystroke_count(),
+                        session.sample_count(),
+                        duration
+                    );
+                }
+
+                #[cfg(feature = "wld_jitter")]
+                for session in &hybrid_sessions {
+                    let duration = session.duration();
+                    let phys_ratio = session.phys_ratio();
+                    println!(
+                        "  {} [wld_jitter]: {} keystrokes, {} samples, {:?}, {:.0}% hardware",
+                        session.id,
+                        session.keystroke_count(),
+                        session.sample_count(),
+                        duration,
+                        phys_ratio * 100.0
+                    );
+                }
             }
+        }
+
+        TrackAction::Show { id } => {
+            validate_session_id(&id)?;
+            let session_path = tracking_dir.join(format!("{}.session.json", id));
 
             #[cfg(feature = "wld_jitter")]
-            for session in hybrid_sessions {
-                let duration = session.duration();
-                let phys_ratio = session.phys_ratio();
-                println!(
-                    "  {} [wld_jitter]: {} keystrokes, {} samples, {:?}, {:.0}% hardware",
-                    session.id,
-                    session.keystroke_count(),
-                    session.sample_count(),
-                    duration,
-                    phys_ratio * 100.0
-                );
+            {
+                let hybrid_path = tracking_dir.join(format!("{}.hybrid.json", id));
+                if hybrid_path.exists() {
+                    let session = wld_engine::HybridJitterSession::load(&hybrid_path, None)
+                        .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
+
+                    if out.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "id": session.id,
+                                "document": session.document_path,
+                                "started_at": session.started_at.to_rfc3339(),
+                                "duration_secs": session.duration().as_secs_f64(),
+                                "keystrokes": session.keystroke_count(),
+                                "samples": session.sample_count(),
+                                "hardware_entropy_ratio": session.phys_ratio(),
+                                "type": "hybrid",
+                            })
+                        );
+                    } else if !out.quiet {
+                        println!("=== Session: {} [wld_jitter] ===", session.id);
+                        println!("Document: {}", session.document_path);
+                        println!(
+                            "Started: {}",
+                            session.started_at.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                        );
+                        println!("Duration: {:?}", session.duration());
+                        println!("Keystrokes: {}", session.keystroke_count());
+                        println!("Samples: {}", session.sample_count());
+                        println!(
+                            "Hardware entropy ratio: {:.1}%",
+                            session.phys_ratio() * 100.0
+                        );
+                    }
+                    return Ok(());
+                }
             }
+
+            if session_path.exists() {
+                let session = JitterSession::load(&session_path)
+                    .map_err(|e| anyhow!("Error loading session: {}", e))?;
+
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "id": session.id,
+                            "document": session.document_path,
+                            "started_at": session.started_at.to_rfc3339(),
+                            "duration_secs": session.duration().as_secs_f64(),
+                            "keystrokes": session.keystroke_count(),
+                            "samples": session.sample_count(),
+                            "type": "standard",
+                        })
+                    );
+                } else if !out.quiet {
+                    println!("=== Session: {} ===", session.id);
+                    println!("Document: {}", session.document_path);
+                    println!(
+                        "Started: {}",
+                        session.started_at.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    );
+                    println!("Duration: {:?}", session.duration());
+                    println!("Keystrokes: {}", session.keystroke_count());
+                    println!("Samples: {}", session.sample_count());
+                }
+                return Ok(());
+            }
+
+            // Fall back to sentinel daemon session data
+            let sentinel_dir = dir.join("sentinel");
+            let sentinel_session = sentinel_dir.join("sessions").join(format!("{}.json", id));
+            if sentinel_session.exists() {
+                let data = fs::read_to_string(&sentinel_session)?;
+                let session: serde_json::Value = serde_json::from_str(&data)?;
+                if out.json {
+                    println!("{}", session);
+                } else if !out.quiet {
+                    println!("=== Session: {} ===", id);
+                    println!();
+                    println!("{}", serde_json::to_string_pretty(&session)?);
+                }
+                return Ok(());
+            }
+
+            return Err(anyhow!("Session not found: {}", id));
         }
 
         TrackAction::Export { session_id } => {
@@ -1024,15 +1270,92 @@ pub(crate) async fn cmd_track_smart(
                     ev.verify()
                         .map_err(|e| anyhow!("Evidence verification failed: {}", e))?;
 
-                    let out_path = format!("{}.hybrid-jitter.json", session_id);
+                    let export_path = format!("{}.hybrid-jitter.json", session_id);
                     let data = ev
                         .encode()
                         .map_err(|e| anyhow!("Error encoding evidence: {}", e))?;
-                    let tmp_path = format!("{}.tmp", out_path);
+                    let tmp_path = format!("{}.tmp", export_path);
                     fs::write(&tmp_path, &data)?;
-                    fs::rename(&tmp_path, &out_path)?;
+                    fs::rename(&tmp_path, &export_path)?;
 
-                    println!("Hybrid jitter evidence exported to: {}", out_path);
+                    if out.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "exported": export_path,
+                                "duration_secs": ev.statistics.duration.as_secs_f64(),
+                                "keystrokes": ev.statistics.total_keystrokes,
+                                "samples": ev.statistics.total_samples,
+                                "document_states": ev.statistics.unique_doc_hashes,
+                                "chain_valid": ev.statistics.chain_valid,
+                                "hardware_ratio": ev.entropy_quality.phys_ratio,
+                                "plausible_human": ev.is_plausible_human_typing(),
+                                "type": "hybrid",
+                            })
+                        );
+                    } else if !out.quiet {
+                        println!("Hybrid jitter evidence exported to: {}", export_path);
+                        println!();
+                        println!("Evidence summary:");
+                        println!("  Duration: {:?}", ev.statistics.duration);
+                        println!("  Keystrokes: {}", ev.statistics.total_keystrokes);
+                        println!("  Samples: {}", ev.statistics.total_samples);
+                        println!("  Document states: {}", ev.statistics.unique_doc_hashes);
+                        println!("  Chain valid: {}", ev.statistics.chain_valid);
+                        println!();
+                        println!("Entropy quality:");
+                        println!(
+                            "  Hardware ratio: {:.1}%",
+                            ev.entropy_quality.phys_ratio * 100.0
+                        );
+                        println!("  Physics samples: {}", ev.entropy_quality.phys_samples);
+                        println!("  Pure HMAC samples: {}", ev.entropy_quality.pure_samples);
+                        println!("  Source: {}", ev.entropy_source());
+
+                        if ev.is_plausible_human_typing() {
+                            println!("  Plausibility: consistent with human typing");
+                        } else {
+                            println!("  Plausibility: unusual patterns detected");
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+
+            let session_path = tracking_dir.join(format!("{}.session.json", session_id));
+            if session_path.exists() {
+                let session = JitterSession::load(&session_path)
+                    .map_err(|e| anyhow!("Error loading session: {}", e))?;
+
+                let ev = session.export();
+
+                ev.verify()
+                    .map_err(|e| anyhow!("Evidence verification failed: {}", e))?;
+
+                let export_path = format!("{}.jitter.json", session_id);
+                let data = ev
+                    .encode()
+                    .map_err(|e| anyhow!("Error encoding evidence: {}", e))?;
+                let tmp_path = format!("{}.tmp", export_path);
+                fs::write(&tmp_path, &data)?;
+                fs::rename(&tmp_path, &export_path)?;
+
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "exported": export_path,
+                            "duration_secs": ev.statistics.duration.as_secs_f64(),
+                            "keystrokes": ev.statistics.total_keystrokes,
+                            "samples": ev.statistics.total_samples,
+                            "document_states": ev.statistics.unique_doc_hashes,
+                            "chain_valid": ev.statistics.chain_valid,
+                            "plausible_human": ev.is_plausible_human_typing(),
+                            "type": "standard",
+                        })
+                    );
+                } else if !out.quiet {
+                    println!("Jitter evidence exported to: {}", export_path);
                     println!();
                     println!("Evidence summary:");
                     println!("  Duration: {:?}", ev.statistics.duration);
@@ -1040,55 +1363,37 @@ pub(crate) async fn cmd_track_smart(
                     println!("  Samples: {}", ev.statistics.total_samples);
                     println!("  Document states: {}", ev.statistics.unique_doc_hashes);
                     println!("  Chain valid: {}", ev.statistics.chain_valid);
-                    println!();
-                    println!("Entropy quality:");
-                    println!(
-                        "  Hardware ratio: {:.1}%",
-                        ev.entropy_quality.phys_ratio * 100.0
-                    );
-                    println!("  Physics samples: {}", ev.entropy_quality.phys_samples);
-                    println!("  Pure HMAC samples: {}", ev.entropy_quality.pure_samples);
-                    println!("  Source: {}", ev.entropy_source());
 
                     if ev.is_plausible_human_typing() {
                         println!("  Plausibility: consistent with human typing");
                     } else {
                         println!("  Plausibility: unusual patterns detected");
                     }
-                    return Ok(());
                 }
-            }
-
-            let session_path = tracking_dir.join(format!("{}.session.json", session_id));
-            let session = JitterSession::load(&session_path)
-                .map_err(|e| anyhow!("Error loading session: {}", e))?;
-
-            let ev = session.export();
-
-            ev.verify()
-                .map_err(|e| anyhow!("Evidence verification failed: {}", e))?;
-
-            let out_path = format!("{}.jitter.json", session_id);
-            let data = ev
-                .encode()
-                .map_err(|e| anyhow!("Error encoding evidence: {}", e))?;
-            let tmp_path = format!("{}.tmp", out_path);
-            fs::write(&tmp_path, &data)?;
-            fs::rename(&tmp_path, &out_path)?;
-
-            println!("Jitter evidence exported to: {}", out_path);
-            println!();
-            println!("Evidence summary:");
-            println!("  Duration: {:?}", ev.statistics.duration);
-            println!("  Keystrokes: {}", ev.statistics.total_keystrokes);
-            println!("  Samples: {}", ev.statistics.total_samples);
-            println!("  Document states: {}", ev.statistics.unique_doc_hashes);
-            println!("  Chain valid: {}", ev.statistics.chain_valid);
-
-            if ev.is_plausible_human_typing() {
-                println!("  Plausibility: consistent with human typing");
             } else {
-                println!("  Plausibility: unusual patterns detected");
+                // Fall back to sentinel daemon session data
+                let sentinel_session = dir
+                    .join("sentinel")
+                    .join("sessions")
+                    .join(format!("{}.json", session_id));
+                if !sentinel_session.exists() {
+                    return Err(anyhow!("Session not found: {}", session_id));
+                }
+
+                let export_path = PathBuf::from(format!("{}.session.json", session_id));
+                let mut tmp_path = export_path.clone().into_os_string();
+                tmp_path.push(".tmp");
+                let tmp_path = PathBuf::from(tmp_path);
+                fs::copy(&sentinel_session, &tmp_path)?;
+                fs::rename(&tmp_path, &export_path)?;
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({"exported": export_path.to_string_lossy()})
+                    );
+                } else if !out.quiet {
+                    println!("Session exported to: {}", export_path.display());
+                }
             }
         }
     }

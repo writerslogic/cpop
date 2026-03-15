@@ -104,9 +104,46 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
                 }
                 ["fingerprint", "voice_enabled"] => {
-                    config.fingerprint.voice_enabled = value
+                    let enabled: bool = value
                         .parse()
                         .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+
+                    if enabled {
+                        // Trigger voice consent flow
+                        use wld_engine::fingerprint::{ConsentManager, ConsentStatus};
+
+                        let mut consent_manager = ConsentManager::new(&config.data_dir)
+                            .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
+
+                        match consent_manager.status() {
+                            ConsentStatus::Granted => {
+                                // Already consented, just enable
+                                config.fingerprint.voice_enabled = true;
+                            }
+                            ConsentStatus::Denied | ConsentStatus::Revoked => {
+                                println!("You previously declined voice fingerprinting.");
+                                println!();
+                                if !prompt_voice_consent(&mut consent_manager, &mut config)? {
+                                    return Ok(());
+                                }
+                            }
+                            ConsentStatus::NotRequested => {
+                                if !prompt_voice_consent(&mut consent_manager, &mut config)? {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    } else {
+                        // Disabling: revoke consent and disable
+                        use wld_engine::fingerprint::ConsentManager;
+
+                        let mut consent_manager = ConsentManager::new(&config.data_dir)
+                            .map_err(|e| anyhow!("Failed to open consent manager: {}", e))?;
+                        consent_manager
+                            .revoke_consent()
+                            .map_err(|e| anyhow!("Failed to revoke consent: {}", e))?;
+                        config.fingerprint.voice_enabled = false;
+                    }
                 }
                 ["fingerprint", "retention_days"] => {
                     let v: u32 = value
@@ -258,6 +295,42 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Prompt for voice fingerprinting consent; returns true if granted.
+fn prompt_voice_consent(
+    consent_manager: &mut wld_engine::fingerprint::ConsentManager,
+    config: &mut WLDConfig,
+) -> Result<bool> {
+    println!("=== Voice Fingerprinting Consent ===");
+    println!();
+    println!("{}", wld_engine::fingerprint::consent::CONSENT_EXPLANATION);
+    println!();
+
+    print!("Do you consent to voice fingerprinting? (yes/no): ");
+    io::stdout().flush()?;
+
+    let mut response = String::new();
+    io::stdin().lock().read_line(&mut response)?;
+    let response = response.trim().to_lowercase();
+
+    if response == "yes" || response == "y" {
+        consent_manager
+            .grant_consent()
+            .map_err(|e| anyhow!("Failed to record consent: {}", e))?;
+        config.fingerprint.voice_enabled = true;
+        config.persist()?;
+        println!();
+        println!("Voice fingerprinting enabled.");
+        Ok(true)
+    } else {
+        consent_manager
+            .deny_consent()
+            .map_err(|e| anyhow!("Failed to record denial: {}", e))?;
+        println!();
+        println!("Voice fingerprinting not enabled.");
+        Ok(false)
+    }
 }
 
 /// Split EDITOR into command + args via whitespace (shell metacharacters stay literal).

@@ -8,13 +8,18 @@ use wld_engine::evidence;
 use wld_engine::war;
 use wld_engine::wld_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
 
-use crate::spec::{MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI};
+use crate::output::OutputMode;
+use crate::spec::{EAT_PROFILE_URI, MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI};
 use wld_engine::{derive_hmac_key, SecureStore};
 use zeroize::Zeroizing;
 
 use crate::util::{ensure_dirs, load_vdf_params, writerslogic_dir};
 
-pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()> {
+pub(crate) fn cmd_verify(
+    file_path: &PathBuf,
+    key: Option<PathBuf>,
+    out: &OutputMode,
+) -> Result<()> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     if ext == "json" {
@@ -35,7 +40,7 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
             }
 
             if let Some(uri) = spec.get("profile_uri").and_then(|v| v.as_str()) {
-                if uri != PROFILE_URI {
+                if uri != PROFILE_URI && uri != EAT_PROFILE_URI {
                     spec_warnings.push(format!("Unknown profile URI: {}", uri));
                 }
             }
@@ -76,6 +81,33 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
         let vdf_params = load_vdf_params(&config);
         match packet.verify(vdf_params) {
             Ok(()) => {
+                let decl_valid = packet.declaration.as_ref().map(|d| d.verify());
+
+                if out.json {
+                    let mut obj = serde_json::json!({
+                        "valid": true,
+                        "file": file_path.to_string_lossy(),
+                        "document": packet.document.title,
+                        "checkpoints": packet.checkpoints.len(),
+                        "total_elapsed": format!("{:?}", packet.total_elapsed_time()),
+                    });
+                    if let Some(dv) = decl_valid {
+                        obj["declaration_valid"] = serde_json::json!(dv);
+                    }
+                    if !spec_warnings.is_empty() {
+                        obj["spec_warnings"] = serde_json::json!(spec_warnings);
+                    }
+                    if let Some(spec) = raw_json.get("spec") {
+                        obj["spec"] = spec.clone();
+                    }
+                    println!("{}", obj);
+                    return Ok(());
+                }
+
+                if out.quiet {
+                    return Ok(());
+                }
+
                 println!("[OK] Evidence packet VERIFIED");
                 println!("  Document: {}", packet.document.title);
                 println!("  Checkpoints: {}", packet.checkpoints.len());
@@ -126,6 +158,17 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
                 }
             }
             Err(e) => {
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "valid": false,
+                            "file": file_path.to_string_lossy(),
+                            "error": e.to_string(),
+                        })
+                    );
+                    return Err(anyhow!("Verification failed"));
+                }
                 println!("[FAILED] Evidence packet INVALID: {}", e);
                 return Err(anyhow!("Verification failed"));
             }
@@ -134,25 +177,60 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
         let data = fs::read(file_path).context("Failed to read CPOP file")?;
         match wld_engine::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(&data) {
             Ok(packet) => {
-                match packet.validate() {
-                    Ok(()) => {
+                let validation_result = packet.validate();
+                let validation_ok = validation_result.is_ok();
+                let validation_err = validation_result.err().map(|e| e.to_string());
+
+                if out.json {
+                    let mut obj = serde_json::json!({
+                        "valid": validation_ok,
+                        "file": file_path.to_string_lossy(),
+                        "version": packet.version,
+                        "profile": packet.profile_uri,
+                        "checkpoints": packet.checkpoints.len(),
+                    });
+                    if let Some(tier) = &packet.attestation_tier {
+                        obj["attestation_tier"] = serde_json::json!(format!("{:?}", tier));
+                    }
+                    if let Some(ct) = &packet.content_tier {
+                        obj["content_tier"] = serde_json::json!(format!("{:?}", ct));
+                    }
+                    if let Some(err) = &validation_err {
+                        obj["validation_error"] = serde_json::json!(err);
+                    }
+                    println!("{}", obj);
+                    return Ok(());
+                }
+
+                if !out.quiet {
+                    if validation_ok {
                         println!("[OK] CPOP evidence packet VERIFIED");
+                    } else if let Some(err) = &validation_err {
+                        println!("[WARN] CPOP decoded but validation failed: {}", err);
                     }
-                    Err(e) => {
-                        println!("[WARN] CPOP decoded but validation failed: {}", e);
+                    println!("  Version: {}", packet.version);
+                    println!("  Profile: {}", packet.profile_uri);
+                    println!("  Checkpoints: {}", packet.checkpoints.len());
+                    if let Some(tier) = &packet.attestation_tier {
+                        println!("  Attestation tier: {:?}", tier);
                     }
-                }
-                println!("  Version: {}", packet.version);
-                println!("  Profile: {}", packet.profile_uri);
-                println!("  Checkpoints: {}", packet.checkpoints.len());
-                if let Some(tier) = &packet.attestation_tier {
-                    println!("  Attestation tier: {:?}", tier);
-                }
-                if let Some(ct) = &packet.content_tier {
-                    println!("  Content tier: {:?}", ct);
+                    if let Some(ct) = &packet.content_tier {
+                        println!("  Content tier: {:?}", ct);
+                    }
                 }
             }
             Err(e) => {
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "valid": false,
+                            "file": file_path.to_string_lossy(),
+                            "error": e.to_string(),
+                        })
+                    );
+                    return Err(anyhow!("Verification failed"));
+                }
                 println!("[FAILED] CPOP evidence packet INVALID: {}", e);
                 return Err(anyhow!("Verification failed"));
             }
@@ -164,45 +242,80 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
 
         let report = war_block.verify();
 
-        if report.valid {
-            println!("[OK] WAR block VERIFIED");
-        } else {
-            println!("[FAILED] WAR block INVALID");
+        if out.json {
+            let checks: Vec<serde_json::Value> = report
+                .checks
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "name": c.name,
+                        "passed": c.passed,
+                        "message": c.message,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "valid": report.valid,
+                    "file": file_path.to_string_lossy(),
+                    "version": report.details.version,
+                    "author": report.details.author,
+                    "document_id": report.details.document_id,
+                    "timestamp": report.details.timestamp,
+                    "checks": checks,
+                    "summary": report.summary,
+                })
+            );
+            if !report.valid {
+                return Err(anyhow!("Verification failed"));
+            }
+            return Ok(());
         }
 
-        println!("  Version: {}", report.details.version);
-        println!("  Author: {}", report.details.author);
-        println!(
-            "  Document: {}",
-            report
-                .details
-                .document_id
-                .get(..16)
-                .unwrap_or(&report.details.document_id)
-        );
-        println!("  Timestamp: {}", report.details.timestamp);
+        if !out.quiet {
+            if report.valid {
+                println!("[OK] WAR block VERIFIED");
+            } else {
+                println!("[FAILED] WAR block INVALID");
+            }
 
-        println!();
-        println!("Verification checks:");
-        for check in &report.checks {
-            let status = if check.passed { "[OK]" } else { "[FAIL]" };
-            println!("  {} {}: {}", status, check.name, check.message);
+            println!("  Version: {}", report.details.version);
+            println!("  Author: {}", report.details.author);
+            println!(
+                "  Document: {}",
+                report
+                    .details
+                    .document_id
+                    .get(..16)
+                    .unwrap_or(&report.details.document_id)
+            );
+            println!("  Timestamp: {}", report.details.timestamp);
+
+            println!();
+            println!("Verification checks:");
+            for check in &report.checks {
+                let status = if check.passed { "[OK]" } else { "[FAIL]" };
+                println!("  {} {}: {}", status, check.name, check.message);
+            }
+
+            println!();
+            println!("  Spec reference (draft-condrey-rats-pop):");
+            println!(
+                "    WAR CBOR tag: {} (attestation-result)",
+                CBOR_TAG_ATTESTATION_RESULT
+            );
+            println!(
+                "    Evidence CBOR tag: {} (evidence-packet)",
+                CBOR_TAG_EVIDENCE_PACKET
+            );
         }
-
-        println!();
-        println!("  Spec reference (draft-condrey-rats-pop):");
-        println!(
-            "    WAR CBOR tag: {} (attestation-result)",
-            CBOR_TAG_ATTESTATION_RESULT
-        );
-        println!(
-            "    Evidence CBOR tag: {} (evidence-packet)",
-            CBOR_TAG_EVIDENCE_PACKET
-        );
 
         if !report.valid {
-            println!();
-            println!("Summary: {}", report.summary);
+            if !out.quiet {
+                println!();
+                println!("Summary: {}", report.summary);
+            }
             return Err(anyhow!("Verification failed"));
         }
     } else if !matches!(ext, "db" | "sqlite") {
@@ -221,7 +334,9 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
             None => writerslogic_dir()?.join("signing_key"),
         };
 
-        println!("Verifying database: {}", file_path.display());
+        if !out.quiet && !out.json {
+            println!("Verifying database: {}", file_path.display());
+        }
 
         let key_data = Zeroizing::new(fs::read(&key_path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -243,9 +358,34 @@ pub(crate) fn cmd_verify(file_path: &PathBuf, key: Option<PathBuf>) -> Result<()
         let hmac_key = derive_hmac_key(&key_data[..32]);
 
         match SecureStore::open(file_path, hmac_key) {
-            Ok(_) => println!("[OK] Database integrity VERIFIED"),
+            Ok(_) => {
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "valid": true,
+                            "file": file_path.to_string_lossy(),
+                            "type": "database",
+                        })
+                    );
+                } else if !out.quiet {
+                    println!("[OK] Database integrity VERIFIED");
+                }
+            }
             Err(e) => {
-                println!("[FAILED] Database integrity FAILED: {}", e);
+                if out.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "valid": false,
+                            "file": file_path.to_string_lossy(),
+                            "type": "database",
+                            "error": e.to_string(),
+                        })
+                    );
+                } else {
+                    println!("[FAILED] Database integrity FAILED: {}", e);
+                }
                 return Err(anyhow!("Verification failed"));
             }
         }
