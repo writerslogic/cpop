@@ -144,7 +144,56 @@ pub(crate) fn cmd_log_smart(file: Option<PathBuf>, out: &OutputMode) -> Result<(
                 println!("No file specified. Showing all tracked documents:");
                 println!();
             }
-            crate::cmd_status::cmd_list(out)
+            cmd_list_documents(out)
         }
     }
+}
+
+/// List all tracked documents (inlined from cmd_status::cmd_list).
+fn cmd_list_documents(out: &OutputMode) -> Result<()> {
+    let db = open_secure_store()?;
+    let files = db.list_files()?;
+
+    if out.json {
+        let docs: Vec<serde_json::Value> = files
+            .iter()
+            .map(|(path, ts, count)| {
+                serde_json::json!({
+                    "path": path,
+                    "last_checkpoint": DateTime::from_timestamp_nanos(*ts).to_rfc3339(),
+                    "checkpoint_count": count,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "documents": docs,
+                "total": files.len(),
+            }))?
+        );
+        return Ok(());
+    }
+
+    if out.quiet {
+        return Ok(());
+    }
+
+    if files.is_empty() {
+        println!("No tracked documents.");
+        return Ok(());
+    }
+
+    println!("Tracked documents:");
+    for (path, last_ts, count) in &files {
+        let ts = DateTime::from_timestamp_nanos(*last_ts);
+        println!(
+            "  {} ({} checkpoints, last: {})",
+            path,
+            count,
+            ts.format("%Y-%m-%d %H:%M")
+        );
+    }
+
+    Ok(())
 }

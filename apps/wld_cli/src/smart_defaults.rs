@@ -6,6 +6,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use crate::util::BLOCKED_EXTENSIONS;
+
 pub fn is_initialized(writerslogic_dir: &Path) -> bool {
     writerslogic_dir.join("signing_key").exists()
 }
@@ -57,34 +59,7 @@ pub fn get_recently_modified_files(dir: &Path, max_count: usize) -> Vec<PathBuf>
 
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 let ext_lower = ext.to_lowercase();
-                if matches!(
-                    ext_lower.as_str(),
-                    "exe"
-                        | "dll"
-                        | "so"
-                        | "dylib"
-                        | "o"
-                        | "a"
-                        | "zip"
-                        | "tar"
-                        | "gz"
-                        | "rar"
-                        | "7z"
-                        | "jpg"
-                        | "jpeg"
-                        | "png"
-                        | "gif"
-                        | "bmp"
-                        | "ico"
-                        | "mp3"
-                        | "mp4"
-                        | "avi"
-                        | "mov"
-                        | "wav"
-                        | "db"
-                        | "sqlite"
-                        | "lock"
-                ) {
+                if BLOCKED_EXTENSIONS.contains(&ext_lower.as_str()) {
                     continue;
                 }
             }
@@ -158,67 +133,6 @@ pub fn select_file_from_list(files: &[PathBuf], prompt_prefix: &str) -> Result<O
     }
 }
 
-pub fn normalize_path(path: &Path) -> Result<PathBuf> {
-    let path_str = path.to_string_lossy();
-    let expanded = if path_str.starts_with("~/") || path_str == "~" {
-        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        if path_str == "~" {
-            home
-        } else {
-            home.join(&path_str[2..])
-        }
-    } else {
-        path.to_path_buf()
-    };
-
-    let cleaned = clean_path(&expanded);
-
-    if cleaned.exists() {
-        let canonical = fs::canonicalize(&cleaned)
-            .map_err(|e| anyhow!("Cannot access path {}: {}", cleaned.display(), e))?;
-
-        #[cfg(target_os = "windows")]
-        {
-            let s = canonical.to_string_lossy();
-            if let Some(stripped) = s.strip_prefix(r"\\?\") {
-                return Ok(PathBuf::from(stripped));
-            }
-        }
-
-        Ok(canonical)
-    } else {
-        Ok(cleaned)
-    }
-}
-
-fn clean_path(path: &Path) -> PathBuf {
-    let path_str = path.to_string_lossy();
-    let trimmed = path_str.trim_end_matches('/');
-    let trimmed = if trimmed.is_empty() && path_str.starts_with('/') {
-        "/"
-    } else if trimmed.is_empty() {
-        "."
-    } else {
-        trimmed
-    };
-
-    let mut result = String::with_capacity(trimmed.len());
-    let mut last_was_slash = false;
-    for c in trimmed.chars() {
-        if c == '/' || c == '\\' {
-            if !last_was_slash {
-                result.push('/');
-            }
-            last_was_slash = true;
-        } else {
-            result.push(c);
-            last_was_slash = false;
-        }
-    }
-
-    PathBuf::from(result)
-}
-
 pub fn default_commit_message() -> String {
     format!("Checkpoint at {}", Utc::now().format("%Y-%m-%d %H:%M"))
 }
@@ -288,16 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_path() {
-        assert_eq!(
-            clean_path(Path::new("/foo//bar/")),
-            PathBuf::from("/foo/bar")
-        );
-        assert_eq!(clean_path(Path::new("./foo")), PathBuf::from("./foo"));
-        assert_eq!(clean_path(Path::new("/")), PathBuf::from("/"));
-    }
-
-    #[test]
     fn test_is_initialized() {
         let temp = std::env::temp_dir().join("writerslogic_test_init");
         let _ = fs::remove_dir_all(&temp);
@@ -309,13 +213,6 @@ mod tests {
         assert!(is_initialized(&temp));
 
         let _ = fs::remove_dir_all(&temp);
-    }
-
-    #[test]
-    fn test_normalize_path() {
-        let cwd = std::env::current_dir().unwrap();
-        let normalized = normalize_path(Path::new(".")).unwrap();
-        assert_eq!(normalized, cwd);
     }
 
     #[test]

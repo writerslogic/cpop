@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 pub const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
+pub const EAT_PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
 pub const MIN_CHECKPOINTS_PER_PACKET: usize = 3;
 
 /// Map CLI tier name to CDDL content-tier: basic/standard=1, enhanced=2, maximum=3.

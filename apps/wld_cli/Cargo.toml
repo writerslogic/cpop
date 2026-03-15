@@ -49,3 +49,4 @@ url = "2.5"
 zeroize = { version = "1.8", features = ["derive"] }
 subtle = "2.6"
 ctrlc = "3.4"
+dialoguer = "0.11"

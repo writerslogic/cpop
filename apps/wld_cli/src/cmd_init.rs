@@ -92,7 +92,10 @@ pub(crate) fn cmd_init() -> Result<()> {
             "created_at": identity.created_at.to_rfc3339(),
         });
         let tmp_identity = identity_path.with_extension("tmp");
-        fs::write(&tmp_identity, serde_json::to_string_pretty(&identity_data)?)?;
+        crate::util::write_restrictive(
+            &tmp_identity,
+            serde_json::to_string_pretty(&identity_data)?.as_bytes(),
+        )?;
         fs::rename(&tmp_identity, &identity_path)?;
 
         println!("  Master Identity: {}", identity.fingerprint);
