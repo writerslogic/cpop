@@ -1,6 +1,6 @@
 <p align="center">
-  <strong>wld_cli</strong><br>
-  Command-line interface for cryptographic authorship witnessing
+  <strong>wld</strong><br>
+  Cryptographic authorship witnessing CLI
 </p>
 
 <p align="center">
@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/writerslogic/writerslogic/actions"><img src="https://github.com/writerslogic/writerslogic/workflows/CI/badge.svg" alt="Build Status"></a>
+  <a href="https://github.com/writerslogic/witnessd/actions"><img src="https://github.com/writerslogic/witnessd/workflows/CI/badge.svg" alt="Build Status"></a>
   <img src="https://img.shields.io/badge/rust-1.75%2B-orange" alt="Rust">
-  <a href="https://github.com/writerslogic/writerslogic/blob/main/apps/wld_cli/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
+  <a href="https://github.com/writerslogic/witnessd/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/Patent-US%2019%2F460%2C364%20Pending-blue" alt="Patent Pending">
 </p>
 
@@ -25,130 +25,96 @@
 
 ## Overview
 
-**wld_cli** is the command-line interface for [wld_engine](https://github.com/writerslogic/writerslogic) — producing independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
+**wld** is the command-line interface for [WritersLogic](https://github.com/writerslogic/witnessd) — producing independently verifiable, tamper-evident process evidence constraining when and how a document could have been created. It implements the [draft-condrey-rats-pop](https://datatracker.ietf.org/doc/draft-condrey-rats-pop/) IETF protocol specification.
 
-This repository contains the CLI tool and Linux packaging. For the full WritersLogic ecosystem:
+Part of the WritersLogic monorepo:
 
-| Component | Path | Description |
-|:----------|:-----|:------------|
-| **wld_engine** | [`crates/wld_engine`](../../crates/wld_engine) | Core cryptographic engine (AGPL-3.0-only) |
-| **wld_protocol** | [`crates/wld_protocol`](../../crates/wld_protocol) | PoP wire format (AGPL-3.0-only) |
-| **wld_jitter** | [`crates/wld_jitter`](../../crates/wld_jitter) | Hardware timing entropy (AGPL-3.0-only) |
-| **wld_cli** | [`apps/wld_cli`](.) | CLI & Linux packaging (this directory, AGPL-3.0-only) |
+| Component | Description |
+|:----------|:------------|
+| [**wld_engine**](../../crates/wld_engine) | Cryptographic engine |
+| [**wld_protocol**](../../crates/wld_protocol) | PoP wire format (CBOR/COSE) |
+| [**wld_jitter**](../../crates/wld_jitter) | Hardware timing entropy |
+| **wld_cli** (this crate) | CLI tool |
 
 ## Installation
 
-### Package Managers
-
-| Platform | Command |
-|:---------|:--------|
-| **macOS** | `brew install writerslogic/tap/wld` |
-| **Linux** | `brew install writerslogic/tap/wld` |
-| **Windows** | `scoop bucket add writerslogic https://github.com/writerslogic/scoop-bucket && scoop install wld` |
-
-### Quick Install Script
-
+**macOS (Homebrew):**
 ```bash
-curl -sSf https://raw.githubusercontent.com/writerslogic/writerslogic/main/apps/wld_cli/install.sh | sh
+brew install writerslogic/tap/writerslogic
 ```
 
-### Build from Source
-
-```bash
-git clone https://github.com/writerslogic/writerslogic.git && cd writerslogic
-cargo build --release
-sudo cp target/release/wld /usr/local/bin/wld
+**Windows (Scoop):**
+```powershell
+scoop bucket add writerslogic https://github.com/writerslogic/scoop-bucket
+scoop install writerslogic
 ```
 
-## Usage
-
-### Getting Started
-
+**Linux / macOS (script):**
 ```bash
-wld init                              # Initialize keys, identity, and database
-wld calibrate                         # Calibrate VDF for your machine
-wld commit document.md -m "Draft"     # Create checkpoint with time proof
-wld log document.md                   # View checkpoint history
+curl -sSf https://raw.githubusercontent.com/writerslogic/witnessd/main/apps/wld_cli/install.sh | sh
 ```
 
-### Evidence Export and Verification
-
+**From source:**
 ```bash
-wld export document.md -t core        # Export as JSON evidence packet
-wld export document.md -f war -o proof.war  # Export as WAR block
-wld verify evidence.json              # Verify JSON evidence packet
-wld verify proof.war                  # Verify WAR block
+cargo install --git https://github.com/writerslogic/witnessd --bin wld
 ```
 
-### Evidence Collection
+## Quick Start
 
 ```bash
-wld track start                       # Start keystroke timing collection
-wld track status                      # Check tracking status
-wld track stop                        # Stop tracking
-wld presence start                    # Start presence verification session
-wld fingerprint status                # Show fingerprint collection status
+# Start tracking a document (auto-initializes on first use)
+wld essay.md
+
+# Create a checkpoint with a message
+wld commit essay.md -m "first draft complete"
+
+# View checkpoint history
+wld log essay.md
+
+# Export cryptographic evidence (.cpop)
+wld export essay.md -t 2
+
+# Verify evidence
+wld verify essay.cpop
 ```
 
-### Daemon and Folder Watching
-
-```bash
-wld start                             # Start background daemon
-wld stop                              # Stop background daemon
-wld watch add ~/Documents             # Auto-checkpoint a folder
-wld status                            # Show system status
-```
-
-## Evidence Tiers
-
-Per [draft-condrey-rats-pop](https://github.com/writerslogic/draft-condrey-rats-pop) CDDL: `content-tier = core(1) / enhanced(2) / maximum(3)`
-
-| Tier | Value | Content | Use Case |
-|:-----|:------|:--------|:---------|
-| `core` | 1 | Checkpoint chain + VDF proofs + keystroke jitter evidence | Default — recommended for most workflows |
-| `enhanced` | 2 | + TPM/hardware attestation | Stronger claims with hardware backing |
-| `maximum` | 3 | + behavioral analysis + external anchors | Maximum assurance |
+Run `wld` with no arguments for an interactive menu, or `wld --help` for the full command reference.
 
 ## Commands
 
 | Command | Aliases | Description |
 |:--------|:--------|:------------|
-| `init` | | Initialize WritersLogic (keys, database, identity) |
-| `calibrate` | | Calibrate VDF performance for this machine |
-| `commit` | `checkpoint` | Create a checkpoint with VDF time proof |
-| `log` | `history` | Show checkpoint history for a file |
-| `export` | | Export evidence packet (JSON or WAR format) |
-| `verify` | | Verify evidence packet or database integrity |
-| `track` | | Manage keystroke timing collection |
-| `presence` | | Manage presence verification sessions |
-| `fingerprint` | `fp` | Manage author fingerprints |
-| `watch` | | Auto-checkpoint watched folders |
-| `start` / `stop` | | Manage the WritersLogic daemon |
-| `session` | | Manage document sessions |
-| `config` | `cfg` | View and edit configuration |
-| `status` | | Show system status and configuration |
-| `list` | `ls` | List all tracked documents |
+| `wld <path>` | | Start tracking a file or directory |
+| `wld commit` | `checkpoint` | Create a checkpoint with VDF time proof |
+| `wld log` | `history`, `ls` | View history or list all tracked documents |
+| `wld export` | `prove` | Export evidence packet (.cpop or .cwar) |
+| `wld verify` | `check` | Verify evidence packet |
+| `wld status` | | Show system status |
+| `wld track` | | Session management (start/stop/status/list/show/export) |
+| `wld identity` | `id` | Identity management |
+| `wld config` | `cfg` | View and edit configuration |
+| `wld fingerprint` | `fp` | Behavioral fingerprinting (status/show/compare/list/delete) |
+| `wld presence` | | Physical presence verification |
 
-## Architecture
+All commands support `--json` for machine-readable output and `--quiet` for silent operation.
 
-```
-wld_cli/
-├── src/
-│   ├── main.rs              # CLI entry point and command dispatch
-│   └── smart_defaults.rs    # Platform-aware default configuration
-├── tests/
-│   └── cli_e2e.rs           # End-to-end CLI integration tests
-├── packaging/
-│   └── linux/               # Linux distribution packaging
-│       ├── debian/           # .deb package config
-│       ├── rpm/              # .rpm package config
-│       ├── appimage/         # AppImage config
-│       ├── systemd/          # systemd service units
-│       └── scripts/          # Build and install scripts
-├── install.sh               # Quick install script
-├── Cargo.toml               # Dependencies (wld_engine via git)
-└── CITATION.cff             # Citation metadata
-```
+## Evidence Tiers
+
+Per [draft-condrey-rats-pop](https://datatracker.ietf.org/doc/draft-condrey-rats-pop/):
+
+| Tier | Content | Use Case |
+|:-----|:--------|:---------|
+| **1** (Core) | Checkpoint chain + VDF proofs + keystroke jitter | Default — recommended for most workflows |
+| **2** (Enhanced) | + TPM/hardware attestation | Stronger claims with hardware backing |
+| **3** (Maximum) | + behavioral analysis + external anchors | Maximum assurance |
+
+## Evidence Formats
+
+| Format | Extension | Description |
+|:-------|:----------|:------------|
+| CPOP | `.cpop` | CBOR-encoded evidence packet (primary format) |
+| CWAR | `.cwar` | CBOR-encoded attestation result (verification report) |
+| JSON | `.json` | Human-readable evidence export |
 
 ## Security
 
@@ -160,23 +126,22 @@ wld_cli/
 - Voice fingerprinting is **off by default** and requires explicit consent
 - All keys are stored with restrictive file permissions (0600)
 - Database uses HMAC-based tamper detection
+- Entirely offline-first — no network calls for core witnessing
 
 ## Development
 
 ```bash
-cargo test                        # Run tests
-cargo clippy -- -D warnings       # Lint
-cargo fmt --all                   # Format
+cargo test -p wld_cli              # CLI tests (39 tests)
+cargo test -p wld_engine --lib     # Engine tests (912 tests)
+cargo test --workspace             # Full test suite
+cargo clippy --workspace -- -D warnings  # Lint (zero warnings)
+cargo fmt --all -- --check         # Format check
 ```
-
-## Linux Packaging
-
-Linux packaging configs (Debian, RPM, AppImage, systemd) are in the [`packaging/linux/`](packaging/linux/) directory. See the [Linux Packaging README](packaging/linux/README-LINUX-PACKAGING.md) for details.
 
 ## Citation
 
 ```bibtex
-@article{condrey2026wld,
+@article{condrey2026writerslogic,
   title={WritersLogic: Proof-of-process via Adversarial Collapse},
   author={Condrey, David},
   journal={arXiv preprint arXiv:2602.01663},
@@ -191,6 +156,6 @@ Linux packaging configs (Debian, RPM, AppImage, systemd) are in the [`packaging/
 
 ## License
 
-Licensed under the [GNU General Public License v3.0](LICENSE).
+Licensed under [AGPL-3.0-only](../../LICENSE).
 
-For commercial licensing inquiries (embedding WritersLogic in proprietary software), contact: licensing@writerslogic.com
+For commercial licensing inquiries, contact: licensing@writerslogic.com
