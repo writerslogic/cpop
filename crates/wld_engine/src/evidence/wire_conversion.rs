@@ -90,6 +90,7 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
         previous_packet_ref: None,
         packet_sequence: None,
         physical_liveness: None,
+        baseline_verification: None,
     }
 }
 
@@ -108,6 +109,8 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
                 memory_cost: swf.params.memory_cost as u64,
                 parallelism: swf.params.parallelism as u64,
                 steps: swf.params.iterations,
+                waypoint_interval: None,
+                waypoint_memory: None,
             },
             input: swf.input.to_vec(),
             merkle_root: swf.merkle_root.to_vec(),
@@ -134,6 +137,8 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
                 memory_cost: 0,
                 parallelism: 1,
                 steps: vdf.iterations,
+                waypoint_interval: None,
+                waypoint_memory: None,
             },
             input: vdf.input.to_vec(),
             merkle_root: vdf.output.to_vec(),
@@ -148,6 +153,8 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
                 memory_cost: 0,
                 parallelism: 0,
                 steps: 0,
+                waypoint_interval: None,
+                waypoint_memory: None,
             },
             input: vec![0u8; 32],
             merkle_root: vec![0u8; 32],
@@ -246,6 +253,10 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             chars_deleted: 0,
             op_count: 0,
             positions: None,
+            edit_graph_hash: None,
+            cursor_trajectory_histogram: None,
+            revision_depth_histogram: None,
+            pause_duration_histogram: None,
         },
         prev_hash: HashValue::sha256(cp.previous_hash.to_vec()),
         checkpoint_hash: HashValue::zero_sha256(), // overwritten by compute_hash() below
@@ -255,6 +266,9 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
         entangled_mac,
         receipts: None,
         active_probes: None,
+        hat_proof: None,
+        beacon_anchor: None,
+        verifier_nonce: None,
     };
     // SHA-256(CBOR(checkpoint \ {8})) per spec
     wire.checkpoint_hash = wire.compute_hash();

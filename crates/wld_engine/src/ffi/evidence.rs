@@ -186,6 +186,10 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                     chars_deleted: (-(ev.size_delta as i64)).max(0) as u64,
                     op_count: 1,
                     positions: None,
+                    edit_graph_hash: None,
+                    cursor_trajectory_histogram: None,
+                    revision_depth_histogram: None,
+                    pause_duration_histogram: None,
                 },
                 prev_hash: HashValue::try_sha256(ev.previous_hash.to_vec())?,
                 checkpoint_hash: HashValue::try_sha256(ev.event_hash.to_vec())?,
@@ -196,6 +200,8 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                         memory_cost: 0,
                         parallelism: 1,
                         steps: ev.vdf_iterations,
+                        waypoint_interval: None,
+                        waypoint_memory: None,
                     },
                     input: vdf_input_bytes,
                     merkle_root,
@@ -207,6 +213,9 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 entangled_mac: None,
                 receipts: None,
                 active_probes: None,
+                hat_proof: None,
+                beacon_anchor: None,
+                verifier_nonce: None,
             })
         })
         .collect::<Result<Vec<_>, String>>()
@@ -258,6 +267,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         previous_packet_ref: None,
         packet_sequence: None,
         physical_liveness: None,
+        baseline_verification: None,
     };
 
     match wire_packet.encode_cbor() {

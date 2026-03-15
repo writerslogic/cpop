@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::checkpoint::CheckpointWire;
 use super::components::{
-    ChannelBinding, DocumentRef, PhysicalLiveness, PresenceChallenge, ProfileDeclarationWire,
+    BaselineVerification, ChannelBinding, DocumentRef, PhysicalLiveness, PresenceChallenge,
+    ProfileDeclarationWire,
 };
 use super::enums::{AttestationTier, ContentTier};
 use super::hash::HashValue;
@@ -35,6 +36,7 @@ use crate::codec::{self, CodecError};
 ///     ? 14 => hash-value,           ; previous-packet-ref
 ///     ? 15 => uint,                 ; packet-sequence
 ///     ? 18 => physical-liveness,
+///     ? 19 => baseline-verification,
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +89,9 @@ pub struct EvidencePacketWire {
 
     #[serde(rename = "18", default, skip_serializing_if = "Option::is_none")]
     pub physical_liveness: Option<PhysicalLiveness>,
+
+    #[serde(rename = "19", default, skip_serializing_if = "Option::is_none")]
+    pub baseline_verification: Option<BaselineVerification>,
 }
 
 /// Minimum number of checkpoints per CDDL: `6 => [3* checkpoint]`.

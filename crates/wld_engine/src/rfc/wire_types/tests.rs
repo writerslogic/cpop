@@ -22,6 +22,10 @@ fn test_checkpoint_wire_cbor_roundtrip() {
             chars_deleted: 0,
             op_count: 150,
             positions: None,
+            edit_graph_hash: None,
+            cursor_trajectory_histogram: None,
+            revision_depth_histogram: None,
+            pause_duration_histogram: None,
         },
         prev_hash,
         checkpoint_hash,
@@ -32,6 +36,8 @@ fn test_checkpoint_wire_cbor_roundtrip() {
                 memory_cost: 65536,
                 parallelism: 1,
                 steps: 1000,
+                waypoint_interval: None,
+                waypoint_memory: None,
             },
             input: vec![0x11; 32],
             merkle_root: vec![0x22; 32],
@@ -47,6 +53,9 @@ fn test_checkpoint_wire_cbor_roundtrip() {
         entangled_mac: None,
         receipts: None,
         active_probes: None,
+        hat_proof: None,
+        beacon_anchor: None,
+        verifier_nonce: None,
     };
 
     let encoded = codec::cbor::encode(&checkpoint).expect("encode checkpoint");
@@ -73,6 +82,10 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
             chars_deleted: 0,
             op_count: 150,
             positions: None,
+            edit_graph_hash: None,
+            cursor_trajectory_histogram: None,
+            revision_depth_histogram: None,
+            pause_duration_histogram: None,
         },
         prev_hash: prev_hash.clone(),
         checkpoint_hash: checkpoint_hash.clone(),
@@ -83,6 +96,8 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
                 memory_cost: 65536,
                 parallelism: 1,
                 steps: 1000,
+                waypoint_interval: None,
+                waypoint_memory: None,
             },
             input: vec![0x11; 32],
             merkle_root: vec![0x22; 32],
@@ -98,6 +113,9 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
         entangled_mac: None,
         receipts: None,
         active_probes: None,
+        hat_proof: None,
+        beacon_anchor: None,
+        verifier_nonce: None,
     };
 
     let mut checkpoints = vec![checkpoint.clone()];
@@ -132,6 +150,7 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
         previous_packet_ref: None,
         packet_sequence: None,
         physical_liveness: None,
+        baseline_verification: None,
     }
 }
 
@@ -174,6 +193,7 @@ fn create_test_attestation_result() -> AttestationResultWire {
             }]),
         }),
         effort_attribution: None,
+        confidence_tier: None,
     }
 }
 

@@ -118,7 +118,12 @@ impl VoiceFingerprint {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PunctuationSignature {
     pub frequencies: HashMap<char, f32>,
-    /// Hashed context patterns (privacy-preserving)
+    /// Hashed context patterns (privacy-preserving).
+    ///
+    /// Structural placeholder: populating this requires surrounding-word context
+    /// which is intentionally not captured in privacy-preserving mode. The field
+    /// is retained for future opt-in content-aware analysis behind explicit consent.
+    #[allow(dead_code)] // Requires content access not available in privacy-preserving mode
     pub context_patterns: Vec<u64>,
 }
 
@@ -234,9 +239,13 @@ fn hash_with_seed(s: &str, seed: u64) -> u64 {
 /// Correction/backspace behavioral signature.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackspaceSignature {
+    /// Average characters typed between consecutive backspaces.
     pub mean_chars_before_backspace: f64,
+    /// Average length of consecutive-backspace runs.
     pub mean_consecutive_backspaces: f64,
+    /// Backspaces per 100 characters typed.
     pub backspace_frequency: f64,
+    /// Fraction of backspaces occurring within 2 characters of prior backspace.
     pub quick_correction_rate: f64,
 }
 
@@ -294,6 +303,16 @@ pub struct VoiceCollector {
     total_chars: usize,
     word_lengths: [usize; MAX_WORD_LENGTH],
     fingerprint: VoiceFingerprint,
+    /// Running sum of chars-before-backspace gaps (for computing mean).
+    chars_before_backspace_sum: usize,
+    /// Number of backspace events that ended a non-zero character gap.
+    chars_before_backspace_count: usize,
+    /// Running sum of consecutive-backspace run lengths.
+    consecutive_run_sum: usize,
+    /// Number of completed consecutive-backspace runs.
+    consecutive_run_count: usize,
+    /// Whether the previous keystroke was a backspace (for run tracking).
+    prev_was_backspace: bool,
 }
 
 impl VoiceCollector {
@@ -308,6 +327,11 @@ impl VoiceCollector {
             total_chars: 0,
             word_lengths: [0; MAX_WORD_LENGTH],
             fingerprint: VoiceFingerprint::new(false),
+            chars_before_backspace_sum: 0,
+            chars_before_backspace_count: 0,
+            consecutive_run_sum: 0,
+            consecutive_run_count: 0,
+            prev_was_backspace: false,
         }
     }
 
@@ -318,7 +342,13 @@ impl VoiceCollector {
             return;
         }
 
+        // End of a consecutive-backspace run — record it.
+        if self.prev_was_backspace && self.consecutive_backspaces > 0 {
+            self.consecutive_run_sum += self.consecutive_backspaces;
+            self.consecutive_run_count += 1;
+        }
         self.consecutive_backspaces = 0;
+        self.prev_was_backspace = false;
 
         if let Some(c) = char_value {
             self.total_chars += 1;
@@ -339,6 +369,13 @@ impl VoiceCollector {
     fn handle_backspace(&mut self) {
         self.total_backspaces += 1;
         self.consecutive_backspaces += 1;
+        self.prev_was_backspace = true;
+
+        // Record the gap length before this backspace run started.
+        if self.consecutive_backspaces == 1 && self.chars_since_backspace > 0 {
+            self.chars_before_backspace_sum += self.chars_since_backspace;
+            self.chars_before_backspace_count += 1;
+        }
 
         if self.chars_since_backspace <= 2 {
             self.quick_corrections += 1;
@@ -392,6 +429,23 @@ impl VoiceCollector {
                 fp.backspace_signature.quick_correction_rate =
                     self.quick_corrections as f64 / self.total_backspaces as f64;
             }
+            if self.chars_before_backspace_count > 0 {
+                fp.backspace_signature.mean_chars_before_backspace = self.chars_before_backspace_sum
+                    as f64
+                    / self.chars_before_backspace_count as f64;
+            }
+            // Include any in-progress backspace run in the mean.
+            let run_count = self.consecutive_run_count
+                + if self.consecutive_backspaces > 0 {
+                    1
+                } else {
+                    0
+                };
+            let run_sum = self.consecutive_run_sum + self.consecutive_backspaces;
+            if run_count > 0 {
+                fp.backspace_signature.mean_consecutive_backspaces =
+                    run_sum as f64 / run_count as f64;
+            }
         }
 
         fp.total_chars = self.total_chars as u64;
@@ -414,6 +468,11 @@ impl VoiceCollector {
         self.total_chars = 0;
         self.word_lengths = [0; MAX_WORD_LENGTH];
         self.fingerprint = VoiceFingerprint::new(false);
+        self.chars_before_backspace_sum = 0;
+        self.chars_before_backspace_count = 0;
+        self.consecutive_run_sum = 0;
+        self.consecutive_run_count = 0;
+        self.prev_was_backspace = false;
     }
 }
 

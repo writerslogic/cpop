@@ -6,6 +6,16 @@ use super::{AuthorFingerprint, ProfileId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Similarity above this threshold yields a SameAuthor verdict.
+const SAME_AUTHOR_THRESHOLD: f64 = 0.80;
+/// Similarity above this threshold yields a LikelySameAuthor verdict.
+const LIKELY_SAME_THRESHOLD: f64 = 0.60;
+/// Similarity below this threshold yields a DifferentAuthors verdict.
+const DIFFERENT_AUTHOR_THRESHOLD: f64 = 0.40;
+
+/// Confidence scales linearly with sample count, saturating at this value.
+pub(crate) const CONFIDENCE_SATURATION_SAMPLES: f64 = 200.0;
+
 /// Pairwise fingerprint comparison result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FingerprintComparison {
@@ -23,29 +33,22 @@ pub struct FingerprintComparison {
 /// Similarity-based authorship verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ComparisonVerdict {
-    /// > 0.85
     SameAuthor,
-    /// 0.70 - 0.85
     LikelySameAuthor,
-    /// 0.40 - 0.70
     Inconclusive,
-    /// 0.20 - 0.40
     LikelyDifferentAuthors,
-    /// < 0.20
     DifferentAuthors,
 }
 
 impl ComparisonVerdict {
     /// Classify a similarity score into a verdict category.
     pub fn from_similarity(similarity: f64) -> Self {
-        if similarity > 0.85 {
+        if similarity > SAME_AUTHOR_THRESHOLD {
             Self::SameAuthor
-        } else if similarity > 0.70 {
+        } else if similarity > LIKELY_SAME_THRESHOLD {
             Self::LikelySameAuthor
-        } else if similarity > 0.40 {
+        } else if similarity > DIFFERENT_AUTHOR_THRESHOLD {
             Self::Inconclusive
-        } else if similarity > 0.20 {
-            Self::LikelyDifferentAuthors
         } else {
             Self::DifferentAuthors
         }
@@ -132,9 +135,9 @@ pub fn compare_fingerprints(a: &AuthorFingerprint, b: &AuthorFingerprint) -> Fin
     }
 }
 
-/// Asymptotic confidence: ~0.5 at 100 samples, ~0.9 at 1000.
+/// Linear confidence saturating at `CONFIDENCE_SATURATION_SAMPLES`.
 fn confidence_from_samples(samples: u64) -> f64 {
-    1.0 - 1.0 / (1.0 + samples as f64 / 100.0)
+    (samples as f64 / CONFIDENCE_SATURATION_SAMPLES).min(1.0)
 }
 
 /// Threshold-based matcher for finding similar profiles.
@@ -368,7 +371,7 @@ mod tests {
             ComparisonVerdict::SameAuthor
         );
         assert_eq!(
-            ComparisonVerdict::from_similarity(0.75),
+            ComparisonVerdict::from_similarity(0.70),
             ComparisonVerdict::LikelySameAuthor
         );
         assert_eq!(
@@ -377,7 +380,7 @@ mod tests {
         );
         assert_eq!(
             ComparisonVerdict::from_similarity(0.3),
-            ComparisonVerdict::LikelyDifferentAuthors
+            ComparisonVerdict::DifferentAuthors
         );
         assert_eq!(
             ComparisonVerdict::from_similarity(0.1),
@@ -414,8 +417,9 @@ mod tests {
 
     #[test]
     fn test_confidence_from_samples() {
-        assert!(confidence_from_samples(0) < 0.1);
-        assert!(confidence_from_samples(100) > 0.4 && confidence_from_samples(100) < 0.6);
-        assert!(confidence_from_samples(1000) > 0.8);
+        assert_eq!(confidence_from_samples(0), 0.0);
+        assert!((confidence_from_samples(100) - 0.5).abs() < f64::EPSILON);
+        assert_eq!(confidence_from_samples(200), 1.0);
+        assert_eq!(confidence_from_samples(1000), 1.0);
     }
 }

@@ -51,14 +51,15 @@ pub use attestation::{
 };
 pub use checkpoint::CheckpointWire;
 pub use components::{
-    ActiveProbe, ChannelBinding, DocumentRef, EditDelta, JitterBindingWire, MerkleProof,
-    PhysicalLiveness, PhysicalState, PresenceChallenge, ProcessProof, ProfileDeclarationWire,
-    ProofParams, Receipt, SelfReceipt, ToolReceipt, SWF_MAX_DURATION_FACTOR,
+    ActiveProbe, BaselineDigest, BaselineVerification, BeaconAnchor, ChannelBinding, DocumentRef,
+    EditDelta, HatProof, JitterBindingWire, MerkleProof, PhysicalLiveness, PhysicalState,
+    PresenceChallenge, ProcessProof, ProfileDeclarationWire, ProofParams, Receipt, SelfReceipt,
+    SessionBehavioralSummary, StreamingStats, ToolReceipt, SWF_MAX_DURATION_FACTOR,
     SWF_MIN_DURATION_FACTOR,
 };
 pub use enums::{
-    AbsenceType, AttestationTier, BindingType, ContentTier, CostUnit, FeatureId, HashAlgorithm,
-    HashSaltMode, ProbeType, ProofAlgorithm, Verdict,
+    AbsenceType, AttestationTier, BindingType, ConfidenceTier, ContentTier, CostUnit, FeatureId,
+    HashAlgorithm, HashSaltMode, ProbeType, ProofAlgorithm, Verdict,
 };
 pub use hash::{CompactRef, HashValue, TimeWindow};
 pub use packet::EvidencePacketWire;

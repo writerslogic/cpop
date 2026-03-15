@@ -249,6 +249,7 @@ impl EarToken {
             created: (self.iat as u64) * 1000,
             forensic_summary: appr.and_then(|a| a.pop_forensic_summary.clone()),
             effort_attribution: None,
+            confidence_tier: None,
         }
     }
 }

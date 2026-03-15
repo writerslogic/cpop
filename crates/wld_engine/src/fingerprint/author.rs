@@ -53,7 +53,8 @@ impl AuthorFingerprint {
     }
 
     pub fn update_confidence(&mut self) {
-        self.confidence = 1.0 - 1.0 / (1.0 + self.sample_count as f64 / 100.0);
+        self.confidence =
+            (self.sample_count as f64 / super::comparison::CONFIDENCE_SATURATION_SAMPLES).min(1.0);
     }
 
     pub fn merge(&mut self, other: &AuthorFingerprint) {

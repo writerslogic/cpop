@@ -234,6 +234,15 @@ impl Verifier {
             .unwrap_or(false)
     }
 
+    /// Attach a previously persisted session so challenges resume against it.
+    pub fn restore_session(&mut self, session: Session) -> Result<(), String> {
+        if !session.active {
+            return Err("cannot restore an inactive session".to_string());
+        }
+        self.session = Some(session);
+        Ok(())
+    }
+
     /// Return a reference to the current session, if any.
     pub fn active_session(&self) -> Option<&Session> {
         self.session.as_ref()

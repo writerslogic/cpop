@@ -284,6 +284,10 @@ pub struct AttestationResultWire {
     #[serde(rename = "13", default, skip_serializing_if = "Option::is_none")]
     pub forensic_summary: Option<ForensicSummary>,
 
+    /// Confidence tier (1..=100)
+    #[serde(rename = "14", default, skip_serializing_if = "Option::is_none")]
+    pub confidence_tier: Option<u8>,
+
     /// Effort attribution
     #[serde(rename = "15", default, skip_serializing_if = "Option::is_none")]
     pub effort_attribution: Option<EffortAttribution>,
@@ -354,6 +358,14 @@ impl AttestationResultWire {
                     "too many warnings: {} (max {})",
                     warnings.len(),
                     MAX_WARNINGS
+                )));
+            }
+        }
+        if let Some(tier) = self.confidence_tier {
+            if tier == 0 || tier > 100 {
+                return Err(CodecError::Validation(format!(
+                    "confidence_tier out of range: {} (must be 1..=100)",
+                    tier
                 )));
             }
         }

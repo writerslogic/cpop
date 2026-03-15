@@ -161,9 +161,10 @@ impl ActivityFingerprint {
         (iki_sim * 0.4 + zone_sim * 0.35 + pause_sim * 0.25).clamp(0.0, 1.0)
     }
 
-    /// Asymptotic confidence: approaches 1.0 around ~500 samples.
+    /// Linear confidence saturating at `CONFIDENCE_SATURATION_SAMPLES`.
     fn update_confidence(&mut self) {
-        self.confidence = 1.0 - 1.0 / (1.0 + self.sample_count as f64 / 500.0);
+        self.confidence =
+            (self.sample_count as f64 / super::comparison::CONFIDENCE_SATURATION_SAMPLES).min(1.0);
     }
 }
 

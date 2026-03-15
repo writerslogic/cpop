@@ -5,11 +5,12 @@
 //! Implements `document-ref`, `edit-delta`, `proof-params`, `merkle-proof`,
 //! `process-proof`, `jitter-binding`, `physical-state`, `physical-liveness`,
 //! `presence-challenge`, `channel-binding`, `self-receipt`, `active-probe`,
-//! and `profile-declaration` from the CDDL schema.
+//! `profile-declaration`, `baseline-verification`, `baseline-digest`,
+//! `session-behavioral-summary`, and `streaming-stats` from the CDDL schema.
 
 use serde::{Deserialize, Serialize};
 
-use super::enums::{BindingType, HashSaltMode, ProbeType, ProofAlgorithm};
+use super::enums::{BindingType, ConfidenceTier, HashSaltMode, ProbeType, ProofAlgorithm};
 use super::hash::HashValue;
 use super::serde_helpers::{fixed_bytes_32, fixed_bytes_32_opt, serde_bytes_opt};
 
@@ -62,6 +63,22 @@ pub struct DocumentRef {
     pub salt_commitment: Option<Vec<u8>>,
 }
 
+impl DocumentRef {
+    /// Validate document-ref constraints per CDDL schema.
+    pub fn validate(&self) -> Result<(), String> {
+        self.content_hash.validate_digest_length()?;
+        if let Some(ref salt) = self.salt_commitment {
+            if !matches!(salt.len(), 32 | 48 | 64) {
+                return Err(format!(
+                    "salt_commitment length {} invalid (must be 32, 48, or 64 bytes)",
+                    salt.len()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Edit delta per CDDL `edit-delta`.
 ///
 /// ```cddl
@@ -70,6 +87,10 @@ pub struct DocumentRef {
 ///     2 => uint,
 ///     3 => uint,
 ///     ? 4 => [* edit-position],
+///     ? 5 => hash-digest,
+///     ? 9 => [8*8 uint],
+///     ? 10 => [8*8 uint],
+///     ? 11 => [8*8 uint],
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +107,54 @@ pub struct EditDelta {
     /// (offset, delta) pairs
     #[serde(rename = "4", default, skip_serializing_if = "Option::is_none")]
     pub positions: Option<Vec<(u64, i64)>>,
+
+    /// Hash of the edit dependency graph
+    #[serde(
+        rename = "5",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes_opt"
+    )]
+    pub edit_graph_hash: Option<Vec<u8>>,
+
+    /// 8-bin histogram of cursor trajectory distances
+    #[serde(rename = "9", default, skip_serializing_if = "Option::is_none")]
+    pub cursor_trajectory_histogram: Option<Vec<u64>>,
+
+    /// 8-bin histogram of revision depths
+    #[serde(rename = "10", default, skip_serializing_if = "Option::is_none")]
+    pub revision_depth_histogram: Option<Vec<u64>>,
+
+    /// 8-bin histogram of pause durations between edits
+    #[serde(rename = "11", default, skip_serializing_if = "Option::is_none")]
+    pub pause_duration_histogram: Option<Vec<u64>>,
+}
+
+/// Max edit positions per delta.
+const MAX_EDIT_POSITIONS: usize = 100_000;
+
+impl EditDelta {
+    /// Validate edit-delta constraints per CDDL schema.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(ref positions) = self.positions {
+            if positions.len() > MAX_EDIT_POSITIONS {
+                return Err(format!(
+                    "too many edit positions: {} (max {})",
+                    positions.len(),
+                    MAX_EDIT_POSITIONS
+                ));
+            }
+            for (i, &(_offset, change)) in positions.iter().enumerate() {
+                if change == 0 {
+                    return Err(format!(
+                        "edit position[{}] has zero change value (no-op not allowed)",
+                        i
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Proof parameters per CDDL `proof-params`.
@@ -96,6 +165,8 @@ pub struct EditDelta {
 ///     2 => uint,  ; memory-cost (KiB)
 ///     3 => uint,  ; parallelism
 ///     4 => uint,  ; steps
+///     ? 5 => uint, ; waypoint-interval (Mode 10 only)
+///     ? 6 => uint, ; waypoint-memory (KiB, Mode 10 only)
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +183,14 @@ pub struct ProofParams {
 
     #[serde(rename = "4")]
     pub steps: u64,
+
+    /// Waypoint interval (Mode 10 only)
+    #[serde(rename = "5", default, skip_serializing_if = "Option::is_none")]
+    pub waypoint_interval: Option<u64>,
+
+    /// Waypoint memory in KiB (Mode 10 only)
+    #[serde(rename = "6", default, skip_serializing_if = "Option::is_none")]
+    pub waypoint_memory: Option<u64>,
 }
 
 /// Merkle proof per CDDL `merkle-proof`.
@@ -398,6 +477,18 @@ impl PresenceChallenge {
             .to_vec()
             .expect("COSE_Sign1 serialization")
     }
+
+    /// Validate presence-challenge constraints per CDDL schema.
+    /// challenge-nonce must be 16..256 bytes (`.size (16..256)`).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.challenge_nonce.len() < 16 || self.challenge_nonce.len() > 256 {
+            return Err(format!(
+                "challenge_nonce length {} out of range (must be 16..=256 bytes)",
+                self.challenge_nonce.len()
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Channel binding per CDDL `channel-binding`.
@@ -525,6 +616,59 @@ pub struct ActiveProbe {
     pub response_latency: Option<u64>,
 }
 
+/// Hardware-anchored time proof per CDDL `hat-proof`.
+///
+/// ```cddl
+/// hat-proof = {
+///     1 => bstr,  ; time-before (TPMS_TIME_ATTEST_INFO)
+///     2 => bstr,  ; time-after (TPMS_TIME_ATTEST_INFO)
+///     3 => bstr,  ; sig-before (AIK signature)
+///     4 => bstr,  ; sig-after (AIK signature)
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HatProof {
+    /// TPMS_TIME_ATTEST_INFO before SWF
+    #[serde(rename = "1", with = "serde_bytes")]
+    pub time_before: Vec<u8>,
+
+    /// TPMS_TIME_ATTEST_INFO after SWF
+    #[serde(rename = "2", with = "serde_bytes")]
+    pub time_after: Vec<u8>,
+
+    /// AIK signature over time-before
+    #[serde(rename = "3", with = "serde_bytes")]
+    pub sig_before: Vec<u8>,
+
+    /// AIK signature over time-after
+    #[serde(rename = "4", with = "serde_bytes")]
+    pub sig_after: Vec<u8>,
+}
+
+/// Public randomness beacon anchor per CDDL `beacon-anchor`.
+///
+/// ```cddl
+/// beacon-anchor = {
+///     1 => tstr,          ; beacon-source (URI)
+///     2 => uint,          ; beacon-round
+///     3 => bstr .size 32, ; beacon-value
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BeaconAnchor {
+    /// URI of beacon service
+    #[serde(rename = "1")]
+    pub source_url: String,
+
+    /// Beacon round number
+    #[serde(rename = "2")]
+    pub beacon_round: u64,
+
+    /// Beacon randomness output (32 bytes)
+    #[serde(rename = "3", with = "fixed_bytes_32")]
+    pub beacon_value: [u8; 32],
+}
+
 /// Profile declaration per CDDL `profile-declaration`.
 ///
 /// ```cddl
@@ -540,4 +684,112 @@ pub struct ProfileDeclarationWire {
 
     #[serde(rename = "2")]
     pub feature_flags: Vec<u64>,
+}
+
+/// Streaming statistics per CDDL `streaming-stats`.
+///
+/// ```cddl
+/// streaming-stats = {
+///     1 => float,   ; mean
+///     2 => float,   ; variance
+///     3 => uint,    ; count
+///     ? 4 => float, ; min
+///     ? 5 => float, ; max
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamingStats {
+    #[serde(rename = "1")]
+    pub mean: f64,
+
+    #[serde(rename = "2")]
+    pub variance: f64,
+
+    #[serde(rename = "3")]
+    pub count: u64,
+
+    #[serde(rename = "4", default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+
+    #[serde(rename = "5", default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+}
+
+/// Single baseline digest per CDDL `baseline-digest`.
+///
+/// ```cddl
+/// baseline-digest = {
+///     1 => tstr,              ; dimension-name
+///     2 => bstr,              ; digest-value
+///     3 => uint,              ; sample-count
+///     ? 4 => streaming-stats, ; reference-stats
+///     ? 10 => confidence-tier,
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineDigest {
+    #[serde(rename = "1")]
+    pub dimension_name: String,
+
+    #[serde(rename = "2", with = "serde_bytes")]
+    pub digest_value: Vec<u8>,
+
+    #[serde(rename = "3")]
+    pub sample_count: u64,
+
+    #[serde(rename = "4", default, skip_serializing_if = "Option::is_none")]
+    pub reference_stats: Option<StreamingStats>,
+
+    #[serde(rename = "10", default, skip_serializing_if = "Option::is_none")]
+    pub confidence_tier: Option<ConfidenceTier>,
+}
+
+/// Session behavioral summary per CDDL `session-behavioral-summary`.
+///
+/// ```cddl
+/// session-behavioral-summary = {
+///     1 => uint,    ; total-keystrokes
+///     2 => uint,    ; total-duration-ms
+///     3 => float,   ; mean-iki-ms
+///     4 => float,   ; iki-std-dev
+///     ? 5 => float, ; similarity-score
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionBehavioralSummary {
+    #[serde(rename = "1")]
+    pub total_keystrokes: u64,
+
+    /// In milliseconds
+    #[serde(rename = "2")]
+    pub total_duration_ms: u64,
+
+    /// Mean inter-key interval in milliseconds
+    #[serde(rename = "3")]
+    pub mean_iki_ms: f64,
+
+    /// Standard deviation of inter-key intervals
+    #[serde(rename = "4")]
+    pub iki_std_dev: f64,
+
+    /// Similarity to established baseline (0.0..1.0)
+    #[serde(rename = "5", default, skip_serializing_if = "Option::is_none")]
+    pub similarity_score: Option<f64>,
+}
+
+/// Baseline verification per CDDL `baseline-verification`.
+///
+/// ```cddl
+/// baseline-verification = {
+///     1 => [+ baseline-digest],
+///     2 => session-behavioral-summary,
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineVerification {
+    #[serde(rename = "1")]
+    pub digests: Vec<BaselineDigest>,
+
+    #[serde(rename = "2")]
+    pub session_summary: SessionBehavioralSummary,
 }

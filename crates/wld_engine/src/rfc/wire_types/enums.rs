@@ -139,3 +139,17 @@ pub enum BindingType {
     /// TLS Exporter Key Material (RFC 5705).
     TlsExporter = 1,
 }
+
+/// Confidence tier for baseline digests per CDDL `confidence-tier`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum ConfidenceTier {
+    /// Population reference baseline.
+    PopulationReference = 1,
+    /// Emerging per-author baseline.
+    Emerging = 2,
+    /// Established per-author baseline.
+    Established = 3,
+    /// Mature per-author baseline.
+    Mature = 4,
+}

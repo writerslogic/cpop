@@ -5,10 +5,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::components::{
-    ActiveProbe, EditDelta, JitterBindingWire, PhysicalState, ProcessProof, Receipt,
+    ActiveProbe, BeaconAnchor, EditDelta, HatProof, JitterBindingWire, PhysicalState, ProcessProof,
+    Receipt,
 };
 use super::hash::HashValue;
-use super::serde_helpers::{fixed_bytes_16, serde_bytes_opt};
+use super::serde_helpers::{fixed_bytes_16, fixed_bytes_32_opt, serde_bytes_opt};
 
 /// Wire-format checkpoint per draft-condrey-rats-pop CDDL `checkpoint`.
 ///
@@ -28,6 +29,9 @@ use super::serde_helpers::{fixed_bytes_16, serde_bytes_opt};
 ///     ? 12 => hash-digest,     ; entangled-mac
 ///     ? 13 => [+ receipt],
 ///     ? 14 => [+ active-probe],
+///     ? 15 => hat-proof,
+///     ? 16 => beacon-anchor,
+///     ? 17 => bstr .size 32, ; verifier-nonce
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,12 +82,27 @@ pub struct CheckpointWire {
 
     #[serde(rename = "14", default, skip_serializing_if = "Option::is_none")]
     pub active_probes: Option<Vec<ActiveProbe>>,
+
+    /// HAT temporal proof (T3/T4)
+    #[serde(rename = "15", default, skip_serializing_if = "Option::is_none")]
+    pub hat_proof: Option<HatProof>,
+
+    /// Public randomness beacon anchor
+    #[serde(rename = "16", default, skip_serializing_if = "Option::is_none")]
+    pub beacon_anchor: Option<BeaconAnchor>,
+
+    /// Verifier nonce for interactive mode (32 bytes)
+    #[serde(
+        rename = "17",
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "fixed_bytes_32_opt"
+    )]
+    pub verifier_nonce: Option<[u8; 32]>,
 }
 
 const MAX_SELF_RECEIPTS: usize = 100;
 const MAX_ACTIVE_PROBES: usize = 100;
-/// HMAC-SHA256 = 32 bytes; allow up to 64 for future algorithms.
-const MAX_ENTANGLED_MAC_LEN: usize = 64;
 
 impl CheckpointWire {
     /// Compute the spec-conformant checkpoint hash per draft-condrey-rats-pop S6.6.
@@ -135,11 +154,10 @@ impl CheckpointWire {
         self.checkpoint_hash.validate_digest_length()?;
 
         if let Some(ref mac) = self.entangled_mac {
-            if mac.len() > MAX_ENTANGLED_MAC_LEN {
+            if !matches!(mac.len(), 32 | 48 | 64) {
                 return Err(format!(
-                    "entangled_mac too long: {} (max {})",
-                    mac.len(),
-                    MAX_ENTANGLED_MAC_LEN
+                    "entangled_mac length {} invalid (must be 32, 48, or 64 bytes)",
+                    mac.len()
                 ));
             }
         }
@@ -162,6 +180,7 @@ impl CheckpointWire {
             }
         }
 
+        self.delta.validate()?;
         self.process_proof.validate()?;
 
         if let Some(ref jb) = self.jitter_binding {

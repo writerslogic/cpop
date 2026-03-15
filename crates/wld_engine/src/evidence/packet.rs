@@ -230,6 +230,9 @@ impl Packet {
         match format {
             Format::Cbor => codec::cbor::encode_cpop(self)
                 .map_err(|e| Error::evidence(format!("encode failed: {e}"))),
+            Format::CborWar => Err(Error::evidence(
+                "CborWar format is for attestation results, not evidence packets",
+            )),
             Format::Json => serde_json::to_vec_pretty(self)
                 .map_err(|e| Error::evidence(format!("encode failed: {e}"))),
         }
@@ -248,6 +251,9 @@ impl Packet {
                 codec::cbor::decode_cpop(data)
                     .map_err(|e| Error::evidence(format!("decode failed: {e}")))
             }
+            Format::CborWar => Err(Error::evidence(
+                "CborWar format is for attestation results, not evidence packets",
+            )),
             Format::Json => serde_json::from_slice(data)
                 .map_err(|e| Error::evidence(format!("decode failed: {e}"))),
         }
@@ -263,6 +269,9 @@ impl Packet {
                 codec::cbor::decode_cpop(data)
                     .map_err(|e| Error::evidence(format!("decode failed: {e}")))
             }
+            Format::CborWar => Err(Error::evidence(
+                "CborWar format is for attestation results, not evidence packets",
+            )),
             Format::Json => serde_json::from_slice(data)
                 .map_err(|e| Error::evidence(format!("decode failed: {e}"))),
         }
