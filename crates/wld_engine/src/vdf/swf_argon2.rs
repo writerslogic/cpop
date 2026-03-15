@@ -83,6 +83,8 @@ pub struct Argon2SwfProof {
     pub sampled_proofs: Vec<MerkleSampleProof>,
     pub claimed_duration: Duration,
     pub challenge: [u8; 32],
+    /// Proof algorithm ID: 20 = SwfArgon2id, 21 = SwfArgon2idEntangled
+    pub proof_algorithm: u16,
 }
 
 /// Merkle inclusion proof for a single sampled SWF iteration.
@@ -91,31 +93,43 @@ pub struct MerkleSampleProof {
     pub leaf_index: u64,
     pub leaf_value: [u8; 32],
     pub sibling_path: Vec<[u8; 32]>,
+    /// Raw Argon2id output before RFC 6962 leaf hashing.
+    /// Verifier checks: H(0x00 || raw_output) == leaf_value.
+    #[serde(default)]
+    pub raw_output: [u8; 32],
 }
 
 /// Default Merkle samples for CORE tier (k=20).
 /// ENHANCED=50, MAXIMUM=100 per draft-condrey-rats-pop §4.4.
 const DEFAULT_SAMPLE_COUNT: usize = 20;
 
-/// Compute an Argon2id SWF proof.
-///
-/// Runs `params.iterations` sequential Argon2id evaluations, builds a
-/// Merkle tree over the outputs, derives a Fiat-Shamir challenge, and
-/// returns sampled inclusion proofs.
+/// Proof algorithm ID for standard Argon2id SWF.
+pub const PROOF_ALGORITHM_STANDARD: u16 = 20;
+/// Proof algorithm ID for entangled Argon2id SWF.
+pub const PROOF_ALGORITHM_ENTANGLED: u16 = 21;
+
+/// Compute an Argon2id SWF proof with standard algorithm (20).
 pub fn compute(input: [u8; 32], params: Argon2SwfParams) -> Result<Argon2SwfProof, String> {
-    compute_with_samples(input, params, DEFAULT_SAMPLE_COUNT)
+    compute_with_algorithm(
+        input,
+        params,
+        DEFAULT_SAMPLE_COUNT,
+        PROOF_ALGORITHM_STANDARD,
+    )
 }
 
-/// Compute with explicit sample count (k=20 CORE, k=50 ENHANCED, k=100 MAXIMUM).
-pub fn compute_with_samples(
+/// Compute with explicit sample count and algorithm ID.
+pub fn compute_with_algorithm(
     input: [u8; 32],
     params: Argon2SwfParams,
     sample_count: usize,
+    proof_algorithm: u16,
 ) -> Result<Argon2SwfProof, String> {
     let argon2 = build_argon2(&params)?;
 
     let start = Instant::now();
     let mut leaves = Vec::with_capacity(params.iterations as usize);
+    let mut raw_outputs = Vec::with_capacity(params.iterations as usize);
     let mut current = input;
 
     for i in 0..params.iterations {
@@ -150,12 +164,13 @@ pub fn compute_with_samples(
             h.finalize().into()
         };
         leaves.push(leaf);
+        raw_outputs.push(output);
         current = output;
     }
 
     let merkle_root = build_merkle_root(&leaves, params.iterations);
 
-    let challenge = fiat_shamir_challenge(&merkle_root, &input, &params);
+    let challenge = fiat_shamir_challenge(&merkle_root, &input, &params, proof_algorithm);
 
     let indices = select_indices(&challenge, params.iterations, sample_count);
 
@@ -168,6 +183,7 @@ pub fn compute_with_samples(
                 leaf_index: idx,
                 leaf_value: leaves[idx as usize],
                 sibling_path: path,
+                raw_output: raw_outputs[idx as usize],
             }
         })
         .collect();
@@ -179,19 +195,27 @@ pub fn compute_with_samples(
         sampled_proofs,
         claimed_duration: start.elapsed(),
         challenge,
+        proof_algorithm,
     })
 }
 
 /// Verify an Argon2id SWF proof by checking:
 /// 1. Fiat-Shamir challenge is correctly derived
-/// 2. Each sampled Merkle proof verifies against the root
+/// 2. raw_output hashes to leaf_value: H(0x00 || raw_output) == leaf_value
+/// 3. Each sampled Merkle proof verifies against the root
+/// 4. For index 0, recomputes Argon2id(input, salt_0) and verifies match
 pub fn verify(proof: &Argon2SwfProof) -> Result<bool, String> {
     verify_with_samples(proof, proof.sampled_proofs.len())
 }
 
 /// Verify with explicit expected sample count.
 pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Result<bool, String> {
-    let expected_challenge = fiat_shamir_challenge(&proof.merkle_root, &proof.input, &proof.params);
+    let expected_challenge = fiat_shamir_challenge(
+        &proof.merkle_root,
+        &proof.input,
+        &proof.params,
+        proof.proof_algorithm,
+    );
     if proof.challenge != expected_challenge {
         return Ok(false);
     }
@@ -203,7 +227,26 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
         }
     }
 
+    // Build Argon2id instance for state recomputation
+    let argon2 = build_argon2(&proof.params)?;
+
+    // Sort samples by index for consecutive-pair verification
+    let mut sorted_samples: Vec<&MerkleSampleProof> = proof.sampled_proofs.iter().collect();
+    sorted_samples.sort_by_key(|s| s.leaf_index);
+
     for sample in &proof.sampled_proofs {
+        // Verify raw_output → leaf_value binding: H(0x00 || raw_output) == leaf_value
+        let expected_leaf: [u8; 32] = {
+            let mut h = Sha256::new();
+            h.update([0x00u8]);
+            h.update(sample.raw_output);
+            h.finalize().into()
+        };
+        if expected_leaf != sample.leaf_value {
+            return Ok(false);
+        }
+
+        // Verify Merkle inclusion proof
         if !verify_merkle_proof(
             &proof.merkle_root,
             sample.leaf_index as usize,
@@ -211,6 +254,51 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
             &sample.sibling_path,
         ) {
             return Ok(false);
+        }
+
+        // For index 0: recompute Argon2id from input and verify
+        if sample.leaf_index == 0 {
+            let salt_hash = {
+                let mut h = Sha256::new();
+                h.update([0x00u8]);
+                h.update(b"PoP-salt-v1");
+                h.update(proof.input);
+                h.finalize()
+            };
+            let mut expected_output = [0u8; 32];
+            argon2
+                .hash_password_into(&proof.input, salt_hash.as_slice(), &mut expected_output)
+                .map_err(|e| format!("verify Argon2id index 0: {e}"))?;
+            if expected_output != sample.raw_output {
+                return Ok(false);
+            }
+        }
+    }
+
+    // Verify consecutive sampled pairs: state_{i+1} = Argon2id(state_i, salt_{i+1})
+    for window in sorted_samples.windows(2) {
+        let prev = window[0];
+        let next = window[1];
+        if next.leaf_index == prev.leaf_index + 1 {
+            let salt_hash = {
+                let mut h = Sha256::new();
+                h.update([0x01u8]);
+                h.update(b"PoP-salt-v1");
+                h.update((next.leaf_index as u32).to_be_bytes());
+                h.finalize()
+            };
+            let mut expected_output = [0u8; 32];
+            argon2
+                .hash_password_into(&prev.raw_output, salt_hash.as_slice(), &mut expected_output)
+                .map_err(|e| {
+                    format!(
+                        "verify Argon2id transition {}->{}: {e}",
+                        prev.leaf_index, next.leaf_index
+                    )
+                })?;
+            if expected_output != next.raw_output {
+                return Ok(false);
+            }
         }
     }
 
@@ -266,9 +354,8 @@ fn fiat_shamir_challenge(
     merkle_root: &[u8; 32],
     input: &[u8; 32],
     params: &Argon2SwfParams,
+    proof_algorithm: u16,
 ) -> [u8; 32] {
-    /// proof_algorithm = 20 (SwfArgon2id) per §7.3
-    const PROOF_ALGORITHM: u16 = 20;
     let params_map = ciborium::Value::Map(vec![
         (1.into(), ciborium::Value::Integer(params.time_cost.into())),
         (
@@ -286,7 +373,7 @@ fn fiat_shamir_challenge(
 
     let mut hasher = Sha256::new();
     hasher.update(b"PoP-Fiat-Shamir-v1");
-    hasher.update(PROOF_ALGORITHM.to_be_bytes());
+    hasher.update(proof_algorithm.to_be_bytes());
     hasher.update(&params_cbor);
     hasher.update(input);
     hasher.update(merkle_root);
@@ -433,8 +520,8 @@ mod tests {
         let root = [1u8; 32];
         let input = [2u8; 32];
         let params = test_params();
-        let c1 = fiat_shamir_challenge(&root, &input, &params);
-        let c2 = fiat_shamir_challenge(&root, &input, &params);
+        let c1 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD);
+        let c2 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD);
         assert_eq!(c1, c2);
     }
 
@@ -442,8 +529,8 @@ mod tests {
     fn test_fiat_shamir_sensitive_to_root() {
         let input = [2u8; 32];
         let params = test_params();
-        let c1 = fiat_shamir_challenge(&[1u8; 32], &input, &params);
-        let c2 = fiat_shamir_challenge(&[3u8; 32], &input, &params);
+        let c1 = fiat_shamir_challenge(&[1u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD);
+        let c2 = fiat_shamir_challenge(&[3u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD);
         assert_ne!(c1, c2);
     }
 

@@ -26,7 +26,7 @@ required-features = ["ffi"]
 sha2 = "0.10.8"
 hmac = "0.12.1"
 argon2 = "0.5"
-ed25519-dalek = "2.1.1"
+ed25519-dalek = { version = "2.1.1", features = ["zeroize"] }
 rand = "0.9.0"
 bip39 = "2.1.0"
 zeroize = { version = "1.8.1", features = ["derive"] }

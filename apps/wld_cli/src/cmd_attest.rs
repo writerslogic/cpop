@@ -8,11 +8,14 @@ use std::path::PathBuf;
 
 use wld_engine::ffi;
 
+use crate::output::OutputMode;
+
 pub(crate) fn cmd_attest(
     format: &str,
     input: Option<PathBuf>,
     output: Option<PathBuf>,
     non_interactive: bool,
+    out: &OutputMode,
 ) -> Result<()> {
     let init = ffi::ffi_init();
     if !init.success {
@@ -29,7 +32,7 @@ pub(crate) fn cmd_attest(
         std::fs::read_to_string(path).map_err(|e| anyhow!("Failed to read input file: {e}"))?
     } else {
         let mut buf = String::new();
-        if io::stdin().is_terminal() && !non_interactive {
+        if io::stdin().is_terminal() && !non_interactive && !out.quiet {
             eprintln!("Enter text to attest (Ctrl-D to finish):");
         }
         io::stdin()
@@ -95,14 +98,21 @@ pub(crate) fn cmd_attest(
 
     let format_lower = format.to_lowercase();
     let proof = match format_lower.as_str() {
+        "json" => serde_json::json!({
+            "war_block": result.war_block,
+            "compact_ref": result.compact_ref,
+        })
+        .to_string(),
         "compact" => result.compact_ref.clone(),
         "both" => format!("{}\n{}", result.war_block, result.compact_ref),
-        _ => result.war_block.clone(), // "war" is default
+        _ => result.war_block.clone(),
     };
 
     if let Some(out_path) = output {
         std::fs::write(&out_path, &proof).map_err(|e| anyhow!("Failed to write output: {e}"))?;
-        eprintln!("Proof written to: {}", out_path.display());
+        if !out.quiet {
+            eprintln!("Proof written to: {}", out_path.display());
+        }
     } else {
         io::stdout().write_all(proof.as_bytes())?;
         if !proof.ends_with('\n') {
@@ -110,7 +120,7 @@ pub(crate) fn cmd_attest(
         }
     }
 
-    if format_lower != "compact" {
+    if !out.quiet && format_lower != "compact" && format_lower != "json" {
         eprintln!("Compact ref: {}", result.compact_ref);
     }
 

@@ -16,6 +16,7 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_foundation_sys::base::{kCFAllocatorDefault, CFTypeRef};
 use core_foundation_sys::error::CFErrorRef;
+use hmac::{Hmac, Mac};
 use security_framework_sys::access_control::{
     kSecAccessControlPrivateKeyUsage, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
     SecAccessControlCreateWithFlags,
@@ -338,17 +339,52 @@ fn sign(state: &SecureEnclaveState, data: &[u8]) -> Result<Vec<u8>, TPMError> {
     Ok(sig.bytes().to_vec())
 }
 
+/// Derive an HMAC key for counter integrity from the signing public key.
+fn derive_counter_hmac_key(public_key: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"witnessd-counter-auth-v1");
+    hasher.update(public_key);
+    hasher.finalize().to_vec()
+}
+
+/// Compute HMAC-SHA256 over the 8-byte counter value.
+fn compute_counter_hmac(hmac_key: &[u8], counter_bytes: &[u8; 8]) -> [u8; 32] {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(hmac_key)
+        .expect("HMAC-SHA256 accepts any key length");
+    mac.update(counter_bytes);
+    mac.finalize().into_bytes().into()
+}
+
 fn load_counter(state: &mut SecureEnclaveState) -> Result<(), TPMError> {
     match fs::read(&state.counter_file) {
-        Ok(data) if data.len() >= 8 => {
+        Ok(data) if data.len() == 40 => {
+            // New format: 8-byte counter + 32-byte HMAC
+            let counter_bytes: [u8; 8] = data[0..8].try_into().expect("slice is exactly 8 bytes");
+            let stored_hmac: [u8; 32] = data[8..40].try_into().expect("slice is exactly 32 bytes");
+
+            let hmac_key = derive_counter_hmac_key(&state.public_key);
+            let expected_hmac = compute_counter_hmac(&hmac_key, &counter_bytes);
+
+            if stored_hmac != expected_hmac {
+                log::error!(
+                    "Counter HMAC verification failed — possible tampering: {:?}",
+                    state.counter_file
+                );
+                return Err(TPMError::CounterRollback);
+            }
+
+            state.counter = u64::from_be_bytes(counter_bytes);
+            Ok(())
+        }
+        Ok(data) if data.len() == 8 => {
+            // Legacy format (no HMAC) — accept but re-save with HMAC on next write.
             let bytes: [u8; 8] = data[0..8].try_into().expect("slice is exactly 8 bytes");
             state.counter = u64::from_be_bytes(bytes);
             Ok(())
         }
         Ok(data) => {
-            // Corruption could be attacker-induced to force counter rollback.
             log::error!(
-                "Counter file corrupt ({} bytes, expected >= 8): {:?}",
+                "Counter file corrupt ({} bytes, expected 8 or 40): {:?}",
                 data.len(),
                 state.counter_file
             );
@@ -366,8 +402,13 @@ fn save_counter(state: &SecureEnclaveState) {
     if let Some(parent) = state.counter_file.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(&state.counter.to_be_bytes());
+    let counter_bytes = state.counter.to_be_bytes();
+    let hmac_key = derive_counter_hmac_key(&state.public_key);
+    let hmac = compute_counter_hmac(&hmac_key, &counter_bytes);
+
+    let mut buf = Vec::with_capacity(40);
+    buf.extend_from_slice(&counter_bytes);
+    buf.extend_from_slice(&hmac);
     let _ = fs::write(&state.counter_file, buf);
 }
 

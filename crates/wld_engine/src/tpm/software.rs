@@ -9,6 +9,10 @@ use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
 
+/// Software-only TPM provider for development and testing.
+///
+/// The signing key is automatically zeroized on drop via ed25519-dalek's
+/// `ZeroizeOnDrop` implementation (enabled by the `zeroize` crate feature).
 pub struct SoftwareProvider {
     signing_key: ed25519_dalek::SigningKey,
     state: Mutex<SoftwareState>,

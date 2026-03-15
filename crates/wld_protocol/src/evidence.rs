@@ -36,9 +36,12 @@ impl PoPBuilder {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| Error::Protocol(format!("system clock error: {}", e)))?
-            .as_secs();
+            .as_millis() as u64;
 
-        let initial_hash = hash_sha256(&document.content_hash.digest);
+        let mut doc_cbor = Vec::new();
+        ciborium::into_writer(&document, &mut doc_cbor)
+            .map_err(|e| Error::Protocol(format!("CBOR encode document-ref: {e}")))?;
+        let initial_hash = hash_sha256(&doc_cbor);
 
         Ok(Self {
             version: 1,
@@ -72,7 +75,7 @@ impl PoPBuilder {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| Error::Protocol(format!("system clock error: {}", e)))?
-            .as_secs();
+            .as_millis() as u64;
 
         let sequence = self.checkpoints.len() as u64;
         let mut checkpoint_id = [0u8; 16];
@@ -148,7 +151,10 @@ impl PoPVerifier {
         let packet = decode_evidence(&payload)?;
         self.validate_structure(&packet)?;
 
-        let mut last_hash = hash_sha256(&packet.document.content_hash.digest);
+        let mut doc_cbor = Vec::new();
+        ciborium::into_writer(&packet.document, &mut doc_cbor)
+            .map_err(|e| Error::Protocol(format!("CBOR encode document-ref: {e}")))?;
+        let mut last_hash = hash_sha256(&doc_cbor);
 
         for (i, checkpoint) in packet.checkpoints.iter().enumerate() {
             if checkpoint.sequence != i as u64 {
