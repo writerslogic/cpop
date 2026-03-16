@@ -11,6 +11,81 @@ use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 
+/// Lower the **current thread's** scheduling priority to idle/background QoS
+/// before heavy Argon2 computation. Returns an opaque token for
+/// [`restore_thread_priority`].
+///
+/// - macOS: `PRIO_DARWIN_THREAD` + `PRIO_DARWIN_BG` (true background QoS)
+/// - Linux: `SCHED_IDLE` policy via `pthread_setschedparam`
+/// - Windows: `THREAD_PRIORITY_IDLE`
+fn lower_thread_priority() -> i32 {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        // PRIO_DARWIN_THREAD (3) + PRIO_DARWIN_BG (0x1000): thread-specific
+        // background QoS — does NOT affect other threads in the process.
+        const PRIO_DARWIN_THREAD: i32 = 3;
+        const PRIO_DARWIN_BG: i32 = 0x1000;
+        let prev = libc::getpriority(PRIO_DARWIN_THREAD, 0);
+        libc::setpriority(PRIO_DARWIN_THREAD, 0, PRIO_DARWIN_BG);
+        prev
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    unsafe {
+        // SCHED_IDLE (5) — thread runs only when no other runnable thread
+        // wants the CPU. Saves the previous policy to restore later.
+        let mut old_param: libc::sched_param = std::mem::zeroed();
+        let _ = libc::pthread_getschedparam(
+            libc::pthread_self(),
+            &mut 0i32 as *mut i32,
+            &mut old_param,
+        );
+        let idle_param: libc::sched_param = std::mem::zeroed();
+        libc::pthread_setschedparam(libc::pthread_self(), 5 /* SCHED_IDLE */, &idle_param);
+        0 // SCHED_OTHER — restore target
+    }
+    #[cfg(windows)]
+    unsafe {
+        extern "system" {
+            fn GetCurrentThread() -> isize;
+            fn SetThreadPriority(thread: isize, priority: i32) -> i32;
+        }
+        const THREAD_PRIORITY_IDLE: i32 = -15;
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+        0 // THREAD_PRIORITY_NORMAL
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        0
+    }
+}
+
+/// Restore thread priority after Argon2 computation.
+fn restore_thread_priority(prev: i32) {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        const PRIO_DARWIN_THREAD: i32 = 3;
+        libc::setpriority(PRIO_DARWIN_THREAD, 0, prev);
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    unsafe {
+        // Restore SCHED_OTHER (normal policy)
+        let param: libc::sched_param = std::mem::zeroed();
+        libc::pthread_setschedparam(libc::pthread_self(), prev, &param);
+    }
+    #[cfg(windows)]
+    unsafe {
+        extern "system" {
+            fn GetCurrentThread() -> isize;
+            fn SetThreadPriority(thread: isize, priority: i32) -> i32;
+        }
+        SetThreadPriority(GetCurrentThread(), prev);
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = prev;
+    }
+}
+
 /// Argon2id SWF parameters.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Argon2SwfParams {
@@ -150,6 +225,7 @@ pub fn compute_with_algorithm(
     let mut raw_outputs = Vec::with_capacity(params.iterations as usize);
     let mut current = input;
 
+    let prev_priority = lower_thread_priority();
     for i in 0..params.iterations {
         // Salt per draft-condrey-rats-pop §4.2:
         //   state_0:   salt = H(0x00 || "PoP-salt-v1" || seed)
@@ -185,6 +261,7 @@ pub fn compute_with_algorithm(
         raw_outputs.push(output);
         current = output;
     }
+    restore_thread_priority(prev_priority);
 
     let merkle_root = build_merkle_root(&leaves, params.iterations);
 
@@ -345,6 +422,7 @@ pub fn calibrate(params: &Argon2SwfParams, duration: Duration) -> Result<u64, St
     let mut iterations = 0u64;
     let start = Instant::now();
 
+    let prev_priority = lower_thread_priority();
     while start.elapsed() < duration {
         let mut output = [0u8; 32];
         argon2
@@ -353,6 +431,7 @@ pub fn calibrate(params: &Argon2SwfParams, duration: Duration) -> Result<u64, St
         current = output;
         iterations += 1;
     }
+    restore_thread_priority(prev_priority);
 
     let elapsed_secs = start.elapsed().as_secs_f64();
     if elapsed_secs < 0.001 {

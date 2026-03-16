@@ -74,7 +74,14 @@ pub(crate) async fn cmd_export(
     stego: bool,
     out: &OutputMode,
 ) -> Result<()> {
-    let abs_path = fs::canonicalize(file_path).context("Failed to resolve path")?;
+    let abs_path = fs::canonicalize(file_path).map_err(|e| {
+        anyhow!(
+            "Cannot resolve path {}: {}\n\n\
+             Check that the path is valid and accessible.",
+            file_path.display(),
+            e
+        )
+    })?;
     let abs_path_str = abs_path.to_string_lossy().into_owned();
 
     let db = open_secure_store()?;

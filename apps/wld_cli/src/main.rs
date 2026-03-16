@@ -344,6 +344,8 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
         "Export evidence",
         "Verify evidence",
         "Show identity",
+        "Behavioral fingerprint",
+        "Presence verification",
         "Configuration",
         "Quit",
     ];
@@ -384,6 +386,43 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
             cmd_identity::cmd_identity(false, false, false, false, out.json)?;
         }
         Some(6) => {
+            let fp_items = &["View status", "List profiles", "Back"];
+            let fp_sel = Select::new()
+                .with_prompt("Fingerprint")
+                .items(fp_items)
+                .default(0)
+                .interact_opt()?;
+            match fp_sel {
+                Some(0) => {
+                    cmd_fingerprint::cmd_fingerprint(cli::FingerprintAction::Status, out)?;
+                }
+                Some(1) => {
+                    cmd_fingerprint::cmd_fingerprint(cli::FingerprintAction::List, out)?;
+                }
+                _ => {}
+            }
+        }
+        Some(7) => {
+            let pr_items = &["Check status", "Start session", "Stop session", "Back"];
+            let pr_sel = Select::new()
+                .with_prompt("Presence")
+                .items(pr_items)
+                .default(0)
+                .interact_opt()?;
+            match pr_sel {
+                Some(0) => {
+                    cmd_presence::cmd_presence(cli::PresenceAction::Status, out)?;
+                }
+                Some(1) => {
+                    cmd_presence::cmd_presence(cli::PresenceAction::Start, out)?;
+                }
+                Some(2) => {
+                    cmd_presence::cmd_presence(cli::PresenceAction::Stop, out)?;
+                }
+                _ => {}
+            }
+        }
+        Some(8) => {
             cmd_config::cmd_config(cli::ConfigAction::Show)?;
         }
         _ => {} // Quit or Esc

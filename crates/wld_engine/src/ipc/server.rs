@@ -19,7 +19,7 @@ use tokio::net::{UnixListener, UnixStream};
 /// Extracts the common message loop logic shared by both platform-specific handlers.
 async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
     stream: &mut S,
-    handler: &dyn IpcMessageHandler,
+    handler: Arc<dyn IpcMessageHandler>,
     transport_label: &str,
     shared_rate_limiter: &Arc<Mutex<RateLimiter>>,
 ) {
@@ -171,7 +171,18 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     continue;
                 }
 
-                let response = handler.handle(msg);
+                let handler_ref = Arc::clone(&handler);
+                let response = match tokio::task::spawn_blocking(move || -> IpcMessage {
+                    handler_ref.handle(msg)
+                })
+                .await
+                {
+                    Ok(r) => r,
+                    Err(e) => IpcMessage::Error {
+                        code: IpcErrorCode::InternalError,
+                        message: format!("handler panicked: {e}"),
+                    },
+                };
 
                 let encode_protocol = match protocol {
                     WireProtocol::SecureJson => WireProtocol::Json,
@@ -389,7 +400,13 @@ async fn handle_connection<H: IpcMessageHandler>(
     handler: Arc<H>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
 ) {
-    handle_connection_inner(&mut stream, handler.as_ref(), "unix-socket", &rate_limiter).await;
+    handle_connection_inner(
+        &mut stream,
+        handler as Arc<dyn IpcMessageHandler>,
+        "unix-socket",
+        &rate_limiter,
+    )
+    .await;
 }
 
 /// Verify that a Windows named pipe client is running as the same user as the server.
@@ -503,5 +520,11 @@ async fn handle_windows_connection<H: IpcMessageHandler>(
         return;
     }
 
-    handle_connection_inner(&mut pipe, handler.as_ref(), "named-pipe", &rate_limiter).await;
+    handle_connection_inner(
+        &mut pipe,
+        handler as Arc<dyn IpcMessageHandler>,
+        "named-pipe",
+        &rate_limiter,
+    )
+    .await;
 }

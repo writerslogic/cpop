@@ -33,6 +33,14 @@ impl Wal {
             .truncate(false)
             .open(path)?;
 
+        // Restrict WAL to owner-only access (contains signed evidence entries)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(path, perms)?;
+        }
+
         let mut state = WalState {
             path: path.to_path_buf(),
             file,
@@ -271,6 +279,13 @@ impl Wal {
 
         let new_path = state.path.with_extension("wal.new");
         let mut new_file = File::create(&new_path)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&new_path, perms)?;
+        }
 
         let header = Header {
             magic: *MAGIC,
