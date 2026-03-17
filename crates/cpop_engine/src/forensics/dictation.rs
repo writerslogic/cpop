@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+
+//! Dictation plausibility scoring: detect forged or implausible speech-to-text events.
+
+use crate::evidence::DictationEvent;
+
+/// Normal dictation WPM upper bound (fast but plausible).
+const WPM_FAST_THRESHOLD: f64 = 200.0;
+
+/// WPM above this is highly suspicious (sped-up playback or injection).
+const WPM_SUSPICIOUS_THRESHOLD: f64 = 250.0;
+
+/// Slow sustained dictation threshold (below this for >10 words is unusual).
+const WPM_SLOW_THRESHOLD: f64 = 40.0;
+
+/// Minimum word count to apply slow-speech penalty.
+const SLOW_SPEECH_MIN_WORDS: u32 = 10;
+
+/// Minimum duration (seconds) below which high word counts are suspicious.
+const MIN_DURATION_SEC: f64 = 2.0;
+
+/// Word count threshold for short-duration suspicion.
+const SHORT_DURATION_WORD_LIMIT: u32 = 20;
+
+/// Duration (seconds) above which dictation is uncommon.
+const LONG_DURATION_SEC: f64 = 3600.0;
+
+/// Penalty for WPM above suspicious threshold.
+const PENALTY_SUSPICIOUS_WPM: f64 = 0.1;
+
+/// Penalty for WPM above fast threshold.
+const PENALTY_FAST_WPM: f64 = 0.5;
+
+/// Penalty for slow sustained dictation.
+const PENALTY_SLOW_WPM: f64 = 0.6;
+
+/// Penalty for too many words in too short a window.
+const PENALTY_SHORT_BURST: f64 = 0.2;
+
+/// Penalty for very long dictation session.
+const PENALTY_LONG_SESSION: f64 = 0.7;
+
+/// Penalty for missing microphone activity.
+const PENALTY_NO_MIC: f64 = 0.3;
+
+/// Assess whether a dictation event is plausible (not forged).
+///
+/// Returns a score in `[0.0, 1.0]` where 1.0 = fully plausible and
+/// values below 0.3 indicate likely forgery or injection.
+pub fn score_dictation_plausibility(event: &DictationEvent) -> f64 {
+    let mut score = 1.0;
+
+    // WPM check: normal dictation is 80-200 WPM.
+    // Above 250 is suspicious (sped-up playback), above 200 is somewhat fast,
+    // below 40 for sustained speech (>10 words) is unusually slow.
+    if event.words_per_minute > WPM_SUSPICIOUS_THRESHOLD {
+        score *= PENALTY_SUSPICIOUS_WPM;
+    } else if event.words_per_minute > WPM_FAST_THRESHOLD {
+        score *= PENALTY_FAST_WPM;
+    } else if event.words_per_minute < WPM_SLOW_THRESHOLD
+        && event.word_count > SLOW_SPEECH_MIN_WORDS
+    {
+        score *= PENALTY_SLOW_WPM;
+    }
+
+    // Duration check: dictation sessions are typically 10s-10min.
+    let duration_sec = (event.end_ns - event.start_ns) as f64 / 1e9;
+    if duration_sec < MIN_DURATION_SEC && event.word_count > SHORT_DURATION_WORD_LIMIT {
+        score *= PENALTY_SHORT_BURST;
+    }
+    if duration_sec > LONG_DURATION_SEC {
+        score *= PENALTY_LONG_SESSION;
+    }
+
+    // Mic check: if mic wasn't active, this might be injected.
+    if !event.mic_active {
+        score *= PENALTY_NO_MIC;
+    }
+
+    score.clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_event(word_count: u32, duration_sec: f64, mic_active: bool) -> DictationEvent {
+        let wpm = if duration_sec > 0.0 {
+            word_count as f64 / (duration_sec / 60.0)
+        } else {
+            0.0
+        };
+        DictationEvent {
+            start_ns: 0,
+            end_ns: (duration_sec * 1e9) as i64,
+            word_count,
+            char_count: word_count * 5,
+            input_method: "com.apple.inputmethod.DictationIME".to_string(),
+            mic_active,
+            words_per_minute: wpm,
+            plausibility_score: 0.0,
+        }
+    }
+
+    #[test]
+    fn normal_dictation_scores_high() {
+        // 120 WPM for 30 seconds with mic = perfectly normal
+        let event = make_event(60, 30.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            score > 0.9,
+            "normal dictation should score >0.9, got {score}"
+        );
+    }
+
+    #[test]
+    fn fast_dictation_penalized() {
+        // 220 WPM — somewhat fast
+        let event = make_event(110, 30.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            (0.4..=0.6).contains(&score),
+            "fast dictation should be penalized, got {score}"
+        );
+    }
+
+    #[test]
+    fn suspicious_speed_heavily_penalized() {
+        // 300 WPM — likely sped-up playback
+        let event = make_event(150, 30.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            score < 0.2,
+            "suspicious speed should score <0.2, got {score}"
+        );
+    }
+
+    #[test]
+    fn no_mic_penalized() {
+        // Normal speed but mic off
+        let event = make_event(60, 30.0, false);
+        let score = score_dictation_plausibility(&event);
+        assert!(score < 0.5, "no-mic should be penalized, got {score}");
+    }
+
+    #[test]
+    fn short_burst_many_words_penalized() {
+        // 25 words in 1 second with mic
+        let event = make_event(25, 1.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(score < 0.3, "short burst should be penalized, got {score}");
+    }
+
+    #[test]
+    fn long_session_mild_penalty() {
+        // 2 hour dictation at normal speed
+        let event = make_event(14400, 7200.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            (0.5..=0.8).contains(&score),
+            "long session should get mild penalty, got {score}"
+        );
+    }
+
+    #[test]
+    fn slow_speech_penalized_when_sustained() {
+        // 30 WPM for 60 seconds (30 words)
+        let event = make_event(30, 60.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            (0.5..=0.7).contains(&score),
+            "slow sustained speech should be penalized, got {score}"
+        );
+    }
+
+    #[test]
+    fn slow_speech_not_penalized_when_few_words() {
+        // 30 WPM but only 5 words — short utterance, acceptable
+        let event = make_event(5, 10.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!(
+            score > 0.9,
+            "short slow dictation should not be penalized, got {score}"
+        );
+    }
+
+    #[test]
+    fn combined_penalties_stack() {
+        // Fast + no mic
+        let event = make_event(110, 30.0, false);
+        let score = score_dictation_plausibility(&event);
+        assert!(score < 0.2, "combined penalties should stack, got {score}");
+    }
+
+    #[test]
+    fn score_clamped_to_unit_range() {
+        let event = make_event(60, 30.0, true);
+        let score = score_dictation_plausibility(&event);
+        assert!((0.0..=1.0).contains(&score));
+
+        // Worst case: all penalties
+        let event = make_event(150, 0.5, false);
+        let score = score_dictation_plausibility(&event);
+        assert!((0.0..=1.0).contains(&score));
+    }
+}

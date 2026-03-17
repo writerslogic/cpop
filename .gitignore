@@ -56,3 +56,5 @@ vendor/
 supabase/
 todo.md
 docs/demo-script.md
+apps/cpop_macos/
+apps/cpop_windows/
