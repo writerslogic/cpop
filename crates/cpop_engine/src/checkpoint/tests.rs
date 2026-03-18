@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use super::*;
-use crate::rfc;
 use crate::vdf::{self, Parameters};
+use cpop_protocol::rfc;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

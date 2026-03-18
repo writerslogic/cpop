@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use crate::forensics::EventData;
-use crate::rfc::wire_types::AttestationTier;
 use crate::store::SecureStore;
+use cpop_protocol::rfc::wire_types::AttestationTier;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
@@ -31,6 +31,13 @@ pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
 
     let data_dir = get_data_dir()?;
     let key_path = data_dir.join("signing_key");
+    // Reject files >1KB to guard against symlink-to-large-file DoS
+    if let Ok(meta) = std::fs::metadata(&key_path) {
+        if meta.len() > 1024 {
+            log::error!("Signing key file too large: {} bytes", meta.len());
+            return None;
+        }
+    }
     let key_data = Zeroizing::new(std::fs::read(&key_path).ok()?);
     let seed = if key_data.len() >= 32 {
         &key_data[..32]

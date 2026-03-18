@@ -2,11 +2,11 @@
 
 use anyhow::{anyhow, Result};
 use chrono::DateTime;
-use std::fs;
-use std::time::Duration;
 use cpop_engine::tpm;
 use cpop_engine::vdf::params::calibrate;
 use cpop_engine::{derive_hmac_key, SecureStore};
+use std::fs;
+use std::time::Duration;
 use zeroize::Zeroizing;
 
 use cpop_engine::config::CpopConfig;
@@ -67,7 +67,8 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
 
     let db_path = dir.join("events.db");
     let (db_status, tracked_files) = if db_path.exists() {
-        let hmac_key = if let Ok(Some(key)) = cpop_engine::identity::SecureStorage::load_hmac_key() {
+        let hmac_key = if let Ok(Some(key)) = cpop_engine::identity::SecureStorage::load_hmac_key()
+        {
             Some(key.to_vec())
         } else {
             let signing_key_path = dir.join("signing_key");

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 //! EAR (Entity Attestation Result) types per draft-ietf-rats-ear.
 //!
@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use cpop_protocol::rfc::wire_types::attestation::{
+use crate::rfc::wire_types::attestation::{
     AbsenceClaim, EntropyReport, ForensicSummary, ForgeryCostEstimate,
 };
 

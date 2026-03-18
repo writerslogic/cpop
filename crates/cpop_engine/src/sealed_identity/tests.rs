@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::keyhierarchy::{KeyHierarchyError, PufProvider};
-use crate::rfc::wire_types::AttestationTier;
 use crate::tpm::{ProviderHandle, SoftwareProvider};
+use cpop_protocol::rfc::wire_types::AttestationTier;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tempfile::TempDir;

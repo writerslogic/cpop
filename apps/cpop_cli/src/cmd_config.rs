@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use anyhow::{anyhow, bail, Result};
+use cpop_engine::config::CpopConfig;
 use std::fs;
 use std::io::{self, BufRead, Write};
-use cpop_engine::config::CpopConfig;
 
 use crate::cli::ConfigAction;
 use crate::util::writerslogic_dir;

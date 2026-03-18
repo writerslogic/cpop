@@ -2,7 +2,7 @@
 
 use crate::ffi::helpers::{detect_attestation_tier, detect_attestation_tier_info, open_store};
 use crate::ffi::types::{FfiResult, FfiVerifyResult};
-use crate::rfc::wire_types::{
+use cpop_protocol::rfc::wire_types::{
     CheckpointWire, DocumentRef, EditDelta, EvidencePacketWire, HashValue, ProcessProof,
     ProofAlgorithm, ProofParams,
 };
@@ -156,10 +156,10 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         .unwrap_or(0);
 
     let content_tier = match tier.to_lowercase().as_str() {
-        "basic" | "core" => Some(crate::rfc::wire_types::ContentTier::Core),
-        "standard" | "enhanced" => Some(crate::rfc::wire_types::ContentTier::Enhanced),
-        "maximum" => Some(crate::rfc::wire_types::ContentTier::Maximum),
-        _ => Some(crate::rfc::wire_types::ContentTier::Core),
+        "basic" | "core" => Some(cpop_protocol::rfc::wire_types::ContentTier::Core),
+        "standard" | "enhanced" => Some(cpop_protocol::rfc::wire_types::ContentTier::Enhanced),
+        "maximum" => Some(cpop_protocol::rfc::wire_types::ContentTier::Maximum),
+        _ => Some(cpop_protocol::rfc::wire_types::ContentTier::Core),
     };
 
     let checkpoints: Vec<CheckpointWire> = match events

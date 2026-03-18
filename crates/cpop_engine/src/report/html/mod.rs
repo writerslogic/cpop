@@ -26,6 +26,7 @@ pub fn render_html(r: &WarReport) -> String {
     sections::write_flags(&mut html, r);
     sections::write_scope(&mut html, r);
     sections::write_analyzed_text(&mut html, r);
+    sections::write_verification_instructions(&mut html);
     sections::write_footer(&mut html, r);
     let _ = write!(html, "</div></body></html>");
     html

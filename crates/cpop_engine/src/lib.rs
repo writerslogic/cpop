@@ -13,11 +13,11 @@ pub mod baseline;
 pub mod calibration;
 pub mod checkpoint;
 pub mod checkpoint_mmr;
-pub mod codec;
 pub mod collaboration;
-pub mod compact_ref;
 pub mod config;
 pub mod continuation;
+#[cfg(feature = "cpop_jitter")]
+pub mod cpop_jitter_bridge;
 pub mod crypto;
 pub mod declaration;
 pub mod engine;
@@ -36,7 +36,7 @@ pub mod presence;
 pub mod provenance;
 pub mod report;
 pub mod research;
-pub mod rfc;
+mod rfc_conversions;
 pub mod sealed_chain;
 pub mod sealed_identity;
 pub mod sentinel;
@@ -49,8 +49,6 @@ pub mod trust_policy;
 pub mod vdf;
 pub mod wal;
 pub mod war;
-#[cfg(feature = "cpop_jitter")]
-pub mod cpop_jitter_bridge;
 pub mod writersproof;
 
 /// Safe nanosecond timestamps, falling back to millis-derived nanos on i64 overflow (~2262+).
@@ -114,7 +112,7 @@ pub use crate::collaboration::{
     MergeStrategy, TimeInterval,
 };
 
-pub use crate::compact_ref::{
+pub use cpop_protocol::compact_ref::{
     CompactEvidenceRef, CompactMetadata, CompactRefError, CompactSummary,
 };
 
@@ -139,14 +137,14 @@ pub use crate::fingerprint::{
     FingerprintManager, FingerprintStatus, ProfileId, VoiceFingerprint,
 };
 
-pub use crate::rfc::{
+pub use cpop_protocol::rfc::{
     BiologyInvariantClaim, BiologyScoringParameters, BlockchainAnchor, CalibrationAttestation,
     JitterBinding, RoughtimeSample, TimeBindingTier, TimeEvidence, TsaResponse, ValidationStatus,
     VdfProofRfc,
 };
 
 // CDDL-conformant wire format types (RFC 8949)
-pub use crate::rfc::wire_types::{
+pub use cpop_protocol::rfc::wire_types::{
     AttestationResultWire, CheckpointWire, DocumentRef as WireDocumentRef, EvidencePacketWire,
     HashAlgorithm, HashValue as WireHashValue, ProcessProof as WireProcessProof, Verdict,
     CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET as CBOR_TAG_EVIDENCE_PACKET_WIRE,

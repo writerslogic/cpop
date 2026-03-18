@@ -8,8 +8,8 @@ use crate::config::ResearchConfig;
 use crate::jitter::Evidence;
 
 use super::types::{
-    AnonymizedSession, ResearchDataExport, UploadResponse, UploadResult, MIN_SESSIONS_FOR_UPLOAD,
-    RESEARCH_UPLOAD_URL, CPOP_VERSION,
+    AnonymizedSession, ResearchDataExport, UploadResponse, UploadResult, CPOP_VERSION,
+    MIN_SESSIONS_FOR_UPLOAD, RESEARCH_UPLOAD_URL,
 };
 
 /// Collects anonymized sessions and manages disk persistence / upload.

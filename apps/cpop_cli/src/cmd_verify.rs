@@ -4,9 +4,9 @@ use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
+use cpop_engine::cpop_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
 use cpop_engine::evidence;
 use cpop_engine::war;
-use cpop_engine::cpop_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
 
 use crate::output::OutputMode;
 use crate::spec::{EAT_PROFILE_URI, MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI};
@@ -175,7 +175,9 @@ pub(crate) fn cmd_verify(
         }
     } else if ext == "cpop" || ext == "cbor" {
         let data = fs::read(file_path).context("read CPOP file")?;
-        match cpop_engine::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(&data) {
+        match cpop_engine::cpop_protocol::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(
+            &data,
+        ) {
             Ok(packet) => {
                 let validation_result = packet.validate();
                 let validation_ok = validation_result.is_ok();

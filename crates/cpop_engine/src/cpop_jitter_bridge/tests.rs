@@ -3,6 +3,7 @@
 use super::*;
 use crate::jitter::{decode_zone_transition, Parameters};
 use std::io::Write;
+use std::time::Duration;
 use tempfile::NamedTempFile;
 
 fn create_temp_doc() -> NamedTempFile {

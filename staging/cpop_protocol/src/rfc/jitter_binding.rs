@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 //! RFC-compliant jitter-binding structure.
 //!
@@ -539,78 +539,6 @@ impl JitterBinding {
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
     }
-}
-
-impl From<&crate::analysis::active_probes::GaltonInvariantResult> for GaltonInvariant {
-    fn from(result: &crate::analysis::active_probes::GaltonInvariantResult) -> Self {
-        Self {
-            absorption_coefficient: result.absorption_coefficient,
-            stimulus_count: result.perturbation_count as u32,
-            expected_absorption: 0.55, // RFC default baseline
-            z_score: {
-                let denom = result.std_error.max(0.001);
-                if denom.is_finite() {
-                    (result.absorption_coefficient - 0.55) / denom
-                } else {
-                    0.0
-                }
-            },
-            passed: result.is_valid,
-        }
-    }
-}
-
-impl From<&crate::analysis::active_probes::ReflexGateResult> for ReflexGate {
-    fn from(result: &crate::analysis::active_probes::ReflexGateResult) -> Self {
-        Self {
-            mean_latency_ms: result.mean_latency_ms,
-            std_dev_ms: result.std_latency_ms,
-            event_count: result.response_count as u32,
-            percentiles: estimate_percentiles(result.mean_latency_ms, result.std_latency_ms),
-            passed: result.is_valid,
-        }
-    }
-}
-
-impl From<&crate::analysis::active_probes::ActiveProbeResults> for ActiveProbes {
-    fn from(results: &crate::analysis::active_probes::ActiveProbeResults) -> Self {
-        Self {
-            galton_invariant: results.galton.as_ref().map(|g| g.into()),
-            reflex_gate: results.reflex.as_ref().map(|r| r.into()),
-        }
-    }
-}
-
-impl From<&crate::analysis::labyrinth::LabyrinthAnalysis> for LabyrinthStructure {
-    fn from(analysis: &crate::analysis::labyrinth::LabyrinthAnalysis) -> Self {
-        // TODO: capture actual attractor points in production
-        let attractor_points: Vec<Vec<f64>> = Vec::new();
-
-        Self {
-            embedding_dimension: analysis.embedding_dimension as u8,
-            time_delay: analysis.optimal_delay as u16,
-            attractor_points,
-            betti_numbers: vec![
-                analysis.betti_numbers[0] as u32,
-                analysis.betti_numbers[1] as u32,
-                analysis.betti_numbers[2] as u32,
-            ],
-            lyapunov_exponent: None,
-            correlation_dimension: analysis.correlation_dimension,
-        }
-    }
-}
-
-/// Estimate percentiles from mean and std assuming normal distribution.
-fn estimate_percentiles(mean: f64, std: f64) -> [f64; 5] {
-    let z_scores = [-1.28, -0.67, 0.0, 0.67, 1.28];
-    [
-        (mean + z_scores[0] * std).max(0.0),
-        (mean + z_scores[1] * std).max(0.0),
-        mean,
-        mean + z_scores[3] * std,
-        mean + z_scores[4] * std,
-    ]
 }
 
 #[cfg(test)]

@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::rfc::wire_types::components::DocumentRef;
-use crate::rfc::wire_types::hash::HashValue;
-use crate::rfc::{self, TimeEvidence, VdfProofRfc};
 use crate::vdf::{self, Parameters};
+use cpop_protocol::rfc::wire_types::components::DocumentRef;
+use cpop_protocol::rfc::wire_types::hash::HashValue;
+use cpop_protocol::rfc::{self, TimeEvidence, VdfProofRfc};
 
 use super::types::*;
 
@@ -38,7 +38,7 @@ fn genesis_prev_hash(
         salt_commitment: None,
     };
 
-    let cbor_bytes = crate::codec::cbor::encode(&doc_ref)
+    let cbor_bytes = cpop_protocol::codec::cbor::encode(&doc_ref)
         .map_err(|e| Error::checkpoint(format!("genesis CBOR encode: {e}")))?;
     Ok(Sha256::digest(&cbor_bytes).into())
 }
@@ -315,7 +315,7 @@ impl Chain {
                 salt_mode: None,
                 salt_commitment: None,
             };
-            let doc_cbor = crate::codec::cbor::encode(&doc_ref)
+            let doc_cbor = cpop_protocol::codec::cbor::encode(&doc_ref)
                 .map_err(|e| Error::checkpoint(format!("genesis doc-ref CBOR: {e}")))?;
             let jitter_or_nonce = rfc_jitter
                 .as_ref()
@@ -323,11 +323,11 @@ impl Chain {
                 .unwrap_or_else(|| content_hash);
             vdf::swf_seed_genesis(&doc_cbor, &jitter_or_nonce)
         } else if let Some(ref jb) = rfc_jitter {
-            let intervals_cbor = crate::codec::cbor::encode(&jb.summary.sample_count)
+            let intervals_cbor = cpop_protocol::codec::cbor::encode(&jb.summary.sample_count)
                 .map_err(|e| Error::checkpoint(format!("SWF intervals CBOR: {e}")))?;
             // PhysicalContext isn't Serialize; use combined_hash as stand-in
             let phys_cbor = match physics {
-                Some(p) => crate::codec::cbor::encode(&p.combined_hash.to_vec())
+                Some(p) => cpop_protocol::codec::cbor::encode(&p.combined_hash.to_vec())
                     .map_err(|e| Error::checkpoint(format!("SWF physics CBOR: {e}")))?,
                 None => vec![],
             };

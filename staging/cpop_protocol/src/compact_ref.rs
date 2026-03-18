@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 //! Compact evidence references (~200B CBOR / ~300 chars base64).
 //!

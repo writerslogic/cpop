@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use crate::jitter::{Parameters, Statistics, TypingProfile};
 use crate::cpop_jitter_bridge::zone_engine::ZoneTrackingEngine;
+use crate::jitter::{Parameters, Statistics, TypingProfile};
 use crate::DateTimeNanosExt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

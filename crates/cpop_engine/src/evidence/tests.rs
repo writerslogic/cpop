@@ -1012,12 +1012,12 @@ fn test_cbor_encoding_with_ppp_tag() {
     let encoded = packet.encode().expect("encode");
 
     assert!(
-        crate::codec::cbor::has_tag(&encoded, crate::codec::CBOR_TAG_CPOP),
+        cpop_protocol::codec::cbor::has_tag(&encoded, cpop_protocol::codec::CBOR_TAG_CPOP),
         "encoded packet should have CPOP semantic tag"
     );
 
-    let format = crate::codec::Format::detect(&encoded);
-    assert_eq!(format, Some(crate::codec::Format::Cbor));
+    let format = cpop_protocol::codec::Format::detect(&encoded);
+    assert_eq!(format, Some(cpop_protocol::codec::Format::Cbor));
 
     let decoded = Packet::decode(&encoded).expect("decode");
     assert_eq!(decoded.document.title, packet.document.title);
@@ -1036,11 +1036,11 @@ fn test_json_format_encoding() {
         .expect("build");
 
     let encoded = packet
-        .encode_with_format(crate::codec::Format::Json)
+        .encode_with_format(cpop_protocol::codec::Format::Json)
         .expect("encode json");
 
-    let format = crate::codec::Format::detect(&encoded);
-    assert_eq!(format, Some(crate::codec::Format::Json));
+    let format = cpop_protocol::codec::Format::detect(&encoded);
+    assert_eq!(format, Some(cpop_protocol::codec::Format::Json));
 
     assert_eq!(encoded[0], b'{');
 
@@ -1059,7 +1059,7 @@ fn test_cbor_missing_tag_rejected() {
         .build()
         .expect("build");
 
-    let untagged = crate::codec::cbor::encode(&packet).expect("encode untagged");
+    let untagged = cpop_protocol::codec::cbor::encode(&packet).expect("encode untagged");
 
     let result = Packet::decode(&untagged);
     assert!(result.is_err());

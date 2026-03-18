@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use super::*;
-use streaming::StreamingStatsExt;
 use cpop_protocol::baseline::{
     BaselineDigest, ConfidenceTier, SessionBehavioralSummary, StreamingStats,
 };
+use streaming::StreamingStatsExt;
 
 fn make_summary(
     keystroke_count: u64,

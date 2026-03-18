@@ -8,13 +8,13 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 
-use crate::codec::{self, Format, CBOR_TAG_CPOP};
 use crate::error::Error;
 use crate::keyhierarchy;
-use crate::rfc;
 use crate::tpm;
 use crate::vdf;
 use crate::DateTimeNanosExt;
+use cpop_protocol::codec::{self, Format, CBOR_TAG_CPOP};
+use cpop_protocol::rfc;
 
 use super::types::Packet;
 

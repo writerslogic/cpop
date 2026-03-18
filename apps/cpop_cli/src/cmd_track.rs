@@ -2,6 +2,9 @@
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use cpop_engine::jitter::{default_parameters as default_jitter_params, Session as JitterSession};
+use cpop_engine::vdf;
+use cpop_engine::SecureEvent;
 use glob::Pattern;
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
@@ -15,9 +18,6 @@ use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
-use cpop_engine::jitter::{default_parameters as default_jitter_params, Session as JitterSession};
-use cpop_engine::vdf;
-use cpop_engine::SecureEvent;
 
 use crate::cli::TrackAction;
 use crate::output::OutputMode;

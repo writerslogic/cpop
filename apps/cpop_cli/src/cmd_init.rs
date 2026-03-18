@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use anyhow::{anyhow, Context, Result};
-use ed25519_dalek::SigningKey;
-use std::fs;
 use cpop_engine::identity::SecureStorage;
 use cpop_engine::keyhierarchy::{derive_master_identity, SoftwarePUF};
 use cpop_engine::tpm;
 use cpop_engine::{derive_hmac_key, SecureStore};
+use ed25519_dalek::SigningKey;
+use std::fs;
 use zeroize::Zeroize;
 
 use crate::util::{ensure_dirs, load_signing_key};

@@ -348,6 +348,11 @@ impl RangeProof {
         if current.is_empty() {
             return Err(MmrError::InvalidProof);
         }
+        // Reject proofs with unconsumed sibling_path elements — indicates
+        // a malformed or padded proof that may verify by coincidence.
+        if sibling_idx != self.sibling_path.len() {
+            return Err(MmrError::InvalidProof);
+        }
         // After Merkle reconstruction, multiple remaining peaks means the
         // proof path was incomplete — reject rather than silently picking one.
         if current.len() != 1 {

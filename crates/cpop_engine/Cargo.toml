@@ -58,7 +58,7 @@ lazy_static = "1.5.0"
 
 # CBOR encoding (RFC 8949 compliance for Proof-of-Process packets)
 ciborium = "0.2"
-coset = "0.3"  # COSE signatures for hardware attestation
+coset = "0.4"  # COSE signatures for hardware attestation
 
 # Async & System
 tokio = { version = "1.43.0", features = ["full"] }
@@ -104,7 +104,7 @@ cpop-jitter = { version = "0.2", optional = true }
 typeshare = "1.0.5"
 
 # CPOP Protocol
-cpop-protocol = { version = "0.1" }
+cpop-protocol = "0.2"
 
 # Unix Specific
 [target.'cfg(unix)'.dependencies]

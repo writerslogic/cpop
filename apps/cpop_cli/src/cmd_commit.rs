@@ -177,9 +177,7 @@ pub(crate) async fn cmd_commit_smart(
             crate::cmd_init::cmd_init()?;
             println!();
         } else {
-            return Err(anyhow!(
-                "CPOP is not initialized. Run 'cpop init' first."
-            ));
+            return Err(anyhow!("CPOP is not initialized. Run 'cpop init' first."));
         }
     }
 

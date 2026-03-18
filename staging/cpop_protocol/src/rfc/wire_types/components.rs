@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 //! Evidence component types for wire-format structures.
 //!

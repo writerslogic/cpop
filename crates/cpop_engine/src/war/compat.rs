@@ -10,15 +10,15 @@ use std::collections::BTreeMap;
 
 use chrono::Utc;
 
-use crate::codec;
 use crate::error::{Error, Result};
-use crate::rfc::wire_types::attestation::AttestationResultWire;
-use crate::rfc::wire_types::enums::{AttestationTier, Verdict};
-use crate::rfc::wire_types::hash::HashValue;
 use crate::war::ear::{
     Ar4siStatus, EarAppraisal, EarToken, TrustworthinessVector, VerifierId, POP_EAR_PROFILE,
 };
 use crate::war::types::{Block, Version};
+use cpop_protocol::codec;
+use cpop_protocol::rfc::wire_types::attestation::AttestationResultWire;
+use cpop_protocol::rfc::wire_types::enums::{AttestationTier, Verdict};
+use cpop_protocol::rfc::wire_types::hash::HashValue;
 
 /// Detected WAR format variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,9 +134,14 @@ impl Block {
     }
 }
 
-impl AttestationResultWire {
+/// Extension trait for converting between AttestationResultWire and EarToken.
+pub trait AttestationResultWireExt {
     /// Convert this legacy attestation result to an EAR token.
-    pub fn to_ear(&self) -> EarToken {
+    fn to_ear(&self) -> EarToken;
+}
+
+impl AttestationResultWireExt for AttestationResultWire {
+    fn to_ear(&self) -> EarToken {
         let status = match self.verdict {
             Verdict::Authentic => Ar4siStatus::Affirming,
             Verdict::Inconclusive => Ar4siStatus::Warning,
@@ -226,11 +231,11 @@ impl EarToken {
         let evidence_ref = appr
             .and_then(|a| a.pop_evidence_ref.as_ref())
             .map(|r| HashValue {
-                algorithm: crate::rfc::wire_types::enums::HashAlgorithm::Sha256,
+                algorithm: cpop_protocol::rfc::wire_types::enums::HashAlgorithm::Sha256,
                 digest: r.clone(),
             })
             .unwrap_or(HashValue {
-                algorithm: crate::rfc::wire_types::enums::HashAlgorithm::Sha256,
+                algorithm: cpop_protocol::rfc::wire_types::enums::HashAlgorithm::Sha256,
                 digest: vec![0u8; 32],
             });
 

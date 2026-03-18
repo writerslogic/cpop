@@ -15,9 +15,12 @@ use crate::keyhierarchy;
 use crate::platform::HidDeviceInfo;
 use crate::presence;
 use crate::provenance;
-use crate::rfc::{self, BiologyInvariantClaim, BiologyMeasurements, JitterBinding, TimeEvidence};
+use crate::rfc_conversions::BiologyInvariantClaimExt;
 use crate::tpm;
 use crate::vdf;
+use cpop_protocol::rfc::{
+    self, BiologyInvariantClaim, BiologyMeasurements, JitterBinding, TimeEvidence,
+};
 
 use super::helpers::convert_anchor_proof;
 use super::{Builder, MAX_INTERVAL_US, MIN_JITTER_SAMPLES_FOR_BINDING, MIN_SAMPLES_FOR_HURST};

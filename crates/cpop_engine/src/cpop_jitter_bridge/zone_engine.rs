@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use crate::jitter::{encode_zone_transition, keycode_to_zone, TypingProfile, ZoneTransition};
 use crate::cpop_jitter_bridge::helpers::interval_to_bucket;
+use crate::jitter::{encode_zone_transition, keycode_to_zone, TypingProfile, ZoneTransition};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

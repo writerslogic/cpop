@@ -3,7 +3,7 @@
 //! Per-transport baseline latency calibration (USB, Bluetooth, internal, etc.).
 
 use crate::platform::TransportType;
-use crate::rfc::jitter_binding::TransportCalibration;
+use cpop_protocol::rfc::jitter_binding::TransportCalibration;
 use std::collections::HashMap;
 
 pub struct TransportCalibrator {
@@ -60,7 +60,7 @@ impl TransportCalibrator {
             })
             .sum::<f64>()
             / samples.len() as f64;
-        let std_dev = variance.sqrt();
+        let std_dev = variance.max(0.0).sqrt();
 
         let now_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
 

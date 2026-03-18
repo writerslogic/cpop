@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: Apache-2.0
 
 //! Spec-conformant wire format types for draft-condrey-rats-pop CDDL schema.
 //!

@@ -632,13 +632,28 @@ pub(super) fn write_analyzed_text(html: &mut String, r: &WarReport) {
     }
 }
 
+pub(super) fn write_verification_instructions(html: &mut String) {
+    html.push_str(
+        r#"<div class="section">
+  <h2>How to Verify This Evidence</h2>
+  <p>This evidence packet can be independently verified:</p>
+  <ul>
+    <li><strong>Web:</strong> Upload this file at <a href="https://writerslogic.com/verify" target="_blank">writerslogic.com/verify</a> &mdash; verification runs in your browser, no data is uploaded</li>
+    <li><strong>CLI:</strong> Install the open-source tool and run <code>cpop verify &lt;file&gt;</code></li>
+  </ul>
+  <p>Verification checks the cryptographic signatures, checkpoint chain integrity, VDF timing proofs, and behavioral consistency.</p>
+</div>
+"#,
+    );
+}
+
 pub(super) fn write_footer(html: &mut String, r: &WarReport) {
     let _ = write!(
         html,
         r#"<div class="report-footer">
 CPOP Authorship Report &nbsp;|&nbsp; {id} &nbsp;|&nbsp; Algorithm {alg} &nbsp;|&nbsp; Schema {schema}<br>
 This report documents process analysis only. It does not constitute legal advice or definitive proof of authorship.
-&copy; {year} CPOP, Inc.
+&copy; {year} WritersLogic
 </div>
 "#,
         id = r.report_id,

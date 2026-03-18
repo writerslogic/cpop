@@ -15,8 +15,8 @@ use zeroize::Zeroize;
 use crate::keyhierarchy::{
     crypto::IDENTITY_DOMAIN, derive_master_identity, MasterIdentity, PufProvider,
 };
-use crate::rfc::wire_types::AttestationTier;
 use crate::tpm::{ClockInfo, ProviderHandle};
+use cpop_protocol::rfc::wire_types::AttestationTier;
 
 use super::types::*;
 

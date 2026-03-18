@@ -14,11 +14,11 @@ pub enum Error {
 
     /// Codec serialization/deserialization error
     #[error("codec: {0}")]
-    Codec(#[from] crate::codec::CodecError),
+    Codec(#[from] cpop_protocol::codec::CodecError),
 
     /// Compact reference error
     #[error("compact ref: {0}")]
-    CompactRef(#[from] crate::compact_ref::CompactRefError),
+    CompactRef(#[from] cpop_protocol::compact_ref::CompactRefError),
 
     /// Forensics analysis error
     #[error("forensics: {0}")]

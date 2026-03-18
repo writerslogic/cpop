@@ -49,7 +49,6 @@ struct EvidenceOutputContext<'a> {
     format_lower: &'a str,
     out_path: &'a Path,
     file_path: &'a Path,
-    config: &'a cpop_engine::config::CpopConfig,
     events: &'a [cpop_engine::SecureEvent],
     packet: &'a serde_json::Value,
     signer: &'a dyn EvidenceSigner,
@@ -187,8 +186,7 @@ pub(crate) async fn cmd_export(
     }
 
     if tier_lower != "basic" && !out.quiet && !out.json {
-        print!("Building evidence packet...");
-        io::stdout().flush()?;
+        println!("Building evidence packet... done.");
     }
 
     let format_lower = format.to_lowercase();
@@ -198,7 +196,6 @@ pub(crate) async fn cmd_export(
         format_lower: &format_lower,
         out_path: &out_path,
         file_path,
-        config: &config,
         events: &events,
         packet: &packet,
         signer: signer.as_ref(),
@@ -214,11 +211,8 @@ pub(crate) async fn cmd_export(
         out,
     })?;
 
-    if tier_lower != "basic" && !out.quiet && !out.json {
-        println!(" done.");
-    }
-
     if !out.quiet && !out.json {
+        println!();
         println!("Recipients can verify this evidence at: https://writerslogic.com/verify");
     }
 
@@ -578,6 +572,7 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
             {"type": "chain_integrity", "description": "Content states form unbroken cryptographic chain", "confidence": "cryptographic"},
             {"type": "time_elapsed", "description": format!("At least {:?} elapsed during documented composition", total_vdf_time), "confidence": "cryptographic"}
         ],
+        "verification_url": "https://writerslogic.com/verify",
         "limitations": [
             "Cannot prove cognitive origin of ideas",
             "Cannot prove absence of AI involvement in ideation"
@@ -606,12 +601,143 @@ fn write_atomic(out_path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Build a CDDL-conformant wire packet directly from secure-store events.
+///
+/// The CLI `cmd_commit` path stores events in SQLite (not in chain files), so
+/// the CBOR export must construct the wire packet from those events rather than
+/// loading a `Chain` from disk.
+fn build_wire_packet_from_events(
+    events: &[cpop_engine::SecureEvent],
+    file_path: &Path,
+    vdf_params: &cpop_engine::vdf::params::Parameters,
+) -> Result<cpop_engine::EvidencePacketWire> {
+    use cpop_engine::cpop_protocol::rfc::wire_types::{
+        AttestationTier, ContentTier, DocumentRef, EditDelta, HashValue, ProcessProof,
+        ProofAlgorithm, ProofParams,
+    };
+
+    let latest = events
+        .last()
+        .ok_or_else(|| anyhow!("No events for CBOR export"))?;
+
+    let filename = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string());
+
+    let document = DocumentRef {
+        content_hash: HashValue::sha256(latest.content_hash.to_vec()),
+        filename,
+        byte_length: latest.file_size.max(0) as u64,
+        char_count: latest.file_size.max(0) as u64,
+        salt_mode: None,
+        salt_commitment: None,
+    };
+
+    let checkpoints: Vec<cpop_engine::CheckpointWire> = events
+        .iter()
+        .enumerate()
+        .map(|(i, ev)| {
+            let (input, merkle_root, iterations, claimed_ms) =
+                if let (Some(vdf_in), Some(vdf_out)) = (ev.vdf_input, ev.vdf_output) {
+                    let ms = if vdf_params.iterations_per_second > 0 {
+                        (ev.vdf_iterations as f64 / vdf_params.iterations_per_second as f64
+                            * 1000.0) as u64
+                    } else {
+                        0
+                    };
+                    (vdf_in.to_vec(), vdf_out.to_vec(), ev.vdf_iterations, ms)
+                } else {
+                    (vec![0u8; 32], vec![0u8; 32], 0u64, 0u64)
+                };
+
+            let process_proof = ProcessProof {
+                algorithm: ProofAlgorithm::SwfSha256,
+                params: ProofParams {
+                    time_cost: 1,
+                    memory_cost: 0,
+                    parallelism: 1,
+                    steps: iterations,
+                    waypoint_interval: None,
+                    waypoint_memory: None,
+                },
+                input,
+                merkle_root,
+                sampled_proofs: vec![],
+                claimed_duration: claimed_ms,
+            };
+
+            let mut cp_id = [0u8; 16];
+            cp_id.copy_from_slice(&ev.event_hash[..16]);
+
+            let mut wire = cpop_engine::CheckpointWire {
+                sequence: i as u64,
+                checkpoint_id: cp_id,
+                timestamp: (ev.timestamp_ns / 1_000_000).max(0) as u64,
+                content_hash: HashValue::sha256(ev.content_hash.to_vec()),
+                char_count: ev.file_size.max(0) as u64,
+                delta: EditDelta {
+                    chars_added: if ev.size_delta > 0 {
+                        ev.size_delta as u64
+                    } else {
+                        0
+                    },
+                    chars_deleted: if ev.size_delta < 0 {
+                        (-i64::from(ev.size_delta)) as u64
+                    } else {
+                        0
+                    },
+                    op_count: 1,
+                    positions: None,
+                    edit_graph_hash: None,
+                    cursor_trajectory_histogram: None,
+                    revision_depth_histogram: None,
+                    pause_duration_histogram: None,
+                },
+                prev_hash: HashValue::sha256(ev.previous_hash.to_vec()),
+                checkpoint_hash: HashValue::sha256(vec![0u8; 32]),
+                process_proof,
+                jitter_binding: None,
+                physical_state: None,
+                entangled_mac: None,
+                receipts: None,
+                active_probes: None,
+                hat_proof: None,
+                beacon_anchor: None,
+                verifier_nonce: None,
+            };
+            wire.checkpoint_hash = wire.compute_hash();
+            wire
+        })
+        .collect();
+
+    let mut packet_id = [0u8; 16];
+    getrandom::getrandom(&mut packet_id)?;
+
+    Ok(cpop_engine::EvidencePacketWire {
+        version: 1,
+        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
+        packet_id,
+        created: chrono::Utc::now().timestamp_millis() as u64,
+        document,
+        checkpoints,
+        attestation_tier: Some(AttestationTier::SoftwareOnly),
+        limitations: None,
+        profile: None,
+        presence_challenges: None,
+        channel_binding: None,
+        content_tier: Some(ContentTier::Core),
+        previous_packet_ref: None,
+        packet_sequence: None,
+        physical_liveness: None,
+        baseline_verification: None,
+    })
+}
+
 fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
     let EvidenceOutputContext {
         format_lower,
         out_path,
         file_path,
-        config,
         events,
         packet,
         signer,
@@ -631,10 +757,7 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
 
     match *format_lower {
         "cpop" | "cbor" => {
-            let chain = cpop_engine::checkpoint::Chain::load(
-                cpop_engine::checkpoint::Chain::find_chain(file_path, &config.data_dir)?,
-            )?;
-            let wire_packet = cpop_engine::evidence::wire_conversion::chain_to_wire(&chain);
+            let wire_packet = build_wire_packet_from_events(events, file_path, vdf_params)?;
             let cbor_data = wire_packet
                 .encode_cbor()
                 .map_err(|e| anyhow!("CBOR encode failed: {}", e))?;
@@ -646,7 +769,7 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
                 println!("CPOP evidence exported to: {}", out_path.display());
                 println!("  Format: CBOR (CDDL-conformant, tagged)");
                 println!("  CBOR tag: {}", CBOR_TAG_EVIDENCE_PACKET);
-                println!("  Checkpoints: {}", chain.checkpoints.len());
+                println!("  Checkpoints: {}", events.len());
                 println!("  Size: {} bytes", cbor_data.len());
             }
         }

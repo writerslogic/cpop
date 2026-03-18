@@ -357,9 +357,9 @@ impl SentinelIpcHandler {
             .map_err(|e| format!("Failed to build packet: {e}"))?;
 
         let format = if output.extension().map(|e| e == "json").unwrap_or(false) {
-            crate::codec::Format::Json
+            cpop_protocol::codec::Format::Json
         } else {
-            crate::codec::Format::Cbor
+            cpop_protocol::codec::Format::Cbor
         };
         let encoded = packet
             .encode_with_format(format)

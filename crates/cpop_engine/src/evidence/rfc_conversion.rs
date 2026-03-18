@@ -6,7 +6,8 @@
 //! string keys and human-readable field names) and the RFC-compliant PacketRfc
 //! format (with integer keys and fixed-point types for CBOR wire encoding).
 
-use crate::rfc;
+use cpop_protocol::rfc;
+use cpop_protocol::rfc::packet::{ErrorTopology as PacketErrorTopology, JitterSealStructure};
 
 use super::types::{Packet, Strength};
 
@@ -44,16 +45,18 @@ impl From<&Packet> for rfc::PacketRfc {
 
         let jitter_seal = if let Some(jb) = &packet.jitter_binding {
             // ~8 bits of entropy per sample, scaled to millibits
-            let entropy_estimate = jb.summary.sample_count as u32 * 8 * 1000;
-            rfc::JitterSealStructure {
+            // Use u64 to avoid overflow on large sample counts (>536K keystrokes)
+            let entropy_estimate =
+                ((jb.summary.sample_count as u64) * 8 * 1000).min(20_000_000) as u32;
+            JitterSealStructure {
                 lang: "en-US".to_string(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),
-                entropy_millibits: entropy_estimate.min(20_000_000),
+                entropy_millibits: entropy_estimate,
                 dp_epsilon_centibits: rfc::Centibits::from_float(0.5),
                 pink_noise_slope_decibits: rfc::SlopeDecibits::from_float(-1.0),
             }
         } else {
-            rfc::JitterSealStructure {
+            JitterSealStructure {
                 lang: "en-US".to_string(),
                 bucket_commitment: Vec::new(),
                 entropy_millibits: 0,
@@ -87,7 +90,7 @@ impl From<&Packet> for rfc::PacketRfc {
         };
 
         let error_topology = packet.behavioral.as_ref().and_then(|b| {
-            b.fingerprint.as_ref().map(|fp| rfc::ErrorTopology {
+            b.fingerprint.as_ref().map(|fp| PacketErrorTopology {
                 fractal_dimension_decibits: rfc::Decibits::from_float(fp.keystroke_interval_std),
                 clustering_millibits: rfc::Millibits::from_float(
                     fp.keystroke_interval_mean / 1000.0,

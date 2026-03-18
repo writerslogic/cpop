@@ -8,14 +8,14 @@
 use uuid::Uuid;
 
 use crate::checkpoint::{Chain, Checkpoint};
-use crate::rfc::wire_types::checkpoint::CheckpointWire;
-use crate::rfc::wire_types::components::{
+use cpop_protocol::rfc::wire_types::checkpoint::CheckpointWire;
+use cpop_protocol::rfc::wire_types::components::{
     DocumentRef, EditDelta, JitterBindingWire, MerkleProof, PhysicalState, ProcessProof,
     ProofParams,
 };
-use crate::rfc::wire_types::enums::{AttestationTier, ContentTier, ProofAlgorithm};
-use crate::rfc::wire_types::hash::HashValue;
-use crate::rfc::wire_types::packet::EvidencePacketWire;
+use cpop_protocol::rfc::wire_types::enums::{AttestationTier, ContentTier, ProofAlgorithm};
+use cpop_protocol::rfc::wire_types::hash::HashValue;
+use cpop_protocol::rfc::wire_types::packet::EvidencePacketWire;
 
 const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
 
@@ -184,13 +184,22 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             })
             .unwrap_or_default();
 
-        let entropy_estimate = (rfc_jitter.summary.entropy_bits * 100.0) as u64;
+        let entropy_estimate = if rfc_jitter.summary.entropy_bits.is_finite()
+            && rfc_jitter.summary.entropy_bits >= 0.0
+        {
+            (rfc_jitter.summary.entropy_bits * 100.0).min(u64::MAX as f64) as u64
+        } else {
+            0
+        };
 
         let jitter_seal = if has_merkle_root {
-            let intervals_cbor = crate::codec::cbor::encode(&intervals).unwrap_or_else(|e| {
-                log::warn!("CBOR encode intervals for jitter seal failed: {e}");
-                vec![]
-            });
+            let intervals_cbor =
+                cpop_protocol::codec::cbor::encode(&intervals).unwrap_or_else(|e| {
+                    log::error!(
+                        "CBOR encode intervals for jitter seal failed: {e} — seal will be invalid"
+                    );
+                    vec![]
+                });
             crate::crypto::compute_jitter_seal(merkle_root, swf_input, &intervals_cbor)
         } else {
             vec![0u8; 32]
@@ -216,16 +225,18 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
     };
 
     let entangled_mac = if let (true, Some(jb)) = (has_merkle_root, jitter_binding_wire.as_ref()) {
-        let jb_cbor = crate::codec::cbor::encode(jb).unwrap_or_else(|e| {
-            log::warn!("CBOR encode jitter-binding for entangled MAC failed: {e}");
+        let jb_cbor = cpop_protocol::codec::cbor::encode(jb).unwrap_or_else(|e| {
+            log::error!(
+                "CBOR encode jitter-binding for entangled MAC failed: {e} — MAC will be invalid"
+            );
             vec![]
         });
         let ps_cbor = physical_state_wire
             .as_ref()
             .and_then(|ps| {
-                crate::codec::cbor::encode(ps)
+                cpop_protocol::codec::cbor::encode(ps)
                     .map_err(|e| {
-                        log::warn!("CBOR encode physical-state for entangled MAC failed: {e}")
+                        log::error!("CBOR encode physical-state for entangled MAC failed: {e} — MAC will be invalid")
                     })
                     .ok()
             })

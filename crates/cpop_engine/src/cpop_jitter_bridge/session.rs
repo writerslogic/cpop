@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use crate::jitter::{Evidence, Parameters, Statistics};
 use crate::cpop_jitter_bridge::doc_tracker::DocumentTracker;
 use crate::cpop_jitter_bridge::types::{
     EntropyQuality, HybridEvidence, HybridSample, HybridSessionData,
 };
 use crate::cpop_jitter_bridge::zone_engine::ZoneTrackingEngine;
+use crate::jitter::{Evidence, Parameters, Statistics};
 use crate::DateTimeNanosExt;
 use chrono::{DateTime, Utc};
-use std::fs;
-use std::path::Path;
-use std::time::Duration;
 use cpop_jitter::{
     derive_session_secret, EvidenceChain as PhysEvidenceChain, Session as PhysSession,
 };
+use std::fs;
+use std::path::Path;
+use std::time::Duration;
 
 /// Combined jitter + zone-tracking session for a single document.
 #[derive(Debug)]

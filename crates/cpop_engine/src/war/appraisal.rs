@@ -13,7 +13,6 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 use crate::evidence::Packet;
-use crate::rfc::wire_types::enums::AttestationTier;
 use crate::trust_policy::AppraisalPolicy;
 use crate::war::ear::{
     Ar4siStatus, EarAppraisal, EarToken, SealClaims, TrustworthinessVector, VerifierId,
@@ -22,6 +21,7 @@ use crate::war::ear::{
 use crate::war::verification::{
     compute_seal, verify_declaration, verify_hash_chain, verify_vdf_proofs,
 };
+use cpop_protocol::rfc::wire_types::enums::AttestationTier;
 
 /// Minimum checkpoint count for a valid appraisal (spec: MIN_CHECKPOINTS_PER_PACKET).
 const MIN_CHECKPOINTS: usize = 3;

@@ -6,9 +6,9 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::rfc::{self, TimeEvidence, VdfProofRfc};
 use crate::vdf::{Argon2SwfProof, VdfProof};
 use crate::DateTimeNanosExt;
+use cpop_protocol::rfc::{self, TimeEvidence, VdfProofRfc};
 
 /// Entanglement mode for checkpoint chain computation.
 ///

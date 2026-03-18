@@ -13,9 +13,9 @@ use crate::declaration;
 use crate::jitter;
 use crate::presence;
 use crate::provenance;
-use crate::rfc::{BiologyInvariantClaim, JitterBinding, TimeEvidence};
 use crate::tpm;
 use crate::vdf;
+use cpop_protocol::rfc::{BiologyInvariantClaim, JitterBinding, TimeEvidence};
 
 use crate::platform::HidDeviceInfo;
 
