@@ -212,6 +212,19 @@ It cannot prove you didn't copy content from elsewhere. However:
 
 ## Practical Usage
 
+### I received a .cpop file. What do I do with it?
+
+A `.cpop` file is a self-contained cryptographic evidence packet that someone has shared with you to prove authorship of a document. You can verify it without creating an account or installing anything:
+
+1. **Web (easiest):** Go to [writerslogic.com/verify](https://writerslogic.com/verify) and upload the file. Verification runs entirely in your browser — the file is never sent to a server.
+
+2. **CLI:** If you have `cpop` installed, run:
+   ```bash
+   cpop verify proof.cpop
+   ```
+
+Verification checks the checkpoint chain, Ed25519 signatures, VDF timing proofs, and behavioral consistency. The output tells you whether the evidence is intact and what it proves: the document's content hashes, the time span over which writing occurred, and the author's cryptographic identity.
+
 ### How often should I create checkpoints?
 
 Recommendations by use case:

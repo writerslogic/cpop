@@ -158,6 +158,15 @@ cargo fmt --all -- --check       # Format check
 cargo audit && cargo deny check  # Security audit
 ```
 
+## Verifying Evidence
+
+Anyone can verify `.cpop` evidence packets — no account or software required:
+
+- **Web**: Upload at [writerslogic.com/verify](https://writerslogic.com/verify)
+- **CLI**: `cpop verify proof.cpop`
+
+Verification checks the checkpoint chain, Ed25519 signatures, VDF timing proofs, and behavioral consistency. It runs entirely client-side — your evidence is never uploaded to our servers.
+
 ## Security & Privacy
 
 > [!IMPORTANT]

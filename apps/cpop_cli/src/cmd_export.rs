@@ -218,6 +218,10 @@ pub(crate) async fn cmd_export(
         println!(" done.");
     }
 
+    if !out.quiet && !out.json {
+        println!("Recipients can verify this evidence at: https://writerslogic.com/verify");
+    }
+
     if stego {
         embed_steganographic_watermark(file_path, &abs_path_str, &events, dir).await?;
     }

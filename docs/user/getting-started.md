@@ -262,6 +262,44 @@ Evidence Class: Tier 2 (Software-Attested)
 Overall: VERIFIED
 ```
 
+## Sharing and Verifying Evidence
+
+### For Authors: Sharing Your Evidence
+
+When you need to prove authorship to an editor, publisher, or legal counterpart:
+
+```bash
+# Export the evidence packet
+cpop export mydoc.txt -o mydoc.cpop
+
+# Share mydoc.cpop with the recipient
+```
+
+The `.cpop` file is self-contained — the recipient does not need access to your machine, your database, or your private key.
+
+### For Recipients: Verifying a .cpop File
+
+Anyone can verify a `.cpop` evidence packet. No account, registration, or special software is required.
+
+**Option 1 — Web (no install needed):**
+
+Upload the file at [writerslogic.com/verify](https://writerslogic.com/verify). Verification runs entirely client-side; the file is never uploaded to a server.
+
+**Option 2 — CLI:**
+
+```bash
+cpop verify mydoc.cpop
+```
+
+Verification checks:
+- Checkpoint chain integrity (no missing or reordered entries)
+- Ed25519 signature validity on every checkpoint
+- VDF timing proofs (confirms real time elapsed)
+- Key hierarchy and session certificate authenticity
+- Behavioral consistency (keystroke metrics, if present)
+
+The output shows a per-check pass/fail summary and an overall verdict.
+
 ## Next Steps
 
 1. **Read the [CLI Reference](cli-reference.md)** for all available commands

@@ -116,6 +116,15 @@ Per [draft-condrey-rats-pop](https://datatracker.ietf.org/doc/draft-condrey-rats
 | CWAR | `.cwar` | CBOR-encoded attestation result (verification report) |
 | JSON | `.json` | Human-readable evidence export |
 
+## Verifying Evidence
+
+Anyone can verify `.cpop` evidence packets — no account or software required:
+
+- **Web**: Upload at [writerslogic.com/verify](https://writerslogic.com/verify)
+- **CLI**: `cpop verify proof.cpop`
+
+Verification checks the checkpoint chain, Ed25519 signatures, VDF timing proofs, and behavioral consistency. It runs entirely client-side — your evidence is never uploaded to our servers.
+
 ## Security
 
 > [!IMPORTANT]
