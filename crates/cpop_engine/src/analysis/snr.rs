@@ -74,7 +74,7 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
     let noise_power = window_variances.iter().sum::<f64>() / window_variances.len() as f64;
 
     let snr_db = if noise_power > 0.0 {
-        (10.0 * (signal_power / noise_power).log10()).min(MAX_SNR_DB)
+        (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
     } else {
         MAX_SNR_DB
     };
@@ -84,7 +84,7 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
         .iter()
         .map(|&var| {
             if var > 0.0 {
-                (10.0 * (signal_power / var).log10()).min(MAX_SNR_DB)
+                (10.0 * (signal_power / var).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
             } else {
                 MAX_SNR_DB
             }

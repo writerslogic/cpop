@@ -15,7 +15,7 @@ use crate::util::{ensure_dirs, load_vdf_params, open_secure_store};
 fn format_timestamp_nanos(ns: i64, fmt: &str) -> String {
     const MIN_NS: i64 = 946_684_800_000_000_000;
     const MAX_NS: i64 = 4_102_444_800_000_000_000;
-    if ns >= MIN_NS && ns <= MAX_NS {
+    if (MIN_NS..=MAX_NS).contains(&ns) {
         DateTime::from_timestamp_nanos(ns).format(fmt).to_string()
     } else {
         "invalid timestamp".to_string()
@@ -26,7 +26,7 @@ fn format_timestamp_nanos(ns: i64, fmt: &str) -> String {
 fn format_timestamp_nanos_rfc3339(ns: i64) -> String {
     const MIN_NS: i64 = 946_684_800_000_000_000;
     const MAX_NS: i64 = 4_102_444_800_000_000_000;
-    if ns >= MIN_NS && ns <= MAX_NS {
+    if (MIN_NS..=MAX_NS).contains(&ns) {
         DateTime::from_timestamp_nanos(ns).to_rfc3339()
     } else {
         "invalid timestamp".to_string()
