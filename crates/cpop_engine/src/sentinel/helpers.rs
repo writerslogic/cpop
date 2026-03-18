@@ -428,52 +428,8 @@ pub fn validate_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
 }
 
 fn validate_canonical_path(path: &Path) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        let path_str = path.to_string_lossy();
-        let blocked = [
-            "/etc/",
-            "/var/root/",
-            "/System/",
-            "/Library/",
-            "/proc/",
-            "/dev/",
-            "/sys/",
-            "/root/",
-            "/private/etc/",
-            "/private/var/root/",
-            "/boot/",
-            "/sbin/",
-            "/bin/",
-        ];
-        for prefix in &blocked {
-            if path_str.starts_with(prefix) {
-                return Err("Access to system directory denied".to_string());
-            }
-        }
+    if crate::ipc::messages::is_blocked_system_path(path)? {
+        return Err("Access to system directory denied".to_string());
     }
-
-    #[cfg(target_os = "windows")]
-    {
-        let path_str = path.to_string_lossy();
-        let lower = path_str.to_lowercase();
-        // Strip UNC extended-length prefix so \\?\C:\Windows\... is caught.
-        let normalized = lower
-            .strip_prefix(r"\\?\")
-            .or_else(|| lower.strip_prefix(r"\??\"))
-            .unwrap_or(&lower);
-        let blocked = [
-            r"c:\windows\",
-            r"c:\program files\",
-            r"c:\program files (x86)\",
-            r"c:\programdata\",
-        ];
-        for prefix in &blocked {
-            if normalized.starts_with(prefix) {
-                return Err("Access to system directory denied".to_string());
-            }
-        }
-    }
-
     Ok(())
 }

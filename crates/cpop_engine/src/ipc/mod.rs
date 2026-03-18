@@ -6,7 +6,7 @@ pub mod unix_socket;
 
 mod async_client;
 pub(crate) mod crypto;
-mod messages;
+pub(crate) mod messages;
 mod server;
 mod sync_client;
 

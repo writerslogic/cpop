@@ -19,10 +19,7 @@ pub struct Rfc3161Provider {
 impl Rfc3161Provider {
     /// Create a provider with explicit TSA endpoint URLs.
     pub fn new(tsa_urls: Vec<String>) -> Result<Self, AnchorError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| AnchorError::Network(format!("HTTP client init failed: {e}")))?;
+        let client = super::http::build_http_client(None)?;
         Ok(Self { tsa_urls, client })
     }
 

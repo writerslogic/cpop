@@ -2,6 +2,7 @@
 
 mod bitcoin;
 mod ethereum;
+mod http;
 mod notary;
 mod ots;
 mod rfc3161;

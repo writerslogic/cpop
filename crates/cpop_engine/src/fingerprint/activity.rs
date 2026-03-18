@@ -22,6 +22,24 @@ const SENTENCE_PAUSE_MS: f64 = 400.0;
 const PARAGRAPH_PAUSE_MS: f64 = 1000.0;
 const THINKING_PAUSE_MS: f64 = 2000.0;
 
+/// Shared trait for distribution types that support weighted merging and similarity comparison.
+///
+/// Implemented by [`IkiDistribution`], [`ZoneProfile`], and [`PauseSignature`], which all
+/// share the same merge/similarity interface despite differing internal representations.
+pub trait WeightedDistribution {
+    /// Similarity score (0.0-1.0) against another distribution of the same type.
+    fn similarity(&self, other: &Self) -> f64;
+
+    /// Weighted merge of `other` into `self`.
+    fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64);
+}
+
+/// Linearly blend two scalar values by weight.
+#[inline]
+fn weighted_blend(a: f64, b: f64, a_weight: f64, b_weight: f64) -> f64 {
+    a * a_weight + b * b_weight
+}
+
 /// Typing dynamics fingerprint built from behavioral samples.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityFingerprint {
@@ -251,23 +269,17 @@ impl IkiDistribution {
 
     /// Weighted merge with another distribution.
     pub fn merge(&mut self, other: &IkiDistribution, self_weight: f64, other_weight: f64) {
-        self.mean = self.mean * self_weight + other.mean * other_weight;
-        self.std_dev = self.std_dev * self_weight + other.std_dev * other_weight;
-        self.skewness = self.skewness * self_weight + other.skewness * other_weight;
-        self.kurtosis = self.kurtosis * self_weight + other.kurtosis * other_weight;
-
-        for i in 0..5 {
-            self.percentiles[i] =
-                self.percentiles[i] * self_weight + other.percentiles[i] * other_weight;
-        }
-
-        for i in 0..self.histogram.len().min(other.histogram.len()) {
-            self.histogram[i] = self.histogram[i] * self_weight + other.histogram[i] * other_weight;
-        }
+        self.weighted_merge(other, self_weight, other_weight);
     }
 
     /// Similarity (0.0-1.0) via Bhattacharyya coefficient on histograms.
     pub fn similarity(&self, other: &IkiDistribution) -> f64 {
+        <Self as WeightedDistribution>::similarity(self, other)
+    }
+}
+
+impl WeightedDistribution for IkiDistribution {
+    fn similarity(&self, other: &Self) -> f64 {
         let hist_sim =
             crate::analysis::stats::bhattacharyya_coefficient(&self.histogram, &other.histogram);
 
@@ -276,6 +288,29 @@ impl IkiDistribution {
             1.0 - (self.std_dev - other.std_dev).abs() / (self.std_dev + other.std_dev + 1.0);
 
         (hist_sim * 0.6 + mean_sim * 0.2 + std_sim * 0.2).clamp(0.0, 1.0)
+    }
+
+    fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {
+        self.mean = weighted_blend(self.mean, other.mean, self_weight, other_weight);
+        self.std_dev = weighted_blend(self.std_dev, other.std_dev, self_weight, other_weight);
+        self.skewness = weighted_blend(self.skewness, other.skewness, self_weight, other_weight);
+        self.kurtosis = weighted_blend(self.kurtosis, other.kurtosis, self_weight, other_weight);
+
+        for i in 0..5 {
+            self.percentiles[i] = weighted_blend(
+                self.percentiles[i],
+                other.percentiles[i],
+                self_weight,
+                other_weight,
+            );
+        }
+
+        merge_histogram(
+            &mut self.histogram,
+            &other.histogram,
+            self_weight,
+            other_weight,
+        );
     }
 }
 
@@ -356,38 +391,12 @@ impl ZoneProfile {
 
     /// Weighted merge with another profile.
     pub fn merge(&mut self, other: &ZoneProfile, self_weight: f64, other_weight: f64) {
-        for i in 0..8 {
-            self.zone_frequencies[i] =
-                self.zone_frequencies[i] * self_weight + other.zone_frequencies[i] * other_weight;
-        }
+        self.weighted_merge(other, self_weight, other_weight);
+    }
 
-        for i in 0..self
-            .zone_transitions
-            .len()
-            .min(other.zone_transitions.len())
-        {
-            self.zone_transitions[i] =
-                self.zone_transitions[i] * self_weight + other.zone_transitions[i] * other_weight;
-        }
-
-        merge_histogram(
-            &mut self.same_finger_histogram,
-            &other.same_finger_histogram,
-            self_weight,
-            other_weight,
-        );
-        merge_histogram(
-            &mut self.same_hand_histogram,
-            &other.same_hand_histogram,
-            self_weight,
-            other_weight,
-        );
-        merge_histogram(
-            &mut self.alternating_histogram,
-            &other.alternating_histogram,
-            self_weight,
-            other_weight,
-        );
+    /// Similarity (0.0-1.0) based on zone frequencies and transitions.
+    pub fn similarity(&self, other: &ZoneProfile) -> f64 {
+        <Self as WeightedDistribution>::similarity(self, other)
     }
 
     /// Return the most frequently used zone as a human-readable string.
@@ -411,9 +420,10 @@ impl ZoneProfile {
         ];
         format!("{} ({:.0}%)", zone_names[zone_idx], freq * 100.0)
     }
+}
 
-    /// Similarity (0.0-1.0) based on zone frequencies and transitions.
-    pub fn similarity(&self, other: &ZoneProfile) -> f64 {
+impl WeightedDistribution for ZoneProfile {
+    fn similarity(&self, other: &Self) -> f64 {
         let freq_sim: f64 = self
             .zone_frequencies
             .iter()
@@ -430,6 +440,42 @@ impl ZoneProfile {
             .sum();
 
         (freq_sim * 0.4 + trans_sim * 0.6).clamp(0.0, 1.0)
+    }
+
+    fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {
+        for i in 0..8 {
+            self.zone_frequencies[i] = weighted_blend(
+                self.zone_frequencies[i],
+                other.zone_frequencies[i],
+                self_weight,
+                other_weight,
+            );
+        }
+
+        merge_histogram(
+            &mut self.zone_transitions,
+            &other.zone_transitions,
+            self_weight,
+            other_weight,
+        );
+        merge_histogram(
+            &mut self.same_finger_histogram,
+            &other.same_finger_histogram,
+            self_weight,
+            other_weight,
+        );
+        merge_histogram(
+            &mut self.same_hand_histogram,
+            &other.same_hand_histogram,
+            self_weight,
+            other_weight,
+        );
+        merge_histogram(
+            &mut self.alternating_histogram,
+            &other.alternating_histogram,
+            self_weight,
+            other_weight,
+        );
     }
 }
 
@@ -495,22 +541,17 @@ impl PauseSignature {
 
     /// Weighted merge with another signature.
     pub fn merge(&mut self, other: &PauseSignature, self_weight: f64, other_weight: f64) {
-        self.sentence_pause_mean =
-            self.sentence_pause_mean * self_weight + other.sentence_pause_mean * other_weight;
-        self.paragraph_pause_mean =
-            self.paragraph_pause_mean * self_weight + other.paragraph_pause_mean * other_weight;
-        self.thinking_pause_mean =
-            self.thinking_pause_mean * self_weight + other.thinking_pause_mean * other_weight;
-        self.sentence_pause_frequency = self.sentence_pause_frequency * self_weight
-            + other.sentence_pause_frequency * other_weight;
-        self.paragraph_pause_frequency = self.paragraph_pause_frequency * self_weight
-            + other.paragraph_pause_frequency * other_weight;
-        self.thinking_pause_frequency = self.thinking_pause_frequency * self_weight
-            + other.thinking_pause_frequency * other_weight;
+        self.weighted_merge(other, self_weight, other_weight);
     }
 
     /// Similarity (0.0-1.0) comparing mean durations and frequencies.
     pub fn similarity(&self, other: &PauseSignature) -> f64 {
+        <Self as WeightedDistribution>::similarity(self, other)
+    }
+}
+
+impl WeightedDistribution for PauseSignature {
+    fn similarity(&self, other: &Self) -> f64 {
         let mean_sims = [
             relative_similarity(self.sentence_pause_mean, other.sentence_pause_mean),
             relative_similarity(self.paragraph_pause_mean, other.paragraph_pause_mean),
@@ -535,6 +576,45 @@ impl PauseSignature {
         let freq_sim: f64 = freq_sims.iter().sum::<f64>() / 3.0;
 
         (mean_sim * 0.5 + freq_sim * 0.5).clamp(0.0, 1.0)
+    }
+
+    fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {
+        self.sentence_pause_mean = weighted_blend(
+            self.sentence_pause_mean,
+            other.sentence_pause_mean,
+            self_weight,
+            other_weight,
+        );
+        self.paragraph_pause_mean = weighted_blend(
+            self.paragraph_pause_mean,
+            other.paragraph_pause_mean,
+            self_weight,
+            other_weight,
+        );
+        self.thinking_pause_mean = weighted_blend(
+            self.thinking_pause_mean,
+            other.thinking_pause_mean,
+            self_weight,
+            other_weight,
+        );
+        self.sentence_pause_frequency = weighted_blend(
+            self.sentence_pause_frequency,
+            other.sentence_pause_frequency,
+            self_weight,
+            other_weight,
+        );
+        self.paragraph_pause_frequency = weighted_blend(
+            self.paragraph_pause_frequency,
+            other.paragraph_pause_frequency,
+            self_weight,
+            other_weight,
+        );
+        self.thinking_pause_frequency = weighted_blend(
+            self.thinking_pause_frequency,
+            other.thinking_pause_frequency,
+            self_weight,
+            other_weight,
+        );
     }
 }
 

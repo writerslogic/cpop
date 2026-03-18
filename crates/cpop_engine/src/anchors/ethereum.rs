@@ -112,37 +112,7 @@ impl EthereumProvider {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, AnchorError> {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        });
-
-        let response = self
-            .client
-            .post(&self.rpc_url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| AnchorError::Network(e.to_string()))?;
-
-        let result: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| AnchorError::Network(e.to_string()))?;
-
-        if let Some(error) = result.get("error") {
-            if !error.is_null() {
-                let msg = error
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("Unknown error");
-                return Err(AnchorError::Submission(msg.to_string()));
-            }
-        }
-
-        Ok(result["result"].clone())
+        super::http::json_rpc_call(&self.client, &self.rpc_url, method, params).await
     }
 
     async fn get_nonce(&self) -> Result<u64, AnchorError> {

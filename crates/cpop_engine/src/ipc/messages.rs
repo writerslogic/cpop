@@ -26,27 +26,51 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
 
     // First line of defense at IPC boundary; sentinel::validate_path() does a
     // second check post-canonicalization.
+    if is_blocked_system_path(path)? {
+        return Err("Access to system directory denied".to_string());
+    }
+
+    Ok(())
+}
+
+/// Blocked system directory prefixes for Unix platforms.
+#[cfg(unix)]
+pub(crate) const BLOCKED_UNIX_PREFIXES: &[&str] = &[
+    "/etc/",
+    "/var/root/",
+    "/System/",
+    "/Library/",
+    "/proc/",
+    "/dev/",
+    "/sys/",
+    "/root/",
+    "/private/etc/",
+    "/private/var/root/",
+    "/boot/",
+    "/sbin/",
+    "/bin/",
+];
+
+/// Blocked system directory prefixes for Windows platforms.
+#[cfg(target_os = "windows")]
+pub(crate) const BLOCKED_WINDOWS_PREFIXES: &[&str] = &[
+    r"c:\windows\",
+    r"c:\program files\",
+    r"c:\program files (x86)\",
+    r"c:\programdata\",
+];
+
+/// Check whether a path falls under a blocked system directory.
+///
+/// Shared by both IPC-layer validation (`validate_ipc_path`) and
+/// sentinel-layer validation (`validate_canonical_path`).
+pub(crate) fn is_blocked_system_path(path: &Path) -> Result<bool, String> {
     #[cfg(unix)]
     {
         let s = path.to_string_lossy();
-        const BLOCKED: &[&str] = &[
-            "/etc/",
-            "/var/root/",
-            "/System/",
-            "/Library/",
-            "/proc/",
-            "/dev/",
-            "/sys/",
-            "/root/",
-            "/private/etc/",
-            "/private/var/root/",
-            "/boot/",
-            "/sbin/",
-            "/bin/",
-        ];
-        for prefix in BLOCKED {
+        for prefix in BLOCKED_UNIX_PREFIXES {
             if s.starts_with(prefix) {
-                return Err("Access to system directory denied".to_string());
+                return Ok(true);
             }
         }
     }
@@ -60,20 +84,14 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
             .strip_prefix(r"\\?\")
             .or_else(|| lower.strip_prefix(r"\??\"))
             .unwrap_or(&lower);
-        const BLOCKED_WIN: &[&str] = &[
-            r"c:\windows\",
-            r"c:\program files\",
-            r"c:\program files (x86)\",
-            r"c:\programdata\",
-        ];
-        for prefix in BLOCKED_WIN {
+        for prefix in BLOCKED_WINDOWS_PREFIXES {
             if normalized.starts_with(prefix) {
-                return Err("Access to system directory denied".to_string());
+                return Ok(true);
             }
         }
     }
 
-    Ok(())
+    Ok(false)
 }
 
 /// IPC message protocol between the engine (Brain) and GUI (Face).

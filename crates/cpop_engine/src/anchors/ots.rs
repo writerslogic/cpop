@@ -26,10 +26,7 @@ impl OpenTimestampsProvider {
     pub fn new() -> Self {
         Self {
             calendar_urls: OTS_CALENDAR_URLS.iter().map(|s| s.to_string()).collect(),
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
+            client: super::http::build_http_client(None).expect("Failed to create HTTP client"),
         }
     }
 
@@ -38,10 +35,7 @@ impl OpenTimestampsProvider {
     pub fn with_calendars(urls: Vec<String>) -> Self {
         Self {
             calendar_urls: urls,
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
+            client: super::http::build_http_client(None).expect("Failed to create HTTP client"),
         }
     }
 

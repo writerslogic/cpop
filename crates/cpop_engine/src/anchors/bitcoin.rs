@@ -60,34 +60,15 @@ impl BitcoinProvider {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, AnchorError> {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        });
-
-        let response = self
-            .client
-            .post(&self.rpc_url)
-            .basic_auth(&self.rpc_user, Some(&self.rpc_password))
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| AnchorError::Network(e.to_string()))?;
-
-        let result: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| AnchorError::Network(e.to_string()))?;
-
-        if let Some(error) = result.get("error") {
-            if !error.is_null() {
-                return Err(AnchorError::Submission(error.to_string()));
-            }
-        }
-
-        Ok(result["result"].clone())
+        super::http::json_rpc_call_with_auth(
+            &self.client,
+            &self.rpc_url,
+            method,
+            params,
+            &self.rpc_user,
+            &self.rpc_password,
+        )
+        .await
     }
 
     async fn create_op_return_tx(&self, hash: &[u8; 32]) -> Result<String, AnchorError> {

@@ -53,11 +53,7 @@ impl NotaryProvider {
             .await
             .map_err(|e| AnchorError::Network(e.to_string()))?;
 
-        if let Some(error) = value.get("error") {
-            if !error.is_null() {
-                return Err(AnchorError::Submission(error.to_string()));
-            }
-        }
+        super::http::check_json_rpc_error(&value)?;
 
         Ok(value)
     }

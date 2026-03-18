@@ -140,6 +140,55 @@ impl LinuxInputDevice {
     }
 }
 
+/// Shared virtual-device name patterns common to all input device types.
+const VIRTUAL_NAME_PATTERNS: &[&str] = &["uinput", "virtual", "xtest", "py-evdev", "synthetic"];
+
+/// Check if an input device appears virtual based on name patterns, physical
+/// path presence, and vendor/product IDs.
+///
+/// - `extra_virtual_names`: additional name substrings that indicate a virtual device
+///   (e.g., "ydotool" for keyboards, "xdotool"/"wacom" for mice).
+/// - `known_physical_names`: name substrings that indicate a real device even when
+///   vendor_id and product_id are both zero (e.g., "keyboard"/"kbd" for keyboards,
+///   "mouse"/"touchpad" for mice).
+fn is_virtual_input_device(
+    name: &str,
+    phys: Option<&str>,
+    vendor_id: u16,
+    product_id: u16,
+    extra_virtual_names: &[&str],
+    known_physical_names: &[&str],
+) -> bool {
+    let name_lower = name.to_lowercase();
+
+    // Check shared + device-specific virtual name patterns
+    for pattern in VIRTUAL_NAME_PATTERNS
+        .iter()
+        .chain(extra_virtual_names.iter())
+    {
+        if name_lower.contains(pattern) {
+            return true;
+        }
+    }
+
+    // No physical path usually means virtual
+    if phys.map_or(true, |p| p.is_empty()) {
+        return true;
+    }
+
+    // Zero vendor+product with no recognizable physical device name
+    if vendor_id == 0 && product_id == 0 {
+        if !known_physical_names
+            .iter()
+            .any(|kw| name_lower.contains(kw))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Enumerate input devices matching a predicate, with a virtual-device filter.
 fn enumerate_input_devices(
     matches: impl Fn(&Device) -> bool,
@@ -197,33 +246,14 @@ pub fn enumerate_keyboards() -> Result<Vec<LinuxInputDevice>> {
 }
 
 fn is_virtual_device(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
-    let name_lower = name.to_lowercase();
-
-    if name_lower.contains("uinput")
-        || name_lower.contains("virtual")
-        || name_lower.contains("xtest")
-        || name_lower.contains("ydotool")
-        || name_lower.contains("py-evdev")
-        || name_lower.contains("synthetic")
-    {
-        return true;
-    }
-
-    if phys.as_ref().map_or(true, |p| p.is_empty()) {
-        return true;
-    }
-
-    if vendor_id == 0
-        && product_id == 0
-        && !name_lower.contains("keyboard")
-        && !name_lower.contains("kbd")
-        && !name_lower.contains("usb")
-        && !name_lower.contains("at translated")
-    {
-        return true;
-    }
-
-    false
+    is_virtual_input_device(
+        name,
+        phys,
+        vendor_id,
+        product_id,
+        &["ydotool"],
+        &["keyboard", "kbd", "usb", "at translated"],
+    )
 }
 
 /// Detect the currently focused application via X11 or /proc fallback.
@@ -722,34 +752,14 @@ pub fn enumerate_mice() -> Result<Vec<LinuxInputDevice>> {
 }
 
 fn is_virtual_mouse(name: &str, phys: Option<&str>, vendor_id: u16, product_id: u16) -> bool {
-    let name_lower = name.to_lowercase();
-
-    if name_lower.contains("uinput")
-        || name_lower.contains("virtual")
-        || name_lower.contains("xtest")
-        || name_lower.contains("xdotool")
-        || name_lower.contains("py-evdev")
-        || name_lower.contains("synthetic")
-        || name_lower.contains("wacom")
-    {
-        return true;
-    }
-
-    if phys.as_ref().map_or(true, |p| p.is_empty()) {
-        return true;
-    }
-
-    if vendor_id == 0
-        && product_id == 0
-        && !name_lower.contains("mouse")
-        && !name_lower.contains("touchpad")
-        && !name_lower.contains("trackpad")
-        && !name_lower.contains("trackpoint")
-    {
-        return true;
-    }
-
-    false
+    is_virtual_input_device(
+        name,
+        phys,
+        vendor_id,
+        product_id,
+        &["xdotool", "wacom"],
+        &["mouse", "touchpad", "trackpad", "trackpoint"],
+    )
 }
 
 /// Linux mouse capture via evdev device readers with idle jitter support.

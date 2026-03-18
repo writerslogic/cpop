@@ -13,7 +13,9 @@ pub mod voice;
 #[cfg(test)]
 mod tests;
 
-pub use activity::{ActivityFingerprint, ActivityFingerprintAccumulator, ZoneProfile};
+pub use activity::{
+    ActivityFingerprint, ActivityFingerprintAccumulator, WeightedDistribution, ZoneProfile,
+};
 pub use author::{AuthorFingerprint, ProfileId};
 pub use comparison::{FingerprintComparison, ProfileMatcher};
 pub use consent::{ConsentManager, ConsentRecord, ConsentStatus};
