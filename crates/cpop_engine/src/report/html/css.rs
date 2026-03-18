@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use crate::report::types::*;
-use std::fmt::Write;
+use std::fmt::{self, Write};
 
-pub(super) fn write_head(html: &mut String, r: &WarReport) {
-    let _ = write!(
+pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
+    write!(
         html,
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -341,5 +341,5 @@ table.data tr:nth-child(even) {{ background: var(--gray-50); }}
 <div class="container">
 "#,
         report_id = r.report_id
-    );
+    )
 }

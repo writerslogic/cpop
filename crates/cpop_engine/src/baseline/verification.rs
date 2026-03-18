@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
+use crate::analysis::stats::bhattacharyya_coefficient;
 use cpop_protocol::baseline::{BaselineDigest, SessionBehavioralSummary};
 
 /// Score a session against the baseline digest, returning 0.0..1.0 similarity.
 pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavioralSummary) -> f64 {
-    let b_coeff = compute_bhattacharyya(&digest.aggregate_iki_histogram, &session.iki_histogram);
+    let b_coeff =
+        bhattacharyya_coefficient(&digest.aggregate_iki_histogram, &session.iki_histogram);
 
     let cv_sim = gaussian_similarity(
         session.iki_cv,
@@ -26,14 +28,6 @@ pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavio
     );
 
     0.4 * b_coeff + 0.2 * cv_sim + 0.2 * hurst_sim + 0.2 * pause_sim
-}
-
-fn compute_bhattacharyya(h1: &[f64; 9], h2: &[f64; 9]) -> f64 {
-    let mut score = 0.0;
-    for i in 0..9 {
-        score += (h1[i] * h2[i]).sqrt();
-    }
-    score
 }
 
 fn gaussian_similarity(value: f64, mean: f64, m2: f64, count: u64) -> f64 {

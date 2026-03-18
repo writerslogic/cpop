@@ -85,27 +85,9 @@ pub fn compare_profiles(a: TypingProfile, b: TypingProfile) -> f64 {
 }
 
 fn histogram_cosine_similarity(a: &[u32; 10], b: &[u32; 10]) -> f64 {
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-    for i in 0..HISTOGRAM_BUCKET_COUNT {
-        let fa = a[i] as f64;
-        let fb = b[i] as f64;
-        dot += fa * fb;
-        norm_a += fa * fa;
-        norm_b += fb * fb;
-    }
-    if norm_a == 0.0 || norm_b == 0.0 {
-        return 0.0;
-    }
-    dot / (sqrt(norm_a) * sqrt(norm_b))
-}
-
-fn sqrt(x: f64) -> f64 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    x.sqrt()
+    let fa: Vec<f64> = a.iter().map(|&v| v as f64).collect();
+    let fb: Vec<f64> = b.iter().map(|&v| v as f64).collect();
+    crate::analysis::stats::cosine_similarity(&fa, &fb)
 }
 
 /// Return true if the typing profile falls within human-plausible bounds.
@@ -202,7 +184,7 @@ pub fn profile_distance(a: TypingProfile, b: TypingProfile) -> f64 {
         sum += diff * diff;
     }
 
-    sqrt(sum)
+    sum.sqrt()
 }
 
 struct NormalizedProfile {

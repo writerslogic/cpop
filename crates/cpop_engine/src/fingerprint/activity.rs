@@ -829,22 +829,7 @@ impl Default for ActivityFingerprintAccumulator {
     }
 }
 
-fn normalize_histogram(hist: &mut [f64]) {
-    let total: f64 = hist.iter().sum();
-    if total > 0.0 {
-        for h in hist {
-            *h /= total;
-        }
-    }
-}
-
-fn merge_histogram(a: &mut [f64], b: &[f64], a_weight: f64, b_weight: f64) {
-    for i in 0..a.len().min(b.len()) {
-        a[i] = a[i] * a_weight + b[i] * b_weight;
-    }
-}
-
-use crate::analysis::stats::relative_similarity;
+use crate::analysis::stats::{merge_histogram, normalize_histogram, relative_similarity};
 
 #[cfg(test)]
 mod tests {

@@ -10,24 +10,30 @@ use std::fmt::Write;
 /// Render a self-contained HTML report from a `WarReport`.
 pub fn render_html(r: &WarReport) -> String {
     let mut html = String::with_capacity(32_000);
-    css::write_head(&mut html, r);
-    sections::write_header(&mut html, r);
-    sections::write_verdict(&mut html, r);
-    sections::write_enfsi_scale(&mut html, r);
-    sections::write_chain_of_custody(&mut html, r);
-    sections::write_category_scores(&mut html, r);
-    sections::write_session_timeline(&mut html, r);
-    sections::write_process_evidence(&mut html, r);
-    sections::write_dimension_analysis(&mut html, r);
-    sections::write_statistical_methodology(&mut html, r);
-    sections::write_dimension_lr_table(&mut html, r);
-    sections::write_checkpoint_chain(&mut html, r);
-    sections::write_forgery_resistance(&mut html, r);
-    sections::write_flags(&mut html, r);
-    sections::write_scope(&mut html, r);
-    sections::write_analyzed_text(&mut html, r);
-    sections::write_verification_instructions(&mut html);
-    sections::write_footer(&mut html, r);
-    let _ = write!(html, "</div></body></html>");
+    // Writing to a String is infallible (fmt::Write for String never fails),
+    // but we propagate fmt::Result for correctness via a helper.
+    let _ = render_html_inner(&mut html, r);
     html
+}
+
+fn render_html_inner(html: &mut String, r: &WarReport) -> std::fmt::Result {
+    css::write_head(html, r)?;
+    sections::write_header(html, r)?;
+    sections::write_verdict(html, r)?;
+    sections::write_enfsi_scale(html, r)?;
+    sections::write_chain_of_custody(html, r)?;
+    sections::write_category_scores(html, r)?;
+    sections::write_session_timeline(html, r)?;
+    sections::write_process_evidence(html, r)?;
+    sections::write_dimension_analysis(html, r)?;
+    sections::write_statistical_methodology(html, r)?;
+    sections::write_dimension_lr_table(html, r)?;
+    sections::write_checkpoint_chain(html, r)?;
+    sections::write_forgery_resistance(html, r)?;
+    sections::write_flags(html, r)?;
+    sections::write_scope(html, r)?;
+    sections::write_analyzed_text(html, r)?;
+    sections::write_verification_instructions(html)?;
+    sections::write_footer(html, r)?;
+    write!(html, "</div></body></html>")
 }

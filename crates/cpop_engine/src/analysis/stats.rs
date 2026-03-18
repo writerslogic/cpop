@@ -50,6 +50,45 @@ pub fn bhattacharyya_coefficient(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(&x, &y)| (x * y).sqrt()).sum()
 }
 
+/// Normalize a histogram in place so entries sum to 1.0.
+///
+/// If the histogram sums to zero (or negative), it is left unchanged.
+pub fn normalize_histogram(hist: &mut [f64]) {
+    let total: f64 = hist.iter().sum();
+    if total > 0.0 {
+        for h in hist {
+            *h /= total;
+        }
+    }
+}
+
+/// Weighted merge of histogram `b` into `a`: `a[i] = a[i] * a_weight + b[i] * b_weight`.
+///
+/// Only the overlapping range `min(a.len(), b.len())` is updated.
+pub fn merge_histogram(a: &mut [f64], b: &[f64], a_weight: f64, b_weight: f64) {
+    for i in 0..a.len().min(b.len()) {
+        a[i] = a[i] * a_weight + b[i] * b_weight;
+    }
+}
+
+/// Cosine similarity between two f64 slices.
+///
+/// Returns 0.0 if either vector has zero magnitude.
+pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
+    let mut dot = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    for (&fa, &fb) in a.iter().zip(b.iter()) {
+        dot += fa * fb;
+        norm_a += fa * fa;
+        norm_b += fb * fb;
+    }
+    if norm_a <= 0.0 || norm_b <= 0.0 {
+        return 0.0;
+    }
+    dot / (norm_a.sqrt() * norm_b.sqrt())
+}
+
 /// Relative similarity: 1.0 when both zero, else `1 - |a-b|/(a+b+ε)`.
 pub fn relative_similarity(a: f64, b: f64) -> f64 {
     if a == 0.0 && b == 0.0 {

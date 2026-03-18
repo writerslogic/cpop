@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use std::fmt::Write;
+use std::fmt::{self, Write};
 
-pub(super) fn row(html: &mut String, label: &str, value: &str) {
-    let _ = write!(
+pub(super) fn row(html: &mut String, label: &str, value: &str) -> fmt::Result {
+    write!(
         html,
         "<tr><td>{}</td><td>{}</td></tr>",
         label,
         html_escape(value)
-    );
+    )
 }
 
 pub(super) fn html_escape(s: &str) -> String {
