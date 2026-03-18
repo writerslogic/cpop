@@ -59,3 +59,5 @@ docs/demo-script.md
 apps/cpop_macos/
 apps/cpop_windows/
 staging/
+t.txt.*
+test.txt.*
