@@ -228,7 +228,7 @@ Windows app: independent of engine groups (separate C# codebase)
   Files: `war/profiles/vc.rs:96,125`, `war/profiles/c2pa.rs:86,129,134`
   Fix: Extract `TrustVectorSerialized` struct, `tier_from_trust_vector()`, `prepare_ear_attestation_data()`. Effort: small
 
-- [ ] **SYS-029** `histogram_stats_scattered` — 4+ files — MEDIUM
+- [x] **SYS-029** `histogram_stats_scattered` — 4+ files — MEDIUM
   <!-- pid:duplicated_logic | verified:true | first:2026-03-11 -->
   Histogram normalization, cosine similarity, percentile computation, and merge utilities defined independently in fingerprint and jitter modules.
   Files: `fingerprint/activity.rs:751` (normalize/merge), `jitter/profile.rs:100` (cosine similarity), `fingerprint/voice.rs:432` (bhattacharyya with f32→f64 alloc), `evidence/builder.rs:551` (5x select_nth_unstable)
@@ -675,7 +675,7 @@ Windows app: independent of engine groups (separate C# codebase)
 
 ### Code Quality HIGH (2026-03-11)
 
-- [ ] **H-135** `[code_quality]` `report/html.rs:1-1082` — God module: 1082 lines of monolithic HTML generation with 50+ `write!` results ignored
+- [x] **H-135** `[code_quality]` `report/html.rs:1-1082` — God module: 1082 lines of monolithic HTML generation with 50+ `write!` results ignored
   <!-- pid:god_module | verified:true | first:2026-03-11 -->
   Impact: Silent formatting failures, untestable sections | Fix: Split into `write_header()`, `write_timeline()`, `write_forensics()`, `write_css()` | Effort: medium
 
