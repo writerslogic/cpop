@@ -168,7 +168,7 @@ fn maybe_auto_init(cli: &Cli, out: &OutputMode) -> Result<()> {
 }
 
 fn print_manual() {
-    Cli::command().print_long_help().unwrap();
+    let _ = Cli::command().print_long_help();
 }
 
 async fn interactive_menu(out: &OutputMode) -> Result<()> {

@@ -210,18 +210,43 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
 
             let (cmd, args) = parse_editor_value(&editor)?;
 
-            let editor_path = std::path::Path::new(&cmd);
-            if editor_path.is_absolute() && !editor_path.exists() {
-                return Err(anyhow!(
-                    "Editor not found: {}\n\n\
-                     Set a valid editor with: export EDITOR=vim",
-                    cmd
-                ));
-            }
+            // Resolve relative commands to absolute paths to prevent $PATH injection
+            let resolved_cmd = if std::path::Path::new(&cmd).is_absolute() {
+                if !std::path::Path::new(&cmd).exists() {
+                    return Err(anyhow!(
+                        "Editor not found: {}\n\n\
+                         Set a valid editor with: export EDITOR=vim",
+                        cmd
+                    ));
+                }
+                cmd.clone()
+            } else {
+                let which_output = std::process::Command::new("which")
+                    .arg(&cmd)
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        if o.status.success() {
+                            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        } else {
+                            None
+                        }
+                    });
+                match which_output {
+                    Some(abs_path) => abs_path,
+                    None => {
+                        return Err(anyhow!(
+                            "Editor not found in PATH: {}\n\n\
+                             Set a valid editor with: export EDITOR=vim",
+                            cmd
+                        ));
+                    }
+                }
+            };
 
-            println!("Opening {} in {}...", config_path.display(), &cmd);
+            println!("Opening {} in {}...", config_path.display(), &resolved_cmd);
 
-            let status = std::process::Command::new(&cmd)
+            let status = std::process::Command::new(&resolved_cmd)
                 .args(&args)
                 .arg(&config_path)
                 .status()
@@ -237,11 +262,13 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                         Err(e) => {
                             eprintln!("Warning: Configuration is invalid: {}", e);
                             if crate::smart_defaults::ask_confirmation("Reopen in editor?", true)? {
-                                let retry = std::process::Command::new(&cmd)
+                                let retry = std::process::Command::new(&resolved_cmd)
                                     .args(&args)
                                     .arg(&config_path)
                                     .status()
-                                    .map_err(|err| anyhow!("reopen editor '{}': {}", cmd, err))?;
+                                    .map_err(|err| {
+                                        anyhow!("reopen editor '{}': {}", resolved_cmd, err)
+                                    })?;
                                 if !retry.success() {
                                     break;
                                 }

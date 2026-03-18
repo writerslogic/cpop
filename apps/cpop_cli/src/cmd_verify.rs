@@ -320,9 +320,7 @@ pub(crate) fn cmd_verify(
             }
             return Err(anyhow!("Verification failed"));
         }
-    } else if !matches!(ext, "db" | "sqlite") {
-        return Err(anyhow!("Unsupported file format: {}", file_path.display()));
-    } else {
+    } else if matches!(ext, "db" | "sqlite") {
         let key_path = match key {
             Some(k) => k,
             None => writersproof_dir()?.join("signing_key"),
@@ -343,11 +341,15 @@ pub(crate) fn cmd_verify(
                 anyhow!("read signing key: {}", e)
             }
         })?);
-        if key_data.len() < 32 {
+        if key_data.len() != 32 && key_data.len() != 64 {
             anyhow::bail!(
-                "Invalid signing key: expected at least 32 bytes, got {}",
+                "Invalid signing key: expected 32 bytes (seed) or 64 bytes (keypair), got {}",
                 key_data.len()
             );
+        }
+        if key_data.len() == 64 {
+            // Ed25519 keypair (seed + public): use seed half for HMAC derivation
+            eprintln!("Note: 64-byte key detected (Ed25519 keypair); using first 32 bytes (seed) for HMAC.");
         }
         let hmac_key = derive_hmac_key(&key_data[..32]);
 
@@ -383,6 +385,11 @@ pub(crate) fn cmd_verify(
                 return Err(anyhow!("Verification failed"));
             }
         }
+    } else {
+        return Err(anyhow!(
+            "Unknown file format '{}'. Expected .json, .cpop, .cwar, or .db",
+            ext
+        ));
     }
 
     Ok(())

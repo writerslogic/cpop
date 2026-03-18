@@ -253,7 +253,10 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
 
-    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    let mut session_lock = session().lock().unwrap_or_else(|p| {
+        eprintln!("Warning: session lock poisoned, recovering");
+        p.into_inner()
+    });
 
     if let Some(prev) = session_lock.take() {
         eprintln!(
@@ -306,7 +309,11 @@ fn handle_checkpoint(
     commitment: Option<String>,
     ordinal: Option<u64>,
 ) -> Response {
-    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    // Poison recovery — see handle_start_session for logging rationale
+    let mut session_lock = session().lock().unwrap_or_else(|p| {
+        eprintln!("Warning: session lock poisoned, recovering");
+        p.into_inner()
+    });
     let session = match session_lock.as_mut() {
         Some(s) => s,
         None => {
@@ -470,7 +477,11 @@ fn compute_commitment(
 }
 
 fn handle_stop_session() -> Response {
-    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    // Poison recovery — see handle_start_session for logging rationale
+    let mut session_lock = session().lock().unwrap_or_else(|p| {
+        eprintln!("Warning: session lock poisoned, recovering");
+        p.into_inner()
+    });
     let session = match session_lock.take() {
         Some(s) => s,
         None => {
@@ -506,7 +517,11 @@ fn handle_stop_session() -> Response {
 
 fn handle_get_status() -> Response {
     let status = cpop_engine::ffi::ffi_get_status();
-    let session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    // Poison recovery — see handle_start_session for logging rationale
+    let session_lock = session().lock().unwrap_or_else(|p| {
+        eprintln!("Warning: session lock poisoned, recovering");
+        p.into_inner()
+    });
 
     Response::Status {
         initialized: status.initialized,
@@ -540,7 +555,11 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
         };
     }
 
-    let mut session_lock = session().lock().unwrap_or_else(|p| p.into_inner());
+    // Poison recovery — see handle_start_session for logging rationale
+    let mut session_lock = session().lock().unwrap_or_else(|p| {
+        eprintln!("Warning: session lock poisoned, recovering");
+        p.into_inner()
+    });
     let session = match session_lock.as_mut() {
         Some(s) => s,
         None => {

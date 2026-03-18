@@ -19,7 +19,8 @@ use cpop_engine::war;
 
 use crate::output::OutputMode;
 use crate::spec::{
-    attestation_tier_value, content_tier_from_cli, profile_uri_from_cli, MIN_CHECKPOINTS_PER_PACKET,
+    attestation_tier_value, content_tier_from_cli, profile_uri_from_cli,
+    MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI,
 };
 use crate::util::{
     ensure_dirs, load_signing_key, load_vdf_params, open_secure_store, validate_session_id,
@@ -292,7 +293,16 @@ fn find_matching_session(tracking_dir: &Path, abs_path_str: &str) -> Option<Stri
                 .and_then(|v| v.as_str())
                 .is_some_and(|dp| dp == abs_path_str)
         } else {
-            content.contains(abs_path_str)
+            let has_session_ext = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(".session.json"));
+            if !has_session_ext {
+                false
+            } else {
+                eprintln!("Warning: Session file is not valid JSON, using string matching (less reliable)");
+                content.contains(abs_path_str)
+            }
         };
         if matches {
             if let Ok(modified) = meta.modified() {
@@ -729,7 +739,7 @@ fn build_wire_packet_from_events(
 
     Ok(cpop_engine::EvidencePacketWire {
         version: 1,
-        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
+        profile_uri: PROFILE_URI.to_string(),
         packet_id,
         created: chrono::Utc::now().timestamp_millis() as u64,
         document,

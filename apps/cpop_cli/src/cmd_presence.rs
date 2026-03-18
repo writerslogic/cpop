@@ -101,11 +101,9 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
                     )
                 })
                 .count();
-            debug_assert_eq!(
-                passed_count + failed_count + missed_count,
-                total_count,
-                "challenge counters must sum to total"
-            );
+            if passed_count + failed_count + missed_count != total_count {
+                eprintln!("Warning: challenge counter mismatch");
+            }
             session.challenges_issued = total_count as i32;
             session.challenges_passed = passed_count as i32;
             session.challenges_failed = failed_count as i32;

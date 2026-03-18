@@ -370,9 +370,10 @@ fn finalize_session(
     }
 
     let (duration, keystroke_count, sample_count) = {
-        let mut s = session
-            .lock()
-            .map_err(|_| anyhow!("Session lock poisoned"))?;
+        let mut s = session.lock().unwrap_or_else(|p| {
+            eprintln!("Warning: session lock was poisoned, recovering state");
+            p.into_inner()
+        });
         s.end();
         s.save(session_path)
             .map_err(|e| anyhow!("Error saving session: {}", e))?;
@@ -531,6 +532,12 @@ async fn cmd_track_start(
     let total_initial: u32 = checkpoint_counts.values().sum();
     if total_initial > 0 {
         println!("Created {} initial checkpoint(s).", total_initial);
+    } else if !initial_files.is_empty() {
+        eprintln!(
+            "Warning: Failed to create any initial checkpoints ({} files attempted). \
+             Check file permissions.",
+            initial_files.len()
+        );
     }
 
     let running = Arc::new(AtomicBool::new(true));
@@ -566,17 +573,23 @@ async fn cmd_track_start(
             Ok(event) => {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     for path in &event.paths {
+                        // Resolve symlinks to prevent symlink attacks
+                        let canonical = match fs::canonicalize(path) {
+                            Ok(p) => p,
+                            Err(_) => continue, // file may have been deleted
+                        };
+
                         // For single file, match exactly; for dirs, check containment + trackability
                         let should_track = if target.is_single_file() {
-                            path == target.root()
+                            canonical == target.root() || path == target.root()
                         } else if glob_patterns.is_empty() {
-                            is_within_target(path, &target)
-                                && path.is_file()
-                                && should_track_file(path)
+                            is_within_target(&canonical, &target)
+                                && canonical.is_file()
+                                && should_track_file(&canonical)
                         } else {
-                            is_within_target(path, &target)
-                                && path.is_file()
-                                && matches_patterns(path, &glob_patterns)
+                            is_within_target(&canonical, &target)
+                                && canonical.is_file()
+                                && matches_patterns(&canonical, &glob_patterns)
                         };
 
                         if !should_track {
@@ -584,29 +597,33 @@ async fn cmd_track_start(
                         }
 
                         let now = Instant::now();
-                        if let Some(last) = last_checkpoint_map.get(path) {
+                        if let Some(last) = last_checkpoint_map.get(&canonical) {
                             if now.duration_since(*last) < debounce {
                                 continue;
                             }
                         }
 
                         match auto_checkpoint_file(
-                            path,
+                            &canonical,
                             &mut db,
                             &vdf_params,
                             &device_id,
                             &machine_id,
                         ) {
                             Ok(true) => {
-                                *checkpoint_counts.entry(path.clone()).or_insert(0) += 1;
-                                last_checkpoint_map.insert(path.clone(), now);
+                                *checkpoint_counts.entry(canonical.clone()).or_insert(0) += 1;
+                                last_checkpoint_map.insert(canonical.clone(), now);
+                                if last_checkpoint_map.len() > 1000 {
+                                    let cutoff = Instant::now() - Duration::from_secs(300);
+                                    last_checkpoint_map.retain(|_, &mut v| v > cutoff);
+                                }
                                 let total: u32 = checkpoint_counts.values().sum();
                                 let ks = session.lock().map(|s| s.keystroke_count()).unwrap_or(0);
                                 let file_display = if target.is_single_file() {
                                     format!("{} keystrokes", ks)
                                 } else {
                                     let name =
-                                        path.file_name().unwrap_or_default().to_string_lossy();
+                                        canonical.file_name().unwrap_or_default().to_string_lossy();
                                     format!("{} — {} keystrokes", name, ks)
                                 };
                                 println!(
