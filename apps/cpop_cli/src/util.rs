@@ -8,7 +8,7 @@ use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// 500 MB — maximum allowed file size.
 pub(crate) const MAX_FILE_SIZE: u64 = 500_000_000;
@@ -110,24 +110,19 @@ pub fn open_secure_store() -> Result<SecureStore> {
     let db_path = dir.join("events.db");
 
     if let Ok(Some(hmac_key)) = cpop_engine::identity::SecureStorage::load_hmac_key() {
-        let mut key_vec = hmac_key.to_vec();
-        let result = SecureStore::open(&db_path, key_vec.clone())
+        let key_vec = Zeroizing::new(hmac_key.to_vec());
+        return SecureStore::open(&db_path, (*key_vec).clone())
             .map_err(|e| anyhow!("Database error: {}", e));
-        key_vec.zeroize();
-        return result;
     }
 
     let signing_key = load_signing_key(&dir)?;
-    let mut hmac_key = derive_hmac_key(&signing_key.to_bytes());
+    let hmac_key = Zeroizing::new(derive_hmac_key(&signing_key.to_bytes()));
 
     if let Err(e) = cpop_engine::identity::SecureStorage::save_hmac_key(&hmac_key) {
         eprintln!("Warning: HMAC key migration: {}", e);
     }
 
-    let result =
-        SecureStore::open(&db_path, hmac_key.clone()).map_err(|e| anyhow!("Database error: {}", e));
-    hmac_key.zeroize();
-    result
+    SecureStore::open(&db_path, (*hmac_key).clone()).map_err(|e| anyhow!("Database error: {}", e))
 }
 
 pub fn get_device_id() -> Result<[u8; 16]> {

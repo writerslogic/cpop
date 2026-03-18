@@ -371,12 +371,25 @@ fn handle_checkpoint(
         }
     }
 
-    if now_ns <= session.last_checkpoint_ts {
+    // Allow up to 1 second backward tolerance for NTP clock adjustments.
+    // SystemTime is not monotonic — laptops waking from sleep commonly see
+    // small backward jumps. Reject only large backward jumps (>1s).
+    const CLOCK_TOLERANCE_NS: u64 = 1_000_000_000;
+    if now_ns
+        < session
+            .last_checkpoint_ts
+            .saturating_sub(CLOCK_TOLERANCE_NS)
+    {
         return Response::Error {
-            message: "Non-monotonic timestamp detected: clock moved backward".into(),
+            message: format!(
+                "Non-monotonic timestamp detected: clock moved backward by {:.1}s",
+                (session.last_checkpoint_ts - now_ns) as f64 / 1e9
+            ),
             code: "TIMESTAMP_NON_MONOTONIC".into(),
         };
     }
+    // Ensure stored timestamp never goes backward even with tolerance.
+    let now_ns = now_ns.max(session.last_checkpoint_ts + 1);
 
     if char_count < session.last_char_count {
         return Response::Error {

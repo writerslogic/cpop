@@ -346,6 +346,14 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
         if kh.checkpoint_signatures.len() > 1 {
             // Verify each signature references a valid ratchet key
             for sig in &kh.checkpoint_signatures {
+                if sig.ratchet_index < 0 {
+                    signing_key_consistent = false;
+                    warnings.push(format!(
+                        "Checkpoint {} has negative ratchet index {}",
+                        sig.ordinal, sig.ratchet_index
+                    ));
+                    break;
+                }
                 let idx = sig.ratchet_index as usize;
                 if idx >= kh.ratchet_public_keys.len() {
                     signing_key_consistent = false;
@@ -466,8 +474,12 @@ fn run_forensics(
         &context,
     );
 
-    // Per-checkpoint analysis
-    let per_cp = if packet.checkpoints.len() >= 2 && !events.is_empty() {
+    // Per-checkpoint analysis — only valid when events have real timestamps.
+    // Events derived from behavioral edit_topology have timestamp_ns: 0, which
+    // would bucket all events into the first checkpoint interval and produce
+    // meaningless results. Only run when keystroke data provides real timestamps.
+    let events_have_timestamps = events.iter().any(|e| e.timestamp_ns > 0);
+    let per_cp = if packet.checkpoints.len() >= 2 && events_have_timestamps {
         let result = per_checkpoint_flags(&events, &packet.checkpoints);
         if result.suspicious {
             warnings.push(format!(
@@ -539,6 +551,15 @@ fn compute_verdict(
     // Unsigned packet → can only be "likely human" at best
     if signature.is_none() {
         return ForensicVerdict::V2LikelyHuman;
+    }
+
+    // Signed packet with valid signature, plausible duration, consistent key
+    // provenance, and no suspicious flags → verified human.
+    if signature == Some(true)
+        && key_provenance.signing_key_consistent
+        && key_provenance.hierarchy_consistent != Some(false)
+    {
+        return ForensicVerdict::V1VerifiedHuman;
     }
 
     ForensicVerdict::V2LikelyHuman
