@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-03-18
+
+### Fixed
+- `cpop export -f cpop` crash — CBOR export path now builds from secure store
+- `cpop --version` showed `cpop_cli` instead of `cpop`
+- `cpop export --json` silently ignored — now outputs machine-readable JSON
+- `--quiet` and `--json` suppress "Basic tier" warning on stderr
+- Jitter bridge tests compile error (missing `Duration` import)
+- `MAX_JITTER_INTERVALS` private import from cpop-protocol 0.1.0
+- HTML report copyright: "CPOP, Inc." → "WritersLogic"
+
+### Added
+- `verification_url` field in JSON evidence packets
+- "How to Verify This Evidence" section in HTML reports
+- Verification URL printed after every successful export
+- `config set` accepts `yes`/`no`/`1`/`0` for booleans
+- Commit warns when checkpoint count < 3 (export minimum)
+- `status` suggests `cpop init` when uninitialized
+
+### Changed
+- Product data directory: `~/.writerslogic` → `~/.writersproof`
+- Config file: `writerslogic.json` → `writersproof.json`
+- Media type: `application/vnd.writersproof.cpop+cbor` (IANA vendor tree)
+- Scoop manifest filename: `writersproof.json`
+
 ## [1.0.2] - 2026-03-17
 
 ### Changed
