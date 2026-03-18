@@ -19,7 +19,7 @@ use cpop_protocol::rfc::{BiologyInvariantClaim, JitterBinding, TimeEvidence};
 
 use crate::platform::HidDeviceInfo;
 
-use super::serde_helpers::{
+use crate::serde_utils::{
     deserialize_optional_nonce, deserialize_optional_pubkey, deserialize_optional_signature,
     serialize_optional_nonce, serialize_optional_pubkey, serialize_optional_signature,
 };

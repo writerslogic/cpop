@@ -6,6 +6,7 @@
 //! independently verifiable.
 
 pub mod appraisal;
+pub mod common;
 pub mod compat;
 pub mod ear;
 pub mod encoding;

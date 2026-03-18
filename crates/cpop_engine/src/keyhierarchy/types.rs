@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::KeyHierarchyError;
-use super::serde_helpers::serde_array_64;
+use crate::serde_utils::serde_array_64;
 
 pub const VERSION: u32 = 1;
 

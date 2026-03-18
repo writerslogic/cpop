@@ -7,7 +7,6 @@ pub mod manager;
 pub mod migration;
 pub mod puf;
 pub mod recovery;
-pub(crate) mod serde_helpers;
 pub mod session;
 pub mod types;
 pub mod verification;

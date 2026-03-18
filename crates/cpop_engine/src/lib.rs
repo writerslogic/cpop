@@ -40,6 +40,7 @@ mod rfc_conversions;
 pub mod sealed_chain;
 pub mod sealed_identity;
 pub mod sentinel;
+pub mod serde_utils;
 pub mod steganography;
 pub mod store;
 pub mod timing;

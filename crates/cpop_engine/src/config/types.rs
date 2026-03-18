@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::defaults::*;
+use super::defaults;
 use crate::vdf::params::Parameters as VdfParameters;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -9,50 +9,46 @@ use std::path::{Path, PathBuf};
 
 /// Top-level engine configuration with subsystem settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CpopConfig {
-    #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
-
-    #[serde(default = "default_watch_dirs")]
     pub watch_dirs: Vec<PathBuf>,
-
-    #[serde(default = "default_retention_days")]
     pub retention_days: u32,
-
-    #[serde(default)]
     pub presence: PresenceConfig,
-
-    #[serde(default)]
     pub vdf: VdfConfig,
-
-    #[serde(default)]
     pub sentinel: SentinelConfig,
-
-    #[serde(default)]
     pub research: ResearchConfig,
-
-    #[serde(default)]
     pub fingerprint: FingerprintConfig,
-
-    #[serde(default)]
     pub privacy: PrivacyConfig,
-
-    #[serde(default)]
     pub writersproof: WritersProofConfig,
+}
+
+impl Default for CpopConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: defaults::default_data_dir(),
+            watch_dirs: defaults::default_watch_dirs(),
+            retention_days: 30,
+            presence: PresenceConfig::default(),
+            vdf: VdfConfig::default(),
+            sentinel: SentinelConfig::default(),
+            research: ResearchConfig::default(),
+            fingerprint: FingerprintConfig::default(),
+            privacy: PrivacyConfig::default(),
+            writersproof: WritersProofConfig::default(),
+        }
+    }
 }
 
 /// WritersProof external trust anchor integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WritersProofConfig {
-    #[serde(default = "default_false")]
     pub enabled: bool,
-    #[serde(default = "default_writersproof_url")]
     pub base_url: String,
     /// Auto-submit evidence on export
-    #[serde(default = "default_false")]
     pub auto_attest: bool,
     /// Queue attestations when offline
-    #[serde(default = "default_true")]
     pub offline_queue: bool,
 }
 
@@ -60,7 +56,7 @@ impl Default for WritersProofConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: default_writersproof_url(),
+            base_url: "https://api.writersproof.com".to_string(),
             auto_attest: false,
             offline_queue: true,
         }
@@ -68,23 +64,15 @@ impl Default for WritersProofConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FingerprintConfig {
     /// Typing dynamics (captures HOW you type, not WHAT)
-    #[serde(default = "default_true")]
     pub activity_enabled: bool,
-
     /// Writing style analysis (requires explicit consent)
-    #[serde(default = "default_false")]
     pub voice_enabled: bool,
-
-    #[serde(default = "default_fingerprint_retention")]
     pub retention_days: u32,
-
     /// Minimum samples before creating a profile
-    #[serde(default = "default_min_fingerprint_samples")]
     pub min_samples: u32,
-
-    #[serde(default = "default_fingerprint_dir")]
     pub storage_path: PathBuf,
 }
 
@@ -95,25 +83,22 @@ impl Default for FingerprintConfig {
             voice_enabled: false,
             retention_days: 365,
             min_samples: 100,
-            storage_path: default_fingerprint_dir(),
+            storage_path: dirs::home_dir()
+                .expect("cannot determine home directory; refusing to use insecure fallback path")
+                .join(".writersproof")
+                .join("fingerprints"),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PrivacyConfig {
     /// Skip password fields and similar sensitive inputs
-    #[serde(default = "default_true")]
     pub detect_sensitive_fields: bool,
-
-    #[serde(default = "default_true")]
     pub hash_urls: bool,
-
-    #[serde(default = "default_true")]
     pub obfuscate_titles: bool,
-
     /// Apps that are never tracked
-    #[serde(default = "default_privacy_excluded")]
     pub excluded_apps: Vec<String>,
 }
 
@@ -123,32 +108,27 @@ impl Default for PrivacyConfig {
             detect_sensitive_fields: true,
             hash_urls: true,
             obfuscate_titles: true,
-            excluded_apps: default_privacy_excluded(),
+            excluded_apps: vec![
+                "1Password".to_string(),
+                "Keychain Access".to_string(),
+                "System Preferences".to_string(),
+                "Terminal".to_string(),
+            ],
         }
     }
 }
 
 /// Opt-in anonymous research data contribution (anonymized jitter timing).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ResearchConfig {
     /// Must be explicitly enabled by user
-    #[serde(default = "default_false")]
     pub contribute_to_research: bool,
-
-    #[serde(default = "default_research_dir")]
     pub research_data_dir: PathBuf,
-
-    #[serde(default = "default_max_research_sessions")]
     pub max_sessions: usize,
-
-    #[serde(default = "default_min_samples_for_research")]
     pub min_samples_per_session: usize,
-
     /// Default: 4 hours
-    #[serde(default = "default_upload_interval")]
     pub upload_interval_secs: u64,
-
-    #[serde(default = "default_true")]
     pub auto_upload: bool,
 }
 
@@ -156,86 +136,70 @@ impl Default for ResearchConfig {
     fn default() -> Self {
         Self {
             contribute_to_research: false,
-            research_data_dir: default_research_dir(),
-            max_sessions: default_max_research_sessions(),
-            min_samples_per_session: default_min_samples_for_research(),
-            upload_interval_secs: default_upload_interval(),
+            research_data_dir: dirs::home_dir()
+                .expect("cannot determine home directory; refusing to use insecure fallback path")
+                .join(".writersproof")
+                .join("research"),
+            max_sessions: 100,
+            min_samples_per_session: 10,
+            upload_interval_secs: 4 * 60 * 60,
             auto_upload: true,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PresenceConfig {
-    #[serde(default = "default_interval")]
     pub challenge_interval_secs: u64,
-    #[serde(default = "default_window")]
     pub response_window_secs: u64,
 }
 
 impl Default for PresenceConfig {
     fn default() -> Self {
         Self {
-            challenge_interval_secs: default_interval(),
-            response_window_secs: default_window(),
+            challenge_interval_secs: 600,
+            response_window_secs: 60,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct VdfConfig {
-    #[serde(default = "default_ips")]
     pub iterations_per_second: u64,
-    #[serde(default = "default_min_iter")]
     pub min_iterations: u64,
-    #[serde(default = "default_max_iter")]
     pub max_iterations: u64,
 }
 
 impl Default for VdfConfig {
     fn default() -> Self {
         Self {
-            iterations_per_second: default_ips(),
-            min_iterations: default_min_iter(),
-            max_iterations: default_max_iter(),
+            iterations_per_second: 1_000_000,
+            min_iterations: 100_000,
+            max_iterations: 3_600_000_000,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SentinelConfig {
-    #[serde(default = "default_false")]
     pub auto_start: bool,
-    #[serde(default = "default_heartbeat")]
     pub heartbeat_interval_secs: u64,
-    #[serde(default = "default_checkpoint")]
     pub checkpoint_interval_secs: u64,
-
-    #[serde(default = "default_writersproof_dir")]
     pub writersproof_dir: PathBuf,
-    #[serde(default)]
     pub shadow_dir: PathBuf,
-    #[serde(default)]
     pub wal_dir: PathBuf,
-    #[serde(default)]
     pub watch_paths: Vec<PathBuf>,
-    #[serde(default = "default_true")]
     pub recursive_watch: bool,
-    #[serde(default = "default_debounce")]
     pub debounce_duration_ms: u64,
-    #[serde(default = "default_idle")]
     pub idle_timeout_secs: u64,
-    #[serde(default)]
     pub allowed_apps: Vec<String>,
-    #[serde(default)]
     pub blocked_apps: Vec<String>,
-    #[serde(default = "default_true")]
     pub track_unknown_apps: bool,
-    #[serde(default = "default_true")]
     pub hash_on_focus: bool,
-    #[serde(default = "default_true")]
     pub hash_on_save: bool,
-    #[serde(default = "default_poll")]
     pub poll_interval_ms: u64,
 }
 
@@ -246,9 +210,9 @@ impl Default for SentinelConfig {
         let writersproof_dir = home.join(".writersproof");
 
         Self {
-            auto_start: default_false(),
-            heartbeat_interval_secs: default_heartbeat(),
-            checkpoint_interval_secs: default_checkpoint(),
+            auto_start: false,
+            heartbeat_interval_secs: 60,
+            checkpoint_interval_secs: 60,
             writersproof_dir: writersproof_dir.clone(),
             shadow_dir: writersproof_dir.join("shadow"),
             wal_dir: writersproof_dir.join("sentinel").join("wal"),
@@ -256,8 +220,33 @@ impl Default for SentinelConfig {
             recursive_watch: true,
             debounce_duration_ms: 500,
             idle_timeout_secs: 1800,
-            allowed_apps: default_allowed_apps(),
-            blocked_apps: default_blocked_apps(),
+            allowed_apps: vec![
+                // macOS
+                "com.apple.TextEdit".to_string(),
+                "com.apple.iWork.Pages".to_string(),
+                // MS Office
+                "com.microsoft.Word".to_string(),
+                "com.microsoft.Excel".to_string(),
+                "com.microsoft.Powerpoint".to_string(),
+                // Editors / IDEs
+                "code".to_string(),
+                "com.microsoft.VSCode".to_string(),
+                "com.sublimetext.4".to_string(),
+                "com.jetbrains.intellij".to_string(),
+                "com.googlecode.iterm2".to_string(),
+                "org.vim.MacVim".to_string(),
+                // Writing tools
+                "com.typora.Typora".to_string(),
+                "md.obsidian".to_string(),
+                "com.notion.Notion".to_string(),
+                // Browser-based (matched by app_name)
+                "Google Docs".to_string(),
+                "org.libreoffice.LibreOffice".to_string(),
+                // Linux terminals
+                "org.gnome.Terminal".to_string(),
+                "org.kde.konsole".to_string(),
+            ],
+            blocked_apps: vec!["com.apple.finder".to_string(), "explorer".to_string()],
             track_unknown_apps: true,
             hash_on_focus: true,
             hash_on_save: true,

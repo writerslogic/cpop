@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use super::defaults::*;
+use super::defaults;
 use super::types::*;
 use anyhow::Result;
 use std::fs;
@@ -62,8 +62,8 @@ impl CpopConfig {
     pub fn default_with_dir(data_dir: &Path) -> Self {
         Self {
             data_dir: data_dir.to_path_buf(),
-            watch_dirs: default_watch_dirs(),
-            retention_days: default_retention_days(),
+            watch_dirs: defaults::default_watch_dirs(),
+            retention_days: 30,
             presence: PresenceConfig::default(),
             vdf: VdfConfig::default(),
             sentinel: SentinelConfig::default(),

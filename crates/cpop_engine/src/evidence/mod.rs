@@ -5,7 +5,6 @@
 mod builder;
 mod packet;
 mod rfc_conversion;
-mod serde_helpers;
 #[cfg(test)]
 mod tests;
 mod types;
