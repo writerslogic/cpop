@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 /// SNR above this threshold across all windows indicates synthetic input.
 const SNR_SYNTHETIC_THRESHOLD_DB: f64 = 20.0;
 
+/// Maximum SNR value in dB to avoid infinity in serialized output.
+const MAX_SNR_DB: f64 = 100.0;
+
 /// Sliding window size in samples.
 const WINDOW_SIZE: usize = 32;
 
@@ -34,6 +37,9 @@ pub struct SnrAnalysis {
 /// Noise power = mean of window variances (high-frequency jitter).
 pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
     if iki_intervals_ns.len() < MIN_SAMPLES {
+        return None;
+    }
+    if iki_intervals_ns.iter().any(|x| !x.is_finite()) {
         return None;
     }
 
@@ -68,9 +74,9 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
     let noise_power = window_variances.iter().sum::<f64>() / window_variances.len() as f64;
 
     let snr_db = if noise_power > 0.0 {
-        10.0 * (signal_power / noise_power).log10()
+        (10.0 * (signal_power / noise_power).log10()).min(MAX_SNR_DB)
     } else {
-        f64::INFINITY
+        MAX_SNR_DB
     };
 
     // Per-window SNR
@@ -78,9 +84,9 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
         .iter()
         .map(|&var| {
             if var > 0.0 {
-                10.0 * (signal_power / var).log10()
+                (10.0 * (signal_power / var).log10()).min(MAX_SNR_DB)
             } else {
-                f64::INFINITY
+                MAX_SNR_DB
             }
         })
         .collect();

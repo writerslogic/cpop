@@ -19,6 +19,7 @@ use crate::vdf;
 use cpop_protocol::forensics::ForensicVerdict;
 
 /// Options controlling what the full verification pipeline checks.
+#[derive(Debug, Clone)]
 pub struct VerifyOptions {
     /// VDF parameters for structural/time proof verification.
     pub vdf_params: vdf::Parameters,
@@ -317,10 +318,19 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
             }
         }
 
-        // Check ratchet key indices are monotonic
+        // Check ratchet key indices are strictly monotonic and non-negative
         let mut prev_index = -1i64;
         for sig in &kh.checkpoint_signatures {
-            if (sig.ratchet_index as i64) < prev_index {
+            let idx = sig.ratchet_index as i64;
+            if idx < 0 {
+                ratchet_monotonic = false;
+                warnings.push(format!(
+                    "Ratchet index negative ({}) at checkpoint {}",
+                    idx, sig.ordinal
+                ));
+                break;
+            }
+            if idx <= prev_index {
                 ratchet_monotonic = false;
                 warnings.push(format!(
                     "Ratchet index non-monotonic at checkpoint {}",
@@ -328,7 +338,7 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
                 ));
                 break;
             }
-            prev_index = sig.ratchet_index as i64;
+            prev_index = idx;
         }
 
         // Check signing key consistency: all checkpoint signatures should use
@@ -551,8 +561,7 @@ fn base64_decode_len(s: &str) -> Option<usize> {
         .map(|b| b.len())
 }
 
-/// Constant for per-checkpoint suspicious threshold (re-exported for CLI).
-const PER_CHECKPOINT_SUSPICIOUS_THRESHOLD: f64 = 0.3;
+use crate::forensics::PER_CHECKPOINT_SUSPICIOUS_THRESHOLD;
 
 #[cfg(test)]
 mod tests {
