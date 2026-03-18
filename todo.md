@@ -194,7 +194,7 @@ Windows app: independent of engine groups (separate C# codebase)
 
 ### Code Quality Systemic (2026-03-11)
 
-- [ ] **SYS-024** `anchor_http_duplication` — 6 files — HIGH
+- [x] **SYS-024** `anchor_http_duplication` — 6 files — HIGH
   <!-- pid:duplicated_logic | verified:true | first:2026-03-11 -->
   HTTP client / JSON-RPC / request-building pattern duplicated across all anchor providers and WritersProof client.
   Files: `anchors/ethereum.rs:117`, `anchors/bitcoin.rs:51`, `anchors/rfc3161.rs:27`, `anchors/ots.rs:232`, `anchors/notary.rs:29`, `writersproof/client.rs:40`
@@ -206,7 +206,7 @@ Windows app: independent of engine groups (separate C# codebase)
   Files: `rfc/serde_helpers.rs` (120L), `rfc/wire_types/serde_helpers.rs` (104L), `evidence/serde_helpers.rs` (62L), `protocol/baseline.rs:123` (serde_bytes_opt), `anchors/types.rs:148,171,191` (3 near-identical modules)
   Fix: Consolidate into single `crate::serde_utils` module; re-export where needed. Effort: small
 
-- [ ] **SYS-026** `sentinel_ipc_code_duplication` — 8+ sites — HIGH
+- [x] **SYS-026** `sentinel_ipc_code_duplication` — 8+ sites — HIGH
   <!-- pid:duplicated_logic | verified:true | first:2026-03-11 -->
   Duplicated patterns across sentinel/IPC subsystems:
   - WAL append logic repeated 3x in `sentinel/helpers.rs` (lines 134, 222, and focus_document_sync)
@@ -239,7 +239,7 @@ Windows app: independent of engine groups (separate C# codebase)
   168 lines of trivial `default_*()` functions in `config/defaults.rs`, each duplicated via `impl Default` in `config/types.rs` (7 structs, ~70 lines of boilerplate).
   Fix: Use `#[serde(default = "fn")]` on fields directly; eliminate manual `impl Default` blocks. Effort: small
 
-- [ ] **SYS-031** `platform_enumerate_duplication` — 3+ files — MEDIUM
+- [x] **SYS-031** `platform_enumerate_duplication` — 3+ files — MEDIUM
 
 ### Residual Systemic (2026-03-12)
 
@@ -707,7 +707,7 @@ Windows app: independent of engine groups (separate C# codebase)
   <!-- pid:key_zeroize_error_path | verified:true | first:2026-03-11 -->
   Impact: Serialized plaintext held in memory before XOR mask applied | Fix: Use `Zeroizing<Vec<u8>>` for intermediate | Effort: medium
 
-- [ ] **H-143** `[code_quality]` `fingerprint/activity.rs:268` — 3 distribution types (IKI, Zone, Pause) with identical from_data/similarity/merge but no shared trait
+- [x] **H-143** `[code_quality]` `fingerprint/activity.rs:268` — 3 distribution types (IKI, Zone, Pause) with identical from_data/similarity/merge but no shared trait
   <!-- pid:duplicated_logic | verified:true | first:2026-03-11 -->
   Impact: 400+ lines of mechanical code; adding a distribution requires full copy-paste | Fix: `Distribution<T>` trait with generic methods | Effort: large
 
