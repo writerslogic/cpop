@@ -2,7 +2,7 @@
 
 //! Forensic authorship analysis: edit topology, keystroke cadence, and profile correlation.
 
-mod analysis;
+pub(crate) mod analysis;
 mod assessment;
 mod cadence;
 mod comparison;
