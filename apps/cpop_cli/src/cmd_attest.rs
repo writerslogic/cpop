@@ -102,7 +102,13 @@ pub(crate) fn cmd_attest(
         .to_string(),
         "compact" => result.compact_ref.clone(),
         "both" => format!("{}\n{}", result.war_block, result.compact_ref),
-        _ => result.war_block.clone(),
+        "war" | "war_block" | "" => result.war_block.clone(),
+        other => {
+            return Err(anyhow!(
+                "Unknown format: '{}'. Valid formats: war, compact, json, both",
+                other
+            ));
+        }
     };
 
     if let Some(out_path) = output {

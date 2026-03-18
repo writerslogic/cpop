@@ -77,10 +77,24 @@ pub(crate) fn cmd_commit(
     let last_event = events.last();
 
     let (vdf_input, size_delta): ([u8; 32], i32) = if let Some(last) = last_event {
-        let delta = (file_size - last.file_size).clamp(i32::MIN as i64, i32::MAX as i64);
+        let raw_delta = file_size - last.file_size;
+        if raw_delta < i32::MIN as i64 || raw_delta > i32::MAX as i64 {
+            eprintln!(
+                "Warning: Size delta {} exceeds i32 range, clamped to {}",
+                raw_delta,
+                raw_delta.clamp(i32::MIN as i64, i32::MAX as i64)
+            );
+        }
+        let delta = raw_delta.clamp(i32::MIN as i64, i32::MAX as i64);
         (last.event_hash, delta as i32)
     } else {
         // Genesis: VDF input is content hash
+        if file_size > i32::MAX as i64 {
+            eprintln!(
+                "Warning: File size {} exceeds i32 range for initial delta, clamped",
+                file_size
+            );
+        }
         (
             content_hash,
             file_size.clamp(i32::MIN as i64, i32::MAX as i64) as i32,

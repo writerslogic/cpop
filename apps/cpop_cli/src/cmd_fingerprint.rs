@@ -21,7 +21,7 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Re
                 .map_err(|e| anyhow!("consent manager: {}", e))?;
 
             let fp_status = manager.status();
-            let min_samples = config.fingerprint.min_samples as usize;
+            let min_samples = (config.fingerprint.min_samples as usize).max(1);
 
             if out.json {
                 let voice_consent = match consent_manager.status() {

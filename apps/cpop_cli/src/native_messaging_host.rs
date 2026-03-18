@@ -309,6 +309,17 @@ fn handle_checkpoint(
     commitment: Option<String>,
     ordinal: Option<u64>,
 ) -> Response {
+    // Validate content_hash is a 64-char hex string (SHA-256 = 32 bytes).
+    if content_hash.len() != 64 || !content_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Response::Error {
+            message: format!(
+                "Invalid content_hash: expected 64 hex characters, got {} chars",
+                content_hash.len()
+            ),
+            code: "INVALID_CONTENT_HASH".into(),
+        };
+    }
+
     // Poison recovery — see handle_start_session for logging rationale
     let mut session_lock = session().lock().unwrap_or_else(|p| {
         eprintln!("Warning: session lock poisoned, recovering");
@@ -593,9 +604,16 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
     const MAX_JITTER_INTERVALS: usize = 100_000;
     let accepted = valid.len();
     let remaining_cap = MAX_JITTER_INTERVALS.saturating_sub(session.jitter_intervals.len());
-    session
-        .jitter_intervals
-        .extend_from_slice(&valid[..accepted.min(remaining_cap)]);
+    let stored = accepted.min(remaining_cap);
+    session.jitter_intervals.extend_from_slice(&valid[..stored]);
+
+    if stored < accepted {
+        eprintln!(
+            "Jitter buffer full: dropped {} of {} accepted intervals",
+            accepted - stored,
+            accepted
+        );
+    }
 
     if !session.jitter_intervals.is_empty() {
         let stats = compute_jitter_stats(&session.jitter_intervals);
@@ -613,11 +631,11 @@ fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
     }
 
     eprintln!(
-        "Jitter: received {count}, accepted {accepted}, total {}",
+        "Jitter: received {count}, accepted {accepted}, stored {stored}, total {}",
         session.jitter_intervals.len()
     );
 
-    Response::JitterReceived { count: accepted }
+    Response::JitterReceived { count: stored }
 }
 
 struct JitterStats {

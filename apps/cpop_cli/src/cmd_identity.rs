@@ -147,17 +147,27 @@ pub(crate) fn cmd_identity(
                     eprintln!("Note: Mnemonic phrase is being written to a non-terminal.");
                     eprintln!("      Store it securely and delete the output when done.");
                 }
-                if let Ok(puf) = SoftwarePUF::new_with_path(&puf_seed_path) {
-                    if let Ok(mut words) = puf.get_mnemonic() {
-                        output["mnemonic"] = serde_json::Value::Array(
-                            words
-                                .split_whitespace()
-                                .map(|s| serde_json::Value::String(s.to_string()))
-                                .collect(),
-                        );
-                        words.zeroize();
+                match SoftwarePUF::new_with_path(&puf_seed_path) {
+                    Ok(puf) => match puf.get_mnemonic() {
+                        Ok(mut words) => {
+                            output["mnemonic"] = serde_json::Value::Array(
+                                words
+                                    .split_whitespace()
+                                    .map(|s| serde_json::Value::String(s.to_string()))
+                                    .collect(),
+                            );
+                            words.zeroize();
+                        }
+                        Err(e) => {
+                            output["mnemonic_error"] = serde_json::Value::String(format!("{}", e));
+                        }
+                    },
+                    Err(e) => {
+                        output["mnemonic_error"] = serde_json::Value::String(format!("{}", e));
                     }
                 }
+            } else {
+                output["mnemonic_error"] = serde_json::Value::String("PUF seed not found".into());
             }
         }
 

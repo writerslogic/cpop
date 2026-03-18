@@ -253,6 +253,8 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                 .map_err(|e| anyhow!("open editor '{}': {}", cmd, e))?;
 
             if status.success() {
+                const MAX_EDIT_RETRIES: u32 = 3;
+                let mut retries = 0;
                 loop {
                     match CpopConfig::load_or_default(&dir) {
                         Ok(_) => {
@@ -260,7 +262,16 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                             break;
                         }
                         Err(e) => {
+                            retries += 1;
                             eprintln!("Warning: Configuration is invalid: {}", e);
+                            if retries >= MAX_EDIT_RETRIES {
+                                eprintln!(
+                                    "Configuration still invalid after {} attempts. \
+                                     It may be ignored on next run.",
+                                    MAX_EDIT_RETRIES
+                                );
+                                break;
+                            }
                             if crate::smart_defaults::ask_confirmation("Reopen in editor?", true)? {
                                 let retry = std::process::Command::new(&resolved_cmd)
                                     .args(&args)

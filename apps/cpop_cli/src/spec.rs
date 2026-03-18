@@ -5,13 +5,21 @@ pub const EAT_PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
 pub const MIN_CHECKPOINTS_PER_PACKET: usize = 3;
 
 /// Map CLI tier name to CDDL content-tier: basic/standard=1, enhanced=2, maximum=3.
+///
+/// Logs a warning for unrecognized tier names and defaults to basic (1).
 pub fn content_tier_from_cli(tier: &str) -> u8 {
     match tier.to_lowercase().as_str() {
-        "basic" => 1,
-        "standard" => 1,
+        "basic" | "standard" => 1,
         "enhanced" => 2,
         "maximum" => 3,
-        _ => 1,
+        other => {
+            eprintln!(
+                "Warning: unknown content tier '{}', defaulting to 'basic'. \
+                 Valid tiers: basic, standard, enhanced, maximum",
+                other
+            );
+            1
+        }
     }
 }
 
