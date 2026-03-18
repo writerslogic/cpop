@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
 use anyhow::{anyhow, Context, Result};
+use fs2::FileExt;
 use std::fs;
 use std::io::{self, BufRead, Write};
-use std::time::SystemTime;
+use std::path::Path;
 
 use crate::cli::PresenceAction;
 use crate::output::OutputMode;
@@ -12,19 +13,55 @@ use cpop_engine::presence::{
     ChallengeStatus, Config as PresenceConfig, Session as PresenceSession, Verifier,
 };
 
-fn load_session(session_file: &std::path::Path) -> Result<(PresenceSession, Option<SystemTime>)> {
+/// Maximum time to wait for the session lock before giving up.
+const SESSION_LOCK_TIMEOUT_MS: u64 = 10_000;
+
+/// Interval between lock acquisition attempts.
+const SESSION_LOCK_POLL_MS: u64 = 100;
+
+/// Acquire an exclusive advisory lock on the session lock file, with timeout.
+fn acquire_session_lock(session_file: &Path) -> Result<fs::File> {
+    let lock_path = session_file.with_extension("lock");
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&lock_path)
+        .context("open session lock file")?;
+
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(SESSION_LOCK_TIMEOUT_MS);
+    let mut warned = false;
+    loop {
+        match lock_file.try_lock_exclusive() {
+            Ok(()) => return Ok(lock_file),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    && std::time::Instant::now() < deadline =>
+            {
+                if !warned {
+                    eprintln!("Waiting for session lock...");
+                    warned = true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(SESSION_LOCK_POLL_MS));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(anyhow!(
+                    "Could not acquire session lock after {}s: another process holds it",
+                    SESSION_LOCK_TIMEOUT_MS / 1000,
+                ));
+            }
+            Err(e) => {
+                return Err(anyhow!("Session lock failed: {}", e));
+            }
+        }
+    }
+}
+
+fn load_session(session_file: &std::path::Path) -> Result<PresenceSession> {
     let data = fs::read(session_file)
         .map_err(|_| anyhow!("No active session. Run 'cpop presence start' first."))?;
-    let mtime = match fs::metadata(session_file).and_then(|m| m.modified()) {
-        Ok(t) => Some(t),
-        Err(e) => {
-            eprintln!("Warning: could not read session mtime: {e}");
-            None
-        }
-    };
-    let session =
-        PresenceSession::decode(&data).map_err(|e| anyhow!("Error loading session: {}", e))?;
-    Ok((session, mtime))
+    PresenceSession::decode(&data).map_err(|e| anyhow!("Error loading session: {}", e))
 }
 
 fn save_session(session_file: &std::path::Path, session: &PresenceSession) -> Result<()> {
@@ -44,7 +81,10 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
 
     match action {
         PresenceAction::Start => {
+            let lock_file = acquire_session_lock(&session_file)?;
+
             if session_file.exists() {
+                drop(lock_file);
                 return Err(anyhow!(
                     "Session already active. Run 'cpop presence stop' first."
                 ));
@@ -56,6 +96,7 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
                 .map_err(|e| anyhow!("Error starting session: {}", e))?;
 
             save_session(&session_file, &session)?;
+            drop(lock_file);
 
             if out.json {
                 let obj = serde_json::json!({
@@ -72,10 +113,9 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
         }
 
         PresenceAction::Stop => {
-            let data = fs::read(&session_file).map_err(|_| anyhow!("No active session."))?;
+            let lock_file = acquire_session_lock(&session_file)?;
 
-            let mut session = PresenceSession::decode(&data)
-                .map_err(|e| anyhow!("Error loading session: {}", e))?;
+            let mut session = load_session(&session_file)?;
 
             session.active = false;
             session.end_time = Some(chrono::Utc::now());
@@ -122,6 +162,7 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
             fs::write(&tmp_path, &archive_data)?;
             fs::rename(&tmp_path, &archive_path)?;
             fs::remove_file(&session_file)?;
+            drop(lock_file);
 
             let duration = session
                 .end_time
@@ -190,11 +231,11 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
         }
 
         PresenceAction::Challenge => {
-            // Load session and record mtime for conflict detection
-            let (session, mtime_before) = load_session(&session_file)?;
+            // Load session under lock, issue challenge, then release lock
+            // during stdin interaction to avoid blocking other commands.
+            let lock_file = acquire_session_lock(&session_file)?;
+            let session = load_session(&session_file)?;
 
-            // Restore the persisted session into the verifier so challenges
-            // accumulate against the real session state.
             let mut verifier = Verifier::new(PresenceConfig::default());
             verifier
                 .restore_session(session)
@@ -203,6 +244,9 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
             let challenge = verifier
                 .issue_challenge()
                 .map_err(|e| anyhow!("Error issuing challenge: {}", e))?;
+
+            // Release lock during user interaction.
+            drop(lock_file);
 
             if !out.quiet && !out.json {
                 println!("=== Presence Challenge ===");
@@ -224,45 +268,28 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
                 .respond_to_challenge(&challenge_id, response)
                 .map_err(|e| anyhow!("Error: {}", e))?;
 
-            // Extract the updated session from the verifier
             let updated_session = verifier
                 .active_session()
                 .ok_or_else(|| anyhow!("Verifier lost session state"))?
                 .clone();
 
-            // Check for concurrent modification before saving.
-            // If either mtime is unknown, conservatively assume conflict.
-            let mtime_after = fs::metadata(&session_file).and_then(|m| m.modified()).ok();
+            // Re-acquire lock, re-read disk state, merge our challenge result.
+            let lock_file = acquire_session_lock(&session_file)?;
 
-            let conflict = match (mtime_before, mtime_after) {
-                (Some(before), Some(after)) => after != before,
-                _ => {
-                    eprintln!(
-                        "Warning: could not compare session mtimes; \
-                         assuming concurrent modification"
-                    );
-                    true
-                }
-            };
-
-            let final_session = if conflict {
-                // File was modified by another process — re-read and merge
-                // our new challenge result into the on-disk session.
-                let disk_data = fs::read(&session_file)
-                    .with_context(|| "re-read session after concurrent modification")?;
-                let mut disk_session = PresenceSession::decode(&disk_data)
-                    .map_err(|e| anyhow!("Error decoding modified session: {}", e))?;
-                // Append only the challenge we just issued (the last one the
-                // verifier recorded).
+            let final_session = if let Ok(disk_session) = load_session(&session_file) {
+                // Merge: append only our new challenge to the current disk state.
+                let mut merged = disk_session;
                 if let Some(our_challenge) = updated_session.challenges.last() {
-                    disk_session.challenges.push(our_challenge.clone());
+                    merged.challenges.push(our_challenge.clone());
                 }
-                disk_session
+                merged
             } else {
+                // Disk session gone (stopped?) — save our full state.
                 updated_session
             };
 
             save_session(&session_file, &final_session)?;
+            drop(lock_file);
 
             if out.json {
                 let obj = serde_json::json!({

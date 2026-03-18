@@ -7,6 +7,9 @@ use std::time::Duration;
 
 use crate::util::ensure_dirs;
 
+/// Grace period to detect immediate daemon startup failures.
+const DAEMON_STARTUP_GRACE_MS: u64 = 500;
+
 fn acquire_or_report(daemon_manager: &DaemonManager) -> Result<bool> {
     let acquired = daemon_manager
         .acquire_pid_file(std::process::id())
@@ -83,7 +86,7 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
             cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
         }
 
-        let child = match cmd.spawn() {
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 daemon_manager.cleanup();
@@ -93,8 +96,36 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
 
         let pid = child.id();
 
-        if let Err(e) = daemon_manager.write_pid_value(pid) {
-            eprintln!("Warning: failed to update PID file with child PID: {e}");
+        // Brief wait to detect immediate startup failures.
+        std::thread::sleep(Duration::from_millis(DAEMON_STARTUP_GRACE_MS));
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                daemon_manager.cleanup();
+                let log_hint = format!("Check log file: {}", log_path.display());
+                if status.success() {
+                    return Err(anyhow::anyhow!(
+                        "Daemon exited immediately (exit code 0). {log_hint}"
+                    ));
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Daemon failed to start (exit code {:?}). {log_hint}",
+                        status.code()
+                    ));
+                }
+            }
+            Ok(None) => {
+                // Still running — write PID file only after confirming alive.
+                if let Err(e) = daemon_manager.write_pid_value(pid) {
+                    eprintln!("Warning: failed to update PID file with child PID: {e}");
+                }
+            }
+            Err(e) => {
+                // Can't confirm status — write PID file anyway for manual cleanup.
+                if let Err(e2) = daemon_manager.write_pid_value(pid) {
+                    eprintln!("Warning: failed to update PID file with child PID: {e2}");
+                }
+                eprintln!("Warning: could not check daemon status: {e}");
+            }
         }
 
         eprintln!("Daemon started (PID: {})", pid);

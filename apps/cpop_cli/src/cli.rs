@@ -102,6 +102,9 @@ pub enum Commands {
         /// Public key file to verify against (optional)
         #[arg(short, long)]
         key: Option<PathBuf>,
+        /// Write WAR appraisal result to disk
+        #[arg(long)]
+        output_war: Option<PathBuf>,
     },
 
     /// Interactive presence challenges

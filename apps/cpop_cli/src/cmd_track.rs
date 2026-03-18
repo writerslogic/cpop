@@ -22,7 +22,7 @@ use subtle::ConstantTimeEq;
 use crate::cli::TrackAction;
 use crate::output::OutputMode;
 use crate::util::{
-    ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store,
+    ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store, retry_on_busy,
     validate_session_id, BLOCKED_EXTENSIONS, MAX_FILE_SIZE,
 };
 
@@ -322,10 +322,23 @@ fn setup_keystroke_capture(
                 let session_clone = Arc::clone(session);
                 let handle = std::thread::spawn(move || {
                     while let Ok(_event) = rx.recv() {
-                        if let Ok(mut s) = session_clone.lock() {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            let mut s = session_clone.lock().unwrap_or_else(|e| {
+                                eprintln!("Warning: session mutex poisoned, recovering");
+                                e.into_inner()
+                            });
                             if let Err(e) = s.record_keystroke() {
                                 eprintln!("Warning: keystroke recording failed: {}", e);
                             }
+                        }));
+                        if let Err(panic_val) = result {
+                            let msg = panic_val
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| panic_val.downcast_ref::<String>().map(|s| s.as_str()))
+                                .unwrap_or("unknown panic");
+                            eprintln!("Warning: keystroke processing panicked: {msg}");
+                            // Continue processing — don't lose subsequent keystrokes
                         }
                     }
                 });
@@ -516,7 +529,9 @@ async fn cmd_track_start(
     let mut checkpoint_counts: HashMap<PathBuf, u32> = HashMap::new();
 
     for file in &initial_files {
-        match auto_checkpoint_file(file, &mut db, &vdf_params, &device_id, &machine_id) {
+        match retry_on_busy(|| {
+            auto_checkpoint_file(file, &mut db, &vdf_params, &device_id, &machine_id)
+        }) {
             Ok(true) => {
                 *checkpoint_counts.entry(file.clone()).or_insert(0) += 1;
             }
@@ -603,13 +618,15 @@ async fn cmd_track_start(
                             }
                         }
 
-                        match auto_checkpoint_file(
-                            &canonical,
-                            &mut db,
-                            &vdf_params,
-                            &device_id,
-                            &machine_id,
-                        ) {
+                        match retry_on_busy(|| {
+                            auto_checkpoint_file(
+                                &canonical,
+                                &mut db,
+                                &vdf_params,
+                                &device_id,
+                                &machine_id,
+                            )
+                        }) {
                             Ok(true) => {
                                 *checkpoint_counts.entry(canonical.clone()).or_insert(0) += 1;
                                 last_checkpoint_map.insert(canonical.clone(), now);
@@ -635,16 +652,7 @@ async fn cmd_track_start(
                             }
                             Ok(false) => {}
                             Err(e) => {
-                                let msg = e.to_string();
-                                if msg.contains("database is locked") || msg.contains("SQLITE_BUSY")
-                                {
-                                    eprintln!(
-                                        "[{}] Skipped checkpoint (database busy)",
-                                        Utc::now().format("%H:%M:%S")
-                                    );
-                                } else {
-                                    eprintln!("Checkpoint error: {}", e);
-                                }
+                                eprintln!("Checkpoint error: {}", e);
                             }
                         }
                     }

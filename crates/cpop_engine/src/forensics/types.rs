@@ -6,7 +6,10 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::analysis::{BehavioralFingerprint, ForgeryAnalysis};
+use crate::analysis::{
+    BehavioralFingerprint, ForgeryAnalysis, IkiCompressionAnalysis, LabyrinthAnalysis,
+    LyapunovAnalysis, SnrAnalysis,
+};
 use crate::forensics::cross_modal::CrossModalResult;
 use crate::forensics::forgery_cost::ForgeryCostEstimate;
 use cpop_protocol::forensics::{ForensicAnalysis as ProtocolForensicAnalysis, ForensicVerdict};
@@ -138,6 +141,10 @@ pub struct ForensicMetrics {
     pub checkpoint_count: usize,
     /// Hurst exponent from cadence timing analysis, if computed.
     pub hurst_exponent: Option<f64>,
+    pub snr: Option<SnrAnalysis>,
+    pub lyapunov: Option<LyapunovAnalysis>,
+    pub iki_compression: Option<IkiCompressionAnalysis>,
+    pub labyrinth: Option<LabyrinthAnalysis>,
 }
 
 impl ForensicMetrics {
@@ -311,6 +318,23 @@ impl fmt::Display for Severity {
             Severity::Alert => write!(f, "alert"),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckpointFlags {
+    pub ordinal: u64,
+    pub event_count: usize,
+    pub timing_cv: f64,
+    pub max_velocity_bps: f64,
+    pub all_append: bool,
+    pub flagged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerCheckpointResult {
+    pub checkpoint_flags: Vec<CheckpointFlags>,
+    pub pct_flagged: f64,
+    pub suspicious: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

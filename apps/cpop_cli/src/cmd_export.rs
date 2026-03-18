@@ -19,11 +19,11 @@ use cpop_engine::war;
 
 use crate::output::OutputMode;
 use crate::spec::{
-    attestation_tier_value, content_tier_from_cli, profile_uri_from_cli,
-    MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI,
+    attestation_tier_value, content_tier_from_cli, profile_uri_from_cli, MIN_CHECKPOINTS_PER_PACKET,
 };
 use crate::util::{
-    ensure_dirs, load_signing_key, load_vdf_params, open_secure_store, validate_session_id,
+    ensure_dirs, load_signing_key, load_vdf_params, open_secure_store, retry_on_busy,
+    validate_session_id,
 };
 
 /// Files larger than this use byte count as an approximation for char count.
@@ -84,7 +84,7 @@ pub(crate) async fn cmd_export(
     let abs_path_str = abs_path.to_string_lossy().into_owned();
 
     let db = open_secure_store()?;
-    let events = db.get_events_for_file(&abs_path_str)?;
+    let events = retry_on_busy(|| db.get_events_for_file(&abs_path_str))?;
 
     validate_checkpoint_count(file_path, &events)?;
 
@@ -293,16 +293,9 @@ fn find_matching_session(tracking_dir: &Path, abs_path_str: &str) -> Option<Stri
                 .and_then(|v| v.as_str())
                 .is_some_and(|dp| dp == abs_path_str)
         } else {
-            let has_session_ext = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(".session.json"));
-            if !has_session_ext {
-                false
-            } else {
-                eprintln!("Warning: Session file is not valid JSON, using string matching (less reliable)");
-                content.contains(abs_path_str)
-            }
+            // Skip non-JSON session files — string matching is unreliable
+            // and could match unrelated paths (e.g., "/foo" matching "/foo/bar").
+            false
         };
         if matches {
             if let Ok(modified) = meta.modified() {
@@ -634,6 +627,9 @@ fn build_wire_packet_from_events(
     events: &[cpop_engine::SecureEvent],
     file_path: &Path,
     vdf_params: &cpop_engine::vdf::params::Parameters,
+    spec_profile_uri: &str,
+    spec_content_tier: u8,
+    spec_attestation_tier: u8,
 ) -> Result<cpop_engine::EvidencePacketWire> {
     use cpop_engine::cpop_protocol::rfc::wire_types::{
         AttestationTier, ContentTier, DocumentRef, EditDelta, HashValue, ProcessProof,
@@ -739,17 +735,26 @@ fn build_wire_packet_from_events(
 
     Ok(cpop_engine::EvidencePacketWire {
         version: 1,
-        profile_uri: PROFILE_URI.to_string(),
+        profile_uri: spec_profile_uri.to_string(),
         packet_id,
         created: chrono::Utc::now().timestamp_millis() as u64,
         document,
         checkpoints,
-        attestation_tier: Some(AttestationTier::SoftwareOnly),
+        attestation_tier: Some(match spec_attestation_tier {
+            4 => AttestationTier::HardwareHardened,
+            3 => AttestationTier::HardwareBound,
+            2 => AttestationTier::AttestedSoftware,
+            _ => AttestationTier::SoftwareOnly,
+        }),
         limitations: None,
         profile: None,
         presence_challenges: None,
         channel_binding: None,
-        content_tier: Some(ContentTier::Core),
+        content_tier: Some(match spec_content_tier {
+            3 => ContentTier::Maximum,
+            2 => ContentTier::Enhanced,
+            _ => ContentTier::Core,
+        }),
         previous_packet_ref: None,
         packet_sequence: None,
         physical_liveness: None,
@@ -781,7 +786,14 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
 
     match *format_lower {
         "cpop" | "cbor" => {
-            let wire_packet = build_wire_packet_from_events(events, file_path, vdf_params)?;
+            let wire_packet = build_wire_packet_from_events(
+                events,
+                file_path,
+                vdf_params,
+                spec_profile_uri,
+                *spec_content_tier,
+                *spec_attestation_tier,
+            )?;
             let cbor_data = wire_packet
                 .encode_cbor()
                 .map_err(|e| anyhow!("CBOR encode failed: {}", e))?;
