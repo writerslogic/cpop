@@ -123,7 +123,11 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         .hardware
         .as_ref()
         .map(|hw| {
-            let has_attestation = hw.bindings.iter().any(|b| b.attestation.is_some());
+            let has_attestation = hw.bindings.iter().any(|b| {
+                b.attestation
+                    .as_ref()
+                    .is_some_and(|a| !a.payload.is_empty())
+            });
             let has_binding = !hw.bindings.is_empty();
             if has_attestation {
                 AttestationTier::HardwareBound

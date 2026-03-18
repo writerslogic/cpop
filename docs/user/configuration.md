@@ -22,7 +22,7 @@ CPOP can be configured through configuration files, environment variables, and c
 
 | Platform | Path |
 |----------|------|
-| macOS/Linux | `~/.writerslogic/config.json` |
+| macOS/Linux | `~/.writersproof/config.json` |
 | macOS App | `~/Library/Application Support/CPOP/config.json` |
 
 ### Custom Location
@@ -50,16 +50,16 @@ CPOP uses JSON configuration with the following structure:
 
 ### TOML Alternative
 
-For the legacy daemon mode, TOML configuration is also supported at `~/.writerslogic/config.toml`:
+For the legacy daemon mode, TOML configuration is also supported at `~/.writersproof/config.toml`:
 
 ```toml
 watch_paths = ["~/Documents"]
 interval = 5
-database_path = "~/.writerslogic/mmr.db"
-log_path = "~/.writerslogic/cpop.log"
-signing_key_path = "~/.writerslogic/signing_key"
-signatures_path = "~/.writerslogic/signatures.sigs"
-event_store_path = "~/.writerslogic/events.db"
+database_path = "~/.writersproof/mmr.db"
+log_path = "~/.writersproof/cpop.log"
+signing_key_path = "~/.writersproof/signing_key"
+signatures_path = "~/.writersproof/signatures.sigs"
+event_store_path = "~/.writersproof/events.db"
 ```
 
 ## Core Settings

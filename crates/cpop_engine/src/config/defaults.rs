@@ -27,7 +27,7 @@ pub(super) fn default_data_dir() -> PathBuf {
     {
         dirs::home_dir()
             .expect("cannot determine home directory")
-            .join(".writerslogic")
+            .join(".writersproof")
     }
 }
 
@@ -73,10 +73,10 @@ pub(super) fn default_checkpoint() -> u64 {
     60
 }
 
-pub(super) fn default_writerslogic_dir() -> PathBuf {
+pub(super) fn default_writersproof_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory; refusing to use insecure fallback path")
-        .join(".writerslogic")
+        .join(".writersproof")
 }
 
 pub(super) fn default_allowed_apps() -> Vec<String> {
@@ -115,7 +115,7 @@ pub(super) fn default_blocked_apps() -> Vec<String> {
 pub(super) fn default_research_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory; refusing to use insecure fallback path")
-        .join(".writerslogic")
+        .join(".writersproof")
         .join("research")
 }
 
@@ -142,7 +142,7 @@ pub(super) fn default_min_fingerprint_samples() -> u32 {
 pub(super) fn default_fingerprint_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory; refusing to use insecure fallback path")
-        .join(".writerslogic")
+        .join(".writersproof")
         .join("fingerprints")
 }
 

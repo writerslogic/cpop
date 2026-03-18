@@ -211,8 +211,8 @@ pub struct SentinelConfig {
     #[serde(default = "default_checkpoint")]
     pub checkpoint_interval_secs: u64,
 
-    #[serde(default = "default_writerslogic_dir")]
-    pub writerslogic_dir: PathBuf,
+    #[serde(default = "default_writersproof_dir")]
+    pub writersproof_dir: PathBuf,
     #[serde(default)]
     pub shadow_dir: PathBuf,
     #[serde(default)]
@@ -243,15 +243,15 @@ impl Default for SentinelConfig {
     fn default() -> Self {
         let home = dirs::home_dir()
             .expect("cannot determine home directory; refusing to use insecure fallback path");
-        let writerslogic_dir = home.join(".writerslogic");
+        let writersproof_dir = home.join(".writersproof");
 
         Self {
             auto_start: default_false(),
             heartbeat_interval_secs: default_heartbeat(),
             checkpoint_interval_secs: default_checkpoint(),
-            writerslogic_dir: writerslogic_dir.clone(),
-            shadow_dir: writerslogic_dir.join("shadow"),
-            wal_dir: writerslogic_dir.join("sentinel").join("wal"),
+            writersproof_dir: writersproof_dir.clone(),
+            shadow_dir: writersproof_dir.join("shadow"),
+            wal_dir: writersproof_dir.join("sentinel").join("wal"),
             watch_paths: Vec::new(),
             recursive_watch: true,
             debounce_duration_ms: 500,
@@ -268,11 +268,11 @@ impl Default for SentinelConfig {
 
 impl SentinelConfig {
     /// Set the root directory, deriving shadow and WAL paths from it.
-    pub fn with_writerslogic_dir(mut self, dir: impl AsRef<Path>) -> Self {
+    pub fn with_writersproof_dir(mut self, dir: impl AsRef<Path>) -> Self {
         let dir = dir.as_ref().to_path_buf();
         self.shadow_dir = dir.join("shadow");
         self.wal_dir = dir.join("sentinel").join("wal");
-        self.writerslogic_dir = dir;
+        self.writersproof_dir = dir;
         self
     }
 
@@ -320,9 +320,9 @@ impl SentinelConfig {
         Ok(())
     }
 
-    /// Create writerslogic, shadow, and WAL directories if they don't exist.
+    /// Create writersproof, shadow, and WAL directories if they don't exist.
     pub fn ensure_directories(&self) -> Result<()> {
-        fs::create_dir_all(&self.writerslogic_dir)?;
+        fs::create_dir_all(&self.writersproof_dir)?;
         fs::create_dir_all(&self.shadow_dir)?;
         fs::create_dir_all(&self.wal_dir)?;
         Ok(())

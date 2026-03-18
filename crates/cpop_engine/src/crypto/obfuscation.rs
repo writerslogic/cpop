@@ -51,7 +51,8 @@ impl Default for ObfuscatedString {
     }
 }
 
-// Serialize as plaintext for disk/IPC format compatibility.
+// Serialization intentionally outputs cleartext — obfuscation targets in-memory
+// protection only (XOR masking against passive memory scraping).
 impl Serialize for ObfuscatedString {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

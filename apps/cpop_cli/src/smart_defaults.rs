@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use crate::util::BLOCKED_EXTENSIONS;
 
-pub fn is_initialized(writerslogic_dir: &Path) -> bool {
-    writerslogic_dir.join("signing_key").exists()
+pub fn is_initialized(writersproof_dir: &Path) -> bool {
+    writersproof_dir.join("signing_key").exists()
 }
 
 pub fn is_calibrated(iterations_per_second: u64) -> bool {
@@ -140,14 +140,14 @@ pub fn default_commit_message() -> String {
 }
 
 pub fn show_quick_status(
-    writerslogic_dir: &Path,
+    writersproof_dir: &Path,
     iterations_per_second: u64,
     tracked_files: &[(String, i64, i64)],
 ) {
     println!("=== CPOP Status ===");
     println!();
 
-    if !is_initialized(writerslogic_dir) {
+    if !is_initialized(writersproof_dir) {
         println!("Status: Not initialized. Run 'cpop init' to get started.");
         return;
     }
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_is_initialized() {
-        let temp = std::env::temp_dir().join("writerslogic_test_init");
+        let temp = std::env::temp_dir().join("writersproof_test_init");
         let _ = fs::remove_dir_all(&temp);
         fs::create_dir_all(&temp).unwrap();
 

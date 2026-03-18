@@ -28,7 +28,7 @@ by the CPOP software itself.
 
 **Purpose:** To create tamper-evident records proving file state at specific times.
 
-**Storage:** Local SQLite database at `~/.writerslogic/events.db`
+**Storage:** Local SQLite database at `~/.writersproof/events.db`
 
 ### 2. Keystroke Timing Metrics (Behavioral Biometrics)
 
@@ -88,10 +88,10 @@ admissibility depends on jurisdiction and context; consult legal counsel.
 ### Local Storage Only
 
 All CPOP data is stored locally in:
-- `~/.writerslogic/` - Configuration and databases
-- `~/.writerslogic/events.db` - Event store (SQLite, encrypted at rest optional)
-- `~/.writerslogic/mmr.bin` - Merkle Mountain Range (append-only)
-- `~/.writerslogic/shadows/` - Encrypted content cache (AES-256-GCM)
+- `~/.writersproof/` - Configuration and databases
+- `~/.writersproof/events.db` - Event store (SQLite, encrypted at rest optional)
+- `~/.writersproof/mmr.bin` - Merkle Mountain Range (append-only)
+- `~/.writersproof/shadows/` - Encrypted content cache (AES-256-GCM)
 
 ### Encryption
 
@@ -116,7 +116,7 @@ contents, keystroke data, or behavioral metrics.
 **Default:** Data is retained indefinitely to maintain complete audit trails.
 
 **User Control:** You may:
-- Delete the entire `~/.writerslogic/` directory to remove all data
+- Delete the entire `~/.writersproof/` directory to remove all data
 - Use `witnessctl prune` to remove events older than a specified date
 - Disable specific collection features via configuration
 
@@ -125,7 +125,7 @@ contents, keystroke data, or behavioral metrics.
 ### Under GDPR (EU/EEA residents)
 
 - **Right of Access:** All data is stored locally and accessible to you
-- **Right to Erasure:** Delete `~/.writerslogic/` to erase all data
+- **Right to Erasure:** Delete `~/.writersproof/` to erase all data
 - **Right to Restrict Processing:** Disable features via configuration
 - **Right to Data Portability:** Export data via `witnessctl export`
 - **Right to Object:** Stop the daemon to cease all processing
@@ -142,7 +142,7 @@ contents, keystroke data, or behavioral metrics.
 - **Written Policy:** This document serves as the required written policy
 - **Consent:** By running CPOP, you consent to local biometric collection
 - **Retention Schedule:** Data retained until manually deleted
-- **Destruction Guidelines:** Delete `~/.writerslogic/` directory
+- **Destruction Guidelines:** Delete `~/.writersproof/` directory
 - **No Disclosure:** Biometric data is never disclosed to third parties
 
 ## Children's Privacy

@@ -65,7 +65,7 @@ It only records:
 ### Where is my data stored?
 
 All data is stored locally on your machine:
-- **CLI**: `~/.writerslogic/`
+- **CLI**: `~/.writersproof/`
 - **macOS App**: `~/Library/Application Support/CPOP/`
 
 No data is sent to any server unless you explicitly export and share it.
@@ -99,7 +99,7 @@ Your private signing key is stored with 0600 permissions (owner read/write only)
 - Uses Ed25519 (state-of-the-art security)
 
 Best practices:
-- Keep a secure backup of `~/.writerslogic/signing_key`
+- Keep a secure backup of `~/.writersproof/signing_key`
 - Never share your private key
 - Use full disk encryption
 

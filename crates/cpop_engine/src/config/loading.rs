@@ -7,9 +7,9 @@ use std::fs;
 use std::path::Path;
 
 impl CpopConfig {
-    /// Load config from `data_dir/writerslogic.json`, falling back to defaults and legacy files.
+    /// Load config from `data_dir/writersproof.json`, falling back to defaults and legacy files.
     pub fn load_or_default(data_dir: &Path) -> Result<Self> {
-        let config_path = data_dir.join("writerslogic.json");
+        let config_path = data_dir.join("writersproof.json");
 
         if config_path.exists() {
             let raw = fs::read_to_string(&config_path)?;
@@ -80,10 +80,10 @@ impl CpopConfig {
         }
     }
 
-    /// Write config to `writerslogic.json` with restrictive permissions (0600 on Unix).
+    /// Write config to `writersproof.json` with restrictive permissions (0600 on Unix).
     pub fn persist(&self) -> Result<()> {
         fs::create_dir_all(&self.data_dir)?;
-        let config_path = self.data_dir.join("writerslogic.json");
+        let config_path = self.data_dir.join("writersproof.json");
         let raw = serde_json::to_string_pretty(self)?;
         fs::write(&config_path, raw)?;
         crate::crypto::restrict_permissions(&config_path, 0o600)?;

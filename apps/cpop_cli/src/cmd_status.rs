@@ -12,7 +12,7 @@ use zeroize::Zeroizing;
 use cpop_engine::config::CpopConfig;
 
 use crate::output::OutputMode;
-use crate::util::{ensure_dirs, open_secure_store, writerslogic_dir};
+use crate::util::{ensure_dirs, open_secure_store, writersproof_dir};
 
 pub(crate) fn cmd_calibrate() -> Result<()> {
     println!("Calibrating VDF performance...");
@@ -213,7 +213,7 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
     } else if db_status.starts_with("error") {
         if db_status.contains("Permission denied") {
             eprintln!("Error: Permission denied reading CPOP data.");
-            eprintln!("Check permissions on ~/.writerslogic/");
+            eprintln!("Check permissions on ~/.writersproof/");
         } else {
             println!("Database: ERROR ({})", db_status);
         }
@@ -271,7 +271,7 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
 }
 
 pub(crate) fn show_quick_status(out: &OutputMode) -> Result<()> {
-    let dir = writerslogic_dir()?;
+    let dir = writersproof_dir()?;
     let config = CpopConfig::load_or_default(&dir)?;
 
     let tracked_files = if dir.join("signing_key").exists() {

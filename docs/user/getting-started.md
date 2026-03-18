@@ -94,7 +94,7 @@ cpop init
 ```
 
 This creates:
-- `~/.writerslogic/` directory structure
+- `~/.writersproof/` directory structure
 - Ed25519 signing key pair (your cryptographic identity)
 - Master identity from device PUF (hardware binding)
 - Secure SQLite database for events
@@ -130,7 +130,7 @@ This takes about 30 seconds and only needs to be done once per machine.
 
 ### Configuration (Optional)
 
-Edit `~/.writerslogic/config.json` to customize behavior:
+Edit `~/.writersproof/config.json` to customize behavior:
 
 ```json
 {

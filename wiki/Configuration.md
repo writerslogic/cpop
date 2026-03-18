@@ -1,7 +1,7 @@
 # Configuration
 
 CPOP can be customized via a JSON configuration file. By default, this file is located at:
-- **Linux/macOS (CLI)**: `~/.writerslogic/config.json`
+- **Linux/macOS (CLI)**: `~/.writersproof/config.json`
 - **macOS App**: `~/Library/Application Support/CPOP/config.json`
 
 ## Configuration Structure

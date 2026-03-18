@@ -376,6 +376,10 @@ impl Chain {
     }
 
     /// Lightweight hash-chain check (no VDF reverification).
+    ///
+    /// Genesis checkpoint: accepts both legacy all-zeros `previous_hash` and
+    /// spec-correct `H(document-ref)` for backward compatibility with chains
+    /// created before the genesis hash computation was standardized.
     pub fn verify_hash_chain(&self) -> bool {
         for (i, cp) in self.checkpoints.iter().enumerate() {
             if cp.compute_hash() != cp.hash {
@@ -731,15 +735,15 @@ impl Chain {
         Ok(())
     }
 
-    /// Locate the chain file for a document in the writerslogic directory.
+    /// Locate the chain file for a document in the writersproof directory.
     pub fn find_chain(
         document_path: impl AsRef<Path>,
-        writerslogic_dir: impl AsRef<Path>,
+        writersproof_dir: impl AsRef<Path>,
     ) -> Result<PathBuf> {
         let abs_path = fs::canonicalize(document_path.as_ref())?;
         let path_hash = Sha256::digest(abs_path.to_string_lossy().as_bytes());
         let doc_id = hex::encode(&path_hash[0..8]);
-        let chain_path = writerslogic_dir
+        let chain_path = writersproof_dir
             .as_ref()
             .join("chains")
             .join(format!("{doc_id}.json"));
@@ -755,10 +759,10 @@ impl Chain {
     /// Load an existing chain or create a new one for the given document.
     pub fn get_or_create_chain(
         document_path: impl AsRef<Path>,
-        writerslogic_dir: impl AsRef<Path>,
+        writersproof_dir: impl AsRef<Path>,
         vdf_params: Parameters,
     ) -> Result<Self> {
-        if let Ok(path) = Self::find_chain(&document_path, &writerslogic_dir) {
+        if let Ok(path) = Self::find_chain(&document_path, &writersproof_dir) {
             return Self::load(path);
         }
 
@@ -767,7 +771,7 @@ impl Chain {
         let path_hash = Sha256::digest(abs_path.to_string_lossy().as_bytes());
         let doc_id = hex::encode(&path_hash[0..8]);
         chain.storage_path = Some(
-            writerslogic_dir
+            writersproof_dir
                 .as_ref()
                 .join("chains")
                 .join(format!("{doc_id}.json")),

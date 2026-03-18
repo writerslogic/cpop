@@ -122,7 +122,7 @@ async fn maybe_auto_start(cli: &Cli, out: &OutputMode) -> Result<()> {
         return Ok(());
     }
 
-    if let Ok(dir) = util::writerslogic_dir() {
+    if let Ok(dir) = util::writersproof_dir() {
         if let Ok(config) = cpop_engine::config::CpopConfig::load_or_default(&dir) {
             if config.sentinel.auto_start {
                 let daemon_manager = cpop_engine::DaemonManager::new(&config.data_dir);
@@ -155,7 +155,7 @@ fn maybe_auto_init(cli: &Cli, out: &OutputMode) -> Result<()> {
     ) || cli.path.is_some();
 
     if needs_init {
-        if let Ok(dir) = util::writerslogic_dir() {
+        if let Ok(dir) = util::writersproof_dir() {
             if !dir.join("signing_key").exists() {
                 if !out.quiet {
                     eprintln!("Initializing CPOP for first use...");

@@ -50,7 +50,7 @@ fn load_api_key() -> Result<String, String> {
 ///
 /// Uses the latest event_hash from the store (matching CLI behavior), signs
 /// the raw hash bytes with Ed25519, and submits to the WritersProof API.
-/// Requires a valid API key stored at `~/.writerslogic/writersproof_api_key`.
+/// Requires a valid API key stored at `~/.writersproof/writersproof_api_key`.
 ///
 /// Note: Function named with underscore in `writers_proof` so UniFFI generates
 /// `ffiAnchorToWritersProof` (capital P) matching the Swift call site.

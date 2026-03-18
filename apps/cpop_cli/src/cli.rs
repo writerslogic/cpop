@@ -22,7 +22,7 @@ EXAMPLES:\n  \
     cpop export essay.txt -t standard   Export evidence for submission\n  \
     cpop verify essay.evidence.json     Verify a proof packet\n\n\
 ENVIRONMENT:\n  \
-    CPOP_DATA_DIR    Override default data directory (~/.writerslogic)\n  \
+    CPOP_DATA_DIR    Override default data directory (~/.writersproof)\n  \
     EDITOR          Editor for 'cpop config edit'\n\n\
 Use 'cpop <command> --help' for details on specific commands.")]
 #[command(args_conflicts_with_subcommands = true)]

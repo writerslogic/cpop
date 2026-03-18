@@ -105,7 +105,7 @@ chmod 400 /var/lib/writerslogic/signing.key
 cpop init --tpm-sealed
 
 # Enable audit logging
-cpop start --foreground  # daemon logs to ~/.writerslogic/logs/daemon.log
+cpop start --foreground  # daemon logs to ~/.writersproof/logs/daemon.log
 ```
 
 ### Linux Capabilities

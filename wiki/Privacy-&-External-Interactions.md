@@ -10,7 +10,7 @@ By default, **CPOP is a strictly local application.**
 
 *   **Keystroke Capture:** Keystroke counting and timing analysis happen entirely within the `cpop` process memory.
 *   **Content Hashing:** Document content is hashed locally. The raw text never leaves your device.
-*   **Database:** Your history of creative effort is stored in a local, encrypted-at-rest SQLite database (`~/.writerslogic/events.db`).
+*   **Database:** Your history of creative effort is stored in a local, encrypted-at-rest SQLite database (`~/.writersproof/events.db`).
 *   **Key Management:** Your cryptographic identity (private keys) is generated on-device and is never shared with our servers.
 
 ---

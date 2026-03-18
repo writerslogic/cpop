@@ -10,7 +10,7 @@ use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::keyhierarchy::{
     crypto::IDENTITY_DOMAIN, derive_master_identity, MasterIdentity, PufProvider,
@@ -220,7 +220,7 @@ impl SealedIdentityStore {
         let old_blob = self.load_blob()?;
 
         let caps = self.provider.capabilities();
-        let mut seed = if caps.supports_sealing {
+        let seed = Zeroizing::new(if caps.supports_sealing {
             match self.provider.unseal(&old_blob.sealed_seed) {
                 Ok(s) => s,
                 Err(_) => {
@@ -239,7 +239,7 @@ impl SealedIdentityStore {
             }
         } else {
             self.software_unwrap(&old_blob.sealed_seed)?
-        };
+        });
 
         let sealed_seed = if caps.supports_sealing {
             self.provider
@@ -266,7 +266,6 @@ impl SealedIdentityStore {
         };
 
         self.persist_blob(&blob)?;
-        seed.zeroize();
 
         Ok(())
     }

@@ -10,7 +10,7 @@ Solutions to common issues with CPOP.
 
 ### "Error deriving master identity"
 - **Cause**: Hardware identity ([[Glossary#PUF|PUF]]) initialization failed.
-- **Solution**: Check file permissions for `~/.writerslogic/`. Run `cpop init` again.
+- **Solution**: Check file permissions for `~/.writersproof/`. Run `cpop init` again.
 
 ---
 
@@ -46,12 +46,12 @@ Solutions to common issues with CPOP.
 
 ### Lost Signing Key
 - **Impact**: You can no longer prove authorship with your old identity.
-- **Solution**: There is no "recovery password." Your signing key is your identity. Always keep a secure backup of `~/.writerslogic/signing_key`.
+- **Solution**: There is no "recovery password." Your signing key is your identity. Always keep a secure backup of `~/.writersproof/signing_key`.
 
 ### Database Corruption
 - **Solution**: You can attempt to recover a corrupted SQLite database using:
   ```bash
-  sqlite3 ~/.writerslogic/events.db ".recover" | sqlite3 events_recovered.db
+  sqlite3 ~/.writersproof/events.db ".recover" | sqlite3 events_recovered.db
   ```
 
 ---

@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 
 use crate::cli::ConfigAction;
-use crate::util::writerslogic_dir;
+use crate::util::writersproof_dir;
 
 /// Parse a boolean from user input, accepting true/false, 1/0, yes/no (case-insensitive).
 fn parse_bool_lenient(s: &str) -> std::result::Result<bool, String> {
@@ -21,8 +21,8 @@ fn parse_bool_lenient(s: &str) -> std::result::Result<bool, String> {
 }
 
 pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
-    let dir = writerslogic_dir()?;
-    let config_path = dir.join("writerslogic.json");
+    let dir = writersproof_dir()?;
+    let config_path = dir.join("writersproof.json");
 
     match action {
         ConfigAction::Show => {

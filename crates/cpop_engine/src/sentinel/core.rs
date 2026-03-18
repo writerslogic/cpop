@@ -152,7 +152,13 @@ impl Sentinel {
     }
 
     /// Set the Ed25519 signing key and update the mouse stego seed.
+    ///
+    /// Rejects all-zero keys as invalid (likely uninitialized).
     pub fn set_signing_key(&self, key: SigningKey) {
+        if key.to_bytes().iter().all(|&b| b == 0) {
+            log::warn!("Rejected all-zero signing key — likely uninitialized");
+            return;
+        }
         *self.signing_key.write_recover() = Some(key);
         self.update_mouse_stego_seed();
     }
@@ -520,11 +526,20 @@ impl Sentinel {
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
             if let Some(key) = self.signing_key.read_recover().clone() {
-                if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
-                    let payload = create_session_start_payload(&session);
-                    if let Err(e) = wal.append(EntryType::SessionStart, payload) {
-                        log::warn!(
-                            "WAL append failed for session {}: {}",
+                match Wal::open(&wal_path, session_id_bytes, key) {
+                    Ok(wal) => {
+                        let payload = create_session_start_payload(&session);
+                        if let Err(e) = wal.append(EntryType::SessionStart, payload) {
+                            log::warn!(
+                                "WAL append failed for session {}: {}",
+                                session.session_id,
+                                e
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "WAL::open() failed for session {}: {} — session continues without persistent proof",
                             session.session_id,
                             e
                         );
@@ -631,7 +646,7 @@ impl Sentinel {
         hasher.update(public_key);
         let identity_fingerprint = hasher.finalize().to_vec();
 
-        let db_path = self.config.writerslogic_dir.join("events.db");
+        let db_path = self.config.writersproof_dir.join("events.db");
         let hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
         let store = crate::store::SecureStore::open(&db_path, hmac_key)?;
 

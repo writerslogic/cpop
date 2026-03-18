@@ -225,7 +225,7 @@ impl WritersProofClient {
         let mut req = self
             .client
             .post(&url)
-            .header("Content-Type", "application/vnd.writerslogic-pop+cbor")
+            .header("Content-Type", "application/vnd.writersproof.cpop+cbor")
             .body(evidence_cbor.to_vec());
 
         if let Some(ref jwt) = self.jwt {

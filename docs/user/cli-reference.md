@@ -48,7 +48,7 @@ cpop init
 ```
 
 **What it does:**
-1. Creates `~/.writerslogic/` directory structure
+1. Creates `~/.writersproof/` directory structure
 2. Generates Ed25519 signing key pair
 3. Initializes master identity from device PUF
 4. Creates secure SQLite database
@@ -301,7 +301,7 @@ $ cpop track start manuscript.md
 
 Tracking started for manuscript.md
   Session ID: sess_abc123
-  WAL: ~/.writerslogic/tracking/manuscript.md.wal
+  WAL: ~/.writersproof/tracking/manuscript.md.wal
 
 Press Ctrl+C or run 'cpop track stop' to end.
 ```

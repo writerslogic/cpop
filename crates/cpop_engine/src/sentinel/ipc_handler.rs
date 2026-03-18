@@ -26,7 +26,7 @@ impl SentinelIpcHandler {
     }
 
     fn open_db(&self) -> Result<crate::store::SecureStore, String> {
-        let db_path = self.sentinel.config.writerslogic_dir.join("events.db");
+        let db_path = self.sentinel.config.writersproof_dir.join("events.db");
         let guard = self.sentinel.signing_key.read_recover();
         let signing_key = guard.as_ref().ok_or("Signing key not initialized")?;
         let key_bytes = signing_key.to_bytes();
@@ -184,12 +184,12 @@ impl SentinelIpcHandler {
         message: String,
     ) -> Result<IpcMessage, String> {
         let path = super::helpers::validate_path(&path)?;
-        let writerslogic_dir = &self.sentinel.config.writerslogic_dir;
+        let writersproof_dir = &self.sentinel.config.writersproof_dir;
         let vdf_params = crate::vdf::default_parameters();
 
         let path_hash = Sha256::digest(path.to_string_lossy().as_bytes());
         let doc_id = hex::encode(&path_hash[0..8]);
-        let chain_path = writerslogic_dir
+        let chain_path = writersproof_dir
             .join("chains")
             .join(format!("{doc_id}.json"));
 
@@ -273,14 +273,14 @@ impl SentinelIpcHandler {
     }
 
     fn handle_export_file(&self, path: PathBuf, output: PathBuf) -> Result<IpcMessage, String> {
-        let writerslogic_dir = &self.sentinel.config.writerslogic_dir;
+        let writersproof_dir = &self.sentinel.config.writersproof_dir;
 
         let _ = super::helpers::validate_path(&path)
             .map_err(|e| format!("Invalid source path: {e}"))?;
         let validated_output = super::helpers::validate_path(&output)
             .map_err(|e| format!("Invalid output path: {e}"))?;
 
-        let chain_path = crate::checkpoint::Chain::find_chain(&path, writerslogic_dir)
+        let chain_path = crate::checkpoint::Chain::find_chain(&path, writersproof_dir)
             .map_err(|e| format!("No chain found: {e}"))?;
         let chain = crate::checkpoint::Chain::load(&chain_path)
             .map_err(|e| format!("Failed to load chain: {e}"))?;
@@ -335,7 +335,7 @@ impl SentinelIpcHandler {
             (fingerprint, hmac)
         };
 
-        let db_path = self.sentinel.config.writerslogic_dir.join("events.db");
+        let db_path = self.sentinel.config.writersproof_dir.join("events.db");
         if let Ok(store) = crate::store::SecureStore::open(&db_path, hmac_key) {
             if let Ok(Some((cbor, sig))) = store.get_baseline_digest(&identity_fingerprint) {
                 if let Ok(digest) =

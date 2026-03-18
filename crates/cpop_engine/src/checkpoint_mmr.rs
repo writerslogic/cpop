@@ -102,11 +102,11 @@ impl CheckpointMmr {
         self.mmr.sync().map_err(Error::from)
     }
 
-    /// Return the default MMR storage directory (`~/.writerslogic/mmr`).
+    /// Return the default MMR storage directory (`~/.writersproof/mmr`).
     pub fn default_mmr_dir() -> Result<PathBuf> {
         let home = dirs::home_dir()
             .ok_or_else(|| Error::config("could not determine home directory for MMR storage"))?;
-        Ok(home.join(".writerslogic").join("mmr"))
+        Ok(home.join(".writersproof").join("mmr"))
     }
 }
 

@@ -25,16 +25,16 @@ pub(crate) const BLOCKED_EXTENSIONS: &[&str] = &[
     "lock", "tmp", "bak", "swp", "swo", "DS_Store",
 ];
 
-pub fn writerslogic_dir() -> Result<PathBuf> {
+pub fn writersproof_dir() -> Result<PathBuf> {
     if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
         return Ok(PathBuf::from(dir));
     }
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-    Ok(home.join(".writerslogic"))
+    Ok(home.join(".writersproof"))
 }
 
 pub fn ensure_dirs() -> Result<CpopConfig> {
-    let dir = writerslogic_dir()?;
+    let dir = writersproof_dir()?;
     let config = CpopConfig::load_or_default(&dir)?;
 
     let dirs = [
@@ -125,7 +125,7 @@ pub fn open_secure_store() -> Result<SecureStore> {
 }
 
 pub fn get_device_id() -> Result<[u8; 16]> {
-    let dir = writerslogic_dir()?;
+    let dir = writersproof_dir()?;
     let key_path = dir.join("signing_key.pub");
     let pub_key = fs::read(&key_path)
         .map_err(|e| anyhow::anyhow!("Cannot read signing_key.pub (run `cpop init` first): {e}"))?;

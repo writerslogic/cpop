@@ -27,7 +27,7 @@ pub struct SoftwarePUF {
 impl SoftwarePUF {
     /// Create a new software PUF using the default data directory.
     pub fn new() -> Result<Self, KeyHierarchyError> {
-        let seed_path = writerslogic_dir().join(SOFTWARE_PUF_SEED_NAME);
+        let seed_path = writersproof_dir().join(SOFTWARE_PUF_SEED_NAME);
         Self::new_with_path(seed_path)
     }
 
@@ -220,14 +220,14 @@ pub fn get_or_create_puf() -> Result<Box<dyn PufProvider>, KeyHierarchyError> {
     Ok(Box::new(HardwarePUF::new()?))
 }
 
-fn writerslogic_dir() -> PathBuf {
+fn writersproof_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
         return PathBuf::from(dir);
     }
     if let Some(home) = dirs::home_dir() {
-        return home.join(".writerslogic");
+        return home.join(".writersproof");
     }
-    PathBuf::from(".writerslogic")
+    PathBuf::from(".writersproof")
 }
 
 struct HardwarePUF {

@@ -224,10 +224,17 @@ pub fn handle_change_event_sync(
                 }
             }
             ChangeEventType::Deleted => {
-                // Must drop sessions_map before end_session_sync re-acquires the lock
-                let event_path = event.path.clone();
+                // Remove within existing lock scope to avoid TOCTOU race
+                let removed = sessions_map.remove(&event.path);
                 drop(sessions_map);
-                end_session_sync(&event_path, sessions, session_events_tx);
+                if let Some(session) = removed {
+                    let _ = session_events_tx.send(SessionEvent {
+                        event_type: SessionEventType::Ended,
+                        session_id: session.session_id,
+                        document_path: event.path.clone(),
+                        timestamp: SystemTime::now(),
+                    });
+                }
             }
             ChangeEventType::Created => {
                 // Picked up on next focus event
@@ -445,5 +452,28 @@ fn validate_canonical_path(path: &Path) -> Result<(), String> {
             }
         }
     }
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = path.to_string_lossy();
+        let lower = path_str.to_lowercase();
+        // Strip UNC extended-length prefix so \\?\C:\Windows\... is caught.
+        let normalized = lower
+            .strip_prefix(r"\\?\")
+            .or_else(|| lower.strip_prefix(r"\??\"))
+            .unwrap_or(&lower);
+        let blocked = [
+            r"c:\windows\",
+            r"c:\program files\",
+            r"c:\program files (x86)\",
+            r"c:\programdata\",
+        ];
+        for prefix in &blocked {
+            if normalized.starts_with(prefix) {
+                return Err("Access to system directory denied".to_string());
+            }
+        }
+    }
+
     Ok(())
 }

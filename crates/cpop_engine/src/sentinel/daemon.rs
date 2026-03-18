@@ -383,7 +383,7 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
         }
     }
 
-    let config = SentinelConfig::default().with_writerslogic_dir(writerslogic_dir);
+    let config = SentinelConfig::default().with_writersproof_dir(writerslogic_dir);
     let sentinel = Arc::new(Sentinel::new(config)?);
 
     if let Ok(Some(hmac_key)) = crate::identity::SecureStorage::load_hmac_key() {

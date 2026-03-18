@@ -14,7 +14,7 @@ use cpop_engine::SecureEvent;
 use crate::output::OutputMode;
 use crate::util::{
     ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store,
-    writerslogic_dir, BLOCKED_EXTENSIONS, LARGE_FILE_WARNING_THRESHOLD, MAX_FILE_SIZE,
+    writersproof_dir, BLOCKED_EXTENSIONS, LARGE_FILE_WARNING_THRESHOLD, MAX_FILE_SIZE,
 };
 
 pub(crate) fn cmd_commit(
@@ -174,7 +174,7 @@ pub(crate) async fn cmd_commit_smart(
     anchor: bool,
     out: &OutputMode,
 ) -> Result<()> {
-    let dir = writerslogic_dir()?;
+    let dir = writersproof_dir()?;
 
     if !crate::smart_defaults::is_initialized(&dir) {
         if !out.quiet {

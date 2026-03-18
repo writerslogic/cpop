@@ -8,7 +8,7 @@ use chacha20poly1305::{
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvError, SendError, Sender};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Max nonce counter value before we refuse to encrypt. ChaCha20-Poly1305
 /// requires unique nonces per key; wrapping to 0 would reuse a nonce and
@@ -77,13 +77,14 @@ pub struct SecureSender<T> {
 impl<T: serde::Serialize> SecureSender<T> {
     /// Serialize, encrypt, and send a value through the channel.
     pub fn send(&self, value: T) -> Result<(), SendError<EncryptedMessage>> {
-        let plaintext = bincode::serde::encode_to_vec(&value, bincode::config::standard())
-            .map_err(|_| {
+        let plaintext = Zeroizing::new(
+            bincode::serde::encode_to_vec(&value, bincode::config::standard()).map_err(|_| {
                 SendError(EncryptedMessage {
                     nonce: [0; 12],
                     ciphertext: vec![],
                 })
-            })?;
+            })?,
+        );
 
         let counter = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
         if counter >= NONCE_COUNTER_MAX {

@@ -70,7 +70,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
     #[cfg(target_os = "macos")]
     let accessibility_granted = crate::sentinel::macos_focus::check_accessibility_permissions();
 
-    let config = SentinelConfig::default().with_writerslogic_dir(&data_dir);
+    let config = SentinelConfig::default().with_writersproof_dir(&data_dir);
 
     let sentinel = match Sentinel::new(config) {
         Ok(s) => Arc::new(s),

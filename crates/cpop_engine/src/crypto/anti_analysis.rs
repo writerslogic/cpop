@@ -43,8 +43,9 @@ fn disable_debugging_macos() {
 pub fn is_debugger_present() -> bool {
     #[cfg(target_os = "macos")]
     {
-        // One way to detect on macOS is checking for the P_TRACED flag in kinfo_proc
-        // Simplified check for this prototype:
+        // macOS: debugger detection not implemented — P_TRACED check would require
+        // sysctl(CTL_KERN, KERN_PROC, KERN_PROC_PID) which adds libc dependency.
+        // Returning false means anti-debug hardening is inactive on macOS.
         false
     }
 

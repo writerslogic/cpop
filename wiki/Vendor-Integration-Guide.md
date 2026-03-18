@@ -36,7 +36,7 @@ func performCheckpoint(path: String) {
 
 For web applications or sandboxed apps that cannot link native libraries, the `cpop` daemon provides a local Unix Socket (or Named Pipe on Windows) for asynchronous communication.
 
-- **Address:** `~/.writerslogic/writerslogic.sock` (Unix) or `\.\pipe\writerslogic` (Windows).
+- **Address:** `~/.writersproof/writersproof.sock` (Unix) or `\.\pipe\writerslogic` (Windows).
 - **Format:** JSON-RPC over the socket.
 
 ### Lifecycle Management

@@ -55,6 +55,11 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
     {
         let s = path.to_string_lossy();
         let lower = s.to_lowercase();
+        // Strip UNC extended-length prefix so \\?\C:\Windows\... is caught.
+        let normalized = lower
+            .strip_prefix(r"\\?\")
+            .or_else(|| lower.strip_prefix(r"\??\"))
+            .unwrap_or(&lower);
         const BLOCKED_WIN: &[&str] = &[
             r"c:\windows\",
             r"c:\program files\",
@@ -62,7 +67,7 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
             r"c:\programdata\",
         ];
         for prefix in BLOCKED_WIN {
-            if lower.starts_with(prefix) {
+            if normalized.starts_with(prefix) {
                 return Err("Access to system directory denied".to_string());
             }
         }

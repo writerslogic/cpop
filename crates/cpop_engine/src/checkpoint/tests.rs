@@ -275,11 +275,11 @@ fn test_total_elapsed_time() {
 fn test_get_or_create_chain() {
     let dir = TempDir::new().expect("create temp dir");
     let doc_path = dir.path().join("document.txt");
-    let writerslogic_dir = dir.path().join(".writerslogic");
+    let writersproof_dir = dir.path().join(".writersproof");
 
     fs::write(&doc_path, b"content").expect("write doc");
 
-    let chain1 = Chain::get_or_create_chain(&doc_path, &writerslogic_dir, test_vdf_params())
+    let chain1 = Chain::get_or_create_chain(&doc_path, &writersproof_dir, test_vdf_params())
         .expect("get_or_create");
     assert!(chain1.checkpoints.is_empty());
 
@@ -290,12 +290,12 @@ fn test_get_or_create_chain() {
 fn test_find_chain_not_found() {
     let dir = TempDir::new().expect("create temp dir");
     let doc_path = dir.path().join("document.txt");
-    let writerslogic_dir = dir.path().join(".writerslogic");
+    let writersproof_dir = dir.path().join(".writersproof");
 
     fs::write(&doc_path, b"content").expect("write doc");
-    fs::create_dir_all(writerslogic_dir.join("chains")).expect("create chains dir");
+    fs::create_dir_all(writersproof_dir.join("chains")).expect("create chains dir");
 
-    let err = Chain::find_chain(&doc_path, &writerslogic_dir).unwrap_err();
+    let err = Chain::find_chain(&doc_path, &writersproof_dir).unwrap_err();
     assert!(err.to_string().contains("no chain found"));
 
     drop(dir);

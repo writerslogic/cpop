@@ -110,7 +110,7 @@ pub fn try_init() -> Option<SecureEnclaveProvider> {
         return None;
     }
 
-    let base_dir = writerslogic_dir();
+    let base_dir = writersproof_dir();
     let counter_file = base_dir.join("se_counter");
 
     let mut state = SecureEnclaveState {
@@ -983,13 +983,13 @@ fn hardware_uuid() -> Option<String> {
     None
 }
 
-fn writerslogic_dir() -> PathBuf {
+fn writersproof_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
         return PathBuf::from(dir);
     }
     dirs::home_dir()
         .expect("cannot determine home directory; refusing to use insecure fallback path")
-        .join(".writerslogic")
+        .join(".writersproof")
 }
 
 #[cfg(test)]

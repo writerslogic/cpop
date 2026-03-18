@@ -3,7 +3,7 @@
 //! Disk-backed offline attestation queue.
 //!
 //! When the WritersProof service is unreachable, attestation requests are
-//! serialized to `~/.writerslogic/queue/` as individual JSON files. The queue
+//! serialized to `~/.writersproof/queue/` as individual JSON files. The queue
 //! can be drained when connectivity is restored.
 
 use std::fs;
@@ -30,14 +30,14 @@ impl OfflineQueue {
         })
     }
 
-    /// Return `~/.writerslogic/queue/`.
+    /// Return `~/.writersproof/queue/`.
     ///
     /// # Panics
     /// Panics if the home directory cannot be determined.
     pub fn default_dir() -> PathBuf {
         dirs::home_dir()
             .expect("cannot determine home directory; refusing to use insecure fallback path")
-            .join(".writerslogic")
+            .join(".writersproof")
             .join("queue")
     }
 

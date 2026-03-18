@@ -479,7 +479,8 @@ fn fiat_shamir_challenge(
         (4.into(), ciborium::Value::Integer(params.iterations.into())),
     ]);
     let mut params_cbor = Vec::new();
-    ciborium::into_writer(&params_map, &mut params_cbor).expect("CBOR encoding proof params");
+    ciborium::into_writer(&params_map, &mut params_cbor)
+        .unwrap_or_else(|e| panic!("CBOR encoding proof params: {e}"));
 
     let mut hasher = Sha256::new();
     hasher.update(b"PoP-Fiat-Shamir-v1");

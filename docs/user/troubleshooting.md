@@ -104,7 +104,7 @@ make install PREFIX=$HOME/.local
 
 2. **Regenerate key manually:**
    ```bash
-   rm ~/.writerslogic/signing_key*
+   rm ~/.writersproof/signing_key*
    cpop init
    ```
 
@@ -116,13 +116,13 @@ make install PREFIX=$HOME/.local
 
 1. **Remove PUF seed and reinitialize:**
    ```bash
-   rm ~/.writerslogic/puf_seed
+   rm ~/.writersproof/puf_seed
    cpop init
    ```
 
 2. **Check file permissions:**
    ```bash
-   chmod 600 ~/.writerslogic/puf_seed
+   chmod 600 ~/.writersproof/puf_seed
    ```
 
 ## Tracking Issues
@@ -194,12 +194,12 @@ make install PREFIX=$HOME/.local
 1. **Stop tracking and check WAL:**
    ```bash
    cpop track stop
-   ls -la ~/.writerslogic/tracking/
+   ls -la ~/.writersproof/tracking/
    ```
 
 2. **Remove corrupted WAL:**
    ```bash
-   rm ~/.writerslogic/tracking/*.wal
+   rm ~/.writersproof/tracking/*.wal
    ```
 
 3. **Existing checkpoints are preserved in the database**
@@ -214,18 +214,18 @@ make install PREFIX=$HOME/.local
 
 1. **Check database status:**
    ```bash
-   sqlite3 ~/.writerslogic/events.db "PRAGMA integrity_check;"
+   sqlite3 ~/.writersproof/events.db "PRAGMA integrity_check;"
    ```
 
 2. **If locked, find process holding lock:**
    ```bash
-   lsof ~/.writerslogic/events.db
+   lsof ~/.writersproof/events.db
    ```
 
 3. **If corrupted, attempt recovery:**
    ```bash
-   sqlite3 ~/.writerslogic/events.db ".recover" | sqlite3 events_recovered.db
-   mv events_recovered.db ~/.writerslogic/events.db
+   sqlite3 ~/.writersproof/events.db ".recover" | sqlite3 events_recovered.db
+   mv events_recovered.db ~/.writersproof/events.db
    ```
 
 ### "VDF computation timeout"
@@ -241,7 +241,7 @@ make install PREFIX=$HOME/.local
 
 2. **Check VDF settings:**
    ```bash
-   cat ~/.writerslogic/config.json | grep -A5 '"vdf"'
+   cat ~/.writersproof/config.json | grep -A5 '"vdf"'
    ```
 
 3. **Reduce max iterations if needed:**
@@ -263,7 +263,7 @@ make install PREFIX=$HOME/.local
 
 2. **Check if signing key changed:**
    ```bash
-   sha256sum ~/.writerslogic/signing_key
+   sha256sum ~/.writersproof/signing_key
    ```
 
 3. **If key was regenerated, previous checkpoints cannot be verified**
@@ -313,7 +313,7 @@ make install PREFIX=$HOME/.local
 
 2. **Verify master identity matches:**
    ```bash
-   cat ~/.writerslogic/identity.json | jq '.fingerprint'
+   cat ~/.writersproof/identity.json | jq '.fingerprint'
    ```
 
 ## Performance Issues
@@ -349,17 +349,17 @@ make install PREFIX=$HOME/.local
 
 1. **Check disk usage:**
    ```bash
-   du -sh ~/.writerslogic/*
+   du -sh ~/.writersproof/*
    ```
 
 2. **WAL files can be cleaned after tracking stops:**
    ```bash
-   rm ~/.writerslogic/tracking/*.wal
+   rm ~/.writersproof/tracking/*.wal
    ```
 
 3. **Database compaction:**
    ```bash
-   sqlite3 ~/.writerslogic/events.db "VACUUM;"
+   sqlite3 ~/.writersproof/events.db "VACUUM;"
    ```
 
 ### Slow Checkpoints
@@ -449,7 +449,7 @@ make install PREFIX=$HOME/.local
 
 1. **Check for backups:**
    ```bash
-   ls ~/.writerslogic/signing_key*
+   ls ~/.writersproof/signing_key*
    ```
 
 2. **If no backup, generate new key:**
@@ -465,7 +465,7 @@ make install PREFIX=$HOME/.local
 
 1. **Attempt recovery:**
    ```bash
-   cp ~/.writerslogic/events.db events.backup
+   cp ~/.writersproof/events.db events.backup
    sqlite3 events.backup ".recover" | sqlite3 events.recovered.db
    ```
 
@@ -476,7 +476,7 @@ make install PREFIX=$HOME/.local
 
 3. **Replace if recovery successful:**
    ```bash
-   mv events.recovered.db ~/.writerslogic/events.db
+   mv events.recovered.db ~/.writersproof/events.db
    ```
 
 ### Export Existing Data
@@ -502,13 +502,13 @@ uname -a
 CPOP version
 
 # Configuration
-cat ~/.writerslogic/config.json
+cat ~/.writersproof/config.json
 
 # Status
 cpop status
 
 # Recent logs (if available)
-tail -100 ~/.writerslogic/cpop.log
+tail -100 ~/.writersproof/cpop.log
 ```
 
 ### Reporting Issues

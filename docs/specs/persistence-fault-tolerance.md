@@ -611,7 +611,7 @@ Rationale:
 - Clear ownership (WAL file tied to document path)
 
 ```
-~/.writerslogic/
+~/.writersproof/
 ├── wal/
 │   ├── a1b2c3d4.wal    # WAL for document at /Users/dave/essay.md
 │   ├── e5f6g7h8.wal    # WAL for document at /Users/dave/notes.txt
@@ -673,7 +673,7 @@ func (s *MultiDocumentSentinel) onFocusChange(docPath string) {
 ## Configuration
 
 ```toml
-# ~/.writerslogic/config.toml
+# ~/.writersproof/config.toml
 
 [persistence]
 # RAM buffer flush interval

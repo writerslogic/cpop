@@ -13,7 +13,7 @@ use crate::spec::{EAT_PROFILE_URI, MIN_CHECKPOINTS_PER_PACKET, PROFILE_URI};
 use cpop_engine::{derive_hmac_key, SecureStore};
 use zeroize::Zeroizing;
 
-use crate::util::{ensure_dirs, load_vdf_params, writerslogic_dir};
+use crate::util::{ensure_dirs, load_vdf_params, writersproof_dir};
 
 pub(crate) fn cmd_verify(
     file_path: &PathBuf,
@@ -325,7 +325,7 @@ pub(crate) fn cmd_verify(
     } else {
         let key_path = match key {
             Some(k) => k,
-            None => writerslogic_dir()?.join("signing_key"),
+            None => writersproof_dir()?.join("signing_key"),
         };
 
         if !out.quiet && !out.json {

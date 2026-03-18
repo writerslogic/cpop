@@ -255,7 +255,7 @@ impl SecureStorage {
                 Some(h) => h,
                 None => return,
             };
-            let data_dir = home_dir.join(".writerslogic");
+            let data_dir = home_dir.join(".writersproof");
 
             if data_dir
                 .components()
@@ -441,6 +441,14 @@ impl SecureStorage {
                     device_id.copy_from_slice(&did);
                 } else {
                     return Err(anyhow!("Invalid device ID length in keyring"));
+                }
+                const MAX_MACHINE_ID_LEN: usize = 256;
+                if mid.len() > MAX_MACHINE_ID_LEN {
+                    return Err(anyhow!(
+                        "Machine ID from keyring exceeds maximum length ({} > {})",
+                        mid.len(),
+                        MAX_MACHINE_ID_LEN
+                    ));
                 }
                 let machine_id = String::from_utf8(mid.to_vec())
                     .map_err(|e| anyhow!("Invalid UTF-8 in machine ID from keyring: {}", e))?;

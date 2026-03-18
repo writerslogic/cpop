@@ -147,9 +147,8 @@ impl From<&crate::analysis::active_probes::GaltonInvariantResult> for GaltonInva
             stimulus_count: result.perturbation_count as u32,
             expected_absorption: 0.55, // RFC default baseline
             z_score: {
-                let denom = result.std_error.max(0.001);
-                if denom.is_finite() {
-                    (result.absorption_coefficient - 0.55) / denom
+                if result.std_error > f64::EPSILON && result.std_error.is_finite() {
+                    (result.absorption_coefficient - 0.55) / result.std_error
                 } else {
                     0.0
                 }

@@ -184,7 +184,11 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Re
                     }
                 }
                 Err(e) => {
-                    return Err(anyhow!("Profile not found: {}", e));
+                    let msg = e.to_string();
+                    if msg.contains("not found") {
+                        return Err(anyhow!("Profile not found: {}", profile_id));
+                    }
+                    return Err(anyhow!("Storage error: {}", e));
                 }
             }
         }
