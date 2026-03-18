@@ -145,6 +145,7 @@ pub(crate) async fn cmd_export(
         latest.event_hash,
         title,
         signer.as_ref(),
+        out,
     )?;
 
     let total_iterations: u64 = events.iter().map(|e| e.vdf_iterations).sum();
@@ -211,7 +212,17 @@ pub(crate) async fn cmd_export(
         out,
     })?;
 
-    if !out.quiet && !out.json {
+    if out.json {
+        let json_out = serde_json::json!({
+            "success": true,
+            "file": out_path.to_string_lossy(),
+            "checkpoints": events.len(),
+            "tier": tier_lower,
+            "format": format_lower,
+            "verification_url": "https://writerslogic.com/verify"
+        });
+        println!("{}", serde_json::to_string(&json_out)?);
+    } else if !out.quiet {
         println!();
         println!("Recipients can verify this evidence at: https://writerslogic.com/verify");
     }
@@ -401,9 +412,12 @@ fn resolve_declaration(
     chain_hash: [u8; 32],
     title: String,
     signer: &dyn EvidenceSigner,
+    out: &OutputMode,
 ) -> Result<declaration::Declaration> {
     if tier_lower == "basic" {
-        eprintln!("Basic tier: using default declaration (no AI tools declared).");
+        if !out.quiet && !out.json {
+            eprintln!("Basic tier: using default declaration (no AI tools declared).");
+        }
         return declaration::no_ai_declaration(
             content_hash,
             chain_hash,

@@ -235,7 +235,12 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
     }
 
     let mut session_nonce = [0u8; 16];
-    getrandom::getrandom(&mut session_nonce).expect("CSPRNG failure");
+    if let Err(e) = getrandom::getrandom(&mut session_nonce) {
+        return Response::Error {
+            message: format!("CSPRNG failure: {e}"),
+            code: "CRYPTO_ERROR".into(),
+        };
+    }
 
     let mut genesis_hasher = Sha256::new();
     genesis_hasher.update(session_id.as_bytes());

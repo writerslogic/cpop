@@ -176,7 +176,7 @@ fn test_cli_help() {
 fn test_cli_version() {
     let env = CliTestEnv::new();
     let stdout = env.run_expect_success(&["--version"], None);
-    assert!(stdout.contains("cpop_cli"));
+    assert!(stdout.contains("cpop"));
 }
 
 #[test]

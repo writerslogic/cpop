@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
+    name = "cpop",
+    bin_name = "cpop",
     author,
     version,
     about = "CPOP — cryptographic proof-of-process authorship witnessing",

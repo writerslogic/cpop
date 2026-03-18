@@ -8,6 +8,18 @@ use std::io::{self, BufRead, Write};
 use crate::cli::ConfigAction;
 use crate::util::writerslogic_dir;
 
+/// Parse a boolean from user input, accepting true/false, 1/0, yes/no (case-insensitive).
+fn parse_bool_lenient(s: &str) -> std::result::Result<bool, String> {
+    match s.to_lowercase().as_str() {
+        "true" | "1" | "yes" => Ok(true),
+        "false" | "0" | "no" => Ok(false),
+        _ => Err(format!(
+            "Invalid boolean value: '{}'. Use true/false, yes/no, or 1/0.",
+            s
+        )),
+    }
+}
+
 pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
     let dir = writerslogic_dir()?;
     let config_path = dir.join("writerslogic.json");
@@ -67,9 +79,8 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
 
             match parts.as_slice() {
                 ["sentinel", "auto_start"] => {
-                    config.sentinel.auto_start = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    config.sentinel.auto_start =
+                        parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
                 }
                 ["sentinel", "heartbeat_interval_secs"] => {
                     let v: u64 = value
@@ -99,14 +110,11 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                     config.sentinel.idle_timeout_secs = v;
                 }
                 ["fingerprint", "activity_enabled"] => {
-                    config.fingerprint.activity_enabled = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    config.fingerprint.activity_enabled =
+                        parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
                 }
                 ["fingerprint", "voice_enabled"] => {
-                    let enabled: bool = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    let enabled: bool = parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
 
                     if enabled {
                         // Trigger voice consent flow
@@ -162,19 +170,16 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                     config.fingerprint.min_samples = v;
                 }
                 ["privacy", "detect_sensitive_fields"] => {
-                    config.privacy.detect_sensitive_fields = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    config.privacy.detect_sensitive_fields =
+                        parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
                 }
                 ["privacy", "hash_urls"] => {
-                    config.privacy.hash_urls = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    config.privacy.hash_urls =
+                        parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
                 }
                 ["privacy", "obfuscate_titles"] => {
-                    config.privacy.obfuscate_titles = value
-                        .parse()
-                        .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+                    config.privacy.obfuscate_titles =
+                        parse_bool_lenient(&value).map_err(|e| anyhow!("{}", e))?;
                 }
                 _ => {
                     return Err(anyhow!(
@@ -184,7 +189,11 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
             }
 
             config.persist()?;
-            println!("Set {} = {}", key, value);
+            // Show the canonical value (e.g. "yes" → "true")
+            let display_value = parse_bool_lenient(&value)
+                .map(|b| b.to_string())
+                .unwrap_or(value);
+            println!("Set {} = {}", key, display_value);
         }
 
         ConfigAction::Edit => {

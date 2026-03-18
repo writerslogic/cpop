@@ -156,6 +156,13 @@ pub(crate) fn cmd_commit(
         if let Some(msg) = &message {
             println!("  Message:      {}", msg);
         }
+        if count < 3 {
+            println!();
+            println!(
+                "Note: Export requires at least 3 checkpoints (currently {}).",
+                count
+            );
+        }
     }
 
     Ok(())

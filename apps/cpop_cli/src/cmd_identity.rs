@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use cpop_engine::keyhierarchy::{derive_master_identity, SoftwarePUF};
 use ed25519_dalek::SigningKey;
 use std::fs;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, IsTerminal};
 use zeroize::Zeroize;
 
 use crate::util::ensure_dirs;
@@ -20,16 +20,17 @@ pub(crate) fn cmd_identity(
     let dir = &config.data_dir;
 
     if recover {
-        if !json {
-            eprintln!("Enter your recovery phrase:");
-            eprint!("> ");
-            io::stderr().flush()?;
-        }
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let mut recovery_phrase = input.trim().to_string();
-        input.zeroize();
+        let mut recovery_phrase = if json || !io::stdin().is_terminal() {
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            let phrase = input.trim().to_string();
+            input.zeroize();
+            phrase
+        } else {
+            dialoguer::Password::new()
+                .with_prompt("Enter recovery phrase")
+                .interact()?
+        };
 
         if recovery_phrase.is_empty() {
             return Err(anyhow!("Recovery phrase cannot be empty"));

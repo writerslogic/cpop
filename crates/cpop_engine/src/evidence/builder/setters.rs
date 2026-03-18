@@ -328,7 +328,10 @@ impl Builder {
                 .map(|(idx, sig)| CheckpointSignature {
                     ordinal: sig.ordinal,
                     checkpoint_hash: hex::encode(sig.checkpoint_hash),
-                    ratchet_index: i32::try_from(idx).unwrap_or(i32::MAX),
+                    ratchet_index: i32::try_from(idx).unwrap_or_else(|_| {
+                        log::warn!("Ratchet index {idx} exceeds i32::MAX, clamping");
+                        i32::MAX
+                    }),
                     signature: general_purpose::STANDARD.encode(sig.signature),
                 })
                 .collect(),

@@ -354,10 +354,19 @@ fn finalize_session(
     target: &TrackTarget,
 ) -> Result<()> {
     if let Some(ref mut capture) = capture_box {
-        let _ = capture.stop();
+        if let Err(e) = capture.stop() {
+            eprintln!("Warning: Keystroke capture stop failed: {e}");
+        }
     }
     if let Some(handle) = keystroke_handle {
-        let _ = handle.join();
+        if let Err(panic_val) = handle.join() {
+            let msg = panic_val
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| panic_val.downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("unknown panic");
+            eprintln!("Warning: Keystroke capture thread panicked: {msg}");
+        }
     }
 
     let (duration, keystroke_count, sample_count) = {

@@ -46,8 +46,7 @@ impl From<&Packet> for rfc::PacketRfc {
         let jitter_seal = if let Some(jb) = &packet.jitter_binding {
             // ~8 bits of entropy per sample, scaled to millibits
             // Use u64 to avoid overflow on large sample counts (>536K keystrokes)
-            let entropy_estimate =
-                ((jb.summary.sample_count as u64) * 8 * 1000).min(20_000_000) as u32;
+            let entropy_estimate = (jb.summary.sample_count * 8 * 1000).min(20_000_000) as u32;
             JitterSealStructure {
                 lang: "en-US".to_string(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),

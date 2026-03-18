@@ -77,21 +77,21 @@ fn now_ns() -> i64 {
                 nanos as i64
             }
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|_| {
+            log::warn!("SystemTime before UNIX_EPOCH in now_ns(); falling back to 0");
+            0
+        })
 }
 
-fn generate_session_id(label: &str) -> String {
+fn generate_session_id(label: &str) -> Result<String, String> {
     let mut hasher = Sha256::new();
     hasher.update(label.as_bytes());
     hasher.update(now_ns().to_le_bytes());
     let mut random_bytes = [0u8; 16];
-    if getrandom::getrandom(&mut random_bytes).is_err() {
-        let fallback = Instant::now().elapsed().as_nanos().to_le_bytes();
-        random_bytes[..16.min(fallback.len())].copy_from_slice(&fallback[..16.min(fallback.len())]);
-    }
+    getrandom::getrandom(&mut random_bytes).map_err(|e| format!("CSPRNG failure: {e}"))?;
     hasher.update(random_bytes);
     let hash = hasher.finalize();
-    hex::encode(&hash[..16])
+    Ok(hex::encode(&hash[..16]))
 }
 
 /// Minimum session count before eviction scan is worthwhile.
@@ -130,7 +130,16 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
     evict_stale_sessions();
 
     let now = Instant::now();
-    let session_id = generate_session_id(&context_label);
+    let session_id = match generate_session_id(&context_label) {
+        Ok(id) => id,
+        Err(e) => {
+            return FfiEphemeralSessionResult {
+                success: false,
+                session_id: String::new(),
+                error_message: Some(e),
+            };
+        }
+    };
 
     sessions().insert(
         session_id.clone(),
@@ -240,7 +249,9 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
             hardware_counter: None,
             input_method: None,
         };
-        let _ = store.add_secure_event(&mut event);
+        if let Err(e) = store.add_secure_event(&mut event) {
+            log::error!("Failed to persist checkpoint: {e}");
+        }
     }
 
     flush_session_state(&session_id, &entry);
@@ -506,7 +517,9 @@ pub fn ffi_ephemeral_checkpoint_hash(
             hardware_counter: None,
             input_method: None,
         };
-        let _ = store.add_secure_event(&mut event);
+        if let Err(e) = store.add_secure_event(&mut event) {
+            log::error!("Failed to persist checkpoint: {e}");
+        }
     }
 
     flush_session_state(&session_id, &entry);

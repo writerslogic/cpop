@@ -317,7 +317,7 @@ fn wal_append_session_event(
             let wal_path = wal_dir.join(format!("{}.wal", session_id));
             if let Ok(wal) = Wal::open(&wal_path, session_id_bytes, key) {
                 if let Err(e) = wal.append(entry_type, payload) {
-                    log::warn!("WAL append failed for session {}: {}", session_id, e);
+                    log::error!("WAL append failed for session {}: {}", session_id, e);
                 }
             }
         } else {

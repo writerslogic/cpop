@@ -121,7 +121,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
 
     let did = load_did().unwrap_or_else(|_| "unknown".into());
     let api_key = match load_api_key() {
-        Ok(k) => k,
+        Ok(k) => zeroize::Zeroizing::new(k),
         Err(e) => {
             return FfiResult {
                 success: false,
@@ -150,7 +150,8 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let result = rt.block_on(async {
         use crate::writersproof::{AnchorMetadata, AnchorRequest, WritersProofClient};
 
-        let client = WritersProofClient::new("https://api.writersproof.com").with_jwt(api_key);
+        let client =
+            WritersProofClient::new("https://api.writersproof.com").with_jwt((*api_key).clone());
 
         tokio::time::timeout(
             std::time::Duration::from_secs(30),

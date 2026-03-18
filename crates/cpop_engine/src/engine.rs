@@ -495,5 +495,8 @@ fn now_ns() -> i64 {
                 nanos as i64
             }
         })
-        .unwrap_or(0)
+        .unwrap_or_else(|_| {
+            log::warn!("SystemTime before UNIX_EPOCH in now_ns(); falling back to 0");
+            0
+        })
 }

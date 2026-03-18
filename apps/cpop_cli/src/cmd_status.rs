@@ -219,6 +219,7 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
         }
     } else {
         println!("Database: not found");
+        println!("  Run 'cpop init' to get started.");
     }
 
     println!();

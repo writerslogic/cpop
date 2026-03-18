@@ -182,7 +182,9 @@ impl ResearchCollector {
         if result.uploaded > 0 {
             self.sessions.clear();
             if self.config.research_data_dir.exists() {
-                let _ = fs::remove_dir_all(&self.config.research_data_dir);
+                if let Err(e) = fs::remove_dir_all(&self.config.research_data_dir) {
+                    log::warn!("Failed to clean up research dir: {e}");
+                }
             }
         }
 

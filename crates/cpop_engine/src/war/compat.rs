@@ -200,7 +200,13 @@ impl AttestationResultWireExt for AttestationResultWire {
 
         EarToken {
             eat_profile: POP_EAR_PROFILE.to_string(),
-            iat: i64::try_from(self.created / 1000).unwrap_or(i64::MAX),
+            iat: i64::try_from(self.created / 1000).unwrap_or_else(|_| {
+                log::warn!(
+                    "EAR iat overflow: created={}, using current time",
+                    self.created
+                );
+                Utc::now().timestamp()
+            }),
             ear_verifier_id: VerifierId::default(),
             submods,
         }

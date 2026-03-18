@@ -87,7 +87,15 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
         let elapsed_secs = elapsed.as_secs();
         let cp_count = packet.checkpoints.len() as u64;
 
-        if elapsed_secs == 0 {
+        // Guard against corrupted timestamps producing absurd durations
+        const MAX_PLAUSIBLE_ELAPSED_SECS: u64 = 31_536_000; // 365 days
+        if elapsed_secs > MAX_PLAUSIBLE_ELAPSED_SECS {
+            warnings.push(format!(
+                "Implausible elapsed time: {}s exceeds maximum {}s (corrupted timestamp?)",
+                elapsed_secs, MAX_PLAUSIBLE_ELAPSED_SECS
+            ));
+            Ar4siStatus::Contraindicated as i8
+        } else if elapsed_secs == 0 {
             warnings.push("VDF proofs verified but total elapsed time is zero".to_string());
             Ar4siStatus::Contraindicated as i8
         } else if elapsed_secs < MIN_AFFIRMING_DURATION_SECS {
