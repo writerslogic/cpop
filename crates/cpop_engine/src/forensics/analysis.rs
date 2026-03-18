@@ -19,12 +19,20 @@ use super::types::{
 };
 use super::velocity::{compute_session_stats, count_sessions_sorted};
 
+use super::types::{CheckpointFlags, PerCheckpointResult};
+use crate::analysis::labyrinth::{analyze_labyrinth, LabyrinthParams};
+use crate::analysis::{analyze_iki_compression, analyze_lyapunov, analyze_snr};
+use crate::evidence::CheckpointProof;
+
 const PERPLEXITY_ANOMALY_THRESHOLD: f64 = 15.0;
 const MIN_IKI_FOR_HURST: usize = 50;
 const STEG_LOW_CONF: f64 = 0.3;
 const STEG_HIGH_CONF: f64 = 0.95;
 const STEG_PENALTY: f64 = 0.20;
 const STEG_ALERT_THRESHOLD: f64 = 0.8;
+const MIN_IKI_FOR_LABYRINTH: usize = 50;
+const PER_CHECKPOINT_SUSPICIOUS_THRESHOLD: f64 = 0.3;
+const PER_CHECKPOINT_ROBOTIC_CV: f64 = 0.10;
 
 pub fn build_profile(
     events: &[EventData],
@@ -171,6 +179,41 @@ pub fn analyze_forensics_ext(
         if forgery.is_suspicious && metrics.steg_confidence > STEG_ALERT_THRESHOLD {
             metrics.anomaly_count += 1;
         }
+
+        // SNR analysis
+        if let Some(snr) = analyze_snr(&iki_intervals) {
+            if snr.flagged {
+                metrics.anomaly_count += 1;
+            }
+            metrics.snr = Some(snr);
+        }
+
+        // Lyapunov exponent analysis
+        if let Some(lyap) = analyze_lyapunov(&iki_intervals) {
+            if lyap.flagged {
+                metrics.anomaly_count += 1;
+            }
+            metrics.lyapunov = Some(lyap);
+        }
+
+        // IKI compression ratio analysis
+        if let Some(comp) = analyze_iki_compression(&iki_intervals) {
+            if comp.flagged {
+                metrics.anomaly_count += 1;
+            }
+            metrics.iki_compression = Some(comp);
+        }
+
+        // Labyrinth (Takens' embedding) analysis
+        if iki_intervals.len() >= MIN_IKI_FOR_LABYRINTH {
+            let params = LabyrinthParams::default();
+            if let Ok(lab) = analyze_labyrinth(&iki_intervals, &params) {
+                if !lab.is_biologically_plausible() {
+                    metrics.anomaly_count += 1;
+                }
+                metrics.labyrinth = Some(lab);
+            }
+        }
     }
 
     metrics.velocity = super::velocity::analyze_velocity(events);
@@ -214,4 +257,107 @@ pub fn analyze_forensics_ext(
     metrics.risk_level = determine_risk_level(metrics.assessment_score, events.len());
 
     metrics
+}
+
+/// Analyze events partitioned by checkpoint boundaries.
+pub fn per_checkpoint_flags(
+    events: &[EventData],
+    checkpoints: &[CheckpointProof],
+) -> PerCheckpointResult {
+    if checkpoints.is_empty() {
+        return PerCheckpointResult {
+            checkpoint_flags: Vec::new(),
+            pct_flagged: 0.0,
+            suspicious: false,
+        };
+    }
+
+    let mut sorted_events = events.to_vec();
+    sorted_events.sort_by_key(|e| e.timestamp_ns);
+
+    let mut flags = Vec::with_capacity(checkpoints.len());
+
+    for (idx, cp) in checkpoints.iter().enumerate() {
+        let cp_ts = cp.timestamp.timestamp_nanos_opt().unwrap_or(i64::MAX);
+        let prev_ts = if idx > 0 {
+            checkpoints[idx - 1]
+                .timestamp
+                .timestamp_nanos_opt()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        let interval_events: Vec<&EventData> = sorted_events
+            .iter()
+            .filter(|e| e.timestamp_ns > prev_ts && e.timestamp_ns <= cp_ts)
+            .collect();
+
+        let event_count = interval_events.len();
+
+        let timing_cv = if event_count >= 2 {
+            let intervals: Vec<f64> = interval_events
+                .windows(2)
+                .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64)
+                .collect();
+            let mean = intervals.iter().sum::<f64>() / intervals.len() as f64;
+            if mean > 0.0 {
+                let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
+                    / intervals.len() as f64;
+                variance.sqrt() / mean
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        let max_velocity_bps = if event_count >= 2 {
+            interval_events
+                .windows(2)
+                .map(|w| {
+                    let dt = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1e9;
+                    if dt > 0.0 {
+                        w[1].size_delta.unsigned_abs() as f64 / dt
+                    } else {
+                        0.0
+                    }
+                })
+                .fold(0.0f64, f64::max)
+        } else {
+            0.0
+        };
+
+        let all_append = if event_count > 0 {
+            interval_events.iter().all(|e| e.size_delta >= 0)
+        } else {
+            false
+        };
+
+        let flagged = (timing_cv < PER_CHECKPOINT_ROBOTIC_CV && event_count >= 3)
+            || (all_append && event_count >= 5);
+
+        flags.push(CheckpointFlags {
+            ordinal: cp.ordinal,
+            event_count,
+            timing_cv,
+            max_velocity_bps,
+            all_append,
+            flagged,
+        });
+    }
+
+    let flagged_count = flags.iter().filter(|f| f.flagged).count();
+    let pct_flagged = if flags.is_empty() {
+        0.0
+    } else {
+        flagged_count as f64 / flags.len() as f64
+    };
+    let suspicious = pct_flagged > PER_CHECKPOINT_SUSPICIOUS_THRESHOLD;
+
+    PerCheckpointResult {
+        checkpoint_flags: flags,
+        pct_flagged,
+        suspicious,
+    }
 }

@@ -48,6 +48,7 @@ pub mod tpm;
 pub mod transcription;
 pub mod trust_policy;
 pub mod vdf;
+pub mod verify;
 pub mod wal;
 pub mod war;
 pub mod writersproof;

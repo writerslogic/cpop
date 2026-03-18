@@ -67,7 +67,11 @@ async fn run() -> Result<()> {
             format,
             stego,
         }) => cmd_export::cmd_export(&file, &tier, output, &format, stego, &out).await?,
-        Some(Commands::Verify { file, key }) => cmd_verify::cmd_verify(&file, key, &out)?,
+        Some(Commands::Verify {
+            file,
+            key,
+            output_war,
+        }) => cmd_verify::cmd_verify(&file, key, output_war, &out)?,
         Some(Commands::Presence { action }) => cmd_presence::cmd_presence(action, &out)?,
         Some(Commands::Track { action, file }) => {
             cmd_track::cmd_track_smart(action, file, &out).await?
@@ -218,7 +222,7 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
             let path: String = Input::new()
                 .with_prompt("Path to evidence file")
                 .interact_text()?;
-            cmd_verify::cmd_verify(&PathBuf::from(path), None, out)?;
+            cmd_verify::cmd_verify(&PathBuf::from(path), None, None, out)?;
         }
         Some(5) => {
             cmd_identity::cmd_identity(false, false, false, false, out.json)?;

@@ -232,6 +232,40 @@ fn clean_path(path: &Path) -> PathBuf {
     cleaned
 }
 
+/// Maximum retries for SQLite BUSY errors.
+const SQLITE_BUSY_MAX_RETRIES: u32 = 5;
+
+/// Base delay in milliseconds for SQLite BUSY retry backoff.
+const SQLITE_BUSY_BASE_DELAY_MS: u64 = 100;
+
+/// Retry a fallible operation with exponential backoff when SQLite is busy.
+///
+/// Retries up to [`SQLITE_BUSY_MAX_RETRIES`] times with exponential backoff
+/// starting at [`SQLITE_BUSY_BASE_DELAY_MS`] when the error message indicates
+/// a locked database.
+pub(crate) fn retry_on_busy<T, F: FnMut() -> Result<T>>(mut op: F) -> Result<T> {
+    let mut last_err = None;
+    for attempt in 0..SQLITE_BUSY_MAX_RETRIES {
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                let msg = e.to_string();
+                if (msg.contains("database is locked") || msg.contains("SQLITE_BUSY"))
+                    && attempt < SQLITE_BUSY_MAX_RETRIES - 1
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        SQLITE_BUSY_BASE_DELAY_MS * (1 << attempt),
+                    ));
+                    last_err = Some(e);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err.expect("MAX_RETRIES must be > 0"))
+}
+
 pub fn load_api_key(dir: &Path) -> Result<String> {
     let key_path = dir.join("api_key");
     fs::read_to_string(&key_path)
