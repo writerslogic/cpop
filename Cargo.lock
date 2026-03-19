@@ -1009,7 +1009,7 @@ dependencies = [
 
 [[package]]
 name = "cpop_cli"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "bs58",
@@ -1039,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "cpop_engine"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "accessibility",
  "aes-gcm",
