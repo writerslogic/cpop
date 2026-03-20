@@ -109,3 +109,82 @@ pub const K_CG_EVENT_SOURCE_STATE_PRIVATE: i64 = -1;
 #[allow(dead_code)]
 pub const K_CG_EVENT_SOURCE_STATE_COMBINED_SESSION: i64 = 0;
 pub const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM: i64 = 1;
+
+// CGEventTap constants (values from Apple's CGEventTypes.h / Quartz Event Services)
+pub const K_CG_HID_EVENT_TAP: u32 = 0;
+pub const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
+pub const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 0x00000001;
+pub const K_CG_EVENT_KEY_DOWN: u32 = 10;
+pub const K_CG_EVENT_MOUSE_MOVED: u32 = 5;
+
+pub const fn cg_event_mask_bit(event_type: u32) -> u64 {
+    1u64 << event_type
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CGPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+pub type CGEventTapCallBack = unsafe extern "C" fn(
+    proxy: *mut std::ffi::c_void,
+    event_type: u32,
+    event: *mut std::ffi::c_void,
+    user_info: *mut std::ffi::c_void,
+) -> *mut std::ffi::c_void;
+
+#[allow(dead_code)]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    pub fn CGEventTapCreate(
+        tap: u32,
+        place: u32,
+        options: u32,
+        events_of_interest: u64,
+        callback: CGEventTapCallBack,
+        user_info: *mut std::ffi::c_void,
+    ) -> *mut std::ffi::c_void;
+
+    pub fn CGEventTapEnable(tap: *mut std::ffi::c_void, enable: bool);
+    pub fn CGEventGetIntegerValueField(event: *mut std::ffi::c_void, field: u32) -> i64;
+    pub fn CGEventGetLocation(event: *mut std::ffi::c_void) -> CGPoint;
+}
+
+extern "C" {
+    pub fn CFMachPortCreateRunLoopSource(
+        allocator: CFAllocatorRef,
+        port: *mut std::ffi::c_void,
+        order: CFIndex,
+    ) -> *mut std::ffi::c_void;
+
+    pub fn CFRunLoopAddSource(
+        rl: *mut std::ffi::c_void,
+        source: *mut std::ffi::c_void,
+        mode: CFStringRef,
+    );
+
+    pub fn CFRunLoopRun();
+
+    pub static kCFRunLoopCommonModes: CFStringRef;
+}
+
+/// Callback type for CGEventTap user callbacks.
+pub type TapCallback = Box<dyn FnMut(*mut std::ffi::c_void, u32)>;
+
+/// C trampoline for CGEventTap callbacks.
+///
+/// SAFETY: `user_info` must be a valid `*mut TapCallback` that outlives the event tap.
+pub unsafe extern "C" fn event_tap_trampoline(
+    _proxy: *mut std::ffi::c_void,
+    event_type: u32,
+    event: *mut std::ffi::c_void,
+    user_info: *mut std::ffi::c_void,
+) -> *mut std::ffi::c_void {
+    if !user_info.is_null() && !event.is_null() {
+        let callback = &mut *(user_info as *mut TapCallback);
+        callback(event, event_type);
+    }
+    event
+}

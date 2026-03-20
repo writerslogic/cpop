@@ -7,10 +7,6 @@ use super::synthetic::verify_event_source;
 use super::{EventVerificationResult, HidDeviceInfo, KeystrokeEvent, SyntheticStats};
 use crate::platform::KeystrokeCapture;
 use anyhow::{anyhow, Result};
-use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-use core_graphics::event::{
-    CGEvent, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
-};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -53,9 +49,10 @@ impl KeystrokeMonitor {
     ) -> Result<Self> {
         let session_clone = Arc::clone(&session);
         Self::start_event_tap(
-            move |event: &CGEvent, verification: EventVerificationResult| {
+            move |event: *mut std::ffi::c_void, verification: EventVerificationResult| {
                 let now = chrono::Utc::now().timestamp_nanos_safe();
-                let keycode = event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYCODE);
+                let keycode =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) };
                 let zone_i = crate::jitter::keycode_to_zone(keycode as u16);
                 let zone = if zone_i >= 0 { zone_i as u8 } else { 0xFF };
 
@@ -106,8 +103,10 @@ impl KeystrokeMonitor {
     ) -> Result<Self> {
         let session_clone = Arc::clone(&session);
         Self::start_event_tap(
-            move |event: &CGEvent, verification: EventVerificationResult| {
-                let keycode = event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYCODE) as u16;
+            move |event: *mut std::ffi::c_void, verification: EventVerificationResult| {
+                let keycode =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) }
+                        as u16;
                 let zone = crate::jitter::keycode_to_zone(keycode);
 
                 if let Ok(mut s) = session_clone.lock() {
@@ -130,7 +129,7 @@ impl KeystrokeMonitor {
 
     fn start_event_tap<F>(on_keystroke: F) -> Result<Self>
     where
-        F: FnMut(&CGEvent, EventVerificationResult) + Send + 'static,
+        F: FnMut(*mut std::ffi::c_void, EventVerificationResult) + Send + 'static,
     {
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
 
@@ -145,24 +144,18 @@ impl KeystrokeMonitor {
         let run_loop: Arc<Mutex<Option<RunLoopHandle>>> = Arc::new(Mutex::new(None));
         let run_loop_clone = Arc::clone(&run_loop);
 
-        // FnMut → Mutex so it can be called from the FnOnce CGEventTap callback
         let on_keystroke = Mutex::new(on_keystroke);
 
         let thread = std::thread::spawn(move || {
-            let events = vec![CGEventType::KeyDown];
-            let tap = CGEventTap::new(
-                CGEventTapLocation::HID,
-                CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly,
-                events,
-                move |_proxy, event_type, event| {
-                    if matches!(event_type, CGEventType::KeyDown) {
-                        let verification = verify_event_source(event);
+            let mut tap_cb: TapCallback =
+                Box::new(move |event: *mut std::ffi::c_void, event_type: u32| {
+                    if event_type == K_CG_EVENT_KEY_DOWN {
+                        let verification = unsafe { verify_event_source(event) };
 
                         match verification {
                             EventVerificationResult::Synthetic => {
                                 rej_count.fetch_add(1, Ordering::SeqCst);
-                                return Some(event.to_owned());
+                                return;
                             }
                             EventVerificationResult::Hardware
                             | EventVerificationResult::Suspicious => {
@@ -176,39 +169,41 @@ impl KeystrokeMonitor {
                             handler(event, verification);
                         }
                     }
-                    Some(event.to_owned())
-                },
-            );
+                });
 
-            let tap = match tap {
-                Ok(tap) => tap,
-                Err(_) => {
+            unsafe {
+                let tap = CGEventTapCreate(
+                    K_CG_HID_EVENT_TAP,
+                    K_CG_HEAD_INSERT_EVENT_TAP,
+                    K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+                    cg_event_mask_bit(K_CG_EVENT_KEY_DOWN),
+                    event_tap_trampoline,
+                    &mut tap_cb as *mut TapCallback as *mut std::ffi::c_void,
+                );
+
+                if tap.is_null() {
                     let _ = ready_tx.send(Err(anyhow!("Failed to create CGEventTap")));
                     return;
                 }
-            };
 
-            let loop_source = match tap.mach_port.create_runloop_source(0) {
-                Ok(source) => source,
-                Err(_) => {
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+                if source.is_null() {
+                    CFRelease(tap);
                     let _ = ready_tx.send(Err(anyhow!("Failed to create runloop source")));
                     return;
                 }
-            };
 
-            let current_loop = CFRunLoop::get_current();
-            unsafe {
                 let rl_ref = CFRunLoopGetCurrent();
                 CFRetain(rl_ref);
                 if let Ok(mut rl) = run_loop_clone.lock() {
                     *rl = Some(RunLoopHandle(rl_ref));
                 }
-                current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
+                CFRunLoopAddSource(rl_ref, source, kCFRunLoopCommonModes);
+                // Signal ready only after run_loop handle is stored (C-002 fix)
+                let _ = ready_tx.send(Ok(()));
+                CGEventTapEnable(tap, true);
+                CFRunLoopRun();
             }
-            // Signal ready only after run_loop handle is stored (C-002 fix)
-            let _ = ready_tx.send(Ok(()));
-            tap.enable();
-            CFRunLoop::run_current();
         });
 
         match ready_rx.recv() {
@@ -300,19 +295,14 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
         let (ready_tx, ready_rx) = mpsc::channel();
 
         let thread = std::thread::spawn(move || {
-            let events = vec![CGEventType::KeyDown];
-            let tap = CGEventTap::new(
-                CGEventTapLocation::HID,
-                CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly,
-                events,
-                move |_proxy, event_type, event| {
+            let mut tap_cb: TapCallback =
+                Box::new(move |event: *mut std::ffi::c_void, event_type: u32| {
                     if !running.load(Ordering::SeqCst) {
-                        return Some(event.to_owned());
+                        return;
                     }
 
-                    if matches!(event_type, CGEventType::KeyDown) {
-                        let verification = verify_event_source(event);
+                    if event_type == K_CG_EVENT_KEY_DOWN {
+                        let verification = unsafe { verify_event_source(event) };
 
                         let is_hardware = match verification {
                             EventVerificationResult::Hardware => true,
@@ -329,8 +319,9 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
 
                         if is_hardware {
                             let now = chrono::Utc::now().timestamp_nanos_safe();
-                            let keycode =
-                                event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYCODE) as u16;
+                            let keycode = unsafe {
+                                CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE)
+                            } as u16;
                             let zone = crate::jitter::keycode_to_zone(keycode);
 
                             let keystroke = KeystrokeEvent {
@@ -346,39 +337,41 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
                             let _ = tx.send(keystroke);
                         }
                     }
-                    Some(event.to_owned())
-                },
-            );
+                });
 
-            let tap = match tap {
-                Ok(tap) => tap,
-                Err(_) => {
+            unsafe {
+                let tap = CGEventTapCreate(
+                    K_CG_HID_EVENT_TAP,
+                    K_CG_HEAD_INSERT_EVENT_TAP,
+                    K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+                    cg_event_mask_bit(K_CG_EVENT_KEY_DOWN),
+                    event_tap_trampoline,
+                    &mut tap_cb as *mut TapCallback as *mut std::ffi::c_void,
+                );
+
+                if tap.is_null() {
                     let _ = ready_tx.send(Err(anyhow!("Failed to create CGEventTap")));
                     return;
                 }
-            };
 
-            let loop_source = match tap.mach_port.create_runloop_source(0) {
-                Ok(source) => source,
-                Err(_) => {
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+                if source.is_null() {
+                    CFRelease(tap);
                     let _ = ready_tx.send(Err(anyhow!("Failed to create runloop source")));
                     return;
                 }
-            };
 
-            let current_loop = CFRunLoop::get_current();
-            unsafe {
                 let rl_ref = CFRunLoopGetCurrent();
                 CFRetain(rl_ref);
                 if let Ok(mut rl) = run_loop.lock() {
                     *rl = Some(RunLoopHandle(rl_ref));
                 }
-                current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
+                CFRunLoopAddSource(rl_ref, source, kCFRunLoopCommonModes);
+                // Signal ready only after run_loop handle is stored (C-002 fix)
+                let _ = ready_tx.send(Ok(()));
+                CGEventTapEnable(tap, true);
+                CFRunLoopRun();
             }
-            // Signal ready only after run_loop handle is stored (C-002 fix)
-            let _ = ready_tx.send(Ok(()));
-            tap.enable();
-            CFRunLoop::run_current();
         });
 
         match ready_rx.recv() {

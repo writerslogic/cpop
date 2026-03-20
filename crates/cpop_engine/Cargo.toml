@@ -45,7 +45,7 @@ serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_bytes = "0.11"
 serde_json = "1.0.135"
 async-trait = "0.1"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
 log = "0.4"
 getrandom = "0.2"
 ripemd = "0.1"
@@ -62,7 +62,7 @@ coset = "0.4"  # COSE signatures for hardware attestation
 
 # Async & System
 tokio = { version = "1.43.0", features = ["full"] }
-sysinfo = "0.33.1"
+sysinfo = { version = "0.33.1", default-features = false, features = ["apple-app-store", "system"] }
 libc = "0.2"
 anyhow = "1.0.95"
 thiserror = "2.0.11"
@@ -126,11 +126,8 @@ windows = { version = "0.59", features = [
 
 # macOS Specific
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26.0"
-core-graphics = "0.24.0"
 core-foundation = "0.10.0"
 core-foundation-sys = "0.8.6"
-accessibility = "0.1.6"
 objc = "0.2.7"
 security-framework = { version = "3.0.0", features = ["OSX_10_12"] }
 security-framework-sys = "2.9.1"

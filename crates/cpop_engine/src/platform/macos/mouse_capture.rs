@@ -6,10 +6,6 @@ use super::ffi::*;
 use super::keystroke::RunLoopHandle;
 use crate::platform::{MouseCapture, MouseEvent, MouseIdleStats, MouseStegoParams};
 use anyhow::{anyhow, Result};
-use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-use core_graphics::event::{
-    CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
-};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 
@@ -79,19 +75,13 @@ impl MouseCapture for MacOSMouseCapture {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
 
         let thread = std::thread::spawn(move || {
-            let events = vec![CGEventType::MouseMoved];
-
-            let tap = CGEventTap::new(
-                CGEventTapLocation::HID,
-                CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly,
-                events,
-                move |_proxy, event_type, event| {
+            let mut tap_cb: TapCallback =
+                Box::new(move |event: *mut std::ffi::c_void, event_type: u32| {
                     if !running.load(Ordering::SeqCst) {
-                        return Some(event.to_owned());
+                        return;
                     }
 
-                    if matches!(event_type, CGEventType::MouseMoved) {
+                    if event_type == K_CG_EVENT_MOUSE_MOVED {
                         let should_capture = if idle_only_mode {
                             if let Ok(time) = last_keystroke_time.read() {
                                 time.elapsed() < std::time::Duration::from_secs(2)
@@ -103,12 +93,12 @@ impl MouseCapture for MacOSMouseCapture {
                         };
 
                         if !should_capture {
-                            return Some(event.to_owned());
+                            return;
                         }
 
                         let now = chrono::Utc::now().timestamp_nanos_safe();
 
-                        let location = event.location();
+                        let location = unsafe { CGEventGetLocation(event) };
                         let x = location.x;
                         let y = location.y;
 
@@ -136,39 +126,40 @@ impl MouseCapture for MacOSMouseCapture {
                             keyboard_active.store(false, Ordering::SeqCst);
                         }
                     }
+                });
 
-                    Some(event.to_owned())
-                },
-            );
+            unsafe {
+                let tap = CGEventTapCreate(
+                    K_CG_HID_EVENT_TAP,
+                    K_CG_HEAD_INSERT_EVENT_TAP,
+                    K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+                    cg_event_mask_bit(K_CG_EVENT_MOUSE_MOVED),
+                    event_tap_trampoline,
+                    &mut tap_cb as *mut TapCallback as *mut std::ffi::c_void,
+                );
 
-            let tap = match tap {
-                Ok(tap) => tap,
-                Err(_) => {
+                if tap.is_null() {
                     let _ = ready_tx.send(Err(anyhow!("Failed to create CGEventTap")));
                     return;
                 }
-            };
 
-            let loop_source = match tap.mach_port.create_runloop_source(0) {
-                Ok(source) => source,
-                Err(_) => {
+                let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+                if source.is_null() {
+                    CFRelease(tap);
                     let _ = ready_tx.send(Err(anyhow!("Failed to create runloop source")));
                     return;
                 }
-            };
 
-            let _ = ready_tx.send(Ok(()));
-            let current_loop = CFRunLoop::get_current();
-            unsafe {
+                let _ = ready_tx.send(Ok(()));
                 let rl_ref = CFRunLoopGetCurrent();
                 CFRetain(rl_ref);
                 if let Ok(mut rl) = run_loop.lock() {
                     *rl = Some(RunLoopHandle(rl_ref));
                 }
-                current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
+                CFRunLoopAddSource(rl_ref, source, kCFRunLoopCommonModes);
+                CGEventTapEnable(tap, true);
+                CFRunLoopRun();
             }
-            tap.enable();
-            CFRunLoop::run_current();
         });
 
         match ready_rx.recv() {

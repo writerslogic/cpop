@@ -59,12 +59,16 @@ pub fn reset_synthetic_stats() {
 }
 
 /// Detects CGEventPost injection by checking source state, keyboard type, and PID.
-pub fn verify_event_source(event: &core_graphics::event::CGEvent) -> EventVerificationResult {
+///
+/// # Safety
+///
+/// `event` must be a valid `CGEventRef` obtained from a CGEventTap callback.
+pub unsafe fn verify_event_source(event: *mut std::ffi::c_void) -> EventVerificationResult {
     let strict = STRICT_MODE.load(Ordering::SeqCst);
 
-    let source_state_id = event.get_integer_value_field(K_CG_EVENT_SOURCE_STATE_ID);
-    let keyboard_type = event.get_integer_value_field(K_CG_KEYBOARD_EVENT_KEYBOARD_TYPE);
-    let source_pid = event.get_integer_value_field(K_CG_EVENT_SOURCE_UNIX_PROCESS_ID);
+    let source_state_id = CGEventGetIntegerValueField(event, K_CG_EVENT_SOURCE_STATE_ID);
+    let keyboard_type = CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYBOARD_TYPE);
+    let source_pid = CGEventGetIntegerValueField(event, K_CG_EVENT_SOURCE_UNIX_PROCESS_ID);
 
     let mut suspicious = false;
 
