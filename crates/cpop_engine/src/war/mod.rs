@@ -58,6 +58,43 @@ impl Block {
 
         let seal = compute_seal(packet, declaration)?;
 
+        // Tool declaration: structured from declaration.ai_tools
+        let tool = if declaration.ai_tools.is_empty() {
+            Some("none".to_string())
+        } else {
+            let t = &declaration.ai_tools[0];
+            let extent = match t.extent {
+                crate::declaration::AiExtent::None => "none",
+                crate::declaration::AiExtent::Minimal => "minor",
+                crate::declaration::AiExtent::Moderate => "moderate",
+                crate::declaration::AiExtent::Substantial => "substantial",
+            };
+            Some(format!("ai:{}:{}", t.tool, extent))
+        };
+
+        // Evidence strength tier
+        let tier = Some(
+            match packet.strength {
+                crate::evidence::Strength::Basic => "T1",
+                crate::evidence::Strength::Standard => "T2",
+                crate::evidence::Strength::Enhanced => "T3",
+                crate::evidence::Strength::Maximum => "T4",
+            }
+            .to_string(),
+        );
+
+        let checkpoints = Some(packet.checkpoints.len() as u64);
+
+        // Duration from first to last checkpoint
+        let duration_secs = if packet.checkpoints.len() >= 2 {
+            let first = packet.checkpoints.first().unwrap().timestamp;
+            let last = packet.checkpoints.last().unwrap().timestamp;
+            let delta = (last - first).num_seconds().max(0) as u64;
+            Some(delta)
+        } else {
+            None
+        };
+
         Ok(Self {
             version,
             author,
@@ -65,6 +102,11 @@ impl Block {
             timestamp: packet.exported_at,
             statement: declaration.statement.clone(),
             seal,
+            tool,
+            tier,
+            score: None, // Set during forensic analysis or export
+            checkpoints,
+            duration_secs,
             evidence: Some(Box::new(packet.clone())),
             signed: false,
             verifier_nonce: packet.verifier_nonce,

@@ -17,6 +17,21 @@ impl Block {
         output.push_str(&format!("Author: {}\n", self.author));
         output.push_str(&format!("Document-ID: {}\n", hex::encode(self.document_id)));
         output.push_str(&format!("Timestamp: {}\n", self.timestamp.to_rfc3339()));
+        if let Some(tool) = &self.tool {
+            output.push_str(&format!("Tool: {}\n", tool));
+        }
+        if let Some(tier) = &self.tier {
+            output.push_str(&format!("Tier: {}\n", tier));
+        }
+        if let Some(score) = self.score {
+            output.push_str(&format!("Score: {}\n", score));
+        }
+        if let Some(cp) = self.checkpoints {
+            output.push_str(&format!("Checkpoints: {}\n", cp));
+        }
+        if let Some(dur) = self.duration_secs {
+            output.push_str(&format!("Duration: {}\n", dur));
+        }
         if let Some(nonce) = &self.verifier_nonce {
             output.push_str(&format!("Verifier-Nonce: {}\n", hex::encode(nonce)));
         }
@@ -66,6 +81,11 @@ impl Block {
         let mut author = String::new();
         let mut document_id = [0u8; 32];
         let mut timestamp = Utc::now();
+        let mut tool: Option<String> = None;
+        let mut tier: Option<String> = None;
+        let mut score: Option<u8> = None;
+        let mut checkpoints: Option<u64> = None;
+        let mut duration_secs: Option<u64> = None;
         let mut verifier_nonce: Option<[u8; 32]> = None;
         let mut header_end = start + 1;
 
@@ -91,6 +111,16 @@ impl Block {
                 timestamp = DateTime::parse_from_rfc3339(val.trim())
                     .map_err(|e| format!("invalid timestamp: {e}"))?
                     .with_timezone(&Utc);
+            } else if let Some(val) = line.strip_prefix("Tool: ") {
+                tool = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("Tier: ") {
+                tier = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("Score: ") {
+                score = val.trim().parse().ok();
+            } else if let Some(val) = line.strip_prefix("Checkpoints: ") {
+                checkpoints = val.trim().parse().ok();
+            } else if let Some(val) = line.strip_prefix("Duration: ") {
+                duration_secs = val.trim().parse().ok();
             } else if let Some(val) = line.strip_prefix("Verifier-Nonce: ") {
                 let bytes =
                     hex::decode(val.trim()).map_err(|e| format!("invalid verifier nonce: {e}"))?;
@@ -135,6 +165,11 @@ impl Block {
             timestamp,
             statement,
             seal,
+            tool,
+            tier,
+            score,
+            checkpoints,
+            duration_secs,
             evidence: None,
             signed,
             verifier_nonce,

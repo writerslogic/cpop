@@ -56,6 +56,25 @@ pub struct Block {
     pub timestamp: DateTime<Utc>,
     pub statement: String,
     pub seal: Seal,
+
+    // ── Structured metadata (new in WAR/1.1+) ──
+    /// Tool declaration: "none", "reference", or "ai:ToolName:extent".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// Evidence strength tier: "T1" (basic) through "T4" (maximum).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// Forensic confidence score (0–100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<u8>,
+    /// Number of checkpoints in the evidence chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoints: Option<u64>,
+    /// Total writing duration in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<u64>,
+
+    // ── Internal / non-serialized fields ──
     /// Not included in ASCII output.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<Box<Packet>>,
