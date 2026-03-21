@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::defaults;
 use super::types::*;
@@ -77,6 +77,7 @@ impl CpopConfig {
             },
             privacy: PrivacyConfig::default(),
             writersproof: WritersProofConfig::default(),
+            beacons: BeaconConfig::default(),
         }
     }
 

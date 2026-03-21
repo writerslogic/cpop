@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Request/response types for the WritersProof attestation API.
 
@@ -150,6 +150,37 @@ pub struct StegoVerifyResponse {
     pub anchor_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor_timestamp: Option<String>,
+}
+
+/// Request body for `/v1/beacon` — fetch temporal beacon attestation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeaconRequest {
+    /// SHA-256 hash of the checkpoint being attested (hex-encoded).
+    pub checkpoint_hash: String,
+}
+
+/// Response from `/v1/beacon` — WritersProof-attested temporal beacon bundle.
+///
+/// WritersProof fetches the latest drand round and NIST pulse server-side,
+/// then counter-signs the bundle. The `wp_signature` is an Ed25519 signature
+/// over `(checkpoint_hash || drand_round || drand_randomness || nist_pulse_index
+/// || nist_output_value || fetched_at)`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeaconResponse {
+    /// drand League of Entropy round number.
+    pub drand_round: u64,
+    /// drand randomness output (hex-encoded, 32 bytes).
+    pub drand_randomness: String,
+    /// NIST Randomness Beacon pulse index.
+    pub nist_pulse_index: u64,
+    /// NIST beacon output value (hex-encoded, 64 bytes).
+    pub nist_output_value: String,
+    /// NIST pulse timestamp.
+    pub nist_timestamp: String,
+    /// When WritersProof fetched the beacon values.
+    pub fetched_at: String,
+    /// WritersProof Ed25519 counter-signature over the bundle (hex-encoded, 64 bytes).
+    pub wp_signature: String,
 }
 
 /// Queued attestation for offline submission.

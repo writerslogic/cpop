@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! HTTP client for the WritersProof attestation API.
 
@@ -6,8 +6,9 @@ use ed25519_dalek::{Signer, SigningKey};
 use reqwest::Client;
 
 use super::types::{
-    AnchorRequest, AnchorResponse, AttestResponse, EnrollRequest, EnrollResponse, NonceResponse,
-    StegoSignRequest, StegoSignResponse, StegoVerifyResponse, VerifyResponse,
+    AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse, EnrollRequest,
+    EnrollResponse, NonceResponse, StegoSignRequest, StegoSignResponse, StegoVerifyResponse,
+    VerifyResponse,
 };
 use crate::error::{Error, Result};
 
@@ -20,12 +21,27 @@ pub struct WritersProofClient {
 
 impl WritersProofClient {
     /// Create a client targeting the given API base URL.
-    pub fn new(base_url: &str) -> Self {
-        Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
-            jwt: None,
-            client: Client::new(),
+    ///
+    /// In production, `base_url` must use HTTPS to protect JWT tokens and
+    /// evidence data in transit. HTTP is only allowed in debug builds for
+    /// local development.
+    pub fn new(base_url: &str) -> Result<Self> {
+        let url = base_url.trim_end_matches('/').to_string();
+        #[cfg(not(debug_assertions))]
+        if !url.starts_with("https://") {
+            return Err(Error::crypto(format!(
+                "WritersProof base_url must use HTTPS in release builds: {}",
+                &url[..url.len().min(40)]
+            )));
         }
+        Ok(Self {
+            base_url: url,
+            jwt: None,
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
+        })
     }
 
     /// Set the JWT token for authenticated requests.
@@ -138,6 +154,16 @@ impl WritersProofClient {
     ///
     /// `GET /v1/certificates/:id`
     pub async fn get_certificate(&self, id: &str) -> Result<Vec<u8>> {
+        // Validate certificate ID to prevent path traversal (e.g., "../../admin/keys")
+        if !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(Error::crypto(format!(
+                "invalid certificate ID: must be alphanumeric/dash/underscore, got: {}",
+                &id[..id.len().min(32)]
+            )));
+        }
         let url = format!("{}/v1/certificates/{}", self.base_url, id);
         let mut req = self.client.get(&url);
         if let Some(ref jwt) = self.jwt {
@@ -156,10 +182,18 @@ impl WritersProofClient {
             )));
         }
 
-        resp.bytes()
+        let body = resp
+            .bytes()
             .await
-            .map(|b| b.to_vec())
-            .map_err(|e| Error::crypto(format!("certificate response read failed: {e}")))
+            .map_err(|e| Error::crypto(format!("certificate response read failed: {e}")))?;
+        // Cap response body to 10 MB to prevent OOM from oversized responses
+        if body.len() > 10_000_000 {
+            return Err(Error::crypto(format!(
+                "certificate response too large: {} bytes (max 10MB)",
+                body.len()
+            )));
+        }
+        Ok(body.to_vec())
     }
 
     /// Get the certificate revocation list.
@@ -184,10 +218,17 @@ impl WritersProofClient {
             )));
         }
 
-        resp.bytes()
+        let body = resp
+            .bytes()
             .await
-            .map(|b| b.to_vec())
-            .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))
+            .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))?;
+        if body.len() > 50_000_000 {
+            return Err(Error::crypto(format!(
+                "CRL response too large: {} bytes (max 50MB)",
+                body.len()
+            )));
+        }
+        Ok(body.to_vec())
     }
 
     /// Anchor an evidence packet hash in the transparency log.
@@ -215,6 +256,52 @@ impl WritersProofClient {
         resp.json::<AnchorResponse>()
             .await
             .map_err(|e| Error::crypto(format!("anchor response parse failed: {e}")))
+    }
+
+    /// Fetch temporal beacon attestation from WritersProof.
+    ///
+    /// WritersProof fetches the latest drand round and NIST pulse server-side,
+    /// then counter-signs the bundle. The returned `wp_signature` is included
+    /// in the H2 seal computation, cryptographically binding the beacon values
+    /// to the evidence packet.
+    ///
+    /// `POST /v1/beacon`
+    pub async fn fetch_beacon(
+        &self,
+        checkpoint_hash: &str,
+        timeout_secs: u64,
+    ) -> Result<BeaconResponse> {
+        let url = format!("{}/v1/beacon", self.base_url);
+        let req = BeaconRequest {
+            checkpoint_hash: checkpoint_hash.to_string(),
+        };
+
+        let effective_timeout = timeout_secs.max(1); // Enforce minimum 1s timeout
+        let mut http_req = self
+            .client
+            .post(&url)
+            .json(&req)
+            .timeout(std::time::Duration::from_secs(effective_timeout));
+
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt);
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("beacon request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "beacon request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<BeaconResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("beacon response parse failed: {e}")))
     }
 
     /// Verify an evidence packet.
@@ -339,21 +426,22 @@ mod tests {
 
     #[test]
     fn test_client_construction() {
-        let client = WritersProofClient::new("https://api.writersproof.com");
-        assert_eq!(client.base_url, "https://api.writersproof.com");
+        let client = WritersProofClient::new("https://api.writerslogic.com").unwrap();
+        assert_eq!(client.base_url, "https://api.writerslogic.com");
         assert!(client.jwt.is_none());
     }
 
     #[test]
     fn test_client_with_jwt() {
-        let client = WritersProofClient::new("https://api.writersproof.com")
+        let client = WritersProofClient::new("https://api.writerslogic.com")
+            .unwrap()
             .with_jwt("test-token".to_string());
         assert_eq!(client.jwt.as_deref(), Some("test-token"));
     }
 
     #[test]
     fn test_trailing_slash_stripped() {
-        let client = WritersProofClient::new("https://api.writersproof.com/");
-        assert_eq!(client.base_url, "https://api.writersproof.com");
+        let client = WritersProofClient::new("https://api.writerslogic.com/").unwrap();
+        assert_eq!(client.base_url, "https://api.writerslogic.com");
     }
 }

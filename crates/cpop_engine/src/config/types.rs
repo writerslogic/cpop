@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::defaults;
 use crate::vdf::params::Parameters as VdfParameters;
@@ -21,6 +21,7 @@ pub struct CpopConfig {
     pub fingerprint: FingerprintConfig,
     pub privacy: PrivacyConfig,
     pub writersproof: WritersProofConfig,
+    pub beacons: BeaconConfig,
 }
 
 impl Default for CpopConfig {
@@ -36,6 +37,7 @@ impl Default for CpopConfig {
             fingerprint: FingerprintConfig::default(),
             privacy: PrivacyConfig::default(),
             writersproof: WritersProofConfig::default(),
+            beacons: BeaconConfig::default(),
         }
     }
 }
@@ -56,10 +58,48 @@ impl Default for WritersProofConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: "https://api.writersproof.com".to_string(),
+            base_url: "https://api.writerslogic.com".to_string(),
             auto_attest: false,
             offline_queue: true,
         }
+    }
+}
+
+/// Temporal beacon configuration.
+///
+/// When enabled, the system fetches drand and NIST beacon values from
+/// WritersProof at each checkpoint, anchoring evidence to publicly
+/// verifiable timestamps. This is the mechanism behind T3/T4 security levels.
+///
+/// Beacons are enabled by default. Disabling caps the maximum security level at T2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BeaconConfig {
+    /// Enable temporal beacon feature globally. Default: true.
+    /// When false, drand and NIST beacon fetches are skipped entirely
+    /// and the maximum achievable security level is T2 (Standard).
+    pub enabled: bool,
+    /// Timeout per beacon fetch in seconds. Default: 5.
+    pub timeout_secs: u64,
+    /// Retry attempts before marking beacon source unavailable. Default: 2.
+    pub retries: u32,
+}
+
+impl Default for BeaconConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            timeout_secs: 5,
+            retries: 2,
+        }
+    }
+}
+
+impl BeaconConfig {
+    /// Clamp timeout and retry values to safe ranges.
+    pub fn sanitize(&mut self) {
+        self.timeout_secs = self.timeout_secs.clamp(1, 300);
+        self.retries = self.retries.clamp(0, 10);
     }
 }
 

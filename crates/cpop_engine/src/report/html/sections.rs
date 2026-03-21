@@ -1,8 +1,23 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::helpers::*;
 use crate::report::types::*;
 use std::fmt::{self, Write};
+
+/// Validate a CSS color value to prevent XSS injection via style attributes.
+/// Only hex colors (#RGB, #RRGGBB, #RRGGBBAA) are allowed. Returns "gray" for
+/// any value that doesn't match.
+fn sanitize_css_color(color: &str) -> &str {
+    let bytes = color.as_bytes();
+    let valid = bytes.first() == Some(&b'#')
+        && matches!(bytes.len(), 4 | 5 | 7 | 9)
+        && bytes[1..].iter().all(|b| b.is_ascii_hexdigit());
+    if valid {
+        color
+    } else {
+        "gray"
+    }
+}
 
 pub(super) fn write_header(html: &mut String, r: &WarReport) -> fmt::Result {
     let sample = if r.is_sample {
@@ -144,7 +159,7 @@ pub(super) fn write_category_scores(html: &mut String, r: &WarReport) -> fmt::Re
 </div>"#,
             name = html_escape(&d.name),
             score = d.score,
-            color = d.color,
+            color = sanitize_css_color(&d.color),
         )?;
     }
     write_category_composite_note(html, r)?;
@@ -234,7 +249,7 @@ pub(super) fn write_dimension_analysis(html: &mut String, r: &WarReport) -> fmt:
 "#,
             name = html_escape(&d.name),
             score = d.score,
-            color = d.color,
+            color = sanitize_css_color(&d.color),
         )?;
         for detail in &d.analysis {
             write!(
@@ -295,7 +310,7 @@ pub(super) fn write_dimension_lr_table(html: &mut String, r: &WarReport) -> fmt:
             lr = format_lr(d.lr),
             log_lr = d.log_lr,
             conf_pct = conf_pct,
-            color = d.color,
+            color = sanitize_css_color(&d.color),
             disc = html_escape(&d.key_discriminator),
         )?;
     }

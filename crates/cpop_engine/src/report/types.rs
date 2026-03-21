@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -302,5 +302,18 @@ impl WarReport {
         getrandom::getrandom(&mut bytes).expect("CSPRNG failure is fatal");
         let hex = hex::encode(bytes).to_uppercase();
         format!("WAR-{}", hex)
+    }
+}
+
+/// Compute a likelihood ratio from an assessment score (0-100).
+///
+/// Scores ≤ 50 map linearly to LR 0.01–1.0 (evidence against human authorship).
+/// Scores > 50 map exponentially: LR = 10^((score - 50) / 10), reaching
+/// ~100,000 at score 100.
+pub fn compute_likelihood_ratio(score: u32) -> f64 {
+    if score <= 50 {
+        (score as f64 / 50.0).max(0.01)
+    } else {
+        10.0_f64.powf((score as f64 - 50.0) / 10.0)
     }
 }
