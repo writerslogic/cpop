@@ -36,7 +36,7 @@ pub enum DetectedFormat {
 /// Detect the format version from raw data.
 pub fn detect_version(data: &[u8]) -> Result<DetectedFormat> {
     if let Ok(text) = std::str::from_utf8(data) {
-        if text.contains("BEGIN CPOP WAR") {
+        if text.contains(crate::war::types::MARKER_BEGIN) {
             if text.contains("Version: WAR/2.0") {
                 return Ok(DetectedFormat::AsciiV2_0);
             } else if text.contains("Version: WAR/1.1") {

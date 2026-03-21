@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use crate::war::types::{Block, Seal, Version};
+use crate::war::types::{
+    Block, Seal, Version, HEADER_BEGIN, HEADER_END, MARKER_BEGIN, MARKER_END, SEAL_BEGIN, SEAL_END,
+};
 use chrono::{DateTime, Utc};
 use hex;
 
@@ -9,7 +11,8 @@ impl Block {
     pub fn encode_ascii(&self) -> String {
         let mut output = String::new();
 
-        output.push_str("-----BEGIN CPOP WAR-----\n");
+        output.push_str(HEADER_BEGIN);
+        output.push('\n');
         output.push_str(&format!("Version: {}\n", self.version.as_str()));
         output.push_str(&format!("Author: {}\n", self.author));
         output.push_str(&format!("Document-ID: {}\n", hex::encode(self.document_id)));
@@ -25,7 +28,8 @@ impl Block {
         }
 
         output.push('\n');
-        output.push_str("-----BEGIN SEAL-----\n");
+        output.push_str(SEAL_BEGIN);
+        output.push('\n');
 
         let seal_hex = self.seal.encode_hex();
         for chunk in seal_hex.as_bytes().chunks(64) {
@@ -33,8 +37,10 @@ impl Block {
             output.push('\n');
         }
 
-        output.push_str("-----END SEAL-----\n");
-        output.push_str("-----END CPOP WAR-----\n");
+        output.push_str(SEAL_END);
+        output.push('\n');
+        output.push_str(HEADER_END);
+        output.push('\n');
 
         output
     }
@@ -45,11 +51,11 @@ impl Block {
 
         let start = lines
             .iter()
-            .position(|l| l.contains("BEGIN CPOP WAR"))
+            .position(|l| l.contains(MARKER_BEGIN))
             .ok_or("missing WAR block header")?;
         let end = lines
             .iter()
-            .position(|l| l.contains("END CPOP WAR"))
+            .position(|l| l.contains(MARKER_END))
             .ok_or("missing WAR block footer")?;
 
         if start >= end {
@@ -99,12 +105,12 @@ impl Block {
 
         let seal_start = lines[start..end]
             .iter()
-            .position(|l| l.contains("BEGIN SEAL"))
+            .position(|l| l.contains(SEAL_BEGIN))
             .map(|pos| start + pos)
             .ok_or("missing seal header")?;
         let seal_end = lines[start..end]
             .iter()
-            .position(|l| l.contains("END SEAL"))
+            .position(|l| l.contains(SEAL_END))
             .map(|pos| start + pos)
             .ok_or("missing seal footer")?;
 

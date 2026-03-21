@@ -5,6 +5,16 @@ use chrono::{DateTime, Utc};
 use hex;
 use serde::{Deserialize, Serialize};
 
+// ASCII-armor delimiters (single source of truth for encoder, decoder, and detection)
+pub const HEADER_BEGIN: &str = "-----BEGIN CPOP WAR-----";
+pub const HEADER_END: &str = "-----END CPOP WAR-----";
+pub const SEAL_BEGIN: &str = "-----BEGIN SEAL-----";
+pub const SEAL_END: &str = "-----END SEAL-----";
+
+// Substring markers used for detection (without the dashes, for contains() matching)
+pub const MARKER_BEGIN: &str = "BEGIN CPOP WAR";
+pub const MARKER_END: &str = "END CPOP WAR";
+
 /// WAR (Written Authorship Report) block format version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Version {
