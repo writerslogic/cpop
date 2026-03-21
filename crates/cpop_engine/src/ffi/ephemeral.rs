@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Ephemeral session FFI — in-memory text witnessing without file paths.
 //!
@@ -322,7 +322,15 @@ pub fn ffi_ephemeral_finalize(
     }
 
     let statement = if statement.len() > MAX_STATEMENT_LEN {
-        statement[..MAX_STATEMENT_LEN].to_string()
+        let truncated = match statement
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_STATEMENT_LEN)
+            .last()
+        {
+            Some((i, c)) => &statement[..i + c.len_utf8()],
+            None => "",
+        };
+        truncated.to_string()
     } else {
         statement
     };
@@ -587,6 +595,20 @@ fn build_war_block(
     let data_dir = crate::ffi::helpers::get_data_dir()
         .ok_or_else(|| "Cannot determine data directory".to_string())?;
     let key_path = data_dir.join("signing_key");
+    // Verify file permissions before reading key material
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&key_path) {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode & 0o077 != 0 {
+                log::warn!(
+                    "Signing key file has overly permissive mode {:04o}; expected 0600",
+                    mode
+                );
+            }
+        }
+    }
     let key_data = zeroize::Zeroizing::new(
         std::fs::read(&key_path).map_err(|e| format!("Cannot read signing key: {e}"))?,
     );

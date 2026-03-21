@@ -1,91 +1,11 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::{detect_attestation_tier, detect_attestation_tier_info, open_store};
-use crate::ffi::types::{FfiResult, FfiVerifyResult};
+use crate::ffi::helpers::{detect_attestation_tier, open_store};
+use crate::ffi::types::FfiResult;
 use cpop_protocol::rfc::wire_types::{
     CheckpointWire, DocumentRef, EditDelta, EvidencePacketWire, HashValue, ProcessProof,
     ProofAlgorithm, ProofParams,
 };
-
-/// Verify an evidence packet at the given path and return integrity results.
-#[cfg_attr(feature = "ffi", uniffi::export)]
-pub fn ffi_verify_evidence(path: String) -> FfiVerifyResult {
-    let (_, tier_num, tier_label) = detect_attestation_tier_info();
-
-    let path = match crate::sentinel::helpers::validate_path(&path) {
-        Ok(p) => p,
-        Err(e) => {
-            return FfiVerifyResult {
-                success: false,
-                checkpoint_count: 0,
-                signature_valid: false,
-                chain_integrity: false,
-                swf_iterations_per_second: 0,
-                attestation_tier: tier_num,
-                attestation_tier_label: tier_label,
-                error_message: Some(e),
-            };
-        }
-    };
-
-    let data = match std::fs::read(&path) {
-        Ok(d) => d,
-        Err(e) => {
-            return FfiVerifyResult {
-                success: false,
-                checkpoint_count: 0,
-                signature_valid: false,
-                chain_integrity: false,
-                swf_iterations_per_second: 0,
-                attestation_tier: tier_num,
-                attestation_tier_label: tier_label,
-                error_message: Some(format!("Failed to read file: {}", e)),
-            };
-        }
-    };
-
-    let packet = match crate::evidence::Packet::decode(&data) {
-        Ok(p) => p,
-        Err(e) => {
-            return FfiVerifyResult {
-                success: false,
-                checkpoint_count: 0,
-                signature_valid: false,
-                chain_integrity: false,
-                swf_iterations_per_second: 0,
-                attestation_tier: tier_num,
-                attestation_tier_label: tier_label,
-                error_message: Some(format!("Failed to decode evidence: {}", e)),
-            };
-        }
-    };
-
-    let checkpoint_count = packet.checkpoints.len() as u32;
-    let vdf_ips = packet.vdf_params.iterations_per_second;
-
-    match packet.verify(packet.vdf_params) {
-        Ok(()) => FfiVerifyResult {
-            success: true,
-            checkpoint_count,
-            signature_valid: true,
-            chain_integrity: true,
-            swf_iterations_per_second: vdf_ips,
-            attestation_tier: tier_num,
-            attestation_tier_label: tier_label,
-            error_message: None,
-        },
-        Err(e) => FfiVerifyResult {
-            success: false,
-            checkpoint_count,
-            signature_valid: false,
-            chain_integrity: false,
-            swf_iterations_per_second: vdf_ips,
-            attestation_tier: tier_num,
-            attestation_tier_label: tier_label,
-            error_message: Some(format!("Verification failed: {}", e)),
-        },
-    }
-}
 
 /// Export stored events for a file as a CBOR evidence packet at the given tier.
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -130,7 +50,8 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         }
     };
 
-    let events = match store.get_events_for_file(&path) {
+    let file_path_str = file_path.to_string_lossy();
+    let events = match store.get_events_for_file(&file_path_str) {
         Ok(e) => e,
         Err(e) => {
             return FfiResult {
@@ -243,7 +164,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
 
     let wire_packet = EvidencePacketWire {
         version: 1,
-        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
+        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
         packet_id: latest.device_id,
         created: now_ms,
         document: DocumentRef {
@@ -271,22 +192,247 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
     };
 
     match wire_packet.encode_cbor() {
-        Ok(encoded) => match std::fs::write(&output_path, &encoded) {
-            Ok(()) => FfiResult {
-                success: true,
-                message: Some(format!("Exported CBOR to {}", output_path.display())),
-                error_message: None,
-            },
-            Err(e) => FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to write output: {}", e)),
-            },
-        },
+        Ok(encoded) => {
+            let tmp_path = output_path.with_extension("tmp");
+            let write_result = (|| -> std::io::Result<()> {
+                let mut f = std::fs::File::create(&tmp_path)?;
+                std::io::Write::write_all(&mut f, &encoded)?;
+                f.sync_all()?;
+                std::fs::rename(&tmp_path, &output_path)?;
+                Ok(())
+            })();
+            match write_result {
+                Ok(()) => FfiResult {
+                    success: true,
+                    message: Some(format!("Exported CBOR to {}", output_path.display())),
+                    error_message: None,
+                },
+                Err(e) => {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    FfiResult {
+                        success: false,
+                        message: None,
+                        error_message: Some(format!("Failed to write output: {}", e)),
+                    }
+                }
+            }
+        }
         Err(e) => FfiResult {
             success: false,
             message: None,
             error_message: Some(format!("Failed to encode CBOR packet: {}", e)),
+        },
+    }
+}
+
+/// Return a compact reference string for the latest event on a tracked file.
+/// Link a derivative export (PDF, EPUB, DOCX, etc.) to a tracked source document.
+///
+/// Creates a "derivative" context event in the source's evidence chain that
+/// binds the export hash, path, and optional message. The binding is VDF-timed
+/// to prove temporal ordering.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_link_derivative(source_path: String, export_path: String, message: String) -> FfiResult {
+    let source = match crate::sentinel::helpers::validate_path(&source_path) {
+        Ok(p) => p,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Invalid source path: {e}")),
+            };
+        }
+    };
+    let export = match crate::sentinel::helpers::validate_path(&export_path) {
+        Ok(p) => p,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Invalid export path: {e}")),
+            };
+        }
+    };
+
+    if !source.exists() {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some(format!("Source file not found: {}", source.display())),
+        };
+    }
+    if !export.exists() {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some(format!("Export file not found: {}", export.display())),
+        };
+    }
+
+    let mut store = match open_store() {
+        Ok(s) => s,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(e),
+            };
+        }
+    };
+
+    let source_str = source.to_string_lossy().to_string();
+    let events = match store.get_events_for_file(&source_str) {
+        Ok(e) => e,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to load events: {e}")),
+            };
+        }
+    };
+
+    if events.is_empty() {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some("No evidence chain for source. Track the file first.".to_string()),
+        };
+    }
+
+    // Enforce file size limits (matching CLI's MAX_FILE_SIZE)
+    const MAX_FILE_SIZE: u64 = 500_000_000; // 500 MB
+    for (label, p) in [("Export", &export), ("Source", &source)] {
+        match std::fs::metadata(p) {
+            Ok(m) if m.len() > MAX_FILE_SIZE => {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!(
+                        "{} file too large ({:.0} MB, max {} MB)",
+                        label,
+                        m.len() as f64 / 1_000_000.0,
+                        MAX_FILE_SIZE / 1_000_000
+                    )),
+                };
+            }
+            Err(e) => {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("{} file metadata error: {e}", label)),
+                };
+            }
+            _ => {}
+        }
+    }
+
+    // Hash both files
+    let export_hash = match crate::crypto::hash_file(&export) {
+        Ok(h) => h,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to hash export: {e}")),
+            };
+        }
+    };
+    let content_hash = match crate::crypto::hash_file(&source) {
+        Ok(h) => h,
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to hash source: {e}")),
+            };
+        }
+    };
+
+    let file_size = std::fs::metadata(&source)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+
+    let note = if message.is_empty() {
+        format!(
+            "Derived from {}",
+            source.file_name().unwrap_or_default().to_string_lossy()
+        )
+    } else {
+        message
+    };
+    let context_note = format!(
+        "export_hash={};export_path={};{}",
+        hex::encode(export_hash),
+        export.to_string_lossy(),
+        note
+    );
+
+    let last = &events[events.len() - 1];
+    let size_delta = (file_size - last.file_size).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    let vdf_input = last.event_hash;
+
+    // Load VDF params
+    let data_dir =
+        crate::ffi::helpers::get_data_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let config = crate::config::CpopConfig::load_or_default(&data_dir).unwrap_or_default();
+    let vdf_params = crate::vdf::params::Parameters {
+        iterations_per_second: config.vdf.iterations_per_second.max(1),
+        min_iterations: config.vdf.min_iterations,
+        max_iterations: config.vdf.max_iterations,
+    };
+
+    let vdf_proof =
+        match crate::vdf::compute(vdf_input, std::time::Duration::from_secs(1), vdf_params) {
+            Ok(p) => p,
+            Err(e) => {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("VDF computation failed: {e}")),
+                };
+            }
+        };
+
+    let mut event = crate::store::SecureEvent {
+        id: None,
+        device_id: [0u8; 16],
+        machine_id: String::new(),
+        timestamp_ns: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
+            .unwrap_or(0),
+        file_path: source_str.clone(),
+        content_hash,
+        file_size,
+        size_delta,
+        previous_hash: [0u8; 32],
+        event_hash: [0u8; 32],
+        context_type: Some("derivative".to_string()),
+        context_note: Some(context_note),
+        vdf_input: Some(vdf_input),
+        vdf_output: Some(vdf_proof.output),
+        vdf_iterations: vdf_proof.iterations,
+        forensic_score: 1.0,
+        is_paste: false,
+        hardware_counter: None,
+        input_method: None,
+    };
+
+    match store.add_secure_event(&mut event) {
+        Ok(_) => FfiResult {
+            success: true,
+            message: Some(format!(
+                "Linked {} to evidence chain (hash: {}...)",
+                export.file_name().unwrap_or_default().to_string_lossy(),
+                hex::encode(&export_hash[..8])
+            )),
+            error_message: None,
+        },
+        Err(e) => FfiResult {
+            success: false,
+            message: None,
+            error_message: Some(format!("Failed to save link event: {e}")),
         },
     }
 }
@@ -462,6 +608,28 @@ pub fn ffi_export_c2pa_manifest(
                 evidence_file.display()
             )),
         };
+    }
+    const MAX_EVIDENCE_FILE_SIZE: u64 = 100_000_000;
+    match std::fs::metadata(&evidence_file) {
+        Ok(m) if m.len() > MAX_EVIDENCE_FILE_SIZE => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!(
+                    "Evidence file too large: {} bytes (max {})",
+                    m.len(),
+                    MAX_EVIDENCE_FILE_SIZE
+                )),
+            };
+        }
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Cannot stat evidence file: {e}")),
+            };
+        }
+        _ => {}
     }
     if !doc_file.exists() {
         return FfiResult {
@@ -721,7 +889,7 @@ fn decode_evidence_for_c2pa(
 
     Ok(cpop_protocol::rfc::EvidencePacket {
         version: 1,
-        profile_uri: "urn:ietf:params:pop:profile:1.0".to_string(),
+        profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
         packet_id,
         created: chrono::Utc::now().timestamp_millis() as u64,
         document: cpop_protocol::rfc::DocumentRef {

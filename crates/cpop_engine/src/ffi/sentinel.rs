@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Sentinel FFI — in-process sentinel lifecycle for GUI apps.
 //!
@@ -11,10 +11,18 @@ use crate::ffi::helpers::{get_data_dir, load_hmac_key};
 use crate::ffi::types::{FfiResult, FfiSentinelStatus, FfiWitnessingStatus};
 use crate::sentinel::Sentinel;
 use crate::RwLockRecover;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
-static SENTINEL: OnceLock<Arc<Sentinel>> = OnceLock::new();
+static SENTINEL: Mutex<Option<Arc<Sentinel>>> = Mutex::new(None);
 static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+
+pub(crate) fn get_sentinel() -> Option<Arc<Sentinel>> {
+    SENTINEL
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .as_ref()
+        .map(Arc::clone)
+}
 
 fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
     FFI_RUNTIME
@@ -33,14 +41,12 @@ fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
 /// Start the sentinel daemon in-process.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_start() -> FfiResult {
-    if let Some(s) = SENTINEL.get() {
-        if s.is_running() {
-            return FfiResult {
-                success: true,
-                message: Some("Sentinel already running".to_string()),
-                error_message: None,
-            };
-        }
+    if get_sentinel().is_some_and(|s| s.is_running()) {
+        return FfiResult {
+            success: true,
+            message: Some("Sentinel already running".to_string()),
+            error_message: None,
+        };
     }
 
     let data_dir = match get_data_dir() {
@@ -148,14 +154,24 @@ pub fn ffi_sentinel_start() -> FfiResult {
         }
     }
 
-    // OnceLock race: stop the duplicate to avoid leaking tokio tasks
-    if let Err(leaked) = SENTINEL.set(sentinel) {
-        if let Err(e) = rt.block_on(leaked.stop()) {
-            log::warn!("Failed to stop duplicate sentinel: {}", e);
+    let capture_active = sentinel.is_keystroke_capture_active();
+
+    if let Ok(mut guard) = SENTINEL.lock() {
+        if let Some(old) = guard.take() {
+            if old.is_running() {
+                let _ = rt.block_on(old.stop());
+            }
         }
+        *guard = Some(sentinel);
     }
 
-    let msg = "Sentinel started".to_string();
+    let msg = if capture_active {
+        "Sentinel started".to_string()
+    } else {
+        "Sentinel started in degraded mode — keystroke capture unavailable. \
+         Check Input Monitoring permission in System Settings > Privacy & Security"
+            .to_string()
+    };
 
     FfiResult {
         success: true,
@@ -167,8 +183,8 @@ pub fn ffi_sentinel_start() -> FfiResult {
 /// Stop the sentinel daemon.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_stop() -> FfiResult {
-    let sentinel = match SENTINEL.get() {
-        Some(s) => Arc::clone(s),
+    let sentinel = match get_sentinel() {
+        Some(s) => s,
         None => {
             return FfiResult {
                 success: false,
@@ -204,6 +220,11 @@ pub fn ffi_sentinel_stop() -> FfiResult {
         };
     }
 
+    // Remove the stopped sentinel so stale sessions aren't visible
+    if let Ok(mut guard) = SENTINEL.lock() {
+        *guard = None;
+    }
+
     FfiResult {
         success: true,
         message: Some("Sentinel stopped".to_string()),
@@ -213,13 +234,14 @@ pub fn ffi_sentinel_stop() -> FfiResult {
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_is_running() -> bool {
-    SENTINEL.get().is_some_and(|s| s.is_running())
+    get_sentinel().is_some_and(|s| s.is_running())
 }
 
 /// Start witnessing a specific file path.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_start_witnessing(path: String) -> FfiResult {
-    let sentinel = match SENTINEL.get() {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
             return FfiResult {
@@ -257,7 +279,8 @@ pub fn ffi_sentinel_start_witnessing(path: String) -> FfiResult {
 /// Stop witnessing a specific file path.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_stop_witnessing(path: String) -> FfiResult {
-    let sentinel = match SENTINEL.get() {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
             return FfiResult {
@@ -285,7 +308,8 @@ pub fn ffi_sentinel_stop_witnessing(path: String) -> FfiResult {
 /// Get current sentinel status.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_status() -> FfiSentinelStatus {
-    let sentinel = match SENTINEL.get() {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
             return FfiSentinelStatus {
@@ -338,7 +362,8 @@ pub fn ffi_sentinel_status() -> FfiSentinelStatus {
 /// Get live witnessing metrics for the first active session.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
-    let sentinel = match SENTINEL.get() {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
             return FfiWitnessingStatus {
@@ -350,10 +375,14 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
                 save_count: 0,
                 checkpoint_count: 0,
                 forensic_score: 0.0,
+                last_paste_chars: 0,
+                keystroke_capture_active: false,
                 error_message: None,
             };
         }
     };
+
+    let capture_active = sentinel.is_keystroke_capture_active();
 
     let sessions = sentinel.sessions();
     let session = match sessions.first() {
@@ -368,6 +397,8 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
                 save_count: 0,
                 checkpoint_count: 0,
                 forensic_score: 0.0,
+                last_paste_chars: 0,
+                keystroke_capture_active: capture_active,
                 error_message: None,
             };
         }
@@ -385,20 +416,39 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         .unwrap_or_default()
         .as_secs_f64();
 
-    let (checkpoint_count, forensic_score) = match crate::ffi::helpers::open_store() {
-        Ok(store) => {
-            let events = store.get_events_for_file(&session.path).unwrap_or_default();
-            let count = events.len() as u64;
-            let score = if events.len() >= 2 {
-                let profile =
-                    crate::forensics::ForensicEngine::evaluate_authorship(&session.path, &events);
-                profile.metrics.edit_entropy / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
-            } else {
-                0.0
-            };
-            (count, score)
-        }
-        Err(_) => (0, 0.0),
+    // Check for host-reported paste (from NSPasteboard monitoring).
+    // take_last_paste_chars atomically reads and clears the value.
+    let host_paste_chars = sentinel.take_last_paste_chars();
+
+    let (checkpoint_count, forensic_score, store_paste_chars) =
+        match crate::ffi::helpers::open_store() {
+            Ok(store) => {
+                let events = store.get_events_for_file(&session.path).unwrap_or_default();
+                let count = events.len() as u64;
+                let score = if events.len() >= 2 {
+                    let profile = crate::forensics::ForensicEngine::evaluate_authorship(
+                        &session.path,
+                        &events,
+                    );
+                    profile.metrics.edit_entropy / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
+                } else {
+                    0.0
+                };
+                let paste = events
+                    .last()
+                    .filter(|e| e.is_paste)
+                    .map(|e| e.size_delta as i64)
+                    .unwrap_or(0);
+                (count, score, paste)
+            }
+            Err(_) => (0, 0.0, 0),
+        };
+
+    // Prefer host-reported paste (real-time) over store-derived (checkpoint-time)
+    let last_paste_chars = if host_paste_chars > 0 {
+        host_paste_chars
+    } else {
+        store_paste_chars
     };
 
     FfiWitnessingStatus {
@@ -410,8 +460,91 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         save_count: session.save_count as u64,
         checkpoint_count,
         forensic_score,
+        last_paste_chars,
+        keystroke_capture_active: capture_active,
         error_message: None,
     }
+}
+
+/// Inject a keystroke event from the host app with hardware verification.
+///
+/// Used when the host platform captures keystrokes via `NSEvent.addGlobalMonitorForEvents`
+/// (sandboxed macOS) and forwards them with CGEvent verification fields.
+///
+/// Verification fields (from `NSEvent.cgEvent`):
+/// - `source_state_id`: CGEvent field 45. HID hardware = 1, injected = -1.
+/// - `keyboard_type`: CGEvent field 10. ANSI=40, ISO=41, JIS=42; synthetic=0.
+/// - `source_pid`: CGEvent field 41. Hardware = 0 (kernel); injected = injector PID.
+///
+/// Synthetic events are rejected, matching the CGEventTap `verify_event_source` behavior.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_sentinel_inject_keystroke(
+    timestamp_ns: i64,
+    keycode: u16,
+    zone: u8,
+    source_state_id: i64,
+    keyboard_type: i64,
+    source_pid: i64,
+) -> bool {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
+        Some(s) if s.is_running() => s,
+        _ => return false,
+    };
+
+    // Same verification as CGEventTap's verify_event_source.
+    // Constants from CGEventTypes.h — stable across macOS versions.
+    const SOURCE_STATE_PRIVATE: i64 = -1;
+    const SOURCE_STATE_HID_SYSTEM: i64 = 1;
+
+    if source_state_id == SOURCE_STATE_PRIVATE {
+        log::debug!("inject_keystroke: rejected — private source state (CGEventPost)");
+        return false;
+    }
+    if keyboard_type == 0 || keyboard_type > 100 {
+        log::debug!("inject_keystroke: rejected — keyboard_type={keyboard_type}");
+        return false;
+    }
+    if source_pid != 0 {
+        log::debug!("inject_keystroke: rejected — source_pid={source_pid}");
+        return false;
+    }
+    if source_state_id != SOURCE_STATE_HID_SYSTEM {
+        log::debug!("inject_keystroke: suspicious source_state_id={source_state_id} — accepted");
+    }
+
+    let sample = crate::jitter::SimpleJitterSample {
+        timestamp_ns,
+        duration_since_last_ns: 0,
+        zone,
+    };
+    sentinel
+        .activity_accumulator
+        .write_recover()
+        .add_sample(&sample);
+    true
+}
+
+/// Notify the sentinel of a paste event detected by the host app.
+///
+/// `char_count` is the number of characters pasted. The sentinel
+/// records this so the next checkpoint can flag it as a paste.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_sentinel_notify_paste(char_count: i64) -> bool {
+    let sentinel_opt = get_sentinel();
+    let sentinel = match sentinel_opt.as_ref() {
+        Some(s) if s.is_running() => s,
+        _ => return false,
+    };
+
+    let sessions = sentinel.sessions();
+    if sessions.is_empty() {
+        return false;
+    }
+
+    // Store the paste char count so ffi_sentinel_witnessing_status can report it
+    sentinel.set_last_paste_chars(char_count);
+    true
 }
 
 #[cfg(test)]
@@ -449,6 +582,7 @@ mod tests {
         assert!(status.document_path.is_none());
         assert_eq!(status.keystroke_count, 0);
         assert_eq!(status.checkpoint_count, 0);
+        assert!(!status.keystroke_capture_active);
     }
 
     #[test]

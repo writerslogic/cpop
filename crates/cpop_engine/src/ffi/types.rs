@@ -1,36 +1,10 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
-pub struct FfiVerifyResult {
-    pub success: bool,
-    pub checkpoint_count: u32,
-    pub signature_valid: bool,
-    pub chain_integrity: bool,
-    pub swf_iterations_per_second: u64,
-    pub attestation_tier: u8,
-    pub attestation_tier_label: String,
-    pub error_message: Option<String>,
-}
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct FfiResult {
     pub success: bool,
     pub message: Option<String>,
-    pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
-pub struct FfiForensicResult {
-    pub success: bool,
-    pub assessment_score: f64,
-    pub risk_level: String,
-    pub anomaly_count: u32,
-    pub monotonic_append_ratio: f64,
-    pub edit_entropy: f64,
-    pub median_interval: f64,
     pub error_message: Option<String>,
 }
 
@@ -51,6 +25,19 @@ pub struct FfiProcessScore {
 pub struct FfiCalibrationResult {
     pub success: bool,
     pub iterations_per_second: u64,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiForensicResult {
+    pub success: bool,
+    pub assessment_score: f64,
+    pub risk_level: String,
+    pub anomaly_count: u32,
+    pub monotonic_append_ratio: f64,
+    pub edit_entropy: f64,
+    pub median_interval: f64,
     pub error_message: Option<String>,
 }
 
@@ -192,6 +179,10 @@ pub struct FfiWitnessingStatus {
     pub save_count: u64,
     pub checkpoint_count: u64,
     pub forensic_score: f64,
+    pub last_paste_chars: i64,
+    /// Whether keystroke capture is active. When false, the sentinel is running
+    /// in degraded (focus-only) mode — keystrokes are not being counted.
+    pub keystroke_capture_active: bool,
     pub error_message: Option<String>,
 }
 

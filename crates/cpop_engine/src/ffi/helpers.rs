@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::forensics::EventData;
 use crate::store::SecureStore;
@@ -69,20 +69,26 @@ pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
     Some(key)
 }
 
-/// Load the Ed25519 signing key from the data directory.
+/// Load the Ed25519 signing key from the data directory, zeroizing intermediates.
 #[allow(dead_code)]
 pub(crate) fn load_signing_key() -> Result<ed25519_dalek::SigningKey, String> {
+    use zeroize::Zeroize;
+
     let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
     let key_path = data_dir.join("signing_key");
-    let key_data =
+    let mut key_data =
         std::fs::read(&key_path).map_err(|e| format!("Failed to read signing key: {e}"))?;
     if key_data.len() < 32 {
+        key_data.zeroize();
         return Err("Signing key is too short".to_string());
     }
-    let secret: [u8; 32] = key_data[..32]
+    let mut secret: [u8; 32] = key_data[..32]
         .try_into()
         .map_err(|_| "Invalid signing key length".to_string())?;
-    Ok(ed25519_dalek::SigningKey::from_bytes(&secret))
+    key_data.zeroize();
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
+    secret.zeroize();
+    Ok(signing_key)
 }
 
 /// Load the DID string from identity.json.
@@ -114,9 +120,71 @@ pub(crate) fn open_store() -> Result<SecureStore, String> {
     let db_path = get_db_path()
         .filter(|p| p.exists())
         .ok_or_else(|| "Database not found".to_string())?;
+    open_store_at(&db_path)
+}
+
+/// Open or recover a SecureStore at the given path.
+///
+/// Recovery strategy on HMAC mismatch:
+/// 1. Try the signing-key-derived HMAC (handles keychain key transitions)
+/// 2. Verify a fresh key is available, THEN delete the stale DB and recreate
+pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, String> {
     let mut hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
-    SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))
-        .map_err(|e| format!("Failed to open database: {}", e))
+    match SecureStore::open(db_path, std::mem::take(&mut *hmac_key)) {
+        Ok(store) => Ok(store),
+        Err(primary_err) => {
+            let err_msg = primary_err.to_string();
+            let is_hmac_mismatch =
+                err_msg.contains("HMAC mismatch") || err_msg.contains("hmac mismatch");
+
+            // Strategy 1: try signing-key-derived HMAC
+            if let Some(mut key) = derive_hmac_from_signing_key() {
+                if let Ok(store) = SecureStore::open(db_path, std::mem::take(&mut *key)) {
+                    log::info!("Opened database with signing-key-derived HMAC");
+                    if let Some(k) = derive_hmac_from_signing_key() {
+                        let _ = crate::identity::SecureStorage::save_hmac_key(&k);
+                    }
+                    return Ok(store);
+                }
+            }
+
+            // Strategy 2: verify key available BEFORE deleting, then recreate
+            if is_hmac_mismatch {
+                // Reset the cache so load_hmac_key re-derives from signing_key
+                crate::identity::SecureStorage::reset_hmac_cache();
+                let fresh_key = load_hmac_key();
+                if let Some(mut k) = fresh_key {
+                    log::warn!("HMAC mismatch unrecoverable; deleting stale database");
+                    let _ = std::fs::remove_file(db_path);
+                    return SecureStore::open(db_path, std::mem::take(&mut *k))
+                        .map_err(|e| format!("Failed to recreate database: {}", e));
+                }
+                // Key unavailable; do NOT delete the DB (preserve data)
+                log::error!("HMAC key unavailable; cannot recover database");
+            }
+
+            Err(format!("Failed to open database: {}", primary_err))
+        }
+    }
+}
+
+/// Derive HMAC key directly from the signing_key file, bypassing keychain.
+pub(crate) fn derive_hmac_from_signing_key() -> Option<Zeroizing<Vec<u8>>> {
+    let data_dir = get_data_dir()?;
+    let key_path = data_dir.join("signing_key");
+    if let Ok(meta) = std::fs::metadata(&key_path) {
+        if meta.len() > 1024 {
+            return None;
+        }
+    }
+    let key_data = Zeroizing::new(std::fs::read(&key_path).ok()?);
+    if key_data.len() >= 32 {
+        Some(Zeroizing::new(crate::crypto::derive_hmac_key(
+            &key_data[..32],
+        )))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn detect_attestation_tier() -> AttestationTier {

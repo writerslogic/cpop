@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::{compute_streak_stats, get_data_dir, load_hmac_key, open_store};
+use crate::ffi::helpers::{compute_streak_stats, get_data_dir, open_store};
 use crate::ffi::types::{
     FfiActivityPoint, FfiDashboardMetrics, FfiLogEntry, FfiResult, FfiStatus, FfiTrackedFile,
 };
@@ -59,18 +59,7 @@ pub fn ffi_init() -> FfiResult {
     }
 
     let db_path = data_dir.join("events.db");
-    let mut hmac_key = match load_hmac_key() {
-        Some(k) => k,
-        None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Failed to derive HMAC key".to_string()),
-            };
-        }
-    };
-
-    match crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key)) {
+    match crate::ffi::helpers::open_store_at(&db_path) {
         Ok(_) => FfiResult {
             success: true,
             message: Some(format!("Initialized at {}", data_dir.display())),
@@ -155,9 +144,11 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     };
 
     let files = store.list_files().unwrap_or_default();
+    let mut seen_paths = std::collections::HashSet::new();
     let mut result = Vec::with_capacity(files.len());
 
     for (path, last_ts, count) in files {
+        seen_paths.insert(path.clone());
         let events = store.get_events_for_file(&path).unwrap_or_default();
         let profile = crate::forensics::ForensicEngine::evaluate_authorship(&path, &events);
 
@@ -175,6 +166,32 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
             risk_level: metrics.risk_level.to_string(),
         });
     }
+
+    // Include sentinel auto-detected sessions that don't yet have checkpoints
+    let sentinel_opt = crate::ffi::sentinel::get_sentinel();
+    if let Some(sentinel) = sentinel_opt.as_ref() {
+        for session in sentinel.sessions() {
+            if session.path.starts_with("shadow://") {
+                continue; // Skip browser shadow sessions
+            }
+            if seen_paths.contains(&session.path) {
+                continue; // Already in the store results
+            }
+            let elapsed_ns = session
+                .start_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as i64)
+                .unwrap_or(0);
+            result.push(FfiTrackedFile {
+                path: session.path.clone(),
+                last_checkpoint_ns: elapsed_ns,
+                checkpoint_count: 0,
+                forensic_score: 0.0,
+                risk_level: "pending".to_string(),
+            });
+        }
+    }
+
     result
 }
 

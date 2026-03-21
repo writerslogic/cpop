@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::ffi::helpers::{get_data_dir, open_store};
 use crate::ffi::types::FfiResult;
@@ -147,11 +147,20 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
         }
     };
 
-    let result = rt.block_on(async {
-        use crate::writersproof::{AnchorMetadata, AnchorRequest, WritersProofClient};
+    let client = match crate::writersproof::WritersProofClient::new("https://api.writerslogic.com")
+    {
+        Ok(c) => c.with_jwt((*api_key).clone()),
+        Err(e) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to create API client: {e}")),
+            };
+        }
+    };
 
-        let client =
-            WritersProofClient::new("https://api.writersproof.com").with_jwt((*api_key).clone());
+    let result = rt.block_on(async {
+        use crate::writersproof::{AnchorMetadata, AnchorRequest};
 
         tokio::time::timeout(
             std::time::Duration::from_secs(30),
