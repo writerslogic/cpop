@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::mmr::errors::MmrError;
 use crate::mmr::node::Node;
@@ -245,6 +245,9 @@ impl Mmr {
     }
 
     fn find_family(&self, pos: u64, height: u8) -> Result<(u64, u64, bool, bool), MmrError> {
+        if height >= 63 {
+            return Ok((0, 0, false, false));
+        }
         let state = self.state.read_recover();
         let offset = 1u64 << (height + 1);
 

@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use keyring::Entry;
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
-use std::sync::{Once, OnceLock};
+use std::sync::{Mutex, Once, OnceLock};
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use zeroize::{Zeroize, Zeroizing};
 
@@ -18,10 +18,19 @@ const DEVICE_ID_ACCOUNT: &str = "device_id";
 const MACHINE_ID_ACCOUNT: &str = "machine_id";
 const FINGERPRINT_KEY_ACCOUNT: &str = "fingerprint_key";
 
-static SEED_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
-static HMAC_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
-static FINGERPRINT_KEY_CACHE: OnceLock<ProtectedBuf> = OnceLock::new();
+/// Mutex instead of OnceLock so the cache can be invalidated after delete_seed().
+static SEED_CACHE: Mutex<Option<ProtectedBuf>> = Mutex::new(None);
+/// Mutex instead of OnceLock so the cache can be reset after HMAC key recovery.
+static HMAC_CACHE: Mutex<Option<ProtectedBuf>> = Mutex::new(None);
+/// Mutex instead of OnceLock so the cache can be invalidated after delete.
+static FINGERPRINT_KEY_CACHE: Mutex<Option<ProtectedBuf>> = Mutex::new(None);
+/// Accepted risk: mnemonic stays in memory for the process lifetime. It is needed
+/// for the entire session (identity re-derivation, recovery prompts) and the
+/// process already handles sensitive key material, so the incremental exposure
+/// from keeping this cached is negligible.
 static MNEMONIC_CACHE: OnceLock<Zeroizing<String>> = OnceLock::new();
+/// Accepted risk: machine_id (String) is not zeroized. It is a non-secret device
+/// identifier, so the residual exposure does not warrant switching to Mutex.
 static IDENTITY_CACHE: OnceLock<([u8; 16], String)> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static MIGRATION_ONCE: Once = Once::new();
@@ -35,7 +44,15 @@ fn keyring_entry(account: &str) -> Result<Entry> {
 }
 
 impl SecureStorage {
+    /// Returns true if keychain access is disabled (e.g., during tests).
+    pub fn is_keychain_disabled() -> bool {
+        std::env::var("CPOP_NO_KEYCHAIN").is_ok_and(|v| v == "1" || v == "true")
+    }
+
     fn save(account: &str, data: &[u8]) -> Result<()> {
+        if Self::is_keychain_disabled() {
+            return Ok(());
+        }
         #[cfg(target_os = "macos")]
         {
             Self::save_macos(account, data)
@@ -43,15 +60,19 @@ impl SecureStorage {
         #[cfg(not(target_os = "macos"))]
         {
             let entry = keyring_entry(account)?;
-            let encoded = general_purpose::STANDARD.encode(data);
-            entry
+            let mut encoded = general_purpose::STANDARD.encode(data);
+            let result = entry
                 .set_password(&encoded)
-                .map_err(|e| anyhow!("Failed to save to keyring: {}", e))?;
-            Ok(())
+                .map_err(|e| anyhow!("Failed to save to keyring: {}", e));
+            encoded.zeroize();
+            result
         }
     }
 
     fn load(account: &str) -> Result<Option<Zeroizing<Vec<u8>>>> {
+        if Self::is_keychain_disabled() {
+            return Ok(None);
+        }
         #[cfg(target_os = "macos")]
         {
             Self::migrate_macos_keychain();
@@ -74,6 +95,9 @@ impl SecureStorage {
     }
 
     fn delete(account: &str) -> Result<()> {
+        if Self::is_keychain_disabled() {
+            return Ok(());
+        }
         #[cfg(target_os = "macos")]
         {
             Self::delete_macos(account)
@@ -102,8 +126,9 @@ impl SecureStorage {
 
         let _ = Self::delete_macos(account);
 
-        let encoded = general_purpose::STANDARD.encode(data);
+        let mut encoded = general_purpose::STANDARD.encode(data);
         let encoded_cf = CFData::from_buffer(encoded.as_bytes());
+        encoded.zeroize();
         let service_cf = CFString::new(SERVICE_NAME);
         let account_cf = CFString::new(account);
 
@@ -325,12 +350,15 @@ impl SecureStorage {
 
             for account in accounts {
                 if let Ok(entry) = Entry::new(SERVICE_NAME, account) {
-                    if let Ok(encoded) = entry.get_password() {
+                    if let Ok(mut encoded) = entry.get_password() {
                         if let Ok(data) = general_purpose::STANDARD.decode(&encoded) {
+                            encoded.zeroize();
                             let data = Zeroizing::new(data);
                             if Self::save_macos(account, &data).is_ok() {
                                 let _ = entry.delete_password();
                             }
+                        } else {
+                            encoded.zeroize();
                         }
                     }
                 }
@@ -362,12 +390,16 @@ impl SecureStorage {
 
     /// Load the identity seed from the platform keychain, with caching.
     pub fn load_seed() -> Result<Option<Zeroizing<Vec<u8>>>> {
-        if let Some(cached) = SEED_CACHE.get() {
-            return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+        if let Ok(guard) = SEED_CACHE.lock() {
+            if let Some(ref cached) = *guard {
+                return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+            }
         }
         let res = Self::load(SEED_ACCOUNT)?;
         if let Some(data) = res {
-            let _ = SEED_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            if let Ok(mut guard) = SEED_CACHE.lock() {
+                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            }
             Ok(Some(data))
         } else {
             Ok(None)
@@ -376,22 +408,47 @@ impl SecureStorage {
 
     /// Delete the identity seed from the platform keychain.
     pub fn delete_seed() -> Result<()> {
-        Self::delete(SEED_ACCOUNT)
+        Self::delete(SEED_ACCOUNT)?;
+        Self::reset_seed_cache();
+        Ok(())
     }
 
-    /// Store the HMAC key in the platform keychain.
+    /// Reset the seed cache, forcing the next load to read from keychain.
+    pub fn reset_seed_cache() {
+        if let Ok(mut guard) = SEED_CACHE.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Store the HMAC key in the platform keychain and update the cache.
     pub fn save_hmac_key(key: &[u8]) -> Result<()> {
-        Self::save(HMAC_ACCOUNT, key)
+        Self::save(HMAC_ACCOUNT, key)?;
+        // Update the cache so subsequent load_hmac_key() calls return the new key
+        if let Ok(mut guard) = HMAC_CACHE.lock() {
+            *guard = Some(ProtectedBuf::new(key.to_vec()));
+        }
+        Ok(())
+    }
+
+    /// Reset the HMAC key cache, forcing the next load to read from keychain.
+    pub fn reset_hmac_cache() {
+        if let Ok(mut guard) = HMAC_CACHE.lock() {
+            *guard = None;
+        }
     }
 
     /// Load the HMAC key from the platform keychain, with caching.
     pub fn load_hmac_key() -> Result<Option<Zeroizing<Vec<u8>>>> {
-        if let Some(cached) = HMAC_CACHE.get() {
-            return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+        if let Ok(guard) = HMAC_CACHE.lock() {
+            if let Some(ref cached) = *guard {
+                return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+            }
         }
         let res = Self::load(HMAC_ACCOUNT)?;
         if let Some(data) = res {
-            let _ = HMAC_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            if let Ok(mut guard) = HMAC_CACHE.lock() {
+                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            }
             Ok(Some(data))
         } else {
             Ok(None)
@@ -473,15 +530,26 @@ impl SecureStorage {
 
     /// Load the fingerprint key from the platform keychain, with caching.
     pub fn load_fingerprint_key() -> Result<Option<Vec<u8>>> {
-        if let Some(cached) = FINGERPRINT_KEY_CACHE.get() {
-            return Ok(Some(cached.as_slice().to_vec()));
+        if let Ok(guard) = FINGERPRINT_KEY_CACHE.lock() {
+            if let Some(ref cached) = *guard {
+                return Ok(Some(cached.as_slice().to_vec()));
+            }
         }
         let res = Self::load(FINGERPRINT_KEY_ACCOUNT)?;
         if let Some(data) = res {
-            let _ = FINGERPRINT_KEY_CACHE.set(ProtectedBuf::new(data.to_vec()));
+            if let Ok(mut guard) = FINGERPRINT_KEY_CACHE.lock() {
+                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            }
             Ok(Some(data.to_vec()))
         } else {
             Ok(None)
+        }
+    }
+
+    /// Reset the fingerprint key cache, forcing the next load to read from keychain.
+    pub fn reset_fingerprint_key_cache() {
+        if let Ok(mut guard) = FINGERPRINT_KEY_CACHE.lock() {
+            *guard = None;
         }
     }
 }

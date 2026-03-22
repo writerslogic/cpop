@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::crypto::{
     decode_for_protocol, encode_for_protocol, encode_message_json, rate_limit_key,
@@ -9,7 +9,7 @@ use super::messages::{
     IpcErrorCode, IpcMessage, IpcMessageHandler, MAX_CONCURRENT_CONNECTIONS, MAX_MESSAGE_SIZE,
 };
 use crate::MutexRecover;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,6 +17,13 @@ use std::sync::{Arc, Mutex};
 use tokio::net::windows::named_pipe;
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+
+/// Convert a length to a u32 for the wire protocol, returning an error if it overflows.
+fn len_to_u32(len: usize) -> Result<[u8; 4]> {
+    Ok(u32::try_from(len)
+        .map_err(|_| anyhow!("Response too large"))?
+        .to_le_bytes())
+}
 
 /// Generic connection handler for both Unix and Windows streams.
 /// Extracts the common message loop logic shared by both platform-specific handlers.
@@ -140,8 +147,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     if let Ok(response_bytes) = encode_message_json(&error_response) {
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, &response_bytes).await;
-                        } else {
-                            let len_bytes = (response_bytes.len() as u32).to_le_bytes();
+                        } else if let Ok(len_bytes) = len_to_u32(response_bytes.len()) {
                             let _ = stream.write_all(&len_bytes).await;
                             let _ = stream.write_all(&response_bytes).await;
                         }
@@ -165,8 +171,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     if let Ok(response_bytes) = encode_message_json(&error_response) {
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, &response_bytes).await;
-                        } else {
-                            let len_bytes = (response_bytes.len() as u32).to_le_bytes();
+                        } else if let Ok(len_bytes) = len_to_u32(response_bytes.len()) {
                             let _ = stream.write_all(&len_bytes).await;
                             let _ = stream.write_all(&response_bytes).await;
                         }
@@ -181,10 +186,13 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                 .await
                 {
                     Ok(r) => r,
-                    Err(e) => IpcMessage::Error {
-                        code: IpcErrorCode::InternalError,
-                        message: format!("handler panicked: {e}"),
-                    },
+                    Err(e) => {
+                        log::error!("IPC: handler panicked: {e}");
+                        IpcMessage::Error {
+                            code: IpcErrorCode::InternalError,
+                            message: "Internal processing error".to_string(),
+                        }
+                    }
                 };
 
                 let encode_protocol = match protocol {
@@ -201,7 +209,13 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                                 break;
                             }
                         } else {
-                            let len_bytes = (response_bytes.len() as u32).to_le_bytes();
+                            let len_bytes = match len_to_u32(response_bytes.len()) {
+                                Ok(b) => b,
+                                Err(e) => {
+                                    log::error!("IPC: response too large: {}", e);
+                                    break;
+                                }
+                            };
                             if stream.write_all(&len_bytes).await.is_err() {
                                 break;
                             }
@@ -220,8 +234,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         let fallback = br#"{"type":"Error","code":"InternalError","message":"Internal serialization error"}"#;
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, fallback).await;
-                        } else {
-                            let len_bytes = (fallback.len() as u32).to_le_bytes();
+                        } else if let Ok(len_bytes) = len_to_u32(fallback.len()) {
                             let _ = stream.write_all(&len_bytes).await;
                             let _ = stream.write_all(fallback.as_slice()).await;
                         }
@@ -242,8 +255,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                 if let Ok(response_bytes) = encode_for_protocol(&error_response, decode_protocol) {
                     if let Some(ref session) = secure_session {
                         let _ = send_encrypted(stream, session, &response_bytes).await;
-                    } else {
-                        let len_bytes = (response_bytes.len() as u32).to_le_bytes();
+                    } else if let Ok(len_bytes) = len_to_u32(response_bytes.len()) {
                         let _ = stream.write_all(&len_bytes).await;
                         let _ = stream.write_all(&response_bytes).await;
                     }
@@ -307,10 +319,12 @@ impl IpcServer {
         {
             loop {
                 let (stream, _) = self.listener.accept().await?;
-                let current = active_connections.load(Ordering::Relaxed);
-                if current >= MAX_CONCURRENT_CONNECTIONS {
+                let prev = active_connections.fetch_add(1, Ordering::Relaxed);
+                if prev >= MAX_CONCURRENT_CONNECTIONS {
+                    active_connections.fetch_sub(1, Ordering::Relaxed);
                     log::warn!(
-                        "IPC: rejecting connection ({current}/{MAX_CONCURRENT_CONNECTIONS} active)"
+                        "IPC: rejecting connection ({}/{MAX_CONCURRENT_CONNECTIONS} active)",
+                        prev
                     );
                     drop(stream);
                     continue;
@@ -318,7 +332,6 @@ impl IpcServer {
                 let handler_clone = Arc::clone(&handler);
                 let rl = Arc::clone(&rate_limiter);
                 let conn_count = Arc::clone(&active_connections);
-                conn_count.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(async move {
                     handle_connection(stream, handler_clone, rl).await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
@@ -333,10 +346,12 @@ impl IpcServer {
                     .create(&self.pipe_name)?;
 
                 server.connect().await?;
-                let current = active_connections.load(Ordering::Relaxed);
-                if current >= MAX_CONCURRENT_CONNECTIONS {
+                let prev = active_connections.fetch_add(1, Ordering::Relaxed);
+                if prev >= MAX_CONCURRENT_CONNECTIONS {
+                    active_connections.fetch_sub(1, Ordering::Relaxed);
                     log::warn!(
-                        "IPC: rejecting connection ({current}/{MAX_CONCURRENT_CONNECTIONS} active)"
+                        "IPC: rejecting connection ({}/{MAX_CONCURRENT_CONNECTIONS} active)",
+                        prev
                     );
                     drop(server);
                     continue;
@@ -344,7 +359,6 @@ impl IpcServer {
                 let handler_clone = Arc::clone(&handler);
                 let rl = Arc::clone(&rate_limiter);
                 let conn_count = Arc::clone(&active_connections);
-                conn_count.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(async move {
                     handle_windows_connection(server, handler_clone, rl).await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
@@ -360,6 +374,7 @@ impl IpcServer {
         mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
     ) -> Result<()> {
         let rate_limiter = Arc::new(Mutex::new(RateLimiter::new(60)));
+        let active_connections = Arc::new(AtomicUsize::new(0));
         #[cfg(not(target_os = "windows"))]
         {
             loop {
@@ -367,10 +382,19 @@ impl IpcServer {
                     result = self.listener.accept() => {
                         match result {
                             Ok((stream, _)) => {
+                                let prev = active_connections.fetch_add(1, Ordering::Relaxed);
+                                if prev >= MAX_CONCURRENT_CONNECTIONS {
+                                    active_connections.fetch_sub(1, Ordering::Relaxed);
+                                    log::warn!("IPC: rejecting connection ({prev}/{MAX_CONCURRENT_CONNECTIONS} active)");
+                                    drop(stream);
+                                    continue;
+                                }
                                 let handler_clone = Arc::clone(&handler);
                                 let rl = Arc::clone(&rate_limiter);
+                                let conn_count = Arc::clone(&active_connections);
                                 tokio::spawn(async move {
                                     handle_connection(stream, handler_clone, rl).await;
+                                    conn_count.fetch_sub(1, Ordering::Relaxed);
                                 });
                             }
                             Err(e) => {
@@ -398,10 +422,18 @@ impl IpcServer {
                 tokio::select! {
                     result = server.connect() => {
                         if result.is_ok() {
+                            let prev = active_connections.fetch_add(1, Ordering::Relaxed);
+                            if prev >= MAX_CONCURRENT_CONNECTIONS {
+                                active_connections.fetch_sub(1, Ordering::Relaxed);
+                                log::warn!("IPC: rejecting connection ({prev}/{MAX_CONCURRENT_CONNECTIONS} active)");
+                                continue;
+                            }
                             let handler_clone = Arc::clone(&handler);
                             let rl = Arc::clone(&rate_limiter);
+                            let conn_count = Arc::clone(&active_connections);
                             tokio::spawn(async move {
                                 handle_windows_connection(server, handler_clone, rl).await;
+                                conn_count.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
                     }
@@ -421,6 +453,29 @@ async fn handle_connection<H: IpcMessageHandler>(
     handler: Arc<H>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
 ) {
+    // H-012: reject connections from different UIDs on Unix sockets.
+    match stream.peer_cred() {
+        Ok(cred) => {
+            let my_uid = unsafe { libc::getuid() };
+            let peer_uid = cred.uid();
+            if peer_uid != my_uid {
+                log::error!(
+                    "IPC: rejecting unix-socket connection from UID {} (server UID {})",
+                    peer_uid,
+                    my_uid
+                );
+                return;
+            }
+        }
+        Err(e) => {
+            log::error!(
+                "IPC: failed to get peer credentials on unix-socket: {} (rejecting)",
+                e
+            );
+            return;
+        }
+    }
+
     handle_connection_inner(
         &mut stream,
         handler as Arc<dyn IpcMessageHandler>,

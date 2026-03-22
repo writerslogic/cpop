@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! AES-256-GCM encrypted chain file storage (anti-tamper).
 //!
@@ -67,10 +67,6 @@ impl ChainEncryptionKey {
             key: ProtectedKey::new(key_bytes),
         }
     }
-}
-
-impl Drop for ChainEncryptionKey {
-    fn drop(&mut self) {}
 }
 
 /// Save a chain to a sealed (encrypted) file.

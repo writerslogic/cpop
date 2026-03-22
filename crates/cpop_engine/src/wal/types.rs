@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use blake3::Hasher;
 use ed25519_dalek::SigningKey;
@@ -86,6 +86,9 @@ pub enum WalError {
     /// WAL exceeds the maximum allowed entry count
     #[error("entry count exceeds maximum ({0})")]
     TooManyEntries(u64),
+    /// WAL header session_id does not match the session_id passed to open()
+    #[error("WAL session_id mismatch")]
+    SessionMismatch,
     /// Underlying I/O error
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

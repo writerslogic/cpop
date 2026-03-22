@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Memory-hardened wrappers for key material: zeroize-on-drop with
 //! optional `mlock` to prevent swap exposure.
@@ -10,8 +10,17 @@ use zeroize::Zeroize;
 use libc::{mlock, munlock};
 
 /// Fixed-size key buffer: zeroized on drop, `mlock`ed on Unix.
-#[derive(Clone)]
+///
+/// Clone is implemented manually to ensure the cloned copy is also mlocked.
+/// The derived Clone would copy raw bytes without calling `lock_memory`.
 pub struct ProtectedKey<const N: usize>([u8; N]);
+
+impl<const N: usize> Clone for ProtectedKey<N> {
+    fn clone(&self) -> Self {
+        // Use new() to ensure the cloned copy is mlocked
+        ProtectedKey::new(self.0)
+    }
+}
 
 impl<const N: usize> ProtectedKey<N> {
     /// Wrap raw bytes, `mlock` the buffer, then zeroize the source.

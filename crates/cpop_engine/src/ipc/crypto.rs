@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::messages::IpcMessage;
 use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce as AesNonce};
@@ -54,8 +54,10 @@ pub(crate) struct SecureSession {
     tx_sequence: AtomicU64,
     rx_sequence: AtomicU64,
     key_bytes: [u8; 32],
-    /// HKDF-derived prefix for nonce bytes [0..4] to avoid zero-prefix bias.
-    nonce_prefix: [u8; 4],
+    /// HKDF-derived prefix for tx nonce bytes [0..4] (direction-specific).
+    tx_nonce_prefix: [u8; 4],
+    /// HKDF-derived prefix for rx nonce bytes [0..4] (direction-specific).
+    rx_nonce_prefix: [u8; 4],
 }
 
 /// Build a 12-byte AES-GCM nonce: 4-byte HKDF prefix + 8-byte sequence number.
@@ -85,9 +87,21 @@ impl SecureSession {
         hk.expand(&info, &mut key_bytes)
             .map_err(|_| anyhow!("HKDF expand failed"))?;
 
-        let mut nonce_prefix = [0u8; 4];
-        hk.expand(b"nonce-prefix", &mut nonce_prefix)
-            .map_err(|_| anyhow!("HKDF expand for nonce prefix failed"))?;
+        // Derive direction-specific nonce prefixes so client→server and
+        // server→client streams never share the same (prefix, seq) pair.
+        let mut client_prefix = [0u8; 4];
+        hk.expand(b"nonce-prefix-client", &mut client_prefix)
+            .map_err(|_| anyhow!("HKDF expand for client nonce prefix failed"))?;
+
+        let mut server_prefix = [0u8; 4];
+        hk.expand(b"nonce-prefix-server", &mut server_prefix)
+            .map_err(|_| anyhow!("HKDF expand for server nonce prefix failed"))?;
+
+        let (tx_nonce_prefix, rx_nonce_prefix) = if is_server {
+            (server_prefix, client_prefix)
+        } else {
+            (client_prefix, server_prefix)
+        };
 
         let cipher = Aes256Gcm::new_from_slice(&key_bytes)
             .map_err(|_| anyhow!("AES-GCM key init failed"))?;
@@ -100,14 +114,22 @@ impl SecureSession {
             tx_sequence: AtomicU64::new(tx_start),
             rx_sequence: AtomicU64::new(rx_start),
             key_bytes,
-            nonce_prefix,
+            tx_nonce_prefix,
+            rx_nonce_prefix,
         })
     }
 
     /// Encrypt a payload. Returns [8-byte seq][12-byte nonce][ciphertext+tag].
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
+        // H-007: guard against sequence overflow — nonce reuse would be fatal.
+        let current = self.tx_sequence.load(Ordering::SeqCst);
+        if current > u64::MAX - 2 {
+            return Err(anyhow!(
+                "tx_sequence exhausted (would overflow) — session must be rekeyed"
+            ));
+        }
         let seq = self.tx_sequence.fetch_add(2, Ordering::SeqCst);
-        let nonce_bytes = construct_nonce(&self.nonce_prefix, seq);
+        let nonce_bytes = construct_nonce(&self.tx_nonce_prefix, seq);
         let nonce = AesNonce::from_slice(&nonce_bytes);
 
         let ciphertext = self
@@ -136,7 +158,8 @@ impl SecureSession {
                 .map_err(|_| anyhow!("Invalid sequence number bytes"))?,
         );
 
-        // Only advance rx_sequence on full decrypt success (see CAS below)
+        // Atomically validate and consume the sequence slot to prevent TOCTOU
+        // where two concurrent threads both pass a load+compare check.
         let expected_seq = self.rx_sequence.load(Ordering::SeqCst);
 
         if seq
@@ -146,21 +169,11 @@ impl SecureSession {
             != 1
         {
             return Err(anyhow!(
-                "Sequence number mismatch: expected {}, got {} (possible replay attack)",
-                expected_seq,
-                seq
+                "Sequence validation failed (possible replay attack)"
             ));
         }
 
-        let nonce = AesNonce::from_slice(&data[8..20]);
-        let ciphertext = &data[20..];
-
-        let plaintext = self
-            .cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| anyhow!("AES-GCM decrypt failed (tampered or wrong key)"))?;
-
-        // CAS: never consume a slot on failure
+        // CAS immediately after validation — only one thread wins the slot.
         self.rx_sequence
             .compare_exchange(
                 expected_seq,
@@ -169,6 +182,23 @@ impl SecureSession {
                 Ordering::SeqCst,
             )
             .map_err(|_| anyhow!("rx_sequence CAS failed — concurrent decrypt detected"))?;
+
+        // Reconstruct nonce from validated sequence — never trust the wire nonce.
+        // The encrypt side derives nonce = construct_nonce(prefix, seq), so we must
+        // reconstruct it identically. Using the wire nonce would allow an attacker
+        // to supply a previously-used nonce, breaking AES-GCM's nonce-uniqueness.
+        let expected_nonce = construct_nonce(&self.rx_nonce_prefix, seq);
+        let wire_nonce = &data[8..20];
+        if expected_nonce.ct_eq(wire_nonce).unwrap_u8() != 1 {
+            return Err(anyhow!("Nonce mismatch (possible tampering)"));
+        }
+        let nonce = AesNonce::from_slice(&expected_nonce);
+        let ciphertext = &data[20..];
+
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| anyhow!("AES-GCM decrypt failed (tampered or wrong key)"))?;
 
         Ok(plaintext)
     }
@@ -291,6 +321,9 @@ pub(crate) async fn secure_handshake_server<
         let mut client_confirm_len_buf = [0u8; 4];
         stream.read_exact(&mut client_confirm_len_buf).await?;
         let client_confirm_len = u32::from_le_bytes(client_confirm_len_buf) as usize;
+        if client_confirm_len == 0 {
+            return Err(anyhow!("Empty key confirmation token"));
+        }
         if client_confirm_len > 1024 {
             return Err(anyhow!("Key confirmation token too large"));
         }
@@ -301,7 +334,11 @@ pub(crate) async fn secure_handshake_server<
             .decrypt(&client_confirm_buf)
             .map_err(|_| anyhow!("Key confirmation failed: client derived different key"))?;
 
-        if client_confirm_plaintext != KEY_CONFIRM_PLAINTEXT {
+        if client_confirm_plaintext
+            .ct_eq(KEY_CONFIRM_PLAINTEXT)
+            .unwrap_u8()
+            == 0
+        {
             return Err(anyhow!(
                 "Key confirmation mismatch: client sent wrong token"
             ));

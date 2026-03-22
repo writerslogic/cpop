@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,14 @@ use crate::error::{Error, Result};
 use crate::vdf::{Argon2SwfProof, VdfProof};
 use crate::DateTimeNanosExt;
 use cpop_protocol::rfc::{self, TimeEvidence, VdfProofRfc};
+
+/// RFC wire format offsets for the 64-byte VDF proof field.
+/// Layout: VDF output (bytes 0..32) || VDF input (bytes 32..64).
+pub const VDF_RFC_OUTPUT_OFFSET: usize = 0;
+pub const VDF_RFC_OUTPUT_END: usize = 32;
+pub const VDF_RFC_INPUT_OFFSET: usize = 32;
+pub const VDF_RFC_INPUT_END: usize = 64;
+pub const VDF_RFC_FIELD_SIZE: usize = 64;
 
 /// Entanglement mode for checkpoint chain computation.
 ///

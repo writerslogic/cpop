@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use zeroize::Zeroize;
 
 pub mod anti_analysis;
 pub mod mem;
@@ -138,6 +139,7 @@ pub fn compute_jitter_seal(merkle_root: &[u8], swf_input: &[u8], intervals_cbor:
 
     let mut mac =
         HmacSha256::new_from_slice(&tag_key).expect("32-byte key is valid for HMAC-SHA256");
+    tag_key.zeroize();
     mac.update(intervals_cbor);
     mac.finalize().into_bytes().to_vec()
 }
@@ -160,9 +162,14 @@ pub fn compute_entangled_mac(
 
     let mut mac =
         HmacSha256::new_from_slice(&binding_key).expect("32-byte key is valid for HMAC-SHA256");
+    binding_key.zeroize();
+    mac.update(&(prev_hash.len() as u32).to_be_bytes());
     mac.update(prev_hash);
+    mac.update(&(content_hash.len() as u32).to_be_bytes());
     mac.update(content_hash);
+    mac.update(&(jitter_binding_cbor.len() as u32).to_be_bytes());
     mac.update(jitter_binding_cbor);
+    mac.update(&(physical_state_cbor.len() as u32).to_be_bytes());
     mac.update(physical_state_cbor);
     mac.finalize().into_bytes().to_vec()
 }

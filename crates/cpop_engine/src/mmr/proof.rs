@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::mmr::errors::MmrError;
 use crate::mmr::node::{hash_internal, hash_leaf, HASH_SIZE};
@@ -237,6 +237,9 @@ pub struct RangeProof {
 impl RangeProof {
     /// Verify this range proof against the given leaf data slices and root.
     pub fn verify(&self, leaf_data: &[Vec<u8>]) -> Result<(), MmrError> {
+        if self.end_leaf < self.start_leaf {
+            return Err(MmrError::InvalidProof);
+        }
         let expected = (self.end_leaf - self.start_leaf + 1) as usize;
         if leaf_data.len() != expected {
             return Err(MmrError::InvalidProof);
@@ -272,6 +275,9 @@ impl RangeProof {
         let mut sibling_idx = 0usize;
         let mut height: u8 = 0;
         while current.len() > 1 || sibling_idx < self.sibling_path.len() {
+            if height >= 63 {
+                return Err(MmrError::InvalidProof);
+            }
             let mut next: HashMap<u64, [u8; HASH_SIZE]> = HashMap::new();
             let mut processed: HashMap<u64, bool> = HashMap::new();
             let mut positions: Vec<u64> = current.keys().copied().collect();

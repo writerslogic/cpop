@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,9 @@ use crate::vdf::{self, Parameters};
 use cpop_protocol::rfc::wire_types::components::DocumentRef;
 use cpop_protocol::rfc::wire_types::hash::HashValue;
 use cpop_protocol::rfc::{self, TimeEvidence, VdfProofRfc};
+
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 
 use super::types::*;
 
@@ -94,6 +97,14 @@ impl Chain {
         vdf_params: Parameters,
         entanglement_mode: EntanglementMode,
     ) -> Result<Self> {
+        if fs::symlink_metadata(document_path.as_ref())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err(Error::checkpoint(
+                "Symlinks not supported for document paths",
+            ));
+        }
         let abs_path = fs::canonicalize(document_path.as_ref())?;
         let path_bytes = abs_path.to_string_lossy();
         let path_hash = Sha256::digest(path_bytes.as_bytes());
@@ -132,6 +143,20 @@ impl Chain {
         message: Option<String>,
         vdf_duration: Option<Duration>,
     ) -> Result<Checkpoint> {
+        // H-014: Acquire advisory file lock to prevent concurrent commits
+        let lock_file = fs::File::open(&self.document_path)?;
+        Self::acquire_lock(&lock_file)?;
+        let result = self.commit_internal_locked(message, vdf_duration);
+        Self::release_lock(&lock_file);
+        result
+    }
+
+    /// Inner commit logic, called while holding the file lock.
+    fn commit_internal_locked(
+        &mut self,
+        message: Option<String>,
+        vdf_duration: Option<Duration>,
+    ) -> Result<Checkpoint> {
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
         let ordinal = self.checkpoints.len() as u64;
@@ -164,9 +189,65 @@ impl Chain {
         Ok(self.checkpoints.last().expect("just pushed").clone())
     }
 
+    /// Acquire an exclusive advisory lock on the document file (non-blocking).
+    #[cfg(unix)]
+    fn acquire_lock(file: &fs::File) -> Result<()> {
+        let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if ret != 0 {
+            return Err(Error::checkpoint(
+                "concurrent commit: could not acquire file lock",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Release the advisory lock.
+    #[cfg(unix)]
+    fn release_lock(file: &fs::File) {
+        unsafe {
+            libc::flock(file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+
+    /// Acquire an exclusive advisory lock (Windows: no-op, use OS file locking).
+    #[cfg(not(unix))]
+    fn acquire_lock(_file: &fs::File) -> Result<()> {
+        // Windows file locking is implicit via CreateFile sharing modes;
+        // advisory flock is not available. Accept the TOCTOU risk on Windows
+        // until a cross-platform lock crate (e.g. fs2) is added.
+        Ok(())
+    }
+
+    /// Release the advisory lock (Windows: no-op).
+    #[cfg(not(unix))]
+    fn release_lock(_file: &fs::File) {}
+
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
     /// Prevents precomputation since each VDF depends on the previous VDF's actual output.
     pub fn commit_entangled(
+        &mut self,
+        message: Option<String>,
+        jitter_hash: [u8; 32],
+        jitter_session_id: String,
+        keystroke_count: u64,
+        vdf_duration: Duration,
+        physics: Option<&crate::PhysicalContext>,
+    ) -> Result<Checkpoint> {
+        let lock_file = fs::File::open(&self.document_path)?;
+        Self::acquire_lock(&lock_file)?;
+        let result = self.commit_entangled_locked(
+            message,
+            jitter_hash,
+            jitter_session_id,
+            keystroke_count,
+            vdf_duration,
+            physics,
+        );
+        Self::release_lock(&lock_file);
+        result
+    }
+
+    fn commit_entangled_locked(
         &mut self,
         message: Option<String>,
         jitter_hash: [u8; 32],
@@ -233,6 +314,29 @@ impl Chain {
         calibration: rfc::CalibrationAttestation,
         physics: Option<&crate::PhysicalContext>,
     ) -> Result<Checkpoint> {
+        let lock_file = fs::File::open(&self.document_path)?;
+        Self::acquire_lock(&lock_file)?;
+        let result = self.commit_rfc_locked(
+            message,
+            vdf_duration,
+            rfc_jitter,
+            time_evidence,
+            calibration,
+            physics,
+        );
+        Self::release_lock(&lock_file);
+        result
+    }
+
+    fn commit_rfc_locked(
+        &mut self,
+        message: Option<String>,
+        vdf_duration: Duration,
+        rfc_jitter: Option<rfc::JitterBinding>,
+        time_evidence: Option<TimeEvidence>,
+        calibration: rfc::CalibrationAttestation,
+        physics: Option<&crate::PhysicalContext>,
+    ) -> Result<Checkpoint> {
         if matches!(self.entanglement_mode, EntanglementMode::Entangled) && rfc_jitter.is_none() {
             return Err(Error::checkpoint("entangled mode requires jitter data"));
         }
@@ -283,9 +387,13 @@ impl Chain {
         };
 
         let rfc_vdf = vdf_proof.as_ref().map(|vdf| {
-            let mut output = [0u8; 64];
-            output[..32].copy_from_slice(&vdf.output);
-            output[32..].copy_from_slice(&vdf.input);
+            use super::types::{
+                VDF_RFC_FIELD_SIZE, VDF_RFC_INPUT_END, VDF_RFC_INPUT_OFFSET, VDF_RFC_OUTPUT_END,
+                VDF_RFC_OUTPUT_OFFSET,
+            };
+            let mut output = [0u8; VDF_RFC_FIELD_SIZE];
+            output[VDF_RFC_OUTPUT_OFFSET..VDF_RFC_OUTPUT_END].copy_from_slice(&vdf.output);
+            output[VDF_RFC_INPUT_OFFSET..VDF_RFC_INPUT_END].copy_from_slice(&vdf.input);
 
             VdfProofRfc::new(
                 vdf.input,
@@ -396,7 +504,9 @@ impl Chain {
                     genesis_prev_hash(cp.content_hash, cp.content_size, &self.document_path)
                         .map(|h| cp.previous_hash == h)
                         .unwrap_or(false);
-                if !is_legacy_zeros && !is_spec_genesis {
+                if is_legacy_zeros {
+                    log::warn!("Legacy all-zeros genesis hash accepted; consider re-chaining");
+                } else if !is_spec_genesis {
                     return false;
                 }
             }
@@ -438,7 +548,9 @@ impl Chain {
                 )
                 .map(|h| checkpoint.previous_hash == h)
                 .unwrap_or(false);
-                if !is_legacy_zeros && !is_spec_genesis {
+                if is_legacy_zeros {
+                    log::warn!("Legacy all-zeros genesis hash accepted; consider re-chaining");
+                } else if !is_spec_genesis {
                     report.fail("checkpoint 0: invalid genesis prev-hash".into());
                     return report;
                 }
@@ -462,13 +574,18 @@ impl Chain {
                     }
                 }
                 Some(sig) => {
-                    // Structural format check only. Cryptographic signature
-                    // verification in keyhierarchy/verification.rs
-                    // (verify_checkpoint_signatures, lines 33-53).
-                    if sig.is_empty() || sig.len() != 64 {
+                    // Structural format check: verify Ed25519 signature length.
+                    // Cryptographic signature verification (Ed25519 verify against
+                    // the signing public key) is performed separately in
+                    // keyhierarchy/verification.rs (verify_checkpoint_signatures)
+                    // because the Chain struct does not hold the public key.
+                    // This check catches corruption/truncation but NOT forgery.
+                    if sig.len() != 64 {
                         report.signature_failures.push(checkpoint.ordinal);
                         report.fail(format!(
-                            "checkpoint {i}: invalid signature length {} (expected 64)",
+                            "checkpoint {i}: invalid Ed25519 signature length {} \
+                             (expected 64 bytes; cryptographic verification deferred \
+                             to keyhierarchy)",
                             sig.len()
                         ));
                         return report;
@@ -553,6 +670,19 @@ impl Chain {
                         report.fail(format!("checkpoint {i}: VDF verification failed"));
                         return report;
                     }
+                }
+            }
+
+            if let Some(rfc_vdf) = &checkpoint.rfc_vdf {
+                use super::types::{VDF_RFC_INPUT_END, VDF_RFC_INPUT_OFFSET};
+                // The 64-byte output field encodes [vdf_output || vdf_input].
+                // Verify the input half matches the challenge field.
+                if rfc_vdf.output[VDF_RFC_INPUT_OFFSET..VDF_RFC_INPUT_END] != rfc_vdf.challenge {
+                    report.fail(format!(
+                        "checkpoint {i}: rfc_vdf layout mismatch \
+                         (input half of output != challenge)"
+                    ));
+                    return report;
                 }
             }
 
@@ -657,9 +787,11 @@ impl Chain {
         }
         let data = serde_json::to_vec_pretty(self)
             .map_err(|e| Error::checkpoint(format!("failed to marshal chain: {e}")))?;
-        // Atomic write: tmp + rename to avoid corrupt chain on crash
+        // Atomic write: tmp + fsync + rename to avoid corrupt chain on crash
         let tmp_path = path.with_extension("tmp");
-        fs::write(&tmp_path, data)?;
+        fs::write(&tmp_path, &data)?;
+        // H-015: fsync before rename to ensure data is durable on disk
+        fs::File::open(&tmp_path)?.sync_all()?;
         fs::rename(&tmp_path, path)?;
         Ok(())
     }

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::MutexRecover;
 use blake3::Hasher;
@@ -93,8 +93,12 @@ impl Wal {
         let data = serialize_entry(&entry)?;
         let length = data.len() as u32;
 
-        state.file.write_all(&length.to_be_bytes())?;
-        state.file.write_all(&data)?;
+        // Pre-assemble length prefix + entry into a single buffer to avoid
+        // partial writes that could corrupt the WAL on crash.
+        let mut frame = Vec::with_capacity(4 + data.len());
+        frame.extend_from_slice(&length.to_be_bytes());
+        frame.extend_from_slice(&data);
+        state.file.write_all(&frame)?;
         // fdatasync: flush data without metadata update (cheaper than sync_all).
         // Batch sync is left as future work.
         state.file.sync_data()?;
@@ -398,7 +402,9 @@ impl Wal {
         if header.version != VERSION {
             return Err(WalError::InvalidVersion(header.version));
         }
-        state.session_id = header.session_id;
+        if header.session_id != state.session_id {
+            return Err(WalError::SessionMismatch);
+        }
         Ok(())
     }
 

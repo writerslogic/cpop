@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::crypto;
 use crate::store::{SecureEvent, SecureStore};
@@ -65,10 +65,13 @@ impl SecureStore {
         let id = tx.last_insert_rowid();
         e.id = Some(id);
 
-        let new_integrity_hmac = crypto::compute_integrity_hmac(&self.hmac_key, &e.event_hash, id);
+        let event_count: i64 =
+            tx.query_row("SELECT COUNT(*) FROM secure_events", [], |row| row.get(0))?;
+        let new_integrity_hmac =
+            crypto::compute_integrity_hmac(&self.hmac_key, &e.event_hash, event_count);
         tx.execute(
             "UPDATE integrity SET chain_hash = ?, event_count = ?, last_verified = ?, hmac = ? WHERE id = 1",
-            params![&e.event_hash[..], id, chrono::Utc::now().timestamp_nanos_safe(), &new_integrity_hmac[..]]
+            params![&e.event_hash[..], event_count, chrono::Utc::now().timestamp_nanos_safe(), &new_integrity_hmac[..]]
         )?;
 
         tx.commit()?;
@@ -152,10 +155,12 @@ impl SecureStore {
                         })
                     })
                     .transpose()?,
-                vdf_iterations: row.get::<_, i64>(14)? as u64,
+                vdf_iterations: u64::try_from(row.get::<_, i64>(14)?).unwrap_or(0),
                 forensic_score: row.get(15)?,
                 is_paste: row.get::<_, i32>(16)? != 0,
-                hardware_counter: row.get::<_, Option<i64>>(17)?.map(|v| v as u64),
+                hardware_counter: row
+                    .get::<_, Option<i64>>(17)?
+                    .map(|v| u64::try_from(v).unwrap_or(0)),
                 input_method: row.get(18)?,
             })
         })?;
@@ -208,7 +213,30 @@ impl SecureStore {
 
     /// Update the file path for all events matching `old_path` to `new_path`.
     /// Used when a rename is detected via content hash continuity.
+    ///
+    /// # Warning
+    ///
+    /// This mutates `file_path` without recomputing event hashes or HMACs.
+    /// It **MUST NOT** be called on events that have already been stored with
+    /// HMAC verification, because `verify_integrity()` will fail afterwards.
+    /// The function checks whether the store has any verified events and returns
+    /// an error if so.
     pub fn update_file_path(&self, old_path: &str, new_path: &str) -> anyhow::Result<usize> {
+        let has_integrity: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM integrity WHERE id = 1 AND event_count > 0",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if has_integrity {
+            return Err(anyhow::anyhow!(
+                "cannot update file_path: store has HMAC-verified events; \
+                 this would break integrity verification"
+            ));
+        }
         let count = self.conn.execute(
             "UPDATE secure_events SET file_path = ? WHERE file_path = ?",
             params![new_path, old_path],
@@ -218,6 +246,9 @@ impl SecureStore {
 
     /// Null out context notes and VDF data for events older than `days_to_keep`.
     pub fn prune_payloads(&self, days_to_keep: i64) -> anyhow::Result<usize> {
+        if days_to_keep < 1 {
+            return Err(anyhow::anyhow!("days_to_keep must be >= 1"));
+        }
         let cutoff = chrono::Utc::now() - chrono::Duration::days(days_to_keep);
         let cutoff_ns = cutoff.timestamp_nanos_safe();
 

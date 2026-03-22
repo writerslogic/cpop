@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Unified error type wrapping all subsystem errors for consistent handling
 //! and pattern matching across the crate.
@@ -46,7 +46,7 @@ pub enum Error {
     Tpm(#[from] crate::tpm::TpmError),
 
     /// VDF aggregation error
-    #[error("vdf: {0}")]
+    #[error("vdf aggregate: {0}")]
     VdfAggregate(#[from] crate::vdf::AggregateError),
 
     /// Write-ahead log error

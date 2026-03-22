@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::crypto::{
     decode_message, decode_message_json, encode_message, encode_message_json, SecureSession,
@@ -128,6 +128,19 @@ impl AsyncIpcClient {
     }
 
     async fn establish_secure_session(&mut self) -> std::result::Result<(), AsyncIpcClientError> {
+        // H-053: Timeout the entire ECDH handshake to prevent indefinite blocking
+        const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, self.establish_secure_session_inner()).await {
+            Ok(result) => result,
+            Err(_) => Err(AsyncIpcClientError::ProtocolError(
+                "ECDH handshake timed out after 5s".into(),
+            )),
+        }
+    }
+
+    async fn establish_secure_session_inner(
+        &mut self,
+    ) -> std::result::Result<(), AsyncIpcClientError> {
         use p256::elliptic_curve::rand_core::OsRng;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
