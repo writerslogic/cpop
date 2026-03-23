@@ -17,13 +17,17 @@ how something was written, not just what was written."
 )]
 #[command(after_help = "\
 EXAMPLES:\n  \
-    cpop essay.txt                     Start tracking a file\n  \
-    cpop commit essay.txt -m \"Draft 1\"  Create a checkpoint\n  \
-    cpop export essay.txt -t standard   Export evidence for submission\n  \
-    cpop verify essay.evidence.json     Verify a proof packet\n\n\
+    cpop essay.txt                       Start tracking a file\n  \
+    cpop commit essay.txt -m \"Draft 1\"    Create a checkpoint\n  \
+    cpop export essay.txt -t standard     Export evidence (JSON)\n  \
+    cpop export essay.txt -f pdf          Export signed PDF report\n  \
+    cpop export essay.txt --no-beacons    Export without beacon attestation\n  \
+    cpop link essay.txt essay.pdf         Link derivative to source\n  \
+    cpop verify essay.evidence.json       Verify a proof packet\n\n\
 ENVIRONMENT:\n  \
-    CPOP_DATA_DIR    Override default data directory (~/.writersproof)\n  \
-    EDITOR          Editor for 'cpop config edit'\n\n\
+    CPOP_DATA_DIR           Override default data directory (~/.writersproof)\n  \
+    CPOP_BEACONS_ENABLED    Enable/disable temporal beacons (true/false)\n  \
+    EDITOR                  Editor for 'cpop config edit'\n\n\
 Use 'cpop <command> --help' for details on specific commands.")]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
@@ -75,7 +79,20 @@ pub enum Commands {
     /// Export evidence packet
     #[command(
         alias = "prove",
-        after_help = "Tiers: basic, standard (recommended), enhanced, maximum."
+        after_help = "TIERS:\n  \
+            basic     T1 — VDF proof only (offline)\n  \
+            standard  T2 — + keystrokes + timing (recommended)\n  \
+            enhanced  T3 — + behavioral analysis + hardware\n  \
+            maximum   T4 — + all external anchors + full attestation\n\n\
+            FORMATS:\n  \
+            json  Machine-readable evidence packet\n  \
+            cpop  CBOR binary wire format\n  \
+            cwar  COSE-signed attestation result\n  \
+            html  Self-contained HTML report (open in browser)\n  \
+            pdf   Signed PDF with anti-forgery security features\n\n\
+            BEACONS:\n  \
+            Temporal beacons (drand + NIST) are enabled by default via WritersProof.\n  \
+            Use --no-beacons to disable (caps security level at T2)."
     )]
     Export {
         /// Document to export
@@ -86,12 +103,18 @@ pub enum Commands {
         /// Output file path (defaults to stdout for JSON)
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
-        /// Output format (json, cpop, cwar, html)
+        /// Output format (json, cpop, cwar, html, pdf)
         #[arg(short = 'f', long, default_value = "json")]
         format: String,
         /// Embed zero-width watermark
         #[arg(long)]
         stego: bool,
+        /// Disable temporal beacon attestation (caps security level at T2)
+        #[arg(long)]
+        no_beacons: bool,
+        /// Beacon fetch timeout in seconds
+        #[arg(long, default_value = "5")]
+        beacon_timeout: u64,
     },
 
     /// Verify an evidence packet or database
@@ -111,6 +134,25 @@ pub enum Commands {
     Presence {
         #[command(subcommand)]
         action: PresenceAction,
+    },
+
+    /// Link an export/derivative to a tracked source document
+    #[command(
+        after_help = "Creates a cryptographic binding between a source document's evidence \
+                      chain and an exported derivative (PDF, EPUB, DOCX, etc.).\n\n\
+                      EXAMPLES:\n  \
+                          cpop link novel.scriv manuscript.pdf -m \"Final PDF\"\n  \
+                          cpop link essay.txt essay.pdf\n  \
+                          cpop link project.scriv manuscript.epub -m \"EPUB export\""
+    )]
+    Link {
+        /// Source document (the tracked file or project)
+        source: PathBuf,
+        /// Export or derivative file (PDF, EPUB, DOCX, etc.)
+        export: PathBuf,
+        /// Description of the relationship
+        #[arg(short, long)]
+        message: Option<String>,
     },
 
     /// Track activity on a file or project
@@ -222,9 +264,6 @@ pub enum TrackAction {
         /// Glob patterns to filter files (e.g. "*.txt,*.md") — directory mode only
         #[arg(short, long, default_value_t = String::new(), hide_default_value = true)]
         patterns: String,
-        #[cfg(feature = "cpop_jitter")]
-        #[arg(long, help = "Use hardware entropy when available")]
-        cpop_jitter: bool,
     },
     /// Stop the active tracking session and save results
     Stop,

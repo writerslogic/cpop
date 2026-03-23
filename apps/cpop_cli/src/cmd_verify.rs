@@ -512,6 +512,7 @@ fn verify_cwar(file_path: &PathBuf, out: &OutputMode) -> Result<()> {
         }
         println!("  Version: {}", report.details.version);
         println!("  Author: {}", report.details.author);
+        // Truncate document_id to first 16 chars for display; if shorter, show full ID.
         println!(
             "  Document: {}",
             report
@@ -616,5 +617,229 @@ fn verify_db(file_path: &PathBuf, key: Option<PathBuf>, out: &OutputMode) -> Res
             }
             Err(anyhow!("Verification failed"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- check_spec_compliance ---
+
+    #[test]
+    fn test_spec_compliance_valid_evidence_no_warnings() {
+        let json = serde_json::json!({
+            "spec": {
+                "cbor_tag": CBOR_TAG_EVIDENCE_PACKET,
+                "profile_uri": PROFILE_URI,
+                "content_tier": 1,
+                "attestation_tier": 1,
+            },
+            "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+        });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            warnings.is_empty(),
+            "valid evidence should produce no warnings, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_wrong_cbor_tag() {
+        let json = serde_json::json!({
+            "spec": { "cbor_tag": 999999 },
+            "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+        });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            warnings.iter().any(|w| w.contains("CBOR tag mismatch")),
+            "wrong CBOR tag should produce warning, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_unknown_profile_uri() {
+        let json = serde_json::json!({
+            "spec": { "profile_uri": "urn:example:unknown" },
+            "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+        });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            warnings.iter().any(|w| w.contains("Unknown profile URI")),
+            "unknown profile URI should be warned, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_eat_profile_uri_accepted() {
+        let json = serde_json::json!({
+            "spec": { "profile_uri": EAT_PROFILE_URI },
+            "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+        });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            !warnings.iter().any(|w| w.contains("profile URI")),
+            "EAT profile URI should be accepted, got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_content_tier_out_of_range() {
+        for bad_tier in [0u64, 4, 100] {
+            let json = serde_json::json!({
+                "spec": { "content_tier": bad_tier },
+                "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+            });
+            let warnings = check_spec_compliance(&json);
+            assert!(
+                warnings.iter().any(|w| w.contains("Invalid content-tier")),
+                "content_tier={bad_tier} should warn, got: {warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spec_compliance_content_tier_valid_range() {
+        for tier in 1u64..=3 {
+            let json = serde_json::json!({
+                "spec": { "content_tier": tier },
+                "checkpoints": [{"a": 1}, {"b": 2}, {"c": 3}],
+            });
+            let warnings = check_spec_compliance(&json);
+            assert!(
+                !warnings.iter().any(|w| w.contains("content-tier")),
+                "content_tier={tier} should be valid, got: {warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spec_compliance_attestation_tier_boundaries() {
+        // Valid: 1..=4
+        for tier in 1u64..=4 {
+            let json = serde_json::json!({ "spec": { "attestation_tier": tier }, "checkpoints": [{}, {}, {}] });
+            let warnings = check_spec_compliance(&json);
+            assert!(
+                !warnings.iter().any(|w| w.contains("attestation-tier")),
+                "attestation_tier={tier} should be valid"
+            );
+        }
+        // Invalid: 0, 5
+        for bad in [0u64, 5] {
+            let json = serde_json::json!({ "spec": { "attestation_tier": bad }, "checkpoints": [{}, {}, {}] });
+            let warnings = check_spec_compliance(&json);
+            assert!(
+                warnings
+                    .iter()
+                    .any(|w| w.contains("Invalid attestation-tier")),
+                "attestation_tier={bad} should warn"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spec_compliance_insufficient_checkpoints() {
+        for count in 0..MIN_CHECKPOINTS_PER_PACKET {
+            let cps: Vec<serde_json::Value> =
+                (0..count).map(|i| serde_json::json!({"i": i})).collect();
+            let json = serde_json::json!({ "spec": {}, "checkpoints": cps });
+            let warnings = check_spec_compliance(&json);
+            assert!(
+                warnings
+                    .iter()
+                    .any(|w| w.contains("Insufficient checkpoints")),
+                "{count} checkpoints should warn"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spec_compliance_exact_minimum_no_warning() {
+        let cps: Vec<serde_json::Value> = (0..MIN_CHECKPOINTS_PER_PACKET)
+            .map(|i| serde_json::json!({"i": i}))
+            .collect();
+        let json = serde_json::json!({ "spec": {}, "checkpoints": cps });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            !warnings.iter().any(|w| w.contains("checkpoints")),
+            "exactly MIN_CHECKPOINTS should not warn"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_missing_spec_no_crash() {
+        let json = serde_json::json!({ "checkpoints": [{}, {}, {}] });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            !warnings.iter().any(|w| w.contains("CBOR")),
+            "missing spec section should not produce CBOR warnings"
+        );
+    }
+
+    #[test]
+    fn test_spec_compliance_multiple_violations() {
+        let json = serde_json::json!({
+            "spec": { "cbor_tag": 0, "profile_uri": "urn:bogus", "content_tier": 99, "attestation_tier": 0 },
+            "checkpoints": [],
+        });
+        let warnings = check_spec_compliance(&json);
+        assert!(
+            warnings.len() >= 4,
+            "should report >=4 warnings, got {}: {warnings:?}",
+            warnings.len()
+        );
+    }
+
+    // --- verdict_str ---
+
+    #[test]
+    fn test_verdict_str_all_variants() {
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V1VerifiedHuman),
+            "V1: Verified Human"
+        );
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V2LikelyHuman),
+            "V2: Likely Human"
+        );
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V3Suspicious),
+            "V3: Suspicious"
+        );
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V4LikelySynthetic),
+            "V4: Likely Synthetic"
+        );
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V5ConfirmedForgery),
+            "V5: Confirmed Forgery"
+        );
+    }
+
+    #[test]
+    fn test_verdict_str_version_prefix_ordering() {
+        let verdicts = [
+            ForensicVerdict::V1VerifiedHuman,
+            ForensicVerdict::V2LikelyHuman,
+            ForensicVerdict::V3Suspicious,
+            ForensicVerdict::V4LikelySynthetic,
+            ForensicVerdict::V5ConfirmedForgery,
+        ];
+        for (i, v) in verdicts.iter().enumerate() {
+            let s = verdict_str(v);
+            assert!(
+                s.starts_with(&format!("V{}: ", i + 1)),
+                "verdict {i} should start with 'V{}: ', got: {s}",
+                i + 1
+            );
+        }
+    }
+
+    // --- status_icon ---
+
+    #[test]
+    fn test_status_icon_values() {
+        assert_eq!(status_icon(true), "[OK]");
+        assert_eq!(status_icon(false), "[FAIL]");
     }
 }

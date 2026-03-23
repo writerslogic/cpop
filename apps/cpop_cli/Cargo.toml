@@ -24,7 +24,7 @@ name = "writerslogic-native-messaging-host"
 path = "src/native_messaging_host.rs"
 
 [features]
-default = []
+default = ["cpop_jitter"]
 cpop_jitter = ["cpop_engine/cpop_jitter"]
 
 [dependencies]

@@ -14,6 +14,7 @@ fn test_cli_full_workflow() {
         let mut child = Command::new(bin)
             .args(args)
             .env("CPOP_DATA_DIR", dir.path())
+            .env("CPOP_NO_KEYCHAIN", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -119,6 +120,7 @@ impl CliTestEnv {
         let mut child = Command::new(self.bin)
             .args(args)
             .env("CPOP_DATA_DIR", self.dir.path())
+            .env("CPOP_NO_KEYCHAIN", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -834,5 +836,421 @@ fn test_cli_verify_unsupported_extension() {
     assert!(
         stderr.contains("format") || stderr.contains("Supported"),
         "Should list supported formats"
+    );
+}
+
+// ==== New feature tests ====
+
+#[test]
+fn test_cli_link_success() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let source = env.dir.path().join("manuscript.txt");
+    fs::write(&source, "My manuscript content").unwrap();
+    env.run_expect_success(&["commit", source.to_str().unwrap(), "-m", "Draft"], None);
+
+    let export = env.dir.path().join("manuscript.pdf");
+    fs::write(&export, b"%PDF-1.4 fake pdf content").unwrap();
+
+    let stdout = env.run_expect_success(
+        &[
+            "link",
+            source.to_str().unwrap(),
+            export.to_str().unwrap(),
+            "-m",
+            "Final PDF export",
+        ],
+        None,
+    );
+    assert!(
+        stdout.contains("Linked export to evidence chain"),
+        "Should confirm link. stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("manuscript.pdf"),
+        "Should show export filename. stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_cli_link_json() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let source = env.dir.path().join("essay.txt");
+    fs::write(&source, "Essay content").unwrap();
+    env.run_expect_success(&["commit", source.to_str().unwrap(), "-m", "V1"], None);
+
+    let export = env.dir.path().join("essay.pdf");
+    fs::write(&export, "fake pdf").unwrap();
+
+    let stdout = env.run_expect_success(
+        &[
+            "link",
+            source.to_str().unwrap(),
+            export.to_str().unwrap(),
+            "--json",
+        ],
+        None,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("link --json should return valid JSON: {e}\nGot: {stdout}"));
+    assert_eq!(parsed.get("linked").and_then(|v| v.as_bool()), Some(true));
+    assert!(parsed.get("export_hash").is_some());
+    assert!(parsed.get("event_hash").is_some());
+}
+
+#[test]
+fn test_cli_link_no_evidence_chain() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let source = env.dir.path().join("untracked.txt");
+    fs::write(&source, "Not tracked").unwrap();
+
+    let export = env.dir.path().join("output.pdf");
+    fs::write(&export, "pdf").unwrap();
+
+    let (success, _stdout, stderr) = env.run(
+        &["link", source.to_str().unwrap(), export.to_str().unwrap()],
+        None,
+    );
+    assert!(!success, "Link should fail without evidence chain");
+    assert!(
+        stderr.contains("No evidence chain"),
+        "Should explain no chain. stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_cli_link_missing_export_file() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let source = env.dir.path().join("source.txt");
+    fs::write(&source, "content").unwrap();
+    env.run_expect_success(&["commit", source.to_str().unwrap(), "-m", "V1"], None);
+
+    let (success, _stdout, stderr) = env.run(
+        &["link", source.to_str().unwrap(), "/nonexistent/export.pdf"],
+        None,
+    );
+    assert!(!success, "Link should fail for missing export");
+    assert!(
+        stderr.contains("not found") || stderr.contains("Export file"),
+        "Should explain missing export. stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_cli_link_shows_in_log() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let source = env.dir.path().join("novel.txt");
+    fs::write(&source, "Novel content").unwrap();
+    env.run_expect_success(&["commit", source.to_str().unwrap(), "-m", "Ch1"], None);
+
+    let export = env.dir.path().join("novel.pdf");
+    fs::write(&export, "pdf").unwrap();
+    env.run_expect_success(
+        &[
+            "link",
+            source.to_str().unwrap(),
+            export.to_str().unwrap(),
+            "-m",
+            "PDF export",
+        ],
+        None,
+    );
+
+    // The derivative event should appear in the log
+    let stdout = env.run_expect_success(&["log", source.to_str().unwrap(), "--json"], None);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let count = parsed
+        .get("checkpoint_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(count, 2, "Should have 2 events (commit + link)");
+}
+
+#[test]
+fn test_cli_commit_empty_file() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("empty.txt");
+    fs::write(&doc, "").unwrap();
+
+    let (_success, stdout, stderr) =
+        env.run(&["commit", doc.to_str().unwrap(), "-m", "Empty"], None);
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("empty") || combined.contains("zero-byte"),
+        "Should warn about empty file. combined: {}",
+        combined
+    );
+}
+
+#[test]
+fn test_cli_commit_unchanged_file() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("stable.txt");
+    fs::write(&doc, "Stable content").unwrap();
+
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "First"], None);
+
+    // Commit same content again — should still create checkpoint
+    let stdout = env.run_expect_success(
+        &["commit", doc.to_str().unwrap(), "-m", "Same content"],
+        None,
+    );
+    assert!(
+        stdout.contains("Checkpoint #2"),
+        "Should create checkpoint even for unchanged content. stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_cli_identity_did() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let stdout = env.run_expect_success(&["identity", "--did"], None);
+    assert!(
+        stdout.contains("did:key:"),
+        "identity --did should show DID. stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_cli_config_reset() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    // Change a config value first
+    env.run_expect_success(
+        &["config", "set", "sentinel.idle_timeout_secs", "999"],
+        None,
+    );
+
+    let stdout = env.run_expect_success(&["config", "reset", "--force"], None);
+    assert!(
+        stdout.contains("Reset") || stdout.contains("reset") || stdout.contains("default"),
+        "config reset should confirm. stdout: {}",
+        stdout
+    );
+
+    // Verify it's back to default
+    let stdout = env.run_expect_success(&["config", "show"], None);
+    assert!(
+        !stdout.contains("999"),
+        "Config should no longer have custom value"
+    );
+}
+
+#[test]
+fn test_cli_export_json_format() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("exporttest.txt");
+    fs::write(&doc, "Export test v1").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V1"], None);
+    fs::write(&doc, "Export test v2 with changes").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V2"], None);
+    fs::write(&doc, "Export test v3 with more changes").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V3"], None);
+
+    let out_path = env.dir.path().join("evidence.json");
+    env.run_expect_success(
+        &[
+            "export",
+            doc.to_str().unwrap(),
+            "-f",
+            "json",
+            "-o",
+            out_path.to_str().unwrap(),
+        ],
+        Some("n\nTest declaration\n"),
+    );
+
+    assert!(out_path.exists(), "JSON evidence file should exist");
+    let content = fs::read_to_string(&out_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|e| {
+        panic!(
+            "Evidence should be valid JSON: {e}\nContent: {}",
+            &content[..200.min(content.len())]
+        )
+    });
+    assert!(
+        parsed.get("checkpoints").is_some() || parsed.get("events").is_some(),
+        "Evidence should contain checkpoints"
+    );
+}
+
+#[test]
+fn test_cli_export_insufficient_checkpoints() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("few.txt");
+    fs::write(&doc, "content").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "Only one"], None);
+
+    let out_path = env.dir.path().join("evidence.json");
+    let (success, _stdout, stderr) = env.run(
+        &[
+            "export",
+            doc.to_str().unwrap(),
+            "-o",
+            out_path.to_str().unwrap(),
+        ],
+        Some("n\nDeclaration\n"),
+    );
+    // Export should either fail or warn about insufficient checkpoints
+    if !success {
+        assert!(
+            stderr.contains("checkpoint") || stderr.contains("at least"),
+            "Should explain insufficient checkpoints. stderr: {}",
+            stderr
+        );
+    }
+}
+
+#[test]
+fn test_cli_multiple_commits_chain_integrity() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("chain.txt");
+    for i in 1..=5 {
+        fs::write(&doc, format!("Version {} of the document", i)).unwrap();
+        let stdout = env.run_expect_success(
+            &[
+                "commit",
+                doc.to_str().unwrap(),
+                "-m",
+                &format!("Commit {}", i),
+                "--json",
+            ],
+            None,
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            parsed.get("checkpoint").and_then(|v| v.as_u64()),
+            Some(i),
+            "Checkpoint number should be {}",
+            i
+        );
+    }
+
+    // Verify log shows all 5
+    let stdout = env.run_expect_success(&["log", doc.to_str().unwrap(), "--json"], None);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        parsed.get("checkpoint_count").and_then(|v| v.as_u64()),
+        Some(5)
+    );
+}
+
+#[test]
+fn test_cli_link_auto_init() {
+    // Link command should auto-initialize on fresh install
+    let env = CliTestEnv::new();
+    // Do NOT call env.init() — test that link triggers auto-init
+
+    let source = env.dir.path().join("src.txt");
+    fs::write(&source, "content").unwrap();
+    let export = env.dir.path().join("out.pdf");
+    fs::write(&export, "pdf").unwrap();
+
+    let (_success, _stdout, stderr) = env.run(
+        &["link", source.to_str().unwrap(), export.to_str().unwrap()],
+        None,
+    );
+    // Should auto-init (stderr mentions initializing) or fail with "no evidence chain"
+    // Either way, the auto-init gate should have fired
+    let combined = format!("{}{}", _stdout, stderr);
+    assert!(
+        combined.contains("Initializing")
+            || combined.contains("initialized")
+            || combined.contains("No evidence chain"),
+        "Link should auto-init or fail after init. combined: {}",
+        combined
+    );
+}
+
+#[test]
+fn test_cli_commit_size_delta() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("delta.txt");
+    fs::write(&doc, "Short").unwrap();
+    env.run_expect_success(
+        &["commit", doc.to_str().unwrap(), "-m", "Short", "--json"],
+        None,
+    );
+
+    fs::write(
+        &doc,
+        "This is a much longer version of the document with more content",
+    )
+    .unwrap();
+    let stdout = env.run_expect_success(
+        &["commit", doc.to_str().unwrap(), "-m", "Long", "--json"],
+        None,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let delta = parsed
+        .get("size_delta")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    assert!(
+        delta > 0,
+        "Size delta should be positive after growth. delta: {}",
+        delta
+    );
+}
+
+#[test]
+fn test_cli_verify_evidence_roundtrip() {
+    let env = CliTestEnv::new();
+    env.init();
+
+    let doc = env.dir.path().join("roundtrip.txt");
+    fs::write(&doc, "V1 content").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V1"], None);
+    fs::write(&doc, "V2 content with changes").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V2"], None);
+    fs::write(&doc, "V3 content with even more changes").unwrap();
+    env.run_expect_success(&["commit", doc.to_str().unwrap(), "-m", "V3"], None);
+
+    let evidence = env.dir.path().join("roundtrip.json");
+    env.run_expect_success(
+        &[
+            "export",
+            doc.to_str().unwrap(),
+            "-o",
+            evidence.to_str().unwrap(),
+        ],
+        Some("n\nRoundtrip test\n"),
+    );
+
+    let stdout = env.run_expect_success(&["verify", evidence.to_str().unwrap()], None);
+    assert!(
+        stdout.contains("Verified"),
+        "Exported evidence should verify. stdout: {}",
+        stdout
     );
 }

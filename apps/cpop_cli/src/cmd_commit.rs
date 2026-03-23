@@ -101,9 +101,18 @@ pub(crate) fn cmd_commit(
         id: None,
         device_id: get_device_id()?,
         machine_id: get_machine_id(),
-        timestamp_ns: Utc::now()
-            .timestamp_nanos_opt()
-            .unwrap_or_else(|| Utc::now().timestamp_millis().saturating_mul(1_000_000)),
+        timestamp_ns: {
+            const MIN_VALID_NS: i64 = 946_684_800 * 1_000_000_000; // year 2000
+            const MAX_VALID_NS: i64 = 4_102_444_800 * 1_000_000_000; // year 2100
+            let ts = Utc::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_else(|| Utc::now().timestamp_millis().saturating_mul(1_000_000));
+            if ts < MIN_VALID_NS || ts > MAX_VALID_NS {
+                Utc::now().timestamp() * 1_000_000_000
+            } else {
+                ts
+            }
+        },
         file_path: abs_path_str.clone(),
         content_hash,
         file_size,
@@ -234,10 +243,11 @@ async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
         use ed25519_dalek::Signer;
         hex::encode(signing_key.sign(latest.event_hash.as_slice()).to_bytes())
     };
-    let did = crate::util::load_did(dir).unwrap_or_else(|_| "unknown".into());
+    let did = crate::util::load_did(dir)
+        .map_err(|e| anyhow!("Cannot anchor without identity. Run 'cpop init' first: {e}"))?;
 
     let api_key = crate::util::load_api_key(dir)?;
-    let client = WritersProofClient::new("https://api.writersproof.com").with_jwt(api_key);
+    let client = WritersProofClient::new("https://api.writerslogic.com")?.with_jwt(api_key);
 
     print!("Anchoring to transparency log...");
     io::stdout().flush()?;
@@ -264,7 +274,7 @@ async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
     println!("  Timestamp: {}", resp.timestamp);
     println!("  Log index: {}", resp.log_index);
     println!(
-        "  Verify at: https://writersproof.com/verify/{}",
+        "  Verify at: https://writerslogic.com/verify/{}",
         resp.anchor_id
     );
 

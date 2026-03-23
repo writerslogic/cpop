@@ -209,3 +209,125 @@ fn cmd_list_documents(out: &OutputMode) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- format_timestamp_nanos ---
+
+    #[test]
+    fn test_timestamp_nanos_valid_date() {
+        // 2024-01-01 00:00:00 UTC = 1704067200s = 1704067200_000_000_000 ns
+        let ns = 1_704_067_200_000_000_000i64;
+        let result = format_timestamp_nanos(ns, "%Y-%m-%d");
+        assert_eq!(result, "2024-01-01", "should format known date correctly");
+    }
+
+    #[test]
+    fn test_timestamp_nanos_year_2000_boundary() {
+        // Year 2000 boundary: 946684800s = MIN_NS
+        let min_ns = 946_684_800_000_000_000i64;
+        let result = format_timestamp_nanos(min_ns, "%Y");
+        assert_eq!(result, "2000", "year 2000 boundary should be valid");
+    }
+
+    #[test]
+    #[test]
+    fn test_timestamp_nanos_year_2100_boundary() {
+        // Year 2100 boundary: 4102444800s = 2100-01-01 00:00:00 UTC
+        let max_ns = 4_102_444_800_000_000_000i64;
+        let result = format_timestamp_nanos(max_ns, "%Y");
+        assert_eq!(result, "2100", "year 2100 (MAX boundary) should be valid");
+    }
+
+    #[test]
+    fn test_timestamp_nanos_below_range_returns_invalid() {
+        let too_early = 946_684_799_999_999_999i64; // 1 ns before year 2000
+        let result = format_timestamp_nanos(too_early, "%Y");
+        assert_eq!(
+            result, "invalid timestamp",
+            "timestamp before year 2000 should return 'invalid timestamp'"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_nanos_above_range_returns_invalid() {
+        let too_late = 4_102_444_800_000_000_001i64; // 1 ns after year 2100
+        let result = format_timestamp_nanos(too_late, "%Y");
+        assert_eq!(
+            result, "invalid timestamp",
+            "timestamp after year 2100 should return 'invalid timestamp'"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_nanos_zero_returns_invalid() {
+        assert_eq!(
+            format_timestamp_nanos(0, "%Y"),
+            "invalid timestamp",
+            "timestamp 0 (epoch) should be out of range"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_nanos_negative_returns_invalid() {
+        assert_eq!(
+            format_timestamp_nanos(-1, "%Y"),
+            "invalid timestamp",
+            "negative timestamp should be invalid"
+        );
+    }
+
+    // --- format_timestamp_nanos_rfc3339 ---
+
+    #[test]
+    fn test_timestamp_rfc3339_valid() {
+        let ns = 1_704_067_200_000_000_000i64;
+        let result = format_timestamp_nanos_rfc3339(ns);
+        assert!(
+            result.contains("2024-01-01"),
+            "RFC 3339 should contain date, got: {result}"
+        );
+        assert!(
+            result.contains('T'),
+            "RFC 3339 format should contain 'T' separator, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_rfc3339_out_of_range() {
+        assert_eq!(
+            format_timestamp_nanos_rfc3339(0),
+            "invalid timestamp",
+            "RFC 3339 should return 'invalid timestamp' for out-of-range"
+        );
+    }
+
+    #[test]
+    fn test_timestamp_rfc3339_boundary_consistency() {
+        // Boundary values should give same valid/invalid behavior
+        let min = 946_684_800_000_000_000i64;
+        let max = 4_102_444_800_000_000_000i64;
+        assert_ne!(
+            format_timestamp_nanos_rfc3339(min),
+            "invalid timestamp",
+            "MIN boundary should be valid"
+        );
+        assert_ne!(
+            format_timestamp_nanos_rfc3339(max),
+            "invalid timestamp",
+            "MAX boundary should be valid"
+        );
+        assert_eq!(
+            format_timestamp_nanos_rfc3339(min - 1),
+            "invalid timestamp",
+            "below MIN should be invalid"
+        );
+        assert_eq!(
+            format_timestamp_nanos_rfc3339(max + 1),
+            "invalid timestamp",
+            "above MAX should be invalid"
+        );
+    }
+}

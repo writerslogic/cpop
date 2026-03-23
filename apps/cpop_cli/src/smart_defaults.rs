@@ -120,16 +120,30 @@ pub fn select_file_from_list(files: &[PathBuf], prompt_prefix: &str) -> Result<O
         Ok(n) if n > 0 && n <= files.len() => Ok(Some(files[n - 1].clone())),
         _ => {
             let input_lower = input.to_lowercase();
-            files
+            let matches: Vec<_> = files
                 .iter()
-                .find(|f| {
+                .filter(|f| {
                     f.file_name()
                         .map(|n| n.to_string_lossy().to_lowercase().contains(&input_lower))
                         .unwrap_or(false)
                 })
-                .cloned()
-                .ok_or_else(|| anyhow!("Invalid selection: {}", input))
-                .map(Some)
+                .collect();
+            match matches.len() {
+                0 => Err(anyhow!("Invalid selection: {}", input)),
+                1 => Ok(Some(matches[0].clone())),
+                _ => {
+                    eprintln!("Multiple matches found:");
+                    for m in &matches {
+                        let name = m
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| m.display().to_string());
+                        eprintln!("  {}", name);
+                    }
+                    eprintln!("Please enter a more specific name or use a number.");
+                    Ok(None)
+                }
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::cli::PresenceAction;
 use crate::output::OutputMode;
-use crate::util::ensure_dirs;
+use crate::util::{ensure_dirs, write_restrictive};
 use cpop_engine::presence::{
     ChallengeStatus, Config as PresenceConfig, Session as PresenceSession, Verifier,
 };
@@ -28,6 +28,8 @@ fn acquire_session_lock(session_file: &Path) -> Result<fs::File> {
         .truncate(true)
         .open(&lock_path)
         .context("open session lock file")?;
+    cpop_engine::restrict_permissions(&lock_path, 0o600)
+        .context("restrict lock file permissions")?;
 
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_millis(SESSION_LOCK_TIMEOUT_MS);
@@ -69,7 +71,7 @@ fn save_session(session_file: &std::path::Path, session: &PresenceSession) -> Re
         .encode()
         .map_err(|e| anyhow!("Error encoding session: {}", e))?;
     let tmp_path = session_file.with_extension("tmp");
-    fs::write(&tmp_path, &data).with_context(|| "save session")?;
+    write_restrictive(&tmp_path, &data).with_context(|| "save session")?;
     fs::rename(&tmp_path, session_file).with_context(|| "finalize session file")?;
     Ok(())
 }
@@ -159,7 +161,7 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
                 .map_err(|e| anyhow!("Error encoding session: {}", e))?;
 
             let tmp_path = archive_path.with_extension("tmp");
-            fs::write(&tmp_path, &archive_data)?;
+            write_restrictive(&tmp_path, &archive_data)?;
             fs::rename(&tmp_path, &archive_path)?;
             fs::remove_file(&session_file)?;
             drop(lock_file);

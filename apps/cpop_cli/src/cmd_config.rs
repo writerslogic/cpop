@@ -76,6 +76,7 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
             let mut config = CpopConfig::load_or_default(&dir)?;
 
             let parts: Vec<&str> = key.split('.').collect();
+            let parsed_bool = parse_bool_lenient(&value).ok();
 
             match parts.as_slice() {
                 ["sentinel", "auto_start"] => {
@@ -190,9 +191,10 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
 
             config.persist()?;
             // Show the canonical value (e.g. "yes" → "true")
-            let display_value = parse_bool_lenient(&value)
-                .map(|b| b.to_string())
-                .unwrap_or(value);
+            let display_value = match parsed_bool {
+                Some(b) => b.to_string(),
+                None => value,
+            };
             println!("Set {} = {}", key, display_value);
         }
 
@@ -440,5 +442,73 @@ mod tests {
         let (cmd, args) = parse_editor_value("  vim   --clean  ").unwrap();
         assert_eq!(cmd, "vim");
         assert_eq!(args, vec!["--clean"]);
+    }
+
+    // --- parse_bool_lenient ---
+
+    #[test]
+    fn test_parse_bool_true_variants() {
+        assert_eq!(parse_bool_lenient("true"), Ok(true));
+        assert_eq!(parse_bool_lenient("1"), Ok(true));
+        assert_eq!(parse_bool_lenient("yes"), Ok(true));
+    }
+
+    #[test]
+    fn test_parse_bool_false_variants() {
+        assert_eq!(parse_bool_lenient("false"), Ok(false));
+        assert_eq!(parse_bool_lenient("0"), Ok(false));
+        assert_eq!(parse_bool_lenient("no"), Ok(false));
+    }
+
+    #[test]
+    fn test_parse_bool_case_insensitive() {
+        assert_eq!(parse_bool_lenient("TRUE"), Ok(true));
+        assert_eq!(parse_bool_lenient("False"), Ok(false));
+        assert_eq!(parse_bool_lenient("YES"), Ok(true));
+        assert_eq!(parse_bool_lenient("No"), Ok(false));
+    }
+
+    #[test]
+    fn test_parse_bool_invalid_values() {
+        assert!(
+            parse_bool_lenient("maybe").is_err(),
+            "'maybe' should be invalid"
+        );
+        assert!(
+            parse_bool_lenient("").is_err(),
+            "empty string should be invalid"
+        );
+        assert!(parse_bool_lenient("2").is_err(), "'2' should be invalid");
+        assert!(
+            parse_bool_lenient("y").is_err(),
+            "'y' alone should be invalid"
+        );
+        assert!(
+            parse_bool_lenient("n").is_err(),
+            "'n' alone should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_parse_bool_invalid_error_contains_value() {
+        let err = parse_bool_lenient("banana").unwrap_err();
+        assert!(
+            err.contains("banana"),
+            "error message should include the invalid value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_bool_whitespace_not_trimmed() {
+        // Current implementation calls .to_lowercase() but not .trim()
+        // This documents the actual behavior
+        assert!(
+            parse_bool_lenient(" true").is_err(),
+            "leading whitespace should cause parse failure (not trimmed)"
+        );
+        assert!(
+            parse_bool_lenient("true ").is_err(),
+            "trailing whitespace should cause parse failure (not trimmed)"
+        );
     }
 }

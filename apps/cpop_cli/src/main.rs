@@ -16,6 +16,7 @@ mod cmd_export;
 mod cmd_fingerprint;
 mod cmd_identity;
 mod cmd_init;
+mod cmd_link;
 mod cmd_log;
 mod cmd_presence;
 mod cmd_status;
@@ -66,13 +67,32 @@ async fn run() -> Result<()> {
             output,
             format,
             stego,
-        }) => cmd_export::cmd_export(&file, &tier, output, &format, stego, &out).await?,
+            no_beacons,
+            beacon_timeout,
+        }) => {
+            cmd_export::cmd_export(
+                &file,
+                &tier,
+                output,
+                &format,
+                stego,
+                no_beacons,
+                beacon_timeout,
+                &out,
+            )
+            .await?
+        }
         Some(Commands::Verify {
             file,
             key,
             output_war,
         }) => cmd_verify::cmd_verify(&file, key, output_war, &out)?,
         Some(Commands::Presence { action }) => cmd_presence::cmd_presence(action, &out)?,
+        Some(Commands::Link {
+            source,
+            export,
+            message,
+        }) => cmd_link::cmd_link(&source, &export, message, &out)?,
         Some(Commands::Track { action, file }) => {
             cmd_track::cmd_track_smart(action, file, &out).await?
         }
@@ -152,6 +172,7 @@ fn maybe_auto_init(cli: &Cli, out: &OutputMode) -> Result<()> {
             | Some(Commands::Export { .. })
             | Some(Commands::Verify { .. })
             | Some(Commands::Track { .. })
+            | Some(Commands::Link { .. })
             | Some(Commands::Calibrate)
             | Some(Commands::Fingerprint { .. })
             | Some(Commands::Attest { .. })
@@ -205,6 +226,15 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
                 .with_prompt("Path to file or folder")
                 .interact_text()?;
             let resolved = util::normalize_path(&PathBuf::from(path))?;
+            // Warn if path escapes cwd and home directory (potential traversal).
+            if let (Ok(cwd), Some(home)) = (std::env::current_dir(), dirs::home_dir()) {
+                if !resolved.starts_with(&cwd) && !resolved.starts_with(&home) {
+                    eprintln!(
+                        "Warning: path '{}' is outside both the current directory and home directory.",
+                        resolved.display()
+                    );
+                }
+            }
             cmd_track::cmd_track_smart(None, Some(resolved), out).await?;
         }
         Some(1) => {
@@ -215,8 +245,17 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
         }
         Some(3) => {
             let path: String = Input::new().with_prompt("Path to file").interact_text()?;
-            cmd_export::cmd_export(&PathBuf::from(path), "standard", None, "json", false, out)
-                .await?;
+            cmd_export::cmd_export(
+                &PathBuf::from(path),
+                "standard",
+                None,
+                "json",
+                false,
+                false,
+                5,
+                out,
+            )
+            .await?;
         }
         Some(4) => {
             let path: String = Input::new()

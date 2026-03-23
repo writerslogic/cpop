@@ -84,9 +84,9 @@ pub(crate) fn cmd_identity(
             fs::rename(&tmp_backup, &backup_path)?;
         }
 
-        let mut seed = puf.get_seed();
+        let seed = puf.get_seed(); // Zeroizing<[u8;32]> — auto-zeroized on drop
         let priv_key = SigningKey::from_bytes(&seed);
-        seed.zeroize();
+        drop(seed); // zeroize immediately after use
         let pub_key = priv_key.verifying_key();
 
         crate::util::write_restrictive(&key_path, &priv_key.to_bytes())?;

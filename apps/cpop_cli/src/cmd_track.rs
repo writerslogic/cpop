@@ -23,7 +23,7 @@ use crate::cli::TrackAction;
 use crate::output::OutputMode;
 use crate::util::{
     ensure_dirs, get_device_id, get_machine_id, load_vdf_params, open_secure_store, retry_on_busy,
-    validate_session_id, BLOCKED_EXTENSIONS, MAX_FILE_SIZE,
+    validate_session_id, write_restrictive, BLOCKED_EXTENSIONS, MAX_FILE_SIZE,
 };
 
 /// Minimum seconds between checkpoints on the same file.
@@ -94,10 +94,31 @@ impl TrackTarget {
 
 fn classify_target(path: &Path) -> Result<TrackTarget> {
     if !path.exists() {
-        return Err(anyhow!(
-            "Not found: {}\n\nCheck that the path exists.",
-            path.display()
-        ));
+        // If it looks like a file path, create it so tracking can begin.
+        let looks_like_file = path.extension().is_some();
+        if looks_like_file {
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    // Canonicalize parent to resolve symlinks and validate it exists.
+                    let _canonical_parent = fs::canonicalize(parent).map_err(|_| {
+                        anyhow!(
+                            "Parent directory does not exist: {}\n\nCreate it first.",
+                            parent.display()
+                        )
+                    })?;
+                }
+            }
+            fs::File::create(path)
+                .with_context(|| format!("Cannot create file: {}", path.display()))?;
+            cpop_engine::restrict_permissions(path, 0o600)
+                .with_context(|| format!("set permissions: {}", path.display()))?;
+            eprintln!("Created new file: {}", path.display());
+        } else {
+            return Err(anyhow!(
+                "Not found: {}\n\nCheck that the path exists.",
+                path.display()
+            ));
+        }
     }
 
     let abs = fs::canonicalize(path)
@@ -227,21 +248,29 @@ fn matches_patterns(path: &Path, patterns: &[Pattern]) -> bool {
     patterns.iter().any(|p| p.matches(name))
 }
 
+/// Outcome of an auto-checkpoint attempt.
+enum CheckpointResult {
+    Created,
+    AlreadyUpToDate,
+    EmptyFile,
+    TooLarge,
+}
+
 fn auto_checkpoint_file(
     file_path: &Path,
     db: &mut cpop_engine::SecureStore,
     vdf_params: &vdf::Parameters,
     device_id: &[u8; 16],
     machine_id: &str,
-) -> Result<bool> {
+) -> Result<CheckpointResult> {
     let abs_path_str = file_path.to_string_lossy().into_owned();
     let file_len = fs::metadata(file_path)?.len();
     if file_len > MAX_FILE_SIZE {
-        return Ok(false);
+        return Ok(CheckpointResult::TooLarge);
     }
     let content = fs::read(file_path)?;
     if content.is_empty() {
-        return Ok(false);
+        return Ok(CheckpointResult::EmptyFile);
     }
     let content_hash: [u8; 32] = Sha256::digest(&content).into();
     let file_size = content.len() as i64;
@@ -249,12 +278,16 @@ fn auto_checkpoint_file(
 
     if let Some(last) = events.last() {
         if bool::from(last.content_hash.ct_eq(&content_hash)) {
-            return Ok(false);
+            return Ok(CheckpointResult::AlreadyUpToDate);
         }
     }
 
     let (vdf_input, size_delta): ([u8; 32], i32) = if let Some(last) = events.last() {
-        let delta = (file_size - last.file_size).clamp(i32::MIN as i64, i32::MAX as i64);
+        let delta = file_size - last.file_size;
+        if delta < i32::MIN as i64 || delta > i32::MAX as i64 {
+            eprintln!("Warning: size delta clamped to i32 range");
+        }
+        let delta = delta.clamp(i32::MIN as i64, i32::MAX as i64);
         (last.event_hash, delta as i32)
     } else {
         (
@@ -291,7 +324,7 @@ fn auto_checkpoint_file(
     };
 
     db.add_secure_event(&mut event)?;
-    Ok(true)
+    Ok(CheckpointResult::Created)
 }
 
 fn setup_keystroke_capture(
@@ -324,7 +357,7 @@ fn setup_keystroke_capture(
                     while let Ok(_event) = rx.recv() {
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             let mut s = session_clone.lock().unwrap_or_else(|e| {
-                                eprintln!("Warning: session mutex poisoned, recovering");
+                                eprintln!("Warning: mutex poisoned, recovering: {}", e);
                                 e.into_inner()
                             });
                             if let Err(e) = s.record_keystroke() {
@@ -383,9 +416,9 @@ fn finalize_session(
     }
 
     let (duration, keystroke_count, sample_count) = {
-        let mut s = session.lock().unwrap_or_else(|p| {
-            eprintln!("Warning: session lock was poisoned, recovering state");
-            p.into_inner()
+        let mut s = session.lock().unwrap_or_else(|e| {
+            eprintln!("Warning: mutex poisoned, recovering: {}", e);
+            e.into_inner()
         });
         s.end();
         s.save(session_path)
@@ -490,9 +523,10 @@ async fn cmd_track_start(
         "mode": target.mode_str(),
         "tracked_files": file_list,
     });
-    let tmp_path = current_file.with_extension("tmp");
-    fs::write(&tmp_path, serde_json::to_string_pretty(&session_info)?)?;
-    fs::rename(&tmp_path, current_file)?;
+    write_restrictive(
+        current_file,
+        serde_json::to_string_pretty(&session_info)?.as_bytes(),
+    )?;
 
     session
         .save(&session_path)
@@ -516,7 +550,9 @@ async fn cmd_track_start(
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
             if let Ok(event) = res {
-                let _ = watcher_tx.send(event);
+                if watcher_tx.send(event).is_err() {
+                    eprintln!("Warning: watcher channel closed, events may be missed");
+                }
             }
         },
         NotifyConfig::default().with_poll_interval(Duration::from_secs(2)),
@@ -528,14 +564,23 @@ async fn cmd_track_start(
     let machine_id = get_machine_id();
     let mut checkpoint_counts: HashMap<PathBuf, u32> = HashMap::new();
 
+    let mut up_to_date = 0u32;
+    let mut empty_files = 0u32;
+
     for file in &initial_files {
         match retry_on_busy(|| {
             auto_checkpoint_file(file, &mut db, &vdf_params, &device_id, &machine_id)
         }) {
-            Ok(true) => {
+            Ok(CheckpointResult::Created) => {
                 *checkpoint_counts.entry(file.clone()).or_insert(0) += 1;
             }
-            Ok(false) => {}
+            Ok(CheckpointResult::AlreadyUpToDate) => {
+                up_to_date += 1;
+            }
+            Ok(CheckpointResult::EmptyFile) => {
+                empty_files += 1;
+            }
+            Ok(CheckpointResult::TooLarge) => {}
             Err(e) => eprintln!(
                 "Warning: initial checkpoint failed for {}: {}",
                 file.file_name().unwrap_or_default().to_string_lossy(),
@@ -547,11 +592,14 @@ async fn cmd_track_start(
     let total_initial: u32 = checkpoint_counts.values().sum();
     if total_initial > 0 {
         println!("Created {} initial checkpoint(s).", total_initial);
-    } else if !initial_files.is_empty() {
-        eprintln!(
-            "Warning: Failed to create any initial checkpoints ({} files attempted). \
-             Check file permissions.",
-            initial_files.len()
+    }
+    if up_to_date > 0 {
+        println!("{} file(s) already up to date.", up_to_date);
+    }
+    if empty_files > 0 {
+        println!(
+            "{} file(s) empty — will checkpoint on first save.",
+            empty_files
         );
     }
 
@@ -627,11 +675,11 @@ async fn cmd_track_start(
                                 &machine_id,
                             )
                         }) {
-                            Ok(true) => {
+                            Ok(CheckpointResult::Created) => {
                                 *checkpoint_counts.entry(canonical.clone()).or_insert(0) += 1;
                                 last_checkpoint_map.insert(canonical.clone(), now);
-                                if last_checkpoint_map.len() > 1000 {
-                                    let cutoff = Instant::now() - Duration::from_secs(300);
+                                if last_checkpoint_map.len() > 100 {
+                                    let cutoff = Instant::now() - Duration::from_secs(60);
                                     last_checkpoint_map.retain(|_, &mut v| v > cutoff);
                                 }
                                 let total: u32 = checkpoint_counts.values().sum();
@@ -650,7 +698,7 @@ async fn cmd_track_start(
                                     file_display,
                                 );
                             }
-                            Ok(false) => {}
+                            Ok(_) => {}
                             Err(e) => {
                                 eprintln!("Checkpoint error: {}", e);
                             }
@@ -663,9 +711,14 @@ async fn cmd_track_start(
         }
 
         if last_save.elapsed() >= save_interval {
-            if let Ok(s) = session.lock() {
-                if let Err(e) = s.save(&session_path) {
-                    eprintln!("Warning: session save failed: {}", e);
+            match session.lock() {
+                Ok(s) => {
+                    if let Err(e) = s.save(&session_path) {
+                        eprintln!("Warning: session save failed: {}", e);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: session lock poisoned during save: {}", e);
                 }
             }
             last_save = Instant::now();
@@ -683,6 +736,15 @@ async fn cmd_track_start(
     )
 }
 
+/// Read the document path from an active session file, if available.
+fn active_session_document(current_file: &Path) -> Option<String> {
+    let data = fs::read_to_string(current_file).ok()?;
+    let info: serde_json::Value = serde_json::from_str(&data).ok()?;
+    info.get("document_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
 pub(crate) async fn cmd_track_smart(
     action: Option<TrackAction>,
     path: Option<PathBuf>,
@@ -694,7 +756,31 @@ pub(crate) async fn cmd_track_smart(
     let current_file = tracking_dir.join("current_session.json");
 
     if let Some(p) = path {
-        return cmd_track_start(&p, &tracking_dir, &current_file, false, None).await;
+        if current_file.exists() {
+            // Session already active — check if the path matches the tracked file.
+            let session_path = active_session_document(&current_file);
+            let requested = fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
+            let requested_str = requested.to_string_lossy();
+
+            if let Some(ref tracked) = session_path {
+                if tracked == requested_str.as_ref() {
+                    // Same file — create a checkpoint.
+                    if !out.quiet {
+                        println!("Tracking session active. Creating checkpoint...");
+                    }
+                    return crate::cmd_commit::cmd_commit(&p, None, out);
+                }
+            }
+
+            // Different file or couldn't determine — inform user.
+            let active = session_path.unwrap_or_else(|| "unknown".into());
+            return Err(anyhow!(
+                "Tracking session already active on: {}\n\n\
+                 Stop it first with 'cpop track stop', then track the new file.",
+                active
+            ));
+        }
+        return cmd_track_start(&p, &tracking_dir, &current_file, true, None).await;
     }
 
     let action = match action {
@@ -726,20 +812,6 @@ pub(crate) async fn cmd_track_smart(
     };
 
     match action {
-        #[cfg(feature = "cpop_jitter")]
-        TrackAction::Start {
-            path: file,
-            cpop_jitter,
-            patterns,
-        } => {
-            let pat = if patterns.is_empty() {
-                None
-            } else {
-                Some(patterns.split(',').map(|s| s.trim().to_string()).collect())
-            };
-            cmd_track_start(&file, &tracking_dir, &current_file, cpop_jitter, pat).await?;
-        }
-        #[cfg(not(feature = "cpop_jitter"))]
         TrackAction::Start {
             path: file,
             patterns,
@@ -749,12 +821,17 @@ pub(crate) async fn cmd_track_smart(
             } else {
                 Some(patterns.split(',').map(|s| s.trim().to_string()).collect())
             };
-            cmd_track_start(&file, &tracking_dir, &current_file, false, pat).await?;
+            cmd_track_start(&file, &tracking_dir, &current_file, true, pat).await?;
         }
 
         TrackAction::Stop => {
-            let data = fs::read_to_string(&current_file)
-                .map_err(|_| anyhow!("No active tracking session."))?;
+            let data = fs::read_to_string(&current_file).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    anyhow!("No active tracking session.")
+                } else {
+                    anyhow!("Cannot read session file: {}", e)
+                }
+            })?;
 
             let session_info: serde_json::Value = serde_json::from_str(&data)?;
             let session_id = session_info
@@ -1048,10 +1125,20 @@ pub(crate) async fn cmd_track_smart(
             let mut has_output = false;
 
             let daemon_sessions: Vec<serde_json::Value> = if sessions_file.exists() {
-                fs::read_to_string(&sessions_file)
-                    .ok()
-                    .and_then(|data| serde_json::from_str(&data).ok())
-                    .unwrap_or_default()
+                match fs::read_to_string(&sessions_file) {
+                    Ok(data) => serde_json::from_str(&data).unwrap_or_else(|e| {
+                        eprintln!(
+                            "Warning: could not parse {}: {}",
+                            sessions_file.display(),
+                            e
+                        );
+                        Vec::new()
+                    }),
+                    Err(e) => {
+                        eprintln!("Warning: could not read {}: {}", sessions_file.display(), e);
+                        Vec::new()
+                    }
+                }
             } else {
                 Vec::new()
             };
@@ -1293,9 +1380,7 @@ pub(crate) async fn cmd_track_smart(
                     let data = ev
                         .encode()
                         .map_err(|e| anyhow!("Error encoding evidence: {}", e))?;
-                    let tmp_path = export_path.with_extension("tmp");
-                    fs::write(&tmp_path, &data)?;
-                    fs::rename(&tmp_path, &export_path)?;
+                    write_restrictive(&export_path, &data)?;
 
                     if out.json {
                         println!(
@@ -1358,9 +1443,7 @@ pub(crate) async fn cmd_track_smart(
                 let data = ev
                     .encode()
                     .map_err(|e| anyhow!("Error encoding evidence: {}", e))?;
-                let tmp_path = export_path.with_extension("tmp");
-                fs::write(&tmp_path, &data)?;
-                fs::rename(&tmp_path, &export_path)?;
+                write_restrictive(&export_path, &data)?;
 
                 if out.json {
                     println!(

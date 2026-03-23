@@ -15,7 +15,19 @@ fn acquire_or_report(daemon_manager: &DaemonManager) -> Result<bool> {
         .acquire_pid_file(std::process::id())
         .map_err(|e| anyhow!("PID file: {}", e))?;
     if !acquired {
+        // Double-check: verify the PID from the file is actually a running process.
+        // The engine's acquire_pid_file checks this, but a race could leave a stale
+        // PID file if the process died between the engine check and here.
         let status = daemon_manager.status();
+        if !status.running {
+            // Process is gone — clean up stale PID file and retry acquisition.
+            eprintln!("Stale PID file detected (process not running). Cleaning up...");
+            daemon_manager.cleanup();
+            let retry = daemon_manager
+                .acquire_pid_file(std::process::id())
+                .map_err(|e| anyhow!("PID file (retry): {}", e))?;
+            return Ok(!retry);
+        }
         if let Some(pid) = status.pid {
             println!("Daemon is already running (PID: {}).", pid);
         } else {
@@ -128,6 +140,17 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
             }
         }
 
+        // Post-spawn verification: re-check the child is still alive.
+        // This closes the TOCTOU window between PID file lock and spawn.
+        if !daemon_manager.is_running() {
+            daemon_manager.cleanup();
+            return Err(anyhow::anyhow!(
+                "Daemon process {} exited before verification. Check log: {}",
+                pid,
+                log_path.display()
+            ));
+        }
+
         eprintln!("Daemon started (PID: {})", pid);
         eprintln!("Log file: {}", log_path.display());
         eprintln!();
@@ -188,6 +211,7 @@ pub(crate) fn cmd_stop() -> Result<()> {
             std::thread::sleep(Duration::from_millis(500));
             let new_status = daemon_manager.status();
             if !new_status.running {
+                daemon_manager.cleanup();
                 println!("Daemon stopped.");
             } else {
                 println!("Daemon may still be stopping...");
@@ -196,6 +220,8 @@ pub(crate) fn cmd_stop() -> Result<()> {
             println!("Daemon appears to be running but PID unknown.");
         }
     } else {
+        // Clean up any stale PID/state files left behind by a crashed daemon.
+        daemon_manager.cleanup();
         println!("Daemon is not running.");
     }
 

@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use cpop_engine::cpop_protocol::crypto::EvidenceSigner;
 use cpop_engine::cpop_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
@@ -16,6 +16,7 @@ use cpop_engine::jitter::Session as JitterSession;
 use cpop_engine::report::{self, WarReport};
 use cpop_engine::tpm;
 use cpop_engine::war;
+use sha2::Digest;
 
 use crate::output::OutputMode;
 use crate::spec::{
@@ -65,14 +66,18 @@ struct EvidenceOutputContext<'a> {
     out: &'a OutputMode,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn cmd_export(
     file_path: &PathBuf,
     tier: &str,
     output: Option<PathBuf>,
     format: &str,
     stego: bool,
+    no_beacons: bool,
+    beacon_timeout: u64,
     out: &OutputMode,
 ) -> Result<()> {
+    let _ = (no_beacons, beacon_timeout); // TODO: wire to beacon fetch in export pipeline
     let abs_path = fs::canonicalize(file_path).map_err(|e| {
         anyhow!(
             "Cannot resolve path {}: {}\n\n\
@@ -150,8 +155,9 @@ pub(crate) async fn cmd_export(
     )?;
 
     let total_iterations: u64 = events.iter().map(|e| e.vdf_iterations).sum();
-    let total_vdf_time =
-        Duration::from_secs_f64(total_iterations as f64 / vdf_params.iterations_per_second as f64);
+    let total_vdf_time = Duration::from_secs_f64(
+        total_iterations as f64 / vdf_params.iterations_per_second.max(1) as f64,
+    );
 
     let spec_content_tier = content_tier_from_cli(&tier_lower);
     let spec_profile_uri = profile_uri_from_cli(&tier_lower);
@@ -174,15 +180,28 @@ pub(crate) async fn cmd_export(
     })?;
 
     if !out.quiet && !out.json {
-        if let Ok(identity_data) = fs::read_to_string(dir.join("identity.json")) {
-            if let Ok(identity) = serde_json::from_str::<serde_json::Value>(&identity_data) {
-                println!(
-                    "Including key hierarchy evidence: {}",
-                    identity
-                        .get("fingerprint")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                );
+        let identity_path = dir.join("identity.json");
+        match fs::read_to_string(&identity_path) {
+            Ok(identity_data) => match serde_json::from_str::<serde_json::Value>(&identity_data) {
+                Ok(identity) => {
+                    println!(
+                        "Including key hierarchy evidence: {}",
+                        identity
+                            .get("fingerprint")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: failed to parse {}: {}",
+                        identity_path.display(),
+                        e
+                    );
+                }
+            },
+            Err(e) => {
+                eprintln!("Warning: failed to read {}: {}", identity_path.display(), e);
             }
         }
     }
@@ -562,7 +581,14 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
             "byte_length": latest.file_size.max(0) as u64,
             "char_count": if latest.file_size > 0 && latest.file_size < CHAR_COUNT_READ_LIMIT {
                 fs::read_to_string(abs_path_str)
-                    .map(|s| s.chars().count() as u64)
+                    .map(|s| {
+                        // Re-check size after read to guard against symlink-swap (TOCTOU).
+                        if s.len() as u64 > crate::util::MAX_FILE_SIZE {
+                            latest.file_size.max(0) as u64
+                        } else {
+                            s.chars().count() as u64
+                        }
+                    })
                     .unwrap_or(latest.file_size.max(0) as u64)
             } else {
                 latest.file_size.max(0) as u64
@@ -607,14 +633,20 @@ fn default_output_path(file_path: &Path, format_lower: &str) -> PathBuf {
         "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
         "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
         "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
+        "pdf" => PathBuf::from(format!("{}.report.pdf", name)),
         _ => PathBuf::from(format!("{}.evidence.json", name)),
     }
 }
 
 fn write_atomic(out_path: &Path, data: &[u8]) -> Result<()> {
-    let tmp_path = out_path.with_extension("tmp");
-    fs::write(&tmp_path, data)?;
-    fs::rename(&tmp_path, out_path)?;
+    use std::io::Write;
+    let dir = out_path.parent().unwrap_or(Path::new("."));
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(dir).context("create temp file for atomic write")?;
+    tmp.write_all(data).context("write evidence data")?;
+    tmp.as_file().sync_all().context("fsync evidence data")?;
+    tmp.persist(out_path)
+        .context("atomic rename to final path")?;
     Ok(())
 }
 
@@ -873,6 +905,69 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
                 println!("  Open in a browser to view, or print to PDF.");
             }
         }
+        "pdf" => {
+            let pub_key = signer.public_key();
+            let key_fp = if pub_key.len() >= 8 {
+                format!(
+                    "{}...{}",
+                    hex::encode(&pub_key[..4]),
+                    hex::encode(&pub_key[pub_key.len() - 4..])
+                )
+            } else {
+                hex::encode(&pub_key)
+            };
+            let war_report = build_war_report(
+                events,
+                vdf_params,
+                tier,
+                total_vdf_time,
+                caps.hardware_backed,
+                tpm_device_id,
+                &key_fp,
+            );
+
+            // Compute security feature seed: sign("cpop-security-v1" || H3)
+            // This binds the guilloché/microtext patterns to this specific evidence.
+            let security_seed = {
+                let evidence_packet: evidence::Packet = serde_json::from_value(ctx.packet.clone())
+                    .context("create evidence packet for security seed")?;
+                if let Ok(block) = war::Block::from_packet_signed(&evidence_packet, ctx.signer) {
+                    let mut msg = b"cpop-security-v1".to_vec();
+                    msg.extend_from_slice(&block.seal.h3);
+                    ctx.signer.sign(&msg).ok().and_then(|sig| {
+                        let mut seed = [0u8; 64];
+                        if sig.len() == 64 {
+                            seed.copy_from_slice(&sig);
+                            Some(seed)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                }
+            };
+            let pdf_bytes = report::render_pdf(&war_report, security_seed.as_ref())
+                .map_err(|e| anyhow!("PDF generation failed: {e}"))?;
+
+            write_atomic(out_path, &pdf_bytes)?;
+
+            if verbose {
+                println!();
+                println!("PDF report exported to: {}", out_path.display());
+                println!("  Report ID: {}", war_report.report_id);
+                println!(
+                    "  Score: {}/100 ({})",
+                    war_report.score,
+                    war_report.verdict.label()
+                );
+                println!("  Checkpoints: {}", events.len());
+                println!(
+                    "  SHA-256: {}",
+                    hex::encode(sha2::Sha256::digest(&pdf_bytes))
+                );
+            }
+        }
         _ => {
             let data = serde_json::to_string_pretty(packet)?;
             write_atomic(out_path, data.as_bytes())?;
@@ -914,17 +1009,17 @@ async fn embed_steganographic_watermark(
 
     let mmr_root = latest.event_hash;
     let signing_key = crate::util::load_signing_key(dir)?;
-    let mut hmac_key: [u8; 32] = {
+    let hmac_key = Zeroizing::new({
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-stego-key-v1");
         hasher.update(signing_key.to_bytes());
-        hasher.finalize().into()
-    };
+        let key: [u8; 32] = hasher.finalize().into();
+        key
+    });
 
     let embedder = ZwcEmbedder::new(ZwcParams::default());
     let result = embedder.embed(&content, &mmr_root, &hmac_key);
-    hmac_key.zeroize();
     let (watermarked, binding) = result?;
 
     let stego_path = {
@@ -963,7 +1058,7 @@ async fn embed_steganographic_watermark(
         use cpop_engine::writersproof::{StegoSignRequest, WritersProofClient};
 
         let did = crate::util::load_did(dir).unwrap_or_else(|_| "unknown".into());
-        let client = WritersProofClient::new("https://api.writersproof.com").with_jwt(key);
+        let client = WritersProofClient::new("https://api.writerslogic.com")?.with_jwt(key);
 
         print!("  Signing watermark via WritersProof...");
         io::stdout().flush()?;
@@ -1198,14 +1293,6 @@ fn verdict_description(verdict: &report::Verdict) -> String {
         Verdict::Inconclusive => "Insufficient evidence for a confident determination. Additional checkpoints recommended.".into(),
         Verdict::Suspicious => "Detected anomalies inconsistent with typical human composition behavior.".into(),
         Verdict::LikelySynthetic => "Evidence patterns strongly suggest synthetic or automated content generation.".into(),
-    }
-}
-
-fn compute_likelihood_ratio(score: u32) -> f64 {
-    if score <= 50 {
-        (score as f64 / 50.0).max(0.01)
-    } else {
-        10.0_f64.powf((score as f64 - 50.0) / 10.0)
     }
 }
 

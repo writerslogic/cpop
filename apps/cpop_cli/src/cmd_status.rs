@@ -69,7 +69,7 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
     let (db_status, tracked_files) = if db_path.exists() {
         let hmac_key = if let Ok(Some(key)) = cpop_engine::identity::SecureStorage::load_hmac_key()
         {
-            Some(key.to_vec())
+            Some(Zeroizing::new(key.to_vec()))
         } else {
             let signing_key_path = dir.join("signing_key");
             if signing_key_path.exists() {
@@ -77,14 +77,14 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
                     .map(Zeroizing::new)
                     .ok()
                     .filter(|k| k.len() >= 32)
-                    .map(|k| derive_hmac_key(&k[..32]))
+                    .map(|k| Zeroizing::new(derive_hmac_key(&k[..32])))
             } else {
                 None
             }
         };
 
         if let Some(hmac_key) = hmac_key {
-            match SecureStore::open(&db_path, hmac_key) {
+            match SecureStore::open(&db_path, hmac_key.to_vec()) {
                 Ok(store) => {
                     let files = store.list_files().unwrap_or_else(|e| {
                         eprintln!("Warning: list_files: {}", e);
