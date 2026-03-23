@@ -228,7 +228,7 @@ When you need to prove authorship:
 cpop export mydoc.txt
 ```
 
-This creates `mydoc.wpkt` containing:
+This creates `mydoc.cpop` containing:
 - Complete checkpoint chain with VDF proofs
 - Key hierarchy with session certificates
 - Signed declaration of creative process
@@ -239,7 +239,7 @@ This creates `mydoc.wpkt` containing:
 Anyone can verify the evidence:
 
 ```bash
-cpop verify mydoc.wpkt
+cpop verify mydoc.cpop
 ```
 
 Output:
@@ -310,9 +310,9 @@ The output shows a per-check pass/fail summary and an overall verdict.
 
 ## Getting Help
 
-- **Documentation**: https://docs.writersproof.com/writerslogic
+- **Documentation**: https://docs.writerslogic.com
 - **Issues**: https://github.com/writerslogic/cpop/issues
-- **Website**: https://writersproof.com
+- **Website**: https://writerslogic.com
 
 ---
 

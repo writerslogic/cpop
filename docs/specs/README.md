@@ -18,6 +18,6 @@ All specifications are currently in **Draft** status and follow the **`draft-con
 ---
 
 <p align="center">
-  <sub>Built with care by <a href="https://writersproof.com">CPOP</a></sub>
+  <sub>Built with care by <a href="https://writerslogic.com">CPOP</a></sub>
 </p>
 

@@ -14,5 +14,5 @@ Welcome to the user documentation for **CPOP**. These guides are designed to hel
 ---
 
 <p align="center">
-  <sub>Built with care by <a href="https://writersproof.com">CPOP</a></sub>
+  <sub>Built with care by <a href="https://writerslogic.com">CPOP</a></sub>
 </p>

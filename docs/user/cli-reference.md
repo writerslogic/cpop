@@ -5,11 +5,13 @@ Complete reference for the CPOP command-line interface.
 ## Table of Contents
 
 - [Global Options](#global-options)
+- [Security Levels](#security-levels)
 - [Commands](#commands)
   - [init](#init)
   - [commit](#commit)
   - [log](#log)
   - [export](#export)
+  - [link](#link)
   - [verify](#verify)
   - [track](#track)
   - [sentinel](#sentinel)
@@ -36,6 +38,19 @@ These options can be used with any command:
 | `--config <path>` | Use custom configuration file |
 | `-h`, `--help` | Show help for command |
 | `-v`, `--version` | Show version information |
+
+## Security Levels
+
+Each export is assigned a security level based on available temporal witnesses:
+
+| Level | Name | Description |
+|-------|------|-------------|
+| T1 | Basic | VDF proof only. Minimum elapsed time. |
+| T2 | Standard | + Roughtime quorum. Absolute time ±30s. |
+| T3 | Enhanced | + WritersProof beacon (drand/NIST). Independently verifiable. |
+| T4 | Maximum | All witnesses active. Highest assurance. |
+
+Use `--no-beacons` to cap at T2, or `--level t4` (future) to require T4.
 
 ## Commands
 
@@ -191,9 +206,11 @@ cpop export <file> [options]
 | Option | Description |
 |--------|-------------|
 | `-o <path>` | Output file path |
-| `--format <fmt>` | Format: `json` or `cbor` |
+| `--format <fmt>` | Format: `json`, `cpop`, `cwar`, `html`, or `pdf` |
 | `--tier <n>` | Evidence tier: `1`, `2`, or `3` |
 | `--include-content` | Include file content in packet |
+| `--no-beacons` | Disable temporal beacon attestation for this export. Caps security level at T2. |
+| `--beacon-timeout <SECS>` | Beacon fetch timeout in seconds. Default: 5. |
 
 **Example:**
 ```bash
@@ -201,7 +218,7 @@ $ cpop export manuscript.md
 
 Exporting evidence packet...
 
-Evidence Packet: manuscript.wpkt
+Evidence Packet: manuscript.cpop
   Checkpoints: 15
   Time span: 2026-01-15 to 2026-01-20
   Evidence tier: 2 (Software-Attested)
@@ -223,6 +240,36 @@ $ cpop export manuscript.md -o evidence.json --format json --tier 3
 - Signed author declaration
 - Verification instructions
 
+**Format details:**
+- `json` — Human-readable JSON evidence packet.
+- `cpop` — CBOR-encoded evidence packet with COSE signatures.
+- `cwar` — CBOR-encoded Written Authorship Report (attestation result).
+- `html` — Self-contained HTML report with interactive verification display.
+- `pdf` — Self-contained PDF report with anti-forgery security features, verdict, process evidence, and verification instructions. Includes embedded WAR block for independent verification.
+
+---
+
+### link
+
+Link an export or derivative file to a tracked source document. Creates a cryptographic binding between the source's evidence chain and the exported derivative.
+
+```bash
+cpop link <SOURCE> <EXPORT> [-m <MESSAGE>]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<SOURCE>` | Source document (the tracked file or project) |
+| `<EXPORT>` | Export or derivative file (PDF, EPUB, DOCX, etc.) |
+| `-m, --message <MSG>` | Description of the relationship |
+
+**Examples:**
+```bash
+cpop link novel.scriv manuscript.pdf -m "Final PDF"
+cpop link essay.txt essay.pdf
+cpop link project.scriv manuscript.epub -m "EPUB export"
+```
+
 ---
 
 ### verify
@@ -242,7 +289,7 @@ cpop verify <file|packet> [options]
 
 **Verify evidence packet:**
 ```bash
-$ cpop verify manuscript.wpkt
+$ cpop verify manuscript.cpop
 
 Evidence Packet Verification
 

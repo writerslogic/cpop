@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://protocol.writersproof.com/schemas/declaration-v1.json",
+  "$id": "https://protocol.writerslogic.com/schemas/declaration-v1.json",
   "title": "Process Declaration",
   "description": "A cryptographically signed attestation describing how a document was created. Unknown fields are preserved for forward compatibility.",
   "type": "object",

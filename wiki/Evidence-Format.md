@@ -1,11 +1,11 @@
 # Evidence Packet Format Specification
 
 **Version:** 1.1.0  
-**Format:** `.wpkt` (CBOR/JSON)
+**Format:** `.cpop` (CBOR/JSON)
 
 ## Overview
 
-A CPOP **Evidence Packet** (`.wpkt`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the [[Glossary#RATS|IETF RATS (Remote ATtestation ProcedureS)]] framework and the **[[Glossary#PoP|Proof-of-Process (PoP)]]** protocol.
+A CPOP **Evidence Packet** (`.cpop`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the [[Glossary#RATS|IETF RATS (Remote ATtestation ProcedureS)]] framework and the **[[Glossary#PoP|Proof-of-Process (PoP)]]** protocol.
 
 ## Design Goals
 

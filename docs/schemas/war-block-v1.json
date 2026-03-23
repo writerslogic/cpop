@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://protocol.writersproof.com/schemas/war-block-v1.json",
+  "$id": "https://protocol.writerslogic.com/schemas/war-block-v1.json",
   "title": "WAR Block",
-  "description": "CPOP Authorship Record (WAR) block - an ASCII-armored evidence format",
+  "description": "Written Authorship Report (WAR) block - an ASCII-armored evidence format",
   "type": "object",
   "required": [
     "version",

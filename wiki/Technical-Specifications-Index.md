@@ -4,7 +4,7 @@ CPOP is built on several core cryptographic and architectural protocols. These d
 
 ## Data Formats
 
-- **[[Evidence Format]]**: The structure of the `.wpkt` evidence packets, including the CDDL schema and serialization rules.
+- **[[Evidence Format]]**: The structure of the `.cpop` evidence packets, including the CDDL schema and serialization rules.
 - **[[Process Declaration]]**: Details on how creative intent is declared and signed before work begins.
 - **[[WAR Block Format]]**: Write-Ahead Recovery blocks for ensuring data integrity during crashes.
 

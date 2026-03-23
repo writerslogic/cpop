@@ -66,7 +66,7 @@ If you are a vendor building a web-based editor (e.g., Google Docs, Notion):
 When integrating CPOP, vendors should be aware of the following external domain interactions:
 
 - **Local-First:** Core witnessing and authorship capture are strictly local and offline-first. Content never leaves the user's device.
-- **Verification:** Verification of evidence packets typically occurs at `writersproof.com/verify`, which uses a client-side (WASM) engine to maintain privacy.
+- **Verification:** Verification of evidence packets typically occurs at `writerslogic.com/verify`, which uses a client-side (WASM) engine to maintain privacy.
 - **Attestation:** Enhanced evidence (Tiers 3/4) periodically interacts with `writerslogic.com/api` for nonces and attestation certificates.
 
 Vendors are encouraged to link to the **[[Privacy & External Interactions]]** page in their own documentation to provide transparency to users.

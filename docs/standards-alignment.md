@@ -54,7 +54,7 @@ Last updated: 2026-03-18
 ### DID Methods Used
 - `did:key:z6Mk...` — Self-sovereign Ed25519 identity (primary)
 - `did:web:writerslogic.com` — Organizational issuer identity
-- `did:web:writersproof.com:authors:{id}` — API-anchored author identity
+- `did:web:writerslogic.com:authors:{id}` — API-anchored author identity
 
 ### Verification Relationships
 - `assertionMethod` — Used for signing evidence packets and VCs

@@ -178,9 +178,9 @@ CPOP is designed with a strictly **offline-first and privacy-preserving** archit
 
 The applications interact with the following external domains for specific enhanced features:
 
-*   **Verification Portal (`writersproof.com/verify`):** Browser-based tool for verifying `.cpop` evidence packets. Runs client-side; evidence data is never uploaded.
+*   **Verification Portal (`writerslogic.com/verify`):** Browser-based tool for verifying `.cpop` evidence packets. Runs client-side; evidence data is never uploaded.
 *   **Attestation API (`writerslogic.com/api`):** Used for Tier 3 and Tier 4 evidence to request anti-replay nonces and receive cloud-signed attestation certificates.
-*   **Schema Registry (`protocol.writersproof.com`):** Hosts JSON schemas and DID resolution data for protocol compliance.
+*   **Schema Registry (`protocol.writerslogic.com`):** Hosts JSON schemas and DID resolution data for protocol compliance.
 
 For a detailed breakdown, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/cpop/wiki/Privacy-&-External-Interactions)**.
 

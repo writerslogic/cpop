@@ -41,7 +41,7 @@ If you're new to CPOP, start here:
 For developers and researchers interested in the underlying protocol:
 
 - **[[Technical Specifications Index]]**
-- **[[Evidence Format]]**: Structure of the `.wpkt` evidence packets.
+- **[[Evidence Format]]**: Structure of the `.cpop` evidence packets.
 - **[[Process Declaration]]**: How creative intent is cryptographically declared.
 - **[[Ratchet Key Hierarchy]]**: Our forward-secure key management system.
 - **[[Behavioral Metrics]]**: How we use keystroke dynamics for attestation.
@@ -51,7 +51,7 @@ For developers and researchers interested in the underlying protocol:
 
 - **[GitHub Issues](https://github.com/writerslogic/cpop/issues)**: Report bugs or request features.
 - **[Discussions](https://github.com/writerslogic/cpop/discussions)**: Ask questions and share your experiences.
-- **[Official Website](https://writersproof.com)**: Learn more about the project mission.
+- **[Official Website](https://writerslogic.com)**: Learn more about the project mission.
 
 ---
 

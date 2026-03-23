@@ -295,7 +295,7 @@ make install PREFIX=$HOME/.local
 1. **Re-verify with current VDF parameters:**
    ```bash
    cpop calibrate
-   cpop verify document.wpkt
+   cpop verify document.cpop
    ```
 
 2. **VDF proofs are deterministic - if fails, evidence may be invalid**
@@ -308,7 +308,7 @@ make install PREFIX=$HOME/.local
 
 1. **Check certificate chain:**
    ```bash
-   cpop verify document.wpkt --verbose 2>&1 | grep -i cert
+   cpop verify document.cpop --verbose 2>&1 | grep -i cert
    ```
 
 2. **Verify master identity matches:**
@@ -486,7 +486,7 @@ Before complete reset:
 ```bash
 # Export all evidence packets
 for file in $(cpop log --all --files); do
-  cpop export "$file" -o "backup_${file}.wpkt"
+  cpop export "$file" -o "backup_${file}.cpop"
 done
 ```
 

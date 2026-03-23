@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://protocol.writersproof.com/schemas/evidence-v1.json",
+  "$id": "https://protocol.writerslogic.com/schemas/evidence-v1.json",
   "title": "Evidence Packet",
   "description": "A self-contained proof of documented authorship matching draft-condrey-rats-pop",
   "type": "object",

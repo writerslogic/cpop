@@ -72,7 +72,7 @@ No data is sent to any server unless you explicitly export and share it.
 
 ### What data is in an evidence packet?
 
-An exported evidence packet (.wpkt) contains:
+An exported evidence packet (.cpop) contains:
 - File content hashes (not content itself)
 - Checkpoint timestamps and VDF proofs
 - Keystroke counts and timing statistics
@@ -164,9 +164,53 @@ Database grows slowly - thousands of checkpoints fit in a few megabytes.
 
 Yes! CPOP works entirely offline. The only network-optional features are:
 - External anchoring (e.g., Bitcoin timestamping)
-- Fetching drand beacon values (for additional time proof)
+- Temporal beacon attestation (drand + NIST beacon values via WritersProof)
+- WritersProof certificate enrollment and verification
 
-All core functionality works without internet.
+All core functionality (VDF proofs, keystroke capture, checkpoint chains) works without internet. Disabling beacons caps the maximum security level at T2 (Standard).
+
+### What are the security levels?
+
+CPOP assigns a security level (T1–T4) to each evidence export based on which temporal witnesses were successfully embedded:
+
+| Level | Name | What's Included | Guarantee |
+|-------|------|-----------------|-----------|
+| T1 | Basic | VDF proof only | Minimum elapsed computation time. No absolute time claim. |
+| T2 | Standard | + keystrokes + timing (+ Roughtime if available) | Absolute time ±30s via independent time servers. |
+| T3 | Enhanced | + behavioral analysis + hardware + WritersProof beacon | Creation time anchored to publicly auditable drand/NIST randomness beacons. |
+| T4 | Maximum | + all external anchors + full attestation | Four independent time witnesses. Highest assurance. |
+
+The system always reaches the highest level achievable. It never claims a level it cannot prove.
+
+### What are temporal beacons?
+
+Temporal beacons are cryptographic randomness values published by independent public sources:
+
+- **drand** (League of Entropy): BLS-signed random value every 30 seconds
+- **NIST Randomness Beacon**: RSA-signed 512-bit value every 60 seconds
+
+When beacons are enabled (default), CPOP fetches these values through WritersProof at each checkpoint. Including a beacon value in a checkpoint proves it was created *after* that value was published — regardless of what the author's system clock says.
+
+### How do I disable beacons?
+
+Beacons are enabled by default. To disable:
+
+```bash
+# Single export:
+cpop export --no-beacons manuscript.txt
+
+# Via environment variable:
+export CPOP_BEACONS_ENABLED=false
+
+# Via configuration file (~/.writersproof/writersproof.json):
+{
+  "beacons": {
+    "enabled": false
+  }
+}
+```
+
+Disabling beacons caps the maximum security level at T2.
 
 ---
 
@@ -284,17 +328,35 @@ For best results, work on local files and sync to cloud as backup.
 
 1. Export the evidence packet:
    ```bash
-   cpop export document.md -o evidence.wpkt
+   cpop export document.md -o evidence.cpop
    ```
 
-2. Share the `.wpkt` file
+2. Share the `.cpop` file
 
 3. Recipient verifies:
    ```bash
-   cpop verify evidence.wpkt
+   cpop verify evidence.cpop
    ```
 
 No account or registration needed - verification is self-contained.
+
+### Can I export a PDF report?
+
+Yes! PDF reports include anti-forgery security features (guilloché patterns, microtext) derived from your cryptographic seal:
+
+```bash
+cpop export manuscript.txt -f pdf
+```
+
+The PDF includes:
+- Security level badge (T1–T4)
+- Verdict and forensic score
+- Writing flow visualization
+- Process evidence metrics
+- Verification instructions (offline and online)
+- Embedded WAR block for independent verification
+
+PDF reports are designed to be difficult to forge — the visual security features are cryptographically bound to the specific evidence packet.
 
 ### Can I verify evidence without CPOP installed?
 
@@ -302,15 +364,15 @@ The evidence packet includes verification instructions. Third-party verification
 - Understanding the cryptographic primitives (Ed25519, SHA-256, VDF)
 - Implementing or using verification code
 
-You can also verify online at https://writersproof.com/verify
+You can also verify online at https://writerslogic.com/verify
 
 ---
 
 ## More Questions?
 
-- **Documentation**: https://docs.writersproof.com/writerslogic
+- **Documentation**: https://docs.writerslogic.com
 - **GitHub Issues**: https://github.com/writerslogic/cpop/issues
-- **Website**: https://writersproof.com
+- **Website**: https://writerslogic.com
 
 ---
 

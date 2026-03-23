@@ -160,14 +160,14 @@ When you need to prove authorship:
 cpop export mydoc.txt
 ```
 
-This creates `mydoc.wpkt` containing your evidence.
+This creates `mydoc.cpop` containing your evidence.
 
 ### Verify Evidence
 
 Anyone can verify the evidence:
 
 ```bash
-cpop verify mydoc.wpkt
+cpop verify mydoc.cpop
 ```
 
 ---

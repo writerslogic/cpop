@@ -12,6 +12,7 @@ CPOP can be configured through configuration files, environment variables, and c
 - [Key Hierarchy Settings](#key-hierarchy-settings)
 - [Presence Settings](#presence-settings)
 - [Sentinel Settings](#sentinel-settings)
+- [Beacon Settings](#beacon-settings)
 - [Environment Variables](#environment-variables)
 - [macOS App Settings](#macos-app-settings)
 - [Configuration Examples](#configuration-examples)
@@ -44,7 +45,8 @@ CPOP uses JSON configuration with the following structure:
   "vdf": { ... },
   "key_hierarchy": { ... },
   "presence": { ... },
-  "sentinel": { ... }
+  "sentinel": { ... },
+  "beacons": { ... }
 }
 ```
 
@@ -242,6 +244,42 @@ CPOP sentinel status
 CPOP sentinel stop
 ```
 
+## Beacon Settings
+
+Temporal beacons anchor evidence to publicly verifiable timestamps via the WritersProof API. Beacons are enabled by default.
+
+```json
+{
+  "beacons": {
+    "enabled": true,
+    "timeout_secs": 5,
+    "retries": 2
+  }
+}
+```
+
+### Options
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `beacons.enabled` | boolean | `true` | Enable temporal beacon attestation. When false, security level is capped at T2. |
+| `beacons.timeout_secs` | integer | `5` | Timeout per beacon fetch in seconds (1–300). |
+| `beacons.retries` | integer | `2` | Retry attempts before marking source unavailable (0–10). |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `CPOP_BEACONS_ENABLED` | Override beacon enabled setting (`true`/`false`) |
+| `CPOP_BEACONS_TIMEOUT_SECS` | Override beacon timeout |
+
+### CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--no-beacons` | Disable beacons for this export (caps at T2) |
+| `--beacon-timeout <SECS>` | Override beacon fetch timeout |
+
 ## Environment Variables
 
 Override configuration with environment variables:
@@ -374,6 +412,15 @@ Maximum evidence strength for legal/compliance use:
   "presence": {
     "challenge_interval_seconds": 300,
     "response_window_seconds": 30
+  },
+  "beacons": {
+    "enabled": true,
+    "timeout_secs": 10,
+    "retries": 3
+  },
+  "writersproof": {
+    "enabled": true,
+    "auto_attest": true
   },
   "sentinel": {
     "auto_start": true,

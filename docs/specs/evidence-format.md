@@ -7,7 +7,7 @@
 
 ## Overview
 
-A CPOP **Evidence Packet** (`.wpkt`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
+A CPOP **Evidence Packet** (`.cpop`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
 
 This specification aligns with the CDDL schema defined in `draft-condrey-rats-pop`.
 
@@ -131,8 +131,8 @@ Forensic metrics describing the magnitude and location of changes.
 ## Domain & Schemas
 
 The official JSON schemas are hosted at:
-- `https://protocol.writersproof.com/schemas/evidence-v1.json`
-- `https://protocol.writersproof.com/schemas/declaration-v1.json`
+- `https://protocol.writerslogic.com/schemas/evidence-v1.json`
+- `https://protocol.writerslogic.com/schemas/declaration-v1.json`
 
 ## References
 

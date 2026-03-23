@@ -6,7 +6,7 @@
 
 ## Overview
 
-This guide provides vendors and verifiers with criteria for interpreting CPOP evidence packets (`.wpkt`), identifying tampering, and differentiating legitimate creative actions from adversarial forgery.
+This guide provides vendors and verifiers with criteria for interpreting CPOP evidence packets (`.cpop`), identifying tampering, and differentiating legitimate creative actions from adversarial forgery.
 
 ## 1. The Process Score (PS)
 

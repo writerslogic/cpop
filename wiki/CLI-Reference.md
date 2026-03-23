@@ -49,9 +49,9 @@ cpop status
 ## Evidence Commands
 
 ### `export`
-Export a `.wpkt` evidence packet containing the full chain of authorship proof.
+Export a `.cpop` evidence packet containing the full chain of authorship proof.
 ```bash
-cpop export <file> [-o output.wpkt]
+cpop export <file> [-o output.cpop]
 ```
 
 ### `verify`

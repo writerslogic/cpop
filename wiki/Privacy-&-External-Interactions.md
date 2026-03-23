@@ -19,10 +19,10 @@ By default, **CPOP is a strictly local application.**
 
 While core functionality is offline, CPOP interacts with **WritersProof** and **CPOP** domains to provide enhanced verification and attestation services.
 
-### 1. Online Verification (`writersproof.com/verify`)
+### 1. Online Verification (`writerslogic.com/verify`)
 The desktop applications generate links and QR codes that point to our verification portal.
 *   **How it works:** When you open an evidence packet in this portal, the verification logic runs **locally in your browser** using WebAssembly.
-*   **Privacy:** Your evidence packet (`.wpkt`) and document content are **never uploaded** to our servers. The portal acts as a "dumb" host for the verification scripts.
+*   **Privacy:** Your evidence packet (`.cpop`) and document content are **never uploaded** to our servers. The portal acts as a "dumb" host for the verification scripts.
 
 ### 2. Cloud Attestation API (`writerslogic.com/api`)
 For high-stakes evidence (Tiers 3 and 4), CPOP can leverage a cloud trust anchor.
@@ -30,7 +30,7 @@ For high-stakes evidence (Tiers 3 and 4), CPOP can leverage a cloud trust anchor
 *   **Remote Attestation:** If you request a cloud-signed certificate, the engine submits an evidence summary (hashes and metadata, not content) to receive a signature from the WritersProof root authority.
 *   **Offline Queue:** Attestation requests are queued locally and only transmitted when you have an active internet connection.
 
-### 3. Protocol & Identity (`protocol.writersproof.com`)
+### 3. Protocol & Identity (`protocol.writerslogic.com`)
 This domain serves as the technical backbone for the **Proof-of-Process (PoP)** protocol.
 *   **JSON Schemas:** Standardizes the format of evidence packets across different implementations.
 *   **DID Resolution:** Provides lookup for author identities that have been optionally published to the decentralized registry.
@@ -40,10 +40,10 @@ The browser extensions use `cpop@writerslogic.com` as a unique identifier to com
 
 ---
 
-## 📧 Administrative & Support
-We use `writersproof.com` and `writerslogic.com` for the following administrative tasks:
+## Administrative & Support
+We use `writerslogic.com` for the following administrative tasks:
 *   **Licensing:** Commercial license inquiries and Contributor License Agreements (CLAs).
-*   **Support:** Handling bug reports and feature requests via `support@writersproof.com`.
+*   **Support:** Handling bug reports and feature requests via `support@writerslogic.com`.
 *   **Security:** Reporting vulnerabilities to `security@writerslogic.com`.
 
 ---
@@ -51,4 +51,4 @@ We use `writersproof.com` and `writerslogic.com` for the following administrativ
 ## Conclusion
 Our interaction with external domains is limited to **cryptographic synchronization** and **convenient verification tools**. At no point in the process does CPOP have access to the contents of your documents or your private creative environment.
 
-*For more information, see our official [Privacy Policy](https://writersproof.com/privacy).*
+*For more information, see our official [Privacy Policy](https://writerslogic.com/privacy).*
