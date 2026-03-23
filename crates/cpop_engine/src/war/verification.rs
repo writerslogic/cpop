@@ -407,10 +407,19 @@ pub fn verify_vdf_proofs(evidence: &Packet) -> CheckResult {
     }
 
     if total == 0 {
+        let passed = evidence.checkpoints.len() <= 1;
+        let message = if passed {
+            "No VDF proofs to verify (first checkpoint only)".to_string()
+        } else {
+            format!(
+                "No VDF proofs found but {} checkpoints present",
+                evidence.checkpoints.len()
+            )
+        };
         CheckResult {
             name: "vdf_proofs".to_string(),
-            passed: true,
-            message: "No VDF proofs to verify (first checkpoint only)".to_string(),
+            passed,
+            message,
         }
     } else {
         CheckResult {

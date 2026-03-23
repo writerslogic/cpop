@@ -135,7 +135,11 @@ impl SecureStore {
                         .try_into()
                         .map_err(|_| anyhow!("Invalid previous_hash"))?;
 
-                    if count > 0 && previous_hash_arr != last_hash {
+                    if count == 0 {
+                        if previous_hash_arr != [0u8; 32] {
+                            return Err(anyhow!("First event {} has non-zero previous_hash", id));
+                        }
+                    } else if previous_hash_arr != last_hash {
                         return Err(anyhow!("Chain break at event {}", id));
                     }
 

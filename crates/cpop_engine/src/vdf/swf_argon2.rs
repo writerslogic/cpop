@@ -499,6 +499,10 @@ fn select_indices(sample_seed: &[u8; 32], num_leaves: u64, count: usize) -> Vec<
 
     use std::collections::HashSet;
 
+    if num_leaves == 0 {
+        return Vec::new();
+    }
+
     let hk = Hkdf::<Sha256>::from_prk(sample_seed).expect("sample seed is valid PRK length");
     let mut indices = Vec::with_capacity(count);
     let mut seen = HashSet::with_capacity(count);

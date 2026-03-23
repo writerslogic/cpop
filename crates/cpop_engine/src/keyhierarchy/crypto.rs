@@ -13,6 +13,10 @@ pub(crate) const RATCHET_INIT_DOMAIN: &str = "witnessd-ratchet-init-v1";
 pub(crate) const RATCHET_ADVANCE_DOMAIN: &str = "witnessd-ratchet-advance-v1";
 pub(crate) const SIGNING_KEY_DOMAIN: &str = "witnessd-signing-key-v1";
 
+/// NOTE: The `salt` and `info` parameter names match the caller convention, but
+/// `Hkdf::new(Some(salt), ikm)` passes `salt` as the HKDF salt and `ikm` as the
+/// input keying material.  Swapping them to match RFC 5869 naming would break all
+/// existing derived key hierarchies, so this ordering is intentionally preserved.
 pub fn hkdf_expand(ikm: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32], KeyHierarchyError> {
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
     let mut okm = [0u8; 32];
@@ -48,6 +52,7 @@ pub fn compute_entangled_nonce(
     mmr_root: &[u8; 32],
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
+    hasher.update(b"witnessd-entangled-nonce-v1");
     hasher.update(session_id);
     hasher.update(data_hash);
     hasher.update(mmr_root);

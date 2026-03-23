@@ -112,6 +112,10 @@ pub fn compute_integrity_hmac(key: &[u8], chain_hash: &[u8; 32], event_count: i6
 }
 
 /// Derive an HMAC key from a private key seed via SHA-256 with domain separation.
+///
+/// NOTE: This intentionally uses SHA-256 rather than HKDF for backwards compatibility
+/// with existing HMAC chains. Changing to HKDF would invalidate all previously stored
+/// event integrity tags.
 pub fn derive_hmac_key(priv_key_seed: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-hmac-key-v1");

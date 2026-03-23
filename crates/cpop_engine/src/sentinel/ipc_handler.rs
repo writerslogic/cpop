@@ -263,7 +263,7 @@ impl SentinelIpcHandler {
         let sig_ok = packet.verify_signature(None).is_ok();
 
         Ok(IpcMessage::VerifyFileResponse {
-            success: chain_ok,
+            success: chain_ok && sig_ok,
             checkpoint_count: packet.checkpoints.len() as u32,
             signature_valid: sig_ok,
             chain_integrity: chain_ok,
@@ -365,8 +365,19 @@ impl SentinelIpcHandler {
             .encode_with_format(format)
             .map_err(|e| format!("Failed to encode packet: {e}"))?;
 
-        std::fs::write(&validated_output, &encoded)
-            .map_err(|e| format!("Failed to write output: {e}"))?;
+        {
+            use std::io::Write;
+            let tmp_path = validated_output.with_extension("tmp");
+            let mut f = std::fs::File::create(&tmp_path)
+                .map_err(|e| format!("Failed to create temp file: {e}"))?;
+            f.write_all(&encoded)
+                .map_err(|e| format!("Failed to write temp file: {e}"))?;
+            f.sync_all()
+                .map_err(|e| format!("Failed to sync temp file: {e}"))?;
+            drop(f);
+            std::fs::rename(&tmp_path, &validated_output)
+                .map_err(|e| format!("Failed to rename output: {e}"))?;
+        }
 
         Ok(IpcMessage::ExportFileResponse {
             success: true,

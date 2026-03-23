@@ -308,7 +308,11 @@ pub fn per_checkpoint_flags(
             if mean > 0.0 {
                 let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
                     / intervals.len() as f64;
-                variance.sqrt() / mean
+                if !variance.is_finite() || !mean.is_finite() {
+                    0.0
+                } else {
+                    variance.sqrt() / mean
+                }
             } else {
                 0.0
             }

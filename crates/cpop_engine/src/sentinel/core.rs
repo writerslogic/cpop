@@ -284,7 +284,7 @@ impl Sentinel {
                         while keystroke_running.load(Ordering::SeqCst) {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
-                                    if keystroke_tx.blocking_send(event).is_err() {
+                                    if keystroke_tx.try_send(event).is_err() {
                                         log::debug!("keystroke channel full, dropping event");
                                     }
                                 }
@@ -325,7 +325,7 @@ impl Sentinel {
                         while mouse_running.load(Ordering::SeqCst) {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
-                                    if mouse_tx.blocking_send(event).is_err() {
+                                    if mouse_tx.try_send(event).is_err() {
                                         log::debug!("mouse channel full, dropping event");
                                     }
                                 }
