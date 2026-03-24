@@ -485,3 +485,9 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
         self.strict_mode
     }
 }
+
+impl Drop for MacOSKeystrokeCapture {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}

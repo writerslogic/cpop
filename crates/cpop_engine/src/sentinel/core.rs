@@ -45,6 +45,8 @@ pub struct Sentinel {
     pub(crate) keystroke_capture_active: Arc<AtomicBool>,
     /// Last paste character count reported by the host app.
     last_paste_chars: Arc<std::sync::atomic::AtomicI64>,
+    /// Timestamp when the sentinel was started via start().
+    start_time: Arc<Mutex<Option<SystemTime>>>,
 }
 
 impl Sentinel {
@@ -82,6 +84,7 @@ impl Sentinel {
             event_loop_handle: Arc::new(Mutex::new(None)),
             keystroke_capture_active: Arc::new(AtomicBool::new(false)),
             last_paste_chars: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            start_time: Arc::new(Mutex::new(None)),
         };
         mouse_stego_seed.zeroize();
         Ok(sentinel)
@@ -193,15 +196,16 @@ impl Sentinel {
     }
 
     /// Set the signing key from raw HMAC key bytes (must be exactly 32 bytes).
-    pub fn set_hmac_key(&self, key: Vec<u8>) {
+    pub fn set_hmac_key(&self, mut key: Vec<u8>) {
         if key.len() == 32 {
-            let mut bytes: [u8; 32] = match key.try_into() {
+            let mut bytes: [u8; 32] = match key.as_slice().try_into() {
                 Ok(b) => b,
                 Err(_) => {
                     log::error!("HMAC key must be exactly 32 bytes");
                     return;
                 }
             };
+            key.zeroize(); // Zeroize the original Vec heap allocation
             let mut seed_copy = bytes;
             *self.signing_key.write_recover() = Some(SigningKey::from_bytes(&bytes));
             bytes.zeroize();
@@ -209,14 +213,23 @@ impl Sentinel {
             seed_copy.zeroize();
         } else {
             log::warn!("HMAC key length {} is not 32 bytes, ignoring", key.len());
+            key.zeroize();
         }
     }
 
     /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
+    ///
+    /// The `running` flag is set **before** the event loop begins so that callers
+    /// can rely on `is_running()` returning `true` immediately after `start()`
+    /// returns `Ok`.
+    // TODO(L-031): Refactor start() into smaller helpers (setup_focus, setup_keystroke,
+    // setup_mouse, spawn_event_loop) to reduce complexity and improve testability.
     pub async fn start(&self) -> Result<()> {
         if self.running.swap(true, Ordering::SeqCst) {
             return Err(SentinelError::AlreadyRunning);
         }
+
+        *self.start_time.lock_recover() = Some(SystemTime::now());
 
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         *self.shutdown_tx.lock_recover() = Some(shutdown_tx);
@@ -284,8 +297,18 @@ impl Sentinel {
                         while keystroke_running.load(Ordering::SeqCst) {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
-                                    if keystroke_tx.try_send(event).is_err() {
-                                        log::debug!("keystroke channel full, dropping event");
+                                    if let Err(e) = keystroke_tx.try_send(event) {
+                                        match e {
+                                            tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                                                log::debug!(
+                                                    "keystroke channel full, dropping event"
+                                                );
+                                            }
+                                            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                                                log::debug!("keystroke channel closed");
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
                                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
@@ -316,6 +339,10 @@ impl Sentinel {
         let mouse_capture_result = crate::platform::linux::LinuxMouseCapture::new();
         #[cfg(target_os = "windows")]
         let mouse_capture_result = crate::platform::windows::WindowsMouseCapture::new();
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        let mouse_capture_result: anyhow::Result<Box<dyn crate::platform::MouseCapture>> = Err(
+            anyhow::anyhow!("Mouse capture not supported on this platform"),
+        );
 
         match mouse_capture_result {
             Ok(mut mouse_capture) => match mouse_capture.start() {
@@ -325,8 +352,16 @@ impl Sentinel {
                         while mouse_running.load(Ordering::SeqCst) {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
-                                    if mouse_tx.try_send(event).is_err() {
-                                        log::debug!("mouse channel full, dropping event");
+                                    if let Err(e) = mouse_tx.try_send(event) {
+                                        match e {
+                                            tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                                                log::debug!("mouse channel full, dropping event");
+                                            }
+                                            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                                                log::debug!("mouse channel closed");
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
                                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
@@ -357,6 +392,7 @@ impl Sentinel {
             let mut idle_check_interval = interval(Duration::from_secs(60));
             let mut last_keystroke_time = std::time::Instant::now();
             let mut last_keystroke_ts_ns: i64 = 0;
+            let mut last_mouse_ts_ns: i64 = 0;
 
             loop {
                 tokio::select! {
@@ -394,6 +430,14 @@ impl Sentinel {
                     }
 
                     Some(event) = mouse_rx.recv() => {
+                        // Compute inter-mouse-event duration from previous timestamp
+                        let _mouse_duration_ns: u64 = if last_mouse_ts_ns > 0 {
+                            event.timestamp_ns.saturating_sub(last_mouse_ts_ns).max(0) as u64
+                        } else {
+                            0
+                        };
+                        last_mouse_ts_ns = event.timestamp_ns;
+
                         let is_during_typing = last_keystroke_time.elapsed() < Duration::from_secs(2);
                         if is_during_typing && event.is_micro_movement() {
                             mouse_idle_stats.write_recover().record(&event);
@@ -601,6 +645,8 @@ impl Sentinel {
             .config
             .wal_dir
             .join(format!("{}.wal", session.session_id));
+        // Session IDs are 32 random bytes hex-encoded (64 hex chars → 32 bytes).
+        // Wal::open requires a [u8; 32] session key derived from this ID.
         let mut session_id_bytes = [0u8; 32];
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
@@ -707,9 +753,9 @@ impl Sentinel {
         self.sessions.read_recover().keys().cloned().collect()
     }
 
-    /// Return the sentinel start time (currently unimplemented, returns None).
+    /// Return the sentinel start time, or None if not yet started.
     pub fn start_time(&self) -> Option<SystemTime> {
-        None
+        *self.start_time.lock_recover()
     }
 
     /// Compute and persist an updated authorship baseline digest from accumulated activity.
@@ -732,8 +778,8 @@ impl Sentinel {
         let identity_fingerprint = hasher.finalize().to_vec();
 
         let db_path = self.config.writersproof_dir.join("events.db");
-        let hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
-        let store = crate::store::SecureStore::open(&db_path, hmac_key)?;
+        let mut hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
+        let store = crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))?;
 
         let current_digest =
             if let Some((cbor, _)) = store.get_baseline_digest(&identity_fingerprint)? {

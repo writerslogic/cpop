@@ -349,7 +349,7 @@ impl Session {
                         .open(&tmp_path)
                 })
                 .map_err(|e| Error::validation(e.to_string()))?;
-            std::io::Write::write_all(&mut f, &*bytes)
+            std::io::Write::write_all(&mut f, &bytes)
                 .map_err(|e| Error::validation(e.to_string()))?;
         }
         #[cfg(not(unix))]
