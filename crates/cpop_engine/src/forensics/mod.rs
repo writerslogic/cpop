@@ -11,6 +11,7 @@ pub mod cross_modal;
 pub mod dictation;
 mod engine;
 pub mod error;
+pub mod event_validation;
 pub mod forgery_cost;
 mod report;
 mod topology;
@@ -27,6 +28,9 @@ pub use cross_modal::{
 };
 pub use engine::*;
 pub use error::*;
+pub use event_validation::{
+    validate_keystroke_event, EventValidationFlags, EventValidationResult, EventValidationState,
+};
 pub use forgery_cost::{
     estimate_forgery_cost, ComponentCost, ForgeryCostEstimate, ForgeryCostInput,
     ForgeryResistanceTier,
