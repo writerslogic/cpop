@@ -41,6 +41,20 @@ fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
 /// Start the sentinel daemon in-process.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_start() -> FfiResult {
+    // Debug: write to data dir (sandbox blocks /tmp)
+    {
+        use std::io::Write;
+        let debug_path = std::env::var("CPOP_DATA_DIR")
+            .map(|d| format!("{}/sentinel_debug.txt", d))
+            .unwrap_or_else(|_| "/tmp/cpop_sentinel_debug.txt".to_string());
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&debug_path)
+        {
+            let _ = writeln!(f, "ffi_sentinel_start called");
+        }
+    }
     if get_sentinel().is_some_and(|s| s.is_running()) {
         return FfiResult {
             success: true,
@@ -173,6 +187,22 @@ pub fn ffi_sentinel_start() -> FfiResult {
             .to_string()
     };
 
+    {
+        use std::io::Write;
+        let debug_path = std::env::var("CPOP_DATA_DIR")
+            .map(|d| format!("{}/sentinel_debug.txt", d))
+            .unwrap_or_else(|_| "/tmp/cpop_sentinel_debug.txt".to_string());
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&debug_path)
+        {
+            let _ = writeln!(
+                f,
+                "sentinel started: capture_active={capture_active} msg={msg}"
+            );
+        }
+    }
     FfiResult {
         success: true,
         message: Some(msg),
@@ -384,8 +414,14 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
 
     let capture_active = sentinel.is_keystroke_capture_active();
 
+    // Prefer the currently focused document; fall back to any session.
+    let current_path = sentinel.current_focus();
     let sessions = sentinel.sessions();
-    let session = match sessions.first() {
+    let session = current_path
+        .as_ref()
+        .and_then(|p| sessions.iter().find(|s| &s.path == p))
+        .or_else(|| sessions.first());
+    let session = match session {
         Some(s) => s,
         None => {
             return FfiWitnessingStatus {
@@ -404,11 +440,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         }
     };
 
-    let keystroke_count = sentinel
-        .activity_accumulator
-        .read_recover()
-        .to_session_summary()
-        .keystroke_count;
+    let keystroke_count = session.keystroke_count;
 
     let elapsed_secs = session
         .start_time

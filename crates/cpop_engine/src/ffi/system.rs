@@ -164,6 +164,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
             checkpoint_count: count,
             forensic_score: metrics.assessment_score,
             risk_level: metrics.risk_level.to_string(),
+            keystroke_count: 0,
         });
     }
 
@@ -188,6 +189,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
                 checkpoint_count: 0,
                 forensic_score: 0.0,
                 risk_level: "pending".to_string(),
+                keystroke_count: session.keystroke_count,
             });
         }
     }

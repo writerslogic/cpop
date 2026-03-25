@@ -49,6 +49,7 @@ pub struct FfiTrackedFile {
     pub checkpoint_count: i64,
     pub forensic_score: f64,
     pub risk_level: String,
+    pub keystroke_count: u64,
 }
 
 #[derive(Debug, Clone)]
