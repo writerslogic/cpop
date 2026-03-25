@@ -451,6 +451,10 @@ impl Sentinel {
                         if let Some(ref path) = *current_focus.read_recover() {
                             if let Some(session) = sessions.write_recover().get_mut(path) {
                                 session.keystroke_count += 1;
+                                // Store jitter sample for per-document forensic analysis
+                                if session.jitter_samples.len() < MAX_DOCUMENT_JITTER_SAMPLES {
+                                    session.jitter_samples.push(sample.clone());
+                                }
                             }
                         }
 
@@ -591,6 +595,15 @@ impl Sentinel {
             .get(path)
             .cloned()
             .ok_or_else(|| SentinelError::SessionNotFound(path.to_string()))
+    }
+
+    /// Return per-document jitter samples for forensic analysis.
+    pub fn document_jitter_samples(&self, path: &str) -> Vec<crate::jitter::SimpleJitterSample> {
+        self.sessions
+            .read_recover()
+            .get(path)
+            .map(|s| s.jitter_samples.clone())
+            .unwrap_or_default()
     }
 
     /// Return the path of the currently focused document, if any.

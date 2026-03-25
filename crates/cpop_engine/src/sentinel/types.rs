@@ -85,6 +85,22 @@ impl Default for WindowInfo {
     }
 }
 
+/// Max jitter samples retained per document to bound memory.
+pub const MAX_DOCUMENT_JITTER_SAMPLES: usize = 50_000;
+
+/// Record of a focus switch away from the tracked document.
+#[derive(Debug, Clone)]
+pub struct FocusSwitchRecord {
+    /// When focus was lost.
+    pub lost_at: SystemTime,
+    /// When focus was regained (None if not yet regained).
+    pub regained_at: Option<SystemTime>,
+    /// App that received focus.
+    pub target_app: String,
+    /// Bundle ID of the app that received focus.
+    pub target_bundle_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct DocumentSession {
     pub path: String,
@@ -102,6 +118,10 @@ pub struct DocumentSession {
     pub app_bundle_id: String,
     pub app_name: String,
     pub window_title: ObfuscatedString,
+    /// Per-document jitter samples for forensic analysis.
+    pub jitter_samples: Vec<crate::jitter::SimpleJitterSample>,
+    /// Focus loss events during this session (timestamps when user switched away).
+    pub focus_switches: Vec<FocusSwitchRecord>,
     pub(crate) has_focus: bool,
     pub(crate) focus_started: Option<Instant>,
 }
@@ -132,6 +152,8 @@ impl DocumentSession {
             app_bundle_id,
             app_name,
             window_title,
+            jitter_samples: Vec::new(),
+            focus_switches: Vec::new(),
             has_focus: false,
             focus_started: None,
         }
