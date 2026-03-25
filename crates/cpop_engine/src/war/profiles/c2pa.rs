@@ -113,7 +113,15 @@ pub fn to_c2pa_assertion(ear: &EarToken) -> Result<C2paAssertion> {
 }
 
 /// Produce a C2PA action entry from an EAR token.
-pub fn to_c2pa_action(ear: &EarToken) -> Result<C2paAction> {
+///
+/// `ai_disclosure` determines the IPTC digitalSourceType:
+/// - `None` or absent: humanCreation
+/// - `AiAssisted`: compositeWithTrainedAlgorithmicMedia
+/// - `AiGenerated`: trainedAlgorithmicMedia
+pub fn to_c2pa_action(
+    ear: &EarToken,
+    ai_disclosure: Option<&super::standards::AiDisclosureLevel>,
+) -> Result<C2paAction> {
     let appr = ear
         .pop_appraisal()
         .ok_or_else(|| Error::evidence("EAR token missing 'pop' submodule"))?;
@@ -124,6 +132,10 @@ pub fn to_c2pa_action(ear: &EarToken) -> Result<C2paAction> {
         .map(|tv| derive_attestation_tier(tv))
         .unwrap_or("software_only");
 
+    let digital_source_type = ai_disclosure
+        .map(|level| level.to_iptc_digital_source_type())
+        .unwrap_or(super::standards::IPTC_HUMAN_CREATION);
+
     let params = serde_json::json!({
         "pop.attestation_tier": tier_str,
         "pop.chain_duration_secs": appr.pop_chain_duration.unwrap_or(0),
@@ -131,8 +143,7 @@ pub fn to_c2pa_action(ear: &EarToken) -> Result<C2paAction> {
 
     Ok(C2paAction {
         action: "c2pa.created".to_string(),
-        digital_source_type: "http://cv.iptc.org/newscodes/digitalsourcetype/humanCreation"
-            .to_string(),
+        digital_source_type: digital_source_type.to_string(),
         software_agent: ear.ear_verifier_id.build.clone(),
         parameters: Some(params),
     })
