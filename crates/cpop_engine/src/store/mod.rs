@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use zeroize::Zeroize;
 
+pub mod access_log;
 pub mod baselines;
 pub mod events;
 pub mod fingerprints;

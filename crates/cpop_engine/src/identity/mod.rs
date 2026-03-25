@@ -4,6 +4,7 @@
 pub mod apple;
 pub mod bridge;
 pub mod did_configuration;
+pub mod did_document;
 pub mod mnemonic;
 pub mod openid4vc;
 pub mod orcid;
