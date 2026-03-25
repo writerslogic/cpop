@@ -792,7 +792,7 @@ fn build_wire_packet_from_events(
                 beacon_anchor: None,
                 verifier_nonce: None,
             };
-            wire.checkpoint_hash = wire.compute_hash();
+            wire.checkpoint_hash = wire.compute_hash().expect("checkpoint hash computation");
             wire
         })
         .collect();
