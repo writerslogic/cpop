@@ -171,9 +171,18 @@ impl AccessLog {
                 id: Some(row.get(0)?),
                 timestamp_ns: row.get(1)?,
                 actor_id: row.get(2)?,
-                action: AccessAction::from_str(&action_str).unwrap_or(AccessAction::Read),
+                action: AccessAction::from_str(&action_str).unwrap_or_else(|| {
+                    log::warn!("Unknown access action '{}', defaulting to Read", action_str);
+                    AccessAction::Read
+                }),
                 resource: row.get(4)?,
-                result: AccessResult::from_str(&result_str).unwrap_or(AccessResult::Success),
+                result: AccessResult::from_str(&result_str).unwrap_or_else(|| {
+                    log::warn!(
+                        "Unknown access result '{}', defaulting to Success",
+                        result_str
+                    );
+                    AccessResult::Success
+                }),
                 ip_or_source: row.get(6)?,
             })
         })?;

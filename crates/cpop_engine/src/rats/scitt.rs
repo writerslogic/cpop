@@ -88,7 +88,7 @@ pub fn beacon_to_receipt_format(beacon: &WpBeaconAttestation) -> Result<Transpar
         ]),
         &mut buf,
     )
-    .expect("CBOR serialization of beacon fields should not fail");
+    .map_err(|e| crate::error::Error::Internal(format!("CBOR serialization failed: {e}")))?;
 
     Ok(TransparencyReceipt {
         receipt_cbor: buf,
