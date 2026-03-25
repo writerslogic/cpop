@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
+
+use serde::Serialize;
+
+/// ORCID (Open Researcher and Contributor ID) identity binding.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrcidIdentity {
+    /// ORCID iD in format 0000-0002-1825-0097.
+    pub orcid_id: String,
+    /// Display name from the ORCID profile, if available.
+    pub display_name: Option<String>,
+    /// Whether the ORCID was verified via OAuth.
+    pub verified: bool,
+}
+
+/// Validate an ORCID iD format.
+///
+/// ORCID iDs consist of 4 groups of 4 digits separated by hyphens, where the
+/// last character is a check digit (0-9 or X) computed per ISO 7064 Mod 11,2.
+pub fn validate_orcid(orcid: &str) -> bool {
+    let stripped: String = orcid.chars().filter(|c| *c != '-').collect();
+    if stripped.len() != 16 {
+        return false;
+    }
+
+    // First 15 characters must be digits; last is digit or 'X'.
+    let (body, check_char) = stripped.split_at(15);
+    if !body.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let last = check_char.chars().next().unwrap_or(' ');
+    if !last.is_ascii_digit() && last != 'X' {
+        return false;
+    }
+
+    // ISO 7064 Mod 11,2 check digit verification.
+    let mut total: u32 = 0;
+    for c in body.chars() {
+        let digit = c.to_digit(10).unwrap_or(0);
+        total = (total + digit) * 2;
+    }
+    let remainder = total % 11;
+    let expected = (12 - remainder) % 11;
+    let check_value = if last == 'X' {
+        10
+    } else {
+        last.to_digit(10).unwrap_or(99)
+    };
+
+    expected == check_value
+}
+
+/// Generate a DID from an ORCID iD using the informal `did:orcid` method.
+///
+/// Returns `did:orcid:<orcid>` if the ORCID is valid, or an empty string if invalid.
+pub fn orcid_to_did(orcid: &str) -> String {
+    if validate_orcid(orcid) {
+        format!("did:orcid:{}", orcid)
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_orcid_validation() {
+        // Known valid ORCID (check digit 'X'): 0000-0002-1694-233X
+        assert!(validate_orcid("0000-0002-1694-233X"));
+        // Known valid ORCID (check digit '0'): 0000-0001-5109-3700
+        assert!(validate_orcid("0000-0001-5109-3700"));
+        // Known valid ORCID (check digit '7'): 0000-0002-1825-0097
+        assert!(validate_orcid("0000-0002-1825-0097"));
+        // Without hyphens.
+        assert!(validate_orcid("0000000218250097"));
+        // Too short.
+        assert!(!validate_orcid("0000-0002-1825"));
+        // Letters in body.
+        assert!(!validate_orcid("AAAA-0002-1825-0097"));
+        // Empty.
+        assert!(!validate_orcid(""));
+        // Wrong check digit.
+        assert!(!validate_orcid("0000-0002-1825-0091"));
+
+        // did:orcid generation.
+        let did = orcid_to_did("0000-0002-1694-233X");
+        assert_eq!(did, "did:orcid:0000-0002-1694-233X");
+
+        // Invalid ORCID returns empty string.
+        assert_eq!(orcid_to_did("invalid"), "");
+    }
+}

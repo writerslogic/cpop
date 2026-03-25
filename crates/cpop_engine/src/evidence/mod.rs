@@ -15,7 +15,7 @@ pub use self::types::{
     CheckpointSignature, Claim, ClaimType, ContextPeriod, DictationEvent, DocumentInfo, EditRegion,
     ExternalAnchors, ForensicMetrics, HardwareEvidence, InputDeviceInfo,
     KeyHierarchyEvidencePacket, KeystrokeEvidence, OtsProof, Packet, RecordProvenance,
-    Rfc3161Proof, Strength, TrustTier,
+    Rfc3161Proof, Strength, TrustTier, WpBeaconAttestation,
 };
 
 pub use self::builder::{
