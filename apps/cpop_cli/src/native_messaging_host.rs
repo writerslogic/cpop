@@ -181,11 +181,15 @@ const ALLOWED_DOMAINS: &[&str] = &[
 ];
 
 /// Check whether a document URL is from an allowed domain.
-/// Only exact matches are accepted; arbitrary subdomains are not allowed.
+/// Exact matches and proper subdomains are accepted; suffix attacks are not.
+/// For example, `sub.docs.google.com` matches `docs.google.com`, but
+/// `evilnotion.so` does NOT match `notion.so`.
 fn is_domain_allowed(document_url: &str) -> bool {
     if let Ok(url) = url::Url::parse(document_url) {
         if let Some(host) = url.host_str() {
-            ALLOWED_DOMAINS.iter().any(|d| host == *d)
+            ALLOWED_DOMAINS
+                .iter()
+                .any(|d| host == *d || host.ends_with(&format!(".{}", d)))
         } else {
             false
         }
