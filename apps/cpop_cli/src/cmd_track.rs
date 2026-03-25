@@ -94,19 +94,28 @@ impl TrackTarget {
 
 fn classify_target(path: &Path) -> Result<TrackTarget> {
     if !path.exists() {
-        // If it looks like a file path, create it so tracking can begin.
+        // If it looks like a file path, create it so tracking can begin,
+        // but only if it's inside the current directory.
         let looks_like_file = path.extension().is_some();
         if looks_like_file {
-            if let Some(parent) = path.parent() {
-                if !parent.as_os_str().is_empty() {
-                    // Canonicalize parent to resolve symlinks and validate it exists.
-                    let _canonical_parent = fs::canonicalize(parent).map_err(|_| {
-                        anyhow!(
-                            "Parent directory does not exist: {}\n\nCreate it first.",
-                            parent.display()
-                        )
-                    })?;
-                }
+            let cwd = std::env::current_dir().context("Cannot determine current directory")?;
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(&cwd);
+            let canonical_parent = fs::canonicalize(parent).map_err(|_| {
+                anyhow!(
+                    "Parent directory does not exist: {}\n\nCreate it first.",
+                    parent.display()
+                )
+            })?;
+            let canonical_cwd = fs::canonicalize(&cwd)?;
+            if !canonical_parent.starts_with(&canonical_cwd) {
+                return Err(anyhow!(
+                    "Refusing to create file outside the current directory: {}\n\n\
+                     Create the file manually or run from its parent directory.",
+                    path.display()
+                ));
             }
             fs::File::create(path)
                 .with_context(|| format!("Cannot create file: {}", path.display()))?;
@@ -605,10 +614,11 @@ async fn cmd_track_start(
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    ctrlc::set_handler(move || {
+    if let Err(e) = ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
-    })
-    .ok();
+    }) {
+        eprintln!("Warning: failed to set Ctrl+C handler: {}", e);
+    }
 
     println!("Tracking: {}", target.display_name());
     if !target.is_single_file() {
@@ -641,6 +651,15 @@ async fn cmd_track_start(
                             Ok(p) => p,
                             Err(_) => continue, // file may have been deleted
                         };
+
+                        // Warn if the path was a symlink pointing elsewhere
+                        if path != &canonical && path.is_symlink() {
+                            eprintln!(
+                                "Warning: {} is a symlink to {}",
+                                path.display(),
+                                canonical.display()
+                            );
+                        }
 
                         // For single file, match exactly; for dirs, check containment + trackability
                         let should_track = if target.is_single_file() {
@@ -706,7 +725,13 @@ async fn cmd_track_start(
                     }
                 }
             }
-            Err(std_mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                // Periodic eviction of stale entries to bound memory
+                if last_checkpoint_map.len() > 50 {
+                    let cutoff = Instant::now() - Duration::from_secs(60);
+                    last_checkpoint_map.retain(|_, &mut v| v > cutoff);
+                }
+            }
             Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
         }
 

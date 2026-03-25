@@ -76,7 +76,6 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
             let mut config = CpopConfig::load_or_default(&dir)?;
 
             let parts: Vec<&str> = key.split('.').collect();
-            let parsed_bool = parse_bool_lenient(&value).ok();
 
             match parts.as_slice() {
                 ["sentinel", "auto_start"] => {
@@ -190,12 +189,8 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
             }
 
             config.persist()?;
-            // Show the canonical value (e.g. "yes" → "true")
-            let display_value = match parsed_bool {
-                Some(b) => b.to_string(),
-                None => value,
-            };
-            println!("Set {} = {}", key, display_value);
+            // Show the raw value the user provided, so "1" stays "1" instead of "true"
+            println!("Set {} = {}", key, value);
         }
 
         ConfigAction::Edit => {
@@ -209,6 +204,16 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                     "nano".to_string()
                 }
             });
+
+            // Strip surrounding quotes (single or double) that some shells leave in $EDITOR
+            let editor = editor.trim().to_string();
+            let editor = if (editor.starts_with('"') && editor.ends_with('"'))
+                || (editor.starts_with('\'') && editor.ends_with('\''))
+            {
+                editor[1..editor.len() - 1].to_string()
+            } else {
+                editor
+            };
 
             let (cmd, args) = parse_editor_value(&editor)?;
 

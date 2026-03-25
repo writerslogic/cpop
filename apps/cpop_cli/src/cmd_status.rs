@@ -75,6 +75,7 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
             if signing_key_path.exists() {
                 fs::read(&signing_key_path)
                     .ok()
+                    .map(Zeroizing::new)
                     .filter(|k| k.len() >= 32)
                     .map(|k| derive_hmac_key(&k[..32]))
             } else {
@@ -126,6 +127,8 @@ pub(crate) fn cmd_status(out: &OutputMode) -> Result<()> {
     let presence_active = dir.join("sessions").join("current.json").exists();
     let tracking_active = dir.join("tracking").join("current_session.json").exists();
 
+    // NOTE: catch_unwind only catches Rust panics; FFI panics (e.g. from TPM
+    // libraries) will abort the process regardless. This is a best-effort guard.
     let (tpm_status, tpm_details) = match std::panic::catch_unwind(|| {
         let provider = tpm::detect_provider();
         let caps = provider.capabilities();

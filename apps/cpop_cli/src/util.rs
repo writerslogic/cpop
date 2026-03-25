@@ -233,9 +233,18 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf> {
 }
 
 fn clean_path(path: &Path) -> PathBuf {
+    use std::path::Component;
     let mut cleaned = PathBuf::new();
     for component in path.components() {
-        cleaned.push(component);
+        match component {
+            Component::ParentDir => {
+                if !cleaned.pop() {
+                    cleaned.push(component);
+                }
+            }
+            Component::CurDir => {}
+            _ => cleaned.push(component),
+        }
     }
     cleaned
 }
@@ -462,15 +471,14 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_path_dotdot_on_nonexistent_preserved() {
-        // For nonexistent paths, .. cannot be resolved without filesystem access
+    fn test_normalize_path_dotdot_on_nonexistent_resolved() {
+        // clean_path now resolves .. lexically even for nonexistent paths (L-003)
         let result = normalize_path(Path::new("/tmp/nonexistent_xyz/a/../b"))
             .expect("normalize should handle nonexistent paths with ..");
-        // clean_path preserves .. for nonexistent paths (no canonicalize)
         assert_eq!(
             result,
-            PathBuf::from("/tmp/nonexistent_xyz/a/../b"),
-            "nonexistent paths preserve .. components (cannot resolve without filesystem)"
+            PathBuf::from("/tmp/nonexistent_xyz/b"),
+            "nonexistent paths should resolve .. lexically"
         );
     }
 

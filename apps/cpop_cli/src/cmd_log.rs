@@ -233,7 +233,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_timestamp_nanos_year_2100_boundary() {
         // Year 2100 boundary: 4102444800s = 2100-01-01 00:00:00 UTC
         let max_ns = 4_102_444_800_000_000_000i64;

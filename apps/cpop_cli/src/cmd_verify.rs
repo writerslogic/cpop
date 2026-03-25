@@ -393,10 +393,7 @@ fn write_war_appraisal(packet: &evidence::Packet, war_path: &PathBuf) -> Result<
             eprintln!("WAR appraisal written to: {}", war_path.display());
             Ok(())
         }
-        Err(e) => {
-            eprintln!("Warning: WAR appraisal failed: {}", e);
-            Ok(())
-        }
+        Err(e) => Err(anyhow::anyhow!("WAR appraisal failed: {}", e)),
     }
 }
 

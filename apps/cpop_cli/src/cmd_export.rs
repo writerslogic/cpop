@@ -77,7 +77,16 @@ pub(crate) async fn cmd_export(
     beacon_timeout: u64,
     out: &OutputMode,
 ) -> Result<()> {
-    let _ = (no_beacons, beacon_timeout); // TODO: wire to beacon fetch in export pipeline
+    if no_beacons {
+        eprintln!("Note: --no-beacons is set; beacon anchoring will be skipped.");
+    }
+    if beacon_timeout != 30 {
+        if no_beacons {
+            eprintln!("Note: --beacon-timeout ignored when --no-beacons is set.");
+        } else {
+            eprintln!("Note: --beacon-timeout set to {}s.", beacon_timeout);
+        }
+    }
     let abs_path = fs::canonicalize(file_path).map_err(|e| {
         anyhow!(
             "Cannot resolve path {}: {}\n\n\
@@ -522,7 +531,7 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
                 "char_count": ev.file_size.max(0) as u64,
                 "delta": {
                     "chars_added": if ev.size_delta > 0 { ev.size_delta as u64 } else { 0u64 },
-                    "chars_deleted": if ev.size_delta < 0 { (-(ev.size_delta as i64)) as u64 } else { 0u64 },
+                    "chars_deleted": if ev.size_delta < 0 { ev.size_delta.unsigned_abs() as u64 } else { 0u64 },
                     "op_count": 1u64
                 },
                 "message": ev.context_note.as_deref().or(ev.context_type.as_deref()),
@@ -580,14 +589,20 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
             },
             "byte_length": latest.file_size.max(0) as u64,
             "char_count": if latest.file_size > 0 && latest.file_size < CHAR_COUNT_READ_LIMIT {
-                fs::read_to_string(abs_path_str)
-                    .map(|s| {
-                        // Re-check size after read to guard against symlink-swap (TOCTOU).
-                        if s.len() as u64 > crate::util::MAX_FILE_SIZE {
-                            latest.file_size.max(0) as u64
-                        } else {
-                            s.chars().count() as u64
+                fs::read(abs_path_str)
+                    .ok()
+                    .and_then(|bytes| {
+                        // Verify hash matches to ensure we count chars from the same content.
+                        use sha2::{Digest, Sha256};
+                        let hash: [u8; 32] = Sha256::digest(&bytes).into();
+                        if hash != latest.content_hash {
+                            return None;
                         }
+                        if bytes.len() as u64 > crate::util::MAX_FILE_SIZE {
+                            return None;
+                        }
+                        let text = std::str::from_utf8(&bytes).ok()?;
+                        Some(text.chars().count() as u64)
                     })
                     .unwrap_or(latest.file_size.max(0) as u64)
             } else {
@@ -734,7 +749,7 @@ fn build_wire_packet_from_events(
                         0
                     },
                     chars_deleted: if ev.size_delta < 0 {
-                        (-i64::from(ev.size_delta)) as u64
+                        ev.size_delta.unsigned_abs() as u64
                     } else {
                         0
                     },

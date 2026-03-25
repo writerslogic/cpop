@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use cpop_engine::fingerprint::{ConsentManager, ConsentStatus, FingerprintManager, ProfileId};
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 
 use crate::cli::FingerprintAction;
 use crate::output::OutputMode;
@@ -184,14 +184,14 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Re
                     }
                 }
                 Err(e) => {
-                    let msg = e.to_string();
-                    // NOTE: String matching is brittle; the upstream error (anyhow) does not
-                    // expose a typed variant for "not found". If the error message changes,
-                    // this match will fall through to the generic branch.
-                    if msg.contains("not found") {
+                    // Check for IO NotFound first (typed), then fall back to string match
+                    // for the anyhow "Profile not found" message from upstream.
+                    let is_not_found = e.downcast_ref::<std::io::Error>().map_or(false, |io_err| {
+                        io_err.kind() == std::io::ErrorKind::NotFound
+                    }) || e.to_string().contains("not found");
+                    if is_not_found {
                         return Err(anyhow!("Profile not found: {}", profile_id));
                     }
-                    eprintln!("Debug: fingerprint load error: {}", e);
                     return Err(anyhow!("Storage error: {}", e));
                 }
             }
@@ -296,6 +296,12 @@ pub(crate) fn cmd_fingerprint(action: FingerprintAction, out: &OutputMode) -> Re
 
         FingerprintAction::Delete { id, force } => {
             if !force {
+                if !io::stdin().is_terminal() {
+                    return Err(anyhow!(
+                        "Cannot prompt for confirmation in non-interactive mode. \
+                         Use --force to skip confirmation."
+                    ));
+                }
                 print!("Delete fingerprint profile '{}'? (yes/no): ", id);
                 io::stdout().flush()?;
 
