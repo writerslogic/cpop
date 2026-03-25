@@ -921,6 +921,22 @@ dependencies = [
 [[package]]
 name = "cpop-jitter"
 version = "0.2.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "hkdf",
+ "hmac",
+ "libm",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
+name = "cpop-jitter"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf31e4b2c3de333482ebc2b3c62da8ab074fdf9c15d76807a38913df75cdc282"
 dependencies = [
@@ -938,9 +954,7 @@ dependencies = [
 
 [[package]]
 name = "cpop-protocol"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2edfbe1c4c62c371a09ff92ffb8b4bec7ddf32aadb2c6aa918a5d23057119cc6"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -948,7 +962,7 @@ dependencies = [
  "ciborium",
  "const-oid",
  "coset",
- "cpop-jitter",
+ "cpop-jitter 0.2.1",
  "der 0.8.0",
  "ed25519-dalek",
  "hex",
@@ -1018,7 +1032,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "coset",
- "cpop-jitter",
+ "cpop-jitter 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "cpop-protocol",
  "crc32fast",
  "dashmap",

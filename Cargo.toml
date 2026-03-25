@@ -30,3 +30,6 @@ base64 = "0.22.1"
 ciborium = "0.2"
 coset = "0.3"
 uniffi = "0.28"
+
+[patch.crates-io]
+cpop-protocol = { path = "../proof-of-process/crates/cpop-protocol" }

@@ -696,11 +696,8 @@ pub fn ffi_export_c2pa_manifest(
     if let Some(ref name) = doc_filename {
         builder = builder.document_filename(name);
     }
-    // Note: cpop-protocol 0.2 does not yet expose a format() setter on the builder.
-    // The MIME type is available for cpop-protocol 0.3 integration.
-    // For now, log the detected type for diagnostics.
     if let Some(ref mime) = mime_type {
-        log::debug!("C2PA manifest: detected dc:format = {}", mime);
+        builder = builder.format(mime);
     }
 
     let provider = crate::tpm::detect_provider();

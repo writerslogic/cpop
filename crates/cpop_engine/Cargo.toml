@@ -105,7 +105,7 @@ cpop-jitter = { version = "0.2", optional = true }
 typeshare = "1.0.5"
 
 # CPOP Protocol
-cpop-protocol = "0.2"
+cpop-protocol = "0.3"
 
 tempfile = "3"
 
