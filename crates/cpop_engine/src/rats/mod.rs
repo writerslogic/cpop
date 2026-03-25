@@ -9,10 +9,13 @@
 //!   wrappers for Evidence and Attestation Results
 //! - **eat**: CWT encoding/decoding for EAR tokens in COSE_Sign1 envelopes
 //!   per RFC 8392 and draft-ietf-rats-ear
+//! - **corim**: CoRIM reference values manifest (draft-ietf-rats-corim)
 
+pub mod corim;
 pub mod eat;
 pub mod types;
 
+pub use corim::CpopReferenceValues;
 pub use eat::{decode_eat_cwt, encode_eat_cwt};
 pub use types::{AttestationResult, Evidence, RatsRole};
 
