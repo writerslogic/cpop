@@ -121,7 +121,7 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
             success: false,
             session_id: String::new(),
             error_message: Some(format!(
-                "Context label too long ({} chars, max {MAX_CONTEXT_LABEL_LEN})",
+                "Context label too long ({} bytes, max {MAX_CONTEXT_LABEL_LEN})",
                 context_label.len()
             )),
         };
@@ -167,6 +167,8 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
 /// Create an in-memory checkpoint of the current content.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: String) -> FfiResult {
+    evict_stale_sessions();
+
     let mut entry = match sessions().get_mut(&session_id) {
         Some(e) => e,
         None => {
@@ -408,6 +410,8 @@ pub fn ffi_ephemeral_finalize(
 /// Get current ephemeral session stats (for the floating indicator).
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_ephemeral_status(session_id: String) -> FfiEphemeralStatusResult {
+    evict_stale_sessions();
+
     match sessions().get(&session_id) {
         Some(entry) => FfiEphemeralStatusResult {
             success: true,
@@ -609,6 +613,15 @@ fn build_war_block(
             }
         }
     }
+    const MAX_SIGNING_KEY_FILE: u64 = 1024;
+    let key_meta =
+        std::fs::metadata(&key_path).map_err(|e| format!("Cannot stat signing key: {e}"))?;
+    if key_meta.len() > MAX_SIGNING_KEY_FILE {
+        return Err(format!(
+            "Signing key file too large ({} bytes, max {MAX_SIGNING_KEY_FILE})",
+            key_meta.len()
+        ));
+    }
     let key_data = zeroize::Zeroizing::new(
         std::fs::read(&key_path).map_err(|e| format!("Cannot read signing key: {e}"))?,
     );
@@ -669,7 +682,10 @@ fn flush_session_state(session_id: &str, session: &EphemeralSession) {
     });
 
     let path = recovery_dir.join(format!("{session_id}.json"));
-    let _ = std::fs::write(path, state.to_string());
+    let tmp_path = recovery_dir.join(format!("{session_id}.json.tmp"));
+    if std::fs::write(&tmp_path, state.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp_path, &path);
+    }
 }
 
 /// Remove crash-recovery state after successful finalization.

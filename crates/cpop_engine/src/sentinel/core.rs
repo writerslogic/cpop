@@ -778,8 +778,8 @@ impl Sentinel {
         let identity_fingerprint = hasher.finalize().to_vec();
 
         let db_path = self.config.writersproof_dir.join("events.db");
-        let mut hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
-        let store = crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))?;
+        let hmac_key = crate::crypto::derive_hmac_key(&signing_key.to_bytes());
+        let store = crate::store::SecureStore::open(&db_path, hmac_key.to_vec())?;
 
         let current_digest =
             if let Some((cbor, _)) = store.get_baseline_digest(&identity_fingerprint)? {

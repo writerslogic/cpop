@@ -44,6 +44,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_bytes = "0.11"
 serde_json = "1.0.135"
+scopeguard = "1"
 async-trait = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
 log = "0.4"
@@ -105,6 +106,8 @@ typeshare = "1.0.5"
 
 # CPOP Protocol
 cpop-protocol = "0.2"
+
+tempfile = "3"
 
 # PDF report generation
 printpdf = "0.7"

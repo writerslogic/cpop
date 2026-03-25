@@ -121,6 +121,9 @@ impl Mmr {
 
         // The MMR index of the n-th leaf (0-indexed) is: 2n - popcount(n)
         // This is O(1) instead of the previous O(N) scan.
+        // Note: overflow is theoretical (requires u64::MAX leaves, which would
+        // exceed any practical storage). The subtraction is safe because
+        // popcount(n) <= 64 and 2n >= popcount(n) for all valid leaf counts.
         Ok(2 * leaf_ordinal - leaf_ordinal.count_ones() as u64)
     }
 
@@ -154,7 +157,7 @@ impl Mmr {
         if node.height != 0 {
             return Err(MmrError::InvalidProof);
         }
-        let (path, peak_index) = self.generate_merkle_path(leaf_index)?;
+        let (path, peak_index) = self.generate_merkle_path(leaf_index, state.size)?;
         let peaks = self.get_peaks()?;
         let peak_indices = find_peaks(state.size);
         let mut peak_position = None;
@@ -198,7 +201,8 @@ impl Mmr {
         for idx in &leaf_indices {
             leaf_hashes.push(self.store.get(*idx)?.hash);
         }
-        let (sibling_path, peak_index) = self.generate_range_merkle_path(&leaf_indices)?;
+        let (sibling_path, peak_index) =
+            self.generate_range_merkle_path(&leaf_indices, state.size)?;
         let peaks = self.get_peaks()?;
         let peak_indices = find_peaks(state.size);
         let mut peak_position = None;
@@ -223,14 +227,19 @@ impl Mmr {
         })
     }
 
-    fn generate_merkle_path(&self, leaf_index: u64) -> Result<(Vec<ProofElement>, u64), MmrError> {
+    fn generate_merkle_path(
+        &self,
+        leaf_index: u64,
+        size: u64,
+    ) -> Result<(Vec<ProofElement>, u64), MmrError> {
         let mut path = Vec::new();
         let mut pos = leaf_index;
         let node = self.store.get(pos)?;
         let mut height = node.height;
 
         loop {
-            let (sibling_pos, parent_pos, is_right_child, found) = self.find_family(pos, height)?;
+            let (sibling_pos, parent_pos, is_right_child, found) =
+                self.find_family(pos, height, size)?;
             if !found {
                 return Ok((path, pos));
             }
@@ -244,18 +253,22 @@ impl Mmr {
         }
     }
 
-    fn find_family(&self, pos: u64, height: u8) -> Result<(u64, u64, bool, bool), MmrError> {
+    fn find_family(
+        &self,
+        pos: u64,
+        height: u8,
+        size: u64,
+    ) -> Result<(u64, u64, bool, bool), MmrError> {
         if height >= 63 {
             return Ok((0, 0, false, false));
         }
-        let state = self.state.read_recover();
         let offset = 1u64 << (height + 1);
 
         let left_parent = pos + offset;
         let right_sibling = left_parent.saturating_sub(1);
-        if right_sibling < state.size && right_sibling != pos {
+        if right_sibling < size && right_sibling != pos {
             let right_node = self.store.get(right_sibling)?;
-            if right_node.height == height && left_parent < state.size {
+            if right_node.height == height && left_parent < size {
                 let parent = self.store.get(left_parent)?;
                 if parent.height == height + 1 {
                     return Ok((right_sibling, left_parent, false, true));
@@ -266,9 +279,9 @@ impl Mmr {
         let right_parent = pos + 1;
         if offset <= pos + 1 {
             let left_sibling = right_parent - offset;
-            if left_sibling < state.size && left_sibling != pos {
+            if left_sibling < size && left_sibling != pos {
                 let left_node = self.store.get(left_sibling)?;
-                if left_node.height == height && right_parent < state.size {
+                if left_node.height == height && right_parent < size {
                     let parent = self.store.get(right_parent)?;
                     if parent.height == height + 1 {
                         return Ok((left_sibling, right_parent, true, true));
@@ -283,15 +296,13 @@ impl Mmr {
     fn generate_range_merkle_path(
         &self,
         leaf_indices: &[u64],
+        size: u64,
     ) -> Result<(Vec<ProofElement>, u64), MmrError> {
-        use std::collections::HashMap;
+        use std::collections::HashSet;
         if leaf_indices.is_empty() {
             return Err(MmrError::InvalidProof);
         }
-        let mut covered: HashMap<u64, bool> = HashMap::new();
-        for idx in leaf_indices {
-            covered.insert(*idx, true);
-        }
+        let mut covered: HashSet<u64> = leaf_indices.iter().copied().collect();
         let mut path: Vec<ProofElement> = Vec::new();
         let mut current_level: Vec<u64> = leaf_indices.to_vec();
         let mut height: u8 = 0;
@@ -300,26 +311,26 @@ impl Mmr {
         while !current_level.is_empty() {
             current_level.sort_unstable();
             let mut next_level = Vec::new();
-            let mut processed_parents: HashMap<u64, bool> = HashMap::new();
+            let mut processed_parents: HashSet<u64> = HashSet::new();
             for pos in &current_level {
                 let (sibling_pos, parent_pos, is_right_child, found) =
-                    self.find_family(*pos, height)?;
+                    self.find_family(*pos, height, size)?;
                 if !found {
                     peak_index = *pos;
                     continue;
                 }
-                if *processed_parents.get(&parent_pos).unwrap_or(&false) {
+                if processed_parents.contains(&parent_pos) {
                     continue;
                 }
-                processed_parents.insert(parent_pos, true);
-                if !covered.get(&sibling_pos).copied().unwrap_or(false) {
+                processed_parents.insert(parent_pos);
+                if !covered.contains(&sibling_pos) {
                     let sibling = self.store.get(sibling_pos)?;
                     path.push(ProofElement {
                         hash: sibling.hash,
                         is_left: is_right_child,
                     });
                 }
-                covered.insert(parent_pos, true);
+                covered.insert(parent_pos);
                 next_level.push(parent_pos);
             }
             current_level = next_level;
@@ -333,12 +344,18 @@ impl Mmr {
 pub fn find_peaks(mut size: u64) -> Vec<u64> {
     let mut peaks = Vec::new();
     let mut offset = 0;
-    while size > 0 {
+    // Cap iterations at 64 (maximum number of peaks for a u64-sized MMR).
+    let mut iterations = 0u32;
+    while size > 0 && iterations < 64 {
         let h = highest_peak(size);
         let tree_size = (1u64 << (h + 1)) - 1;
+        if tree_size > size {
+            break;
+        }
         peaks.push(offset + tree_size - 1);
         offset += tree_size;
         size -= tree_size;
+        iterations += 1;
     }
     peaks
 }

@@ -132,7 +132,13 @@ pub fn try_init() -> Option<SecureEnclaveProvider> {
         return None;
     }
 
-    let base_dir = writersproof_dir();
+    let base_dir = match writersproof_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("Secure Enclave init failed: {e}");
+            return None;
+        }
+    };
     let counter_file = base_dir.join("se_counter");
 
     let mut state = SecureEnclaveState {
@@ -273,12 +279,16 @@ fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TpmError
         unsafe { CFString::wrap_under_get_rule(kSecAttrApplicationLabel) },
         tag.as_CFType(),
     ));
-    if !access.is_null() {
-        private_pairs.push((
-            unsafe { CFString::wrap_under_get_rule(kSecAttrAccessControl) },
-            unsafe { CFType::wrap_under_create_rule(access as CFTypeRef) },
+    if access.is_null() {
+        return Err(TpmError::KeyGeneration(
+            "SecAccessControlCreateWithFlags returned null".into(),
         ));
     }
+
+    private_pairs.push((
+        unsafe { CFString::wrap_under_get_rule(kSecAttrAccessControl) },
+        unsafe { CFType::wrap_under_create_rule(access as CFTypeRef) },
+    ));
     let private_attrs =
         core_foundation::dictionary::CFDictionary::from_CFType_pairs(&private_pairs);
 
@@ -432,12 +442,24 @@ fn save_counter(state: &SecureEnclaveState) {
     let mut buf = Vec::with_capacity(40);
     buf.extend_from_slice(&counter_bytes);
     buf.extend_from_slice(&hmac);
-    if let Err(e) = fs::write(&state.counter_file, &buf) {
+
+    // Atomic write: write to tmp, fsync, rename to avoid partial writes on crash.
+    let tmp_path = state.counter_file.with_extension("tmp");
+    let write_result = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp_path)?;
+        f.write_all(&buf)?;
+        f.sync_all()?;
+        fs::rename(&tmp_path, &state.counter_file)?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
         log::error!(
             "Failed to persist counter to {:?}: {}",
             state.counter_file,
             e
         );
+        let _ = fs::remove_file(&tmp_path);
     }
     if let Err(e) = crate::crypto::restrict_permissions(&state.counter_file, 0o600) {
         log::warn!("Failed to set counter file permissions: {}", e);
@@ -446,11 +468,16 @@ fn save_counter(state: &SecureEnclaveState) {
 
 impl SecureEnclaveProvider {
     /// v4 format: XOR cipher, kept for backward compat only.
+    #[deprecated(note = "v4 XOR seal is unauthenticated; migrate to v5 AEAD")]
     fn unseal_v4_legacy(
         &self,
         state: &SecureEnclaveState,
         sealed: &[u8],
     ) -> Result<Vec<u8>, TpmError> {
+        log::warn!(
+            "Unsealing v4 legacy format (unauthenticated XOR cipher). \
+             Re-seal with v5 AEAD to upgrade."
+        );
         if sealed.len() < 34 {
             return Err(TpmError::SealedDataTooShort);
         }
@@ -581,10 +608,9 @@ impl Provider for SecureEnclaveProvider {
     fn seal(&self, data: &[u8], _policy: &[u8]) -> Result<Vec<u8>, TpmError> {
         let state = self.state.lock_recover();
 
-        let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-seal-nonce-v2");
-        hasher.update(data);
-        let seal_nonce = hasher.finalize().to_vec();
+        let mut seal_nonce = vec![0u8; 32];
+        getrandom::getrandom(&mut seal_nonce)
+            .map_err(|e| TpmError::Sealing(format!("seal nonce generation: {e}")))?;
 
         let signature = sign(&state, &seal_nonce)?;
         let mut key_material = Sha256::digest(&signature);
@@ -618,6 +644,7 @@ impl Provider for SecureEnclaveProvider {
         }
 
         match sealed[0] {
+            #[allow(deprecated)]
             4 => self.unseal_v4_legacy(&state, sealed),
             5 => self.unseal_v5_aead(&state, sealed),
             _ => Err(TpmError::SealedVersionUnsupported),
@@ -958,10 +985,13 @@ fn extract_public_key(key_ref: SecKeyRef) -> Result<Vec<u8>, TpmError> {
     let mut error: CFErrorRef = null_mut();
     let data_ref = unsafe { SecKeyCopyExternalRepresentation(public_key, &mut error) };
     if data_ref.is_null() {
+        unsafe { core_foundation_sys::base::CFRelease(public_key as *mut std::ffi::c_void) };
         return Err(TpmError::KeyExport("public key export failed".into()));
     }
     let data = unsafe { CFData::wrap_under_create_rule(data_ref) };
-    Ok(data.bytes().to_vec())
+    let result = data.bytes().to_vec();
+    unsafe { core_foundation_sys::base::CFRelease(public_key as *mut std::ffi::c_void) };
+    Ok(result)
 }
 
 fn hardware_uuid() -> Option<String> {
@@ -1005,13 +1035,13 @@ fn hardware_uuid() -> Option<String> {
     None
 }
 
-fn writersproof_dir() -> PathBuf {
+fn writersproof_dir() -> Result<PathBuf, TpmError> {
     if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
-        return PathBuf::from(dir);
+        return Ok(PathBuf::from(dir));
     }
     dirs::home_dir()
-        .expect("cannot determine home directory; refusing to use insecure fallback path")
-        .join(".writersproof")
+        .map(|d| d.join(".writersproof"))
+        .ok_or_else(|| TpmError::Configuration("cannot determine home directory".into()))
 }
 
 #[cfg(test)]

@@ -87,7 +87,15 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         .iter()
         .enumerate()
         .map(|(i, ev)| {
-            let timestamp_ms = (ev.timestamp_ns.max(0) / 1_000_000) as u64;
+            let timestamp_ms = if ev.timestamp_ns < 0 {
+                log::warn!(
+                    "Negative timestamp_ns {} at index {i}, clamping to 0",
+                    ev.timestamp_ns
+                );
+                0u64
+            } else {
+                (ev.timestamp_ns / 1_000_000) as u64
+            };
             let vdf_input_bytes = ev
                 .vdf_input
                 .map(|b| b.to_vec())
@@ -300,11 +308,9 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
         };
     }
 
-    // Enforce file size limits (matching CLI's MAX_FILE_SIZE)
-    const MAX_FILE_SIZE: u64 = 500_000_000; // 500 MB
     for (label, p) in [("Export", &export), ("Source", &source)] {
         match std::fs::metadata(p) {
-            Ok(m) if m.len() > MAX_FILE_SIZE => {
+            Ok(m) if m.len() > crate::MAX_FILE_SIZE => {
                 return FfiResult {
                     success: false,
                     message: None,
@@ -312,7 +318,7 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
                         "{} file too large ({:.0} MB, max {} MB)",
                         label,
                         m.len() as f64 / 1_000_000.0,
-                        MAX_FILE_SIZE / 1_000_000
+                        crate::MAX_FILE_SIZE / 1_000_000
                     )),
                 };
             }
@@ -463,7 +469,7 @@ pub fn ffi_get_compact_ref(path: String) -> String {
     let hash_hex = hex::encode(last_event.event_hash);
 
     format!(
-        "writerslogic:{}:{}",
+        "pop-ref:writerslogic:{}:{}",
         &hash_hex[..hash_hex.len().min(12)],
         events.len()
     )
@@ -523,7 +529,8 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
             .unwrap_or(0),
-        file_path: path.clone(),
+        // Use canonicalized path so export/log lookups match
+        file_path: file_path.to_string_lossy().to_string(),
         content_hash,
         file_size,
         size_delta: 0,
@@ -701,20 +708,41 @@ pub fn ffi_export_c2pa_manifest(
         }
     };
 
-    match std::fs::write(&out_file, &jumbf) {
-        Ok(()) => FfiResult {
-            success: true,
-            message: Some(format!(
-                "C2PA manifest exported to {} ({} bytes)",
-                out_file.display(),
-                jumbf.len()
-            )),
-            error_message: None,
-        },
+    // Atomic write: tempfile + fsync + rename
+    let parent = out_file
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    match tempfile::NamedTempFile::new_in(parent) {
+        Ok(mut tmp) => {
+            use std::io::Write;
+            if let Err(e) = tmp.write_all(&jumbf).and_then(|_| tmp.as_file().sync_all()) {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("Failed to write C2PA manifest: {e}")),
+                };
+            }
+            match tmp.persist(&out_file) {
+                Ok(_) => FfiResult {
+                    success: true,
+                    message: Some(format!(
+                        "C2PA manifest exported to {} ({} bytes)",
+                        out_file.display(),
+                        jumbf.len()
+                    )),
+                    error_message: None,
+                },
+                Err(e) => FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("Failed to persist C2PA manifest: {e}")),
+                },
+            }
+        }
         Err(e) => FfiResult {
             success: false,
             message: None,
-            error_message: Some(format!("Failed to write C2PA manifest: {e}")),
+            error_message: Some(format!("Failed to create temp file for C2PA manifest: {e}")),
         },
     }
 }
@@ -831,7 +859,7 @@ mod tests {
 
         let compact = ffi_get_compact_ref(path_str);
         assert!(
-            compact.starts_with("writerslogic:"),
+            compact.starts_with("pop-ref:writerslogic:"),
             "expected compact ref prefix, got: {compact}"
         );
     }

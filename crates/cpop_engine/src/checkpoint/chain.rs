@@ -18,6 +18,9 @@ use std::os::unix::io::AsRawFd;
 
 use super::types::*;
 
+/// Hard upper bound on checkpoint count to reject malformed chain files.
+const MAX_CHECKPOINTS: usize = 1_000_000;
+
 /// Compute the genesis checkpoint prev-hash per draft-condrey-rats-pop:
 /// `prev_hash = SHA-256(CBOR-encode(document-ref))`.
 ///
@@ -32,11 +35,13 @@ fn genesis_prev_hash(
         .file_name()
         .map(|n| n.to_string_lossy().to_string());
 
+    // char_count uses content_size (byte length) as approximation; for accurate
+    // character count, callers should provide actual UTF-8 char count.
     let doc_ref = DocumentRef {
         content_hash: HashValue::sha256(content_hash.to_vec()),
         filename,
         byte_length: content_size,
-        char_count: content_size, // best-effort approximation
+        char_count: content_size, // byte-count approximation; see comment above
         salt_mode: None,
         salt_commitment: None,
     };
@@ -146,12 +151,16 @@ impl Chain {
         // H-014: Acquire advisory file lock to prevent concurrent commits
         let lock_file = fs::File::open(&self.document_path)?;
         Self::acquire_lock(&lock_file)?;
-        let result = self.commit_internal_locked(message, vdf_duration);
-        Self::release_lock(&lock_file);
-        result
+        let _guard = scopeguard::guard(&lock_file, Self::release_lock);
+        self.commit_internal_locked(message, vdf_duration)
     }
 
     /// Inner commit logic, called while holding the file lock.
+    // TODO(M-119): commit_internal_locked, commit_entangled_locked, and
+    // commit_rfc_locked share significant duplication (content hashing,
+    // ordinal computation, genesis prev-hash, timestamp validation, hash
+    // computation, push). Extract a shared commit_finish() helper once the
+    // interface stabilises.
     fn commit_internal_locked(
         &mut self,
         message: Option<String>,
@@ -159,7 +168,7 @@ impl Chain {
     ) -> Result<Checkpoint> {
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
-        let ordinal = self.checkpoints.len() as u64;
+        let ordinal = u64::try_from(self.checkpoints.len()).expect("checkpoint count exceeds u64");
 
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
@@ -176,7 +185,10 @@ impl Chain {
                 let last_ts = last_cp.map(|cp| cp.timestamp).unwrap_or(now);
                 now.signed_duration_since(last_ts)
                     .to_std()
-                    .unwrap_or(Duration::from_secs(0))
+                    .unwrap_or_else(|_| {
+                        log::warn!("System clock regression detected; using zero VDF duration");
+                        Duration::from_secs(0)
+                    })
             });
             let vdf_input = vdf::chain_input(content_hash, previous_hash, ordinal);
             let proof = vdf::compute(vdf_input, duration, self.vdf_params)?;
@@ -395,6 +407,9 @@ impl Chain {
             output[VDF_RFC_OUTPUT_OFFSET..VDF_RFC_OUTPUT_END].copy_from_slice(&vdf.output);
             output[VDF_RFC_INPUT_OFFSET..VDF_RFC_INPUT_END].copy_from_slice(&vdf.input);
 
+            // The `output` parameter is the concatenated Wesolowski-style format
+            // (output[0..32] || input[0..32] = 64 bytes), not the raw 32-byte VDF output.
+            // Layout is defined by the VDF_RFC_* constants in checkpoint/types.rs.
             VdfProofRfc::new(
                 vdf.input,
                 output,
@@ -444,7 +459,9 @@ impl Chain {
             vdf::swf_seed_core(&previous_hash, &content_hash)
         };
 
-        // Argon2id SWF proof per draft-condrey-rats-pop (algorithm=20)
+        // Argon2id SWF proof per draft-condrey-rats-pop (algorithm=20).
+        // vdf_params.min_iterations reused as Argon2id time cost for simplicity;
+        // dedicated parameter would be cleaner but not worth the breaking change.
         let argon2_swf = {
             let swf_params = vdf::swf_argon2::Argon2SwfParams {
                 iterations: self.vdf_params.min_iterations.max(3),
@@ -477,9 +494,11 @@ impl Chain {
         if report.valid {
             Ok(())
         } else {
-            Err(Error::checkpoint(
-                report.error.unwrap_or_else(|| "verification failed".into()),
-            ))
+            Err(Error::checkpoint(if report.errors.is_empty() {
+                "verification failed".to_string()
+            } else {
+                report.errors.join("; ")
+            }))
         }
     }
 
@@ -788,20 +807,56 @@ impl Chain {
         let data = serde_json::to_vec_pretty(self)
             .map_err(|e| Error::checkpoint(format!("failed to marshal chain: {e}")))?;
         // Atomic write: tmp + fsync + rename to avoid corrupt chain on crash
-        let tmp_path = path.with_extension("tmp");
+        let rand_suffix: String = {
+            use std::collections::hash_map::RandomState;
+            use std::hash::{BuildHasher, Hasher};
+            let mut h = RandomState::new().build_hasher();
+            h.write_u64(std::process::id() as u64);
+            format!("{:016x}", h.finish())
+        };
+        let tmp_name = format!(
+            "{}.{}.tmp",
+            path.display(),
+            &rand_suffix[..8.min(rand_suffix.len())]
+        );
+        let tmp_path = PathBuf::from(tmp_name);
         fs::write(&tmp_path, &data)?;
         // H-015: fsync before rename to ensure data is durable on disk
         fs::File::open(&tmp_path)?.sync_all()?;
         fs::rename(&tmp_path, path)?;
+        // L-009: fsync parent directory to ensure rename is durable
+        if let Some(parent) = path.parent() {
+            if let Ok(dir) = fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
         Ok(())
     }
 
     /// Load and validate a chain from disk, rejecting tampered VDF proofs.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let data = fs::read(path.as_ref())?;
+        let path = path.as_ref();
+        // M-117: Reject excessively large chain files (>100 MB) before reading.
+        let metadata = fs::metadata(path)?;
+        const MAX_CHAIN_FILE_SIZE: u64 = 100 * 1024 * 1024;
+        if metadata.len() > MAX_CHAIN_FILE_SIZE {
+            return Err(Error::checkpoint(format!(
+                "chain file too large: {} bytes (max {})",
+                metadata.len(),
+                MAX_CHAIN_FILE_SIZE
+            )));
+        }
+        let data = fs::read(path)?;
         let mut chain: Chain = serde_json::from_slice(&data)
             .map_err(|e| Error::checkpoint(format!("failed to unmarshal chain: {e}")))?;
-        chain.storage_path = Some(path.as_ref().to_path_buf());
+        if chain.checkpoints.len() > MAX_CHECKPOINTS {
+            return Err(Error::checkpoint(format!(
+                "checkpoint count {} exceeds maximum ({})",
+                chain.checkpoints.len(),
+                MAX_CHECKPOINTS
+            )));
+        }
+        chain.storage_path = Some(path.to_path_buf());
         chain.validate_vdf_proofs()?;
         Ok(chain)
     }

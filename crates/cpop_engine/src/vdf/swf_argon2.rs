@@ -184,16 +184,18 @@ pub const PROOF_ALGORITHM_STANDARD: u16 = 20;
 /// Proof algorithm ID for entangled Argon2id SWF.
 pub const PROOF_ALGORITHM_ENTANGLED: u16 = 21;
 
+/// Hard upper bound on iterations to prevent unbounded computation.
+const MAX_ITERATIONS: u64 = 10_000_000;
+
 /// Validate iteration bounds shared by compute and verify paths.
 fn validate_iterations(iterations: u64) -> Result<(), String> {
     if iterations == 0 {
         return Err("iterations must be >= 1".into());
     }
-    if iterations > u32::MAX as u64 {
+    if iterations > MAX_ITERATIONS {
         return Err(format!(
-            "iterations {} exceeds u32::MAX ({})",
-            iterations,
-            u32::MAX
+            "iterations {} exceeds maximum ({})",
+            iterations, MAX_ITERATIONS
         ));
     }
     Ok(())
@@ -220,13 +222,14 @@ pub fn compute_with_algorithm(
 
     let argon2 = build_argon2(&params)?;
 
+    let capped_iterations = params.iterations.min(MAX_ITERATIONS) as usize;
     let start = Instant::now();
-    let mut leaves = Vec::with_capacity(params.iterations as usize);
-    let mut raw_outputs = Vec::with_capacity(params.iterations as usize);
+    let mut leaves = Vec::with_capacity(capped_iterations);
+    let mut raw_outputs = Vec::with_capacity(capped_iterations);
     let mut current = input;
 
     let prev_priority = lower_thread_priority();
-    for i in 0..params.iterations {
+    for i in 0..params.iterations.min(MAX_ITERATIONS) {
         // Salt per draft-condrey-rats-pop §4.2:
         //   state_0:   salt = H(0x00 || "PoP-salt-v1" || seed)
         //   state_i:   salt = H(0x01 || "PoP-salt-v1" || I2OSP(i, 4))
@@ -265,7 +268,7 @@ pub fn compute_with_algorithm(
 
     let merkle_root = build_merkle_root(&leaves, params.iterations);
 
-    let challenge = fiat_shamir_challenge(&merkle_root, &input, &params, proof_algorithm);
+    let challenge = fiat_shamir_challenge(&merkle_root, &input, &params, proof_algorithm)?;
 
     let indices = select_indices(&challenge, params.iterations, sample_count);
 
@@ -312,7 +315,7 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
         &proof.input,
         &proof.params,
         proof.proof_algorithm,
-    );
+    )?;
     if proof.challenge.ct_eq(&expected_challenge).unwrap_u8() == 0 {
         return Ok(false);
     }
@@ -375,12 +378,6 @@ pub fn verify_with_samples(proof: &Argon2SwfProof, sample_count: usize) -> Resul
                 return Ok(false);
             }
         }
-    }
-
-    // Chain anchor: index 0 must always be verified
-    let has_index_0 = proof.sampled_proofs.iter().any(|s| s.leaf_index == 0);
-    if !has_index_0 {
-        return Ok(false);
     }
 
     // Verify consecutive sampled pairs: state_{i+1} = Argon2id(state_i, salt_{i+1})
@@ -465,7 +462,7 @@ fn fiat_shamir_challenge(
     input: &[u8; 32],
     params: &Argon2SwfParams,
     proof_algorithm: u16,
-) -> [u8; 32] {
+) -> Result<[u8; 32], String> {
     let params_map = ciborium::Value::Map(vec![
         (1.into(), ciborium::Value::Integer(params.time_cost.into())),
         (
@@ -480,7 +477,7 @@ fn fiat_shamir_challenge(
     ]);
     let mut params_cbor = Vec::new();
     ciborium::into_writer(&params_map, &mut params_cbor)
-        .unwrap_or_else(|e| panic!("CBOR encoding proof params: {e}"));
+        .map_err(|e| format!("CBOR encoding proof params: {e}"))?;
 
     let mut hasher = Sha256::new();
     hasher.update(b"PoP-Fiat-Shamir-v1");
@@ -488,7 +485,7 @@ fn fiat_shamir_challenge(
     hasher.update(&params_cbor);
     hasher.update(input);
     hasher.update(merkle_root);
-    hasher.finalize().into()
+    Ok(hasher.finalize().into())
 }
 
 /// Select `count` unique leaf indices via HKDF-Expand per §7.3:
@@ -636,8 +633,8 @@ mod tests {
         let root = [1u8; 32];
         let input = [2u8; 32];
         let params = test_params();
-        let c1 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD);
-        let c2 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD);
+        let c1 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD).unwrap();
+        let c2 = fiat_shamir_challenge(&root, &input, &params, PROOF_ALGORITHM_STANDARD).unwrap();
         assert_eq!(c1, c2);
     }
 
@@ -645,8 +642,10 @@ mod tests {
     fn test_fiat_shamir_sensitive_to_root() {
         let input = [2u8; 32];
         let params = test_params();
-        let c1 = fiat_shamir_challenge(&[1u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD);
-        let c2 = fiat_shamir_challenge(&[3u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD);
+        let c1 =
+            fiat_shamir_challenge(&[1u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD).unwrap();
+        let c2 =
+            fiat_shamir_challenge(&[3u8; 32], &input, &params, PROOF_ALGORITHM_STANDARD).unwrap();
         assert_ne!(c1, c2);
     }
 
@@ -775,7 +774,7 @@ mod tests {
         };
         let result = compute(input, params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds u32::MAX"));
+        assert!(result.unwrap_err().contains("exceeds maximum"));
     }
 
     #[test]

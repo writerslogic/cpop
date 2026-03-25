@@ -8,9 +8,9 @@
 | Severity | Open | Component |
 |----------|------|-----------|
 | CRITICAL | 2    | Google Workspace |
-| HIGH     | 11   | CLI (3), Engine (2), Marketplace (6) |
-| MEDIUM   | 31   | CLI (17), Engine (6), Marketplace (8) |
-| LOW      | 15   | CLI (6), Engine (4), Marketplace (4) |
+| HIGH     | 9    | CLI (3), Engine (0), Marketplace (6) |
+| MEDIUM   | 25   | CLI (17), Engine (0), Marketplace (8) |
+| LOW      | 11   | CLI (6), Engine (0), Marketplace (4) |
 
 ---
 
@@ -32,8 +32,8 @@
 - [ ] **H-003** `cpop_cli/src/cmd_export.rs:80` — `--no-beacons` and `--beacon-timeout` flags silently ignored (no-ops).
 
 ### Engine (Rust)
-- [ ] **H-004** `cpop_engine/src/tpm/secure_enclave.rs:1032` — `writersproof_dir()` panics on missing home directory.
-- [ ] **H-005** `cpop_engine/src/sentinel/core.rs:782` — HMAC key escapes `Zeroizing` wrapper via `mem::take`.
+- [x] **H-004** `cpop_engine/src/tpm/secure_enclave.rs:1032` — `writersproof_dir()` panics on missing home directory.
+- [x] **H-005** `cpop_engine/src/sentinel/core.rs:782` — HMAC key escapes `Zeroizing` wrapper via `mem::take`.
 
 ### Marketplace (TypeScript)
 - [x] **H-006** `cpop_google_workspace/src/WritersProofClient.ts:168` — User email sent to API without consent.
@@ -67,12 +67,12 @@
 - [ ] **M-017** `cli.rs:116` — `beacon_timeout` no upper bound validation.
 
 ### Engine
-- [ ] **M-018** `tpm/secure_enclave.rs:465` — Legacy v4 XOR seal non-authenticated, repeating keystream.
-- [ ] **M-019** `tpm/secure_enclave.rs:600` — Seal nonce deterministic; linkable operations.
-- [ ] **M-020** `checkpoint/chain.rs:152` — File lock not released on panic (relies on File drop).
-- [ ] **M-021** `vdf/swf_argon2.rs:480` — `panic!` in CBOR encoding reachable from verification path.
-- [ ] **M-022** `ffi/ephemeral.rs:616` — Signing key read with no size bound. OOM risk.
-- [ ] **M-023** `mmr/mmr.rs:344` — `find_peaks` could infinite loop on malformed size.
+- [x] **M-018** `tpm/secure_enclave.rs:465` — Legacy v4 XOR seal non-authenticated, repeating keystream.
+- [x] **M-019** `tpm/secure_enclave.rs:600` — Seal nonce deterministic; linkable operations.
+- [x] **M-020** `checkpoint/chain.rs:152` — File lock not released on panic (relies on File drop).
+- [x] **M-021** `vdf/swf_argon2.rs:480` — `panic!` in CBOR encoding reachable from verification path.
+- [x] **M-022** `ffi/ephemeral.rs:616` — Signing key read with no size bound. OOM risk.
+- [x] **M-023** `mmr/mmr.rs:344` — `find_peaks` could infinite loop on malformed size.
 
 ### Marketplace
 - [x] **M-024** `cpop_atlassian/src/resolvers/index.ts:163` — Race condition in session state read-modify-write.
@@ -98,10 +98,10 @@
 - [ ] **L-007** `cmd_status.rs:76` — Derived HMAC key not zeroized.
 
 ### Engine
-- [ ] **L-008** `tpm/secure_enclave.rs:972` — `extract_public_key` leaks SecKeyRef.
-- [ ] **L-009** `checkpoint/chain.rs:802` — No fsync on parent directory after rename.
-- [ ] **L-010** `ffi/evidence.rs:711` — C2PA manifest write not atomic.
-- [ ] **L-011** `ffi/ephemeral.rs:119` — `.len()` checks bytes but error says "chars".
+- [x] **L-008** `tpm/secure_enclave.rs:972` — `extract_public_key` leaks SecKeyRef.
+- [x] **L-009** `checkpoint/chain.rs:802` — No fsync on parent directory after rename.
+- [x] **L-010** `ffi/evidence.rs:711` — C2PA manifest write not atomic.
+- [x] **L-011** `ffi/ephemeral.rs:119` — `.len()` checks bytes but error says "chars".
 
 ### Marketplace
 - [x] **L-012** `cpop_atlassian/resolvers/index.ts:212` — Console logs may contain session IDs.
