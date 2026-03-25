@@ -9,6 +9,7 @@ use super::messages::{
     IpcErrorCode, IpcMessage, IpcMessageHandler, MAX_CONCURRENT_CONNECTIONS, MAX_MESSAGE_SIZE,
 };
 use super::rbac::{check_authorization, required_role, IpcRole};
+use crate::store::access_log::{new_access_entry, AccessAction, AccessLog, AccessResult};
 use crate::MutexRecover;
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
@@ -26,6 +27,59 @@ fn len_to_u32(len: usize) -> Result<[u8; 4]> {
         .to_le_bytes())
 }
 
+/// Map an IPC message to an access action and resource string for audit logging.
+fn ipc_access_info(msg: &IpcMessage) -> (AccessAction, String) {
+    match msg {
+        IpcMessage::GetStatus
+        | IpcMessage::GetAttestationNonce
+        | IpcMessage::Heartbeat
+        | IpcMessage::Handshake { .. } => (AccessAction::Read, "status".to_string()),
+        IpcMessage::StartWitnessing { file_path } => {
+            (AccessAction::Write, file_path.display().to_string())
+        }
+        IpcMessage::StopWitnessing { file_path } => {
+            let resource = file_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "all".to_string());
+            (AccessAction::Write, resource)
+        }
+        IpcMessage::ExportWithNonce { file_path, .. }
+        | IpcMessage::ExportFile {
+            path: file_path, ..
+        } => (AccessAction::Export, file_path.display().to_string()),
+        IpcMessage::VerifyFile { path }
+        | IpcMessage::VerifyWithNonce {
+            evidence_path: path,
+            ..
+        } => (AccessAction::Verify, path.display().to_string()),
+        _ => (AccessAction::Read, "ipc".to_string()),
+    }
+}
+
+/// Record an access event to the audit log, if one is configured.
+fn record_access(
+    access_log: Option<&Arc<Mutex<AccessLog>>>,
+    msg: &IpcMessage,
+    client_role: IpcRole,
+    transport_label: &str,
+    result: AccessResult,
+) {
+    if let Some(al) = access_log {
+        let (action, resource) = ipc_access_info(msg);
+        let mut entry = new_access_entry(
+            format!("{:?}", client_role),
+            action,
+            resource,
+            result,
+            transport_label,
+        );
+        if let Err(e) = al.lock_recover().log_access(&mut entry) {
+            log::warn!("IPC: access log write failed: {}", e);
+        }
+    }
+}
+
 /// Generic connection handler for both Unix and Windows streams.
 /// Extracts the common message loop logic shared by both platform-specific handlers.
 ///
@@ -37,6 +91,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
     transport_label: &str,
     shared_rate_limiter: &Arc<Mutex<RateLimiter>>,
     client_role: IpcRole,
+    access_log: Option<&Arc<Mutex<AccessLog>>>,
 ) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -203,6 +258,13 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         transport_label,
                         msg_required_role
                     );
+                    record_access(
+                        access_log,
+                        &msg,
+                        client_role,
+                        transport_label,
+                        AccessResult::Denied,
+                    );
                     let error_response = IpcMessage::Error {
                         code: IpcErrorCode::PermissionDenied,
                         message: format!(
@@ -220,6 +282,15 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     }
                     continue;
                 }
+
+                // Audit log: record each authorized IPC request.
+                record_access(
+                    access_log,
+                    &msg,
+                    client_role,
+                    transport_label,
+                    AccessResult::Success,
+                );
 
                 let handler_ref = Arc::clone(&handler);
                 let response = match tokio::task::spawn_blocking(move || -> IpcMessage {
@@ -314,6 +385,7 @@ pub struct IpcServer {
     #[cfg(target_os = "windows")]
     pipe_name: String,
     socket_path: PathBuf,
+    access_log: Option<Arc<Mutex<AccessLog>>>,
 }
 
 impl IpcServer {
@@ -331,6 +403,7 @@ impl IpcServer {
         Ok(Self {
             listener,
             socket_path: path,
+            access_log: None,
         })
     }
 
@@ -346,11 +419,17 @@ impl IpcServer {
         Ok(Self {
             pipe_name,
             socket_path: path,
+            access_log: None,
         })
     }
 
     pub fn socket_path(&self) -> &std::path::Path {
         &self.socket_path
+    }
+
+    /// Attach an access log for administrative audit logging of IPC requests.
+    pub fn set_access_log(&mut self, log: AccessLog) {
+        self.access_log = Some(Arc::new(Mutex::new(log)));
     }
 
     /// Run the IPC server with a message handler
@@ -381,10 +460,11 @@ impl IpcServer {
                 let handler_clone = Arc::clone(&handler);
                 let rl = Arc::clone(&rate_limiter);
                 let conn_count = Arc::clone(&active_connections);
+                let al = self.access_log.clone();
                 tokio::spawn(async move {
                     let _ = tokio::time::timeout(
                         std::time::Duration::from_secs(300),
-                        handle_connection(stream, handler_clone, rl),
+                        handle_connection(stream, handler_clone, rl, al),
                     )
                     .await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
@@ -412,8 +492,9 @@ impl IpcServer {
                 let handler_clone = Arc::clone(&handler);
                 let rl = Arc::clone(&rate_limiter);
                 let conn_count = Arc::clone(&active_connections);
+                let al = self.access_log.clone();
                 tokio::spawn(async move {
-                    handle_windows_connection(server, handler_clone, rl).await;
+                    handle_windows_connection(server, handler_clone, rl, al).await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
                 });
             }
@@ -445,8 +526,9 @@ impl IpcServer {
                                 let handler_clone = Arc::clone(&handler);
                                 let rl = Arc::clone(&rate_limiter);
                                 let conn_count = Arc::clone(&active_connections);
+                                let al = self.access_log.clone();
                                 tokio::spawn(async move {
-                                    handle_connection(stream, handler_clone, rl).await;
+                                    handle_connection(stream, handler_clone, rl, al).await;
                                     conn_count.fetch_sub(1, Ordering::Relaxed);
                                 });
                             }
@@ -484,8 +566,9 @@ impl IpcServer {
                             let handler_clone = Arc::clone(&handler);
                             let rl = Arc::clone(&rate_limiter);
                             let conn_count = Arc::clone(&active_connections);
+                            let al = self.access_log.clone();
                             tokio::spawn(async move {
-                                handle_windows_connection(server, handler_clone, rl).await;
+                                handle_windows_connection(server, handler_clone, rl, al).await;
                                 conn_count.fetch_sub(1, Ordering::Relaxed);
                             });
                         }
@@ -505,6 +588,7 @@ async fn handle_connection<H: IpcMessageHandler>(
     mut stream: UnixStream,
     handler: Arc<H>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
+    access_log: Option<Arc<Mutex<AccessLog>>>,
 ) {
     // H-012: reject connections from different UIDs on Unix sockets.
     match stream.peer_cred() {
@@ -535,6 +619,7 @@ async fn handle_connection<H: IpcMessageHandler>(
         "unix-socket",
         &rate_limiter,
         IpcRole::default(),
+        access_log.as_ref(),
     )
     .await;
 }
@@ -641,6 +726,7 @@ async fn handle_windows_connection<H: IpcMessageHandler>(
     mut pipe: named_pipe::NamedPipeServer,
     handler: Arc<H>,
     rate_limiter: Arc<Mutex<RateLimiter>>,
+    access_log: Option<Arc<Mutex<AccessLog>>>,
 ) {
     if let Err(e) = verify_windows_pipe_peer(&pipe) {
         log::error!(
@@ -656,6 +742,7 @@ async fn handle_windows_connection<H: IpcMessageHandler>(
         "named-pipe",
         &rate_limiter,
         IpcRole::default(),
+        access_log.as_ref(),
     )
     .await;
 }
