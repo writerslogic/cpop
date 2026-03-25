@@ -27,6 +27,9 @@ fn len_to_u32(len: usize) -> Result<[u8; 4]> {
 
 /// Generic connection handler for both Unix and Windows streams.
 /// Extracts the common message loop logic shared by both platform-specific handlers.
+///
+/// Plaintext fallback branches are kept for protocol version negotiation;
+/// they will be removed when v2 is enforced.
 async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
     stream: &mut S,
     handler: Arc<dyn IpcMessageHandler>,
@@ -307,7 +310,7 @@ impl IpcServer {
         })
     }
 
-    pub fn socket_path(&self) -> &PathBuf {
+    pub fn socket_path(&self) -> &std::path::Path {
         &self.socket_path
     }
 
@@ -318,7 +321,14 @@ impl IpcServer {
         #[cfg(not(target_os = "windows"))]
         {
             loop {
-                let (stream, _) = self.listener.accept().await?;
+                let stream = match self.listener.accept().await {
+                    Ok((s, _)) => s,
+                    Err(e) => {
+                        log::error!("IPC: accept error in run_with_handler: {e}");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
                 let prev = active_connections.fetch_add(1, Ordering::Relaxed);
                 if prev >= MAX_CONCURRENT_CONNECTIONS {
                     active_connections.fetch_sub(1, Ordering::Relaxed);
@@ -333,7 +343,11 @@ impl IpcServer {
                 let rl = Arc::clone(&rate_limiter);
                 let conn_count = Arc::clone(&active_connections);
                 tokio::spawn(async move {
-                    handle_connection(stream, handler_clone, rl).await;
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(300),
+                        handle_connection(stream, handler_clone, rl),
+                    )
+                    .await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
                 });
             }

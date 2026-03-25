@@ -86,13 +86,25 @@ impl<T: serde::Serialize> SecureSender<T> {
             })?,
         );
 
-        let counter = self.nonce_counter.fetch_add(1, Ordering::SeqCst);
-        if counter >= NONCE_COUNTER_MAX {
-            return Err(SendError(EncryptedMessage {
-                nonce: [0; 12],
-                ciphertext: vec![],
-            }));
-        }
+        // Reserve a nonce slot via compare_exchange; only commit after successful encrypt.
+        let counter = loop {
+            let current = self.nonce_counter.load(Ordering::SeqCst);
+            if current >= NONCE_COUNTER_MAX {
+                return Err(SendError(EncryptedMessage {
+                    nonce: [0; 12],
+                    ciphertext: vec![],
+                }));
+            }
+            match self.nonce_counter.compare_exchange(
+                current,
+                current + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(val) => break val,
+                Err(_) => continue,
+            }
+        };
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes[0..4].copy_from_slice(&self.nonce_prefix);
         nonce_bytes[4..].copy_from_slice(&counter.to_le_bytes());

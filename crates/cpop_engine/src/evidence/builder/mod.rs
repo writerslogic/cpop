@@ -158,6 +158,7 @@ impl Builder {
         Ok(self.packet)
     }
 
+    // TODO: Refactor: extract per-claim-type helpers to reduce generate_claims to dispatch table
     fn generate_claims(&mut self) {
         self.add_claim(
             ClaimType::ChainIntegrity,
@@ -228,6 +229,8 @@ impl Builder {
             );
         }
 
+        // Both physical_context and hardware use HardwareAttested; future: add
+        // PhysicalContextCaptured variant to distinguish the two claim sources.
         if self.packet.physical_context.is_some() {
             self.add_claim(
                 ClaimType::HardwareAttested,
@@ -285,13 +288,18 @@ impl Builder {
                 .iter()
                 .map(|d| d.word_count)
                 .sum();
-            let avg_plausibility = self
+            let sum: f64 = self
                 .packet
                 .dictation_events
                 .iter()
                 .map(|d| d.plausibility_score)
-                .sum::<f64>()
-                / self.packet.dictation_events.len() as f64;
+                .sum();
+            let count = self.packet.dictation_events.len() as f64;
+            let avg_plausibility = if sum.is_nan() || count == 0.0 {
+                0.0
+            } else {
+                sum / count
+            };
             self.add_claim(
                 ClaimType::DictationVerified,
                 format!(

@@ -167,10 +167,13 @@ impl DocumentSession {
     }
 }
 
+/// Generate a 64-char hex session ID (32 random bytes).
+/// Wal::open requires a `[u8; 32]` session key, so 32 bytes ensures
+/// the hex string decodes without truncation or padding.
 pub fn generate_session_id() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
-    let bytes: [u8; 16] = rng.random();
+    let bytes: [u8; 32] = rng.random();
     hex::encode(bytes)
 }
 

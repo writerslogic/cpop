@@ -263,6 +263,12 @@ impl Provider for LinuxTpmProvider {
         Ok(signature)
     }
 
+    /// Seal data to the TPM's current PCR state.
+    ///
+    /// `_policy` is ignored: the sealing policy is always derived from the
+    /// hardcoded PCR selection (`default_pcr_selection()`). A custom policy
+    /// parameter would require building an arbitrary policy digest, which is
+    /// not needed for the current security model where PCR binding is sufficient.
     fn seal(&self, data: &[u8], _policy: &[u8]) -> Result<Vec<u8>, TpmError> {
         let mut state = self.inner.lock_recover();
         let pcrs = default_pcr_selection();
@@ -403,7 +409,7 @@ fn create_ak(state: &mut LinuxState) -> Result<(KeyHandle, Vec<u8>), TpmError> {
         .map_err(|_| TpmError::NotAvailable)?;
 
     let rsa_params = PublicRsaParametersBuilder::new()
-        .with_symmetric(SymmetricDefinitionObject::Null)
+        .with_symmetric(SymmetricDefinitionObject::AES_128_CFB)
         .with_scheme(
             RsaScheme::create(RsaSchemeAlgorithm::RsaSsa, Some(HashingAlgorithm::Sha256))
                 .map_err(|_| TpmError::NotAvailable)?,
@@ -570,6 +576,8 @@ fn read_pcrs(state: &mut LinuxState, pcrs: &[u32]) -> Result<Vec<PcrValue>, TpmE
     Ok(values)
 }
 
+/// NV counter uses `Auth::default()` (empty). In the current threat model, only
+/// the app process accesses `/dev/tpmrm0`.
 fn init_counter(state: &mut LinuxState) -> Result<(), TpmError> {
     let nv_index = NvIndexTpmHandle::new(NV_COUNTER_INDEX).map_err(|_| TpmError::CounterNotInit)?;
     let nv_handle = NvIndexHandle::from(NV_COUNTER_INDEX);

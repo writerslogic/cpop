@@ -508,7 +508,7 @@ impl Builder {
                 transport_calibration: None,
             }],
             summary: rfc::JitterSummary {
-                sample_count: keystroke.samples.len() as u64,
+                sample_count: intervals_us.len() as u64,
                 mean_interval_us: mean,
                 std_dev,
                 coefficient_of_variation: cv,
@@ -519,13 +519,20 @@ impl Builder {
                 entropy_bits: (keystroke.samples.len() as f64).log2(),
                 hurst_exponent,
             },
-            binding_mac: rfc::BindingMac::compute(
-                &entropy_hash,
-                *document_hash,
-                keystroke.total_keystrokes,
-                timestamp_ms,
-                &entropy_hash,
-            ),
+            binding_mac: {
+                use hkdf::Hkdf;
+                let hk = Hkdf::<sha2::Sha256>::new(None, &entropy_hash);
+                let mut mac_key = [0u8; 32];
+                hk.expand(b"witnessd-binding-mac-key-v1", &mut mac_key)
+                    .expect("32 bytes is valid HKDF-Expand length");
+                rfc::BindingMac::compute(
+                    &mac_key,
+                    *document_hash,
+                    keystroke.total_keystrokes,
+                    timestamp_ms,
+                    &entropy_hash,
+                )
+            },
             raw_intervals: None,
             active_probes: None,
             labyrinth_structure: None,

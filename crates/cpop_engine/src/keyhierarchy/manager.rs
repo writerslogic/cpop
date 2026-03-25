@@ -20,6 +20,10 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    /// Create a new session manager for the given document.
+    ///
+    /// Callers may pre-compute `doc_hash` externally to avoid double-hashing
+    /// if the file content is already known; use `new_with_hash` in that case.
     pub fn new(
         puf: Box<dyn PufProvider>,
         document_path: impl Into<String>,
@@ -83,6 +87,8 @@ impl SessionManager {
         Ok(())
     }
 
+    /// End the current session. This method is idempotent; calling it
+    /// multiple times has no additional effect.
     pub fn end(&mut self) {
         self.session.end();
     }
@@ -114,13 +120,8 @@ impl ChainSigner {
         Ok(Self { chain, manager })
     }
 
-    pub fn commit_and_sign(
-        &mut self,
-        message: Option<String>,
-    ) -> Result<checkpoint::Checkpoint, KeyHierarchyError> {
-        self.chain
-            .commit(message)
-            .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))?;
+    /// Sign the last checkpoint in the chain, returning a clone.
+    fn sign_last_checkpoint(&mut self) -> Result<checkpoint::Checkpoint, KeyHierarchyError> {
         let cp = self
             .chain
             .checkpoints
@@ -130,6 +131,16 @@ impl ChainSigner {
         Ok(cp.clone())
     }
 
+    pub fn commit_and_sign(
+        &mut self,
+        message: Option<String>,
+    ) -> Result<checkpoint::Checkpoint, KeyHierarchyError> {
+        self.chain
+            .commit(message)
+            .map_err(|e| KeyHierarchyError::Crypto(format!("{e:#}")))?;
+        self.sign_last_checkpoint()
+    }
+
     pub fn commit_and_sign_with_duration(
         &mut self,
         message: Option<String>,
@@ -137,14 +148,8 @@ impl ChainSigner {
     ) -> Result<checkpoint::Checkpoint, KeyHierarchyError> {
         self.chain
             .commit_with_vdf_duration(message, vdf_duration)
-            .map_err(|e| KeyHierarchyError::Crypto(e.to_string()))?;
-        let cp = self
-            .chain
-            .checkpoints
-            .last_mut()
-            .ok_or_else(|| KeyHierarchyError::Crypto("no checkpoint after commit".into()))?;
-        self.manager.sign_checkpoint(cp)?;
-        Ok(cp.clone())
+            .map_err(|e| KeyHierarchyError::Crypto(format!("{e:#}")))?;
+        self.sign_last_checkpoint()
     }
 
     pub fn end(&mut self) {
@@ -155,7 +160,7 @@ impl ChainSigner {
         &self.chain
     }
 
-    pub fn signed_checkpoints(&self) -> &Vec<checkpoint::Checkpoint> {
+    pub fn signed_checkpoints(&self) -> &[checkpoint::Checkpoint] {
         &self.chain.checkpoints
     }
 

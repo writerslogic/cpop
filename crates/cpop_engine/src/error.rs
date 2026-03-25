@@ -24,10 +24,14 @@ pub enum Error {
     #[error("forensics: {0}")]
     Forensics(#[from] crate::forensics::ForensicsError),
 
-    /// IPC communication error
+    /// IPC communication error (Unix domain socket)
     #[cfg(unix)]
+    #[error("ipc unix: {0}")]
+    IpcUnix(#[from] crate::ipc::unix_socket::IpcError),
+
+    /// IPC communication error (platform-agnostic)
     #[error("ipc: {0}")]
-    Ipc(#[from] crate::ipc::unix_socket::IpcError),
+    Ipc(String),
 
     /// Key hierarchy error
     #[error("key hierarchy: {0}")]
@@ -200,13 +204,32 @@ impl Error {
         Error::Internal(msg.into())
     }
 
-    /// Returns `true` for errors that may succeed on retry (I/O, timeout, anchor).
-    pub fn is_transient(&self) -> bool {
-        matches!(self, Error::Io(_) | Error::Timeout(_) | Error::Anchor(_))
+    /// Create a platform-agnostic IPC error.
+    pub fn ipc(msg: impl Into<String>) -> Self {
+        Error::Ipc(msg.into())
+    }
+
+    /// Returns `true` for errors that may succeed on retry (I/O, timeout, anchor, IPC).
+    #[allow(dead_code)]
+    pub(crate) fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Error::Io(_) | Error::Timeout(_) | Error::Anchor(_) | Error::Ipc(_)
+        ) || {
+            #[cfg(unix)]
+            {
+                matches!(self, Error::IpcUnix(_))
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
     }
 
     /// Returns `true` for validation/input errors (bad data, hash mismatch, bad sig).
-    pub fn is_validation(&self) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn is_validation(&self) -> bool {
         matches!(
             self,
             Error::Validation(_) | Error::HashMismatch { .. } | Error::Signature(_)
@@ -214,6 +237,7 @@ impl Error {
     }
 }
 
+// NOTE: these From impls are legacy; prefer specific error variants.
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Error::Legacy(s)

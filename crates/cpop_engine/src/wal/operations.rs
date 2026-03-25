@@ -70,6 +70,9 @@ impl Wal {
         if state.closed {
             return Err(WalError::Closed);
         }
+        if state.byte_count >= MAX_WAL_SIZE {
+            return Err(WalError::TooLarge(state.byte_count));
+        }
 
         let timestamp = now_nanos();
         let mut entry = Entry {
@@ -239,6 +242,10 @@ impl Wal {
     }
 
     /// Truncate entries before `before_seq`, rewriting the file with a new header.
+    ///
+    /// Retained entries are re-signed with the current signing key because the
+    /// original key may differ after key rotation. This is intentional: the WAL
+    /// guarantees integrity from this point forward, not provenance of historical keys.
     pub fn truncate(&self, before_seq: u64) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
         let mut all_entries = Vec::new();
@@ -275,6 +282,13 @@ impl Wal {
             .into_iter()
             .filter(|e| e.sequence >= before_seq)
             .collect();
+
+        // Verify ordinal continuity: retained entries must have sequential ordinals.
+        for pair in entries.windows(2) {
+            if pair[1].sequence != pair[0].sequence + 1 {
+                return Err(WalError::SequenceGap);
+            }
+        }
 
         let new_path = state.path.with_extension("wal.new");
         let mut new_file = File::create(&new_path)?;
@@ -444,8 +458,6 @@ impl Wal {
             };
 
             // Verify hash chain linkage (prev_hash must match our running last_hash).
-            // Ed25519 signatures are NOT verified here because the verifying key
-            // may differ from the signing key provided at open() time.
             if entry.prev_hash.ct_eq(&state.last_hash).unwrap_u8() == 0 {
                 log::warn!(
                     "WAL broken chain at seq {}: truncating to last valid entry (offset {})",
@@ -468,6 +480,17 @@ impl Wal {
                 log::warn!(
                     "WAL cumulative hash mismatch at seq {}: truncating to last valid entry \
                      (offset {})",
+                    entry.sequence,
+                    offset,
+                );
+                break;
+            }
+
+            let sig = Signature::from_bytes(&entry.signature);
+            let verifying_key = state.signing_key.verifying_key();
+            if verifying_key.verify(&entry.cumulative_hash, &sig).is_err() {
+                log::warn!(
+                    "WAL signature invalid at seq {}: truncating to last valid entry (offset {})",
                     entry.sequence,
                     offset,
                 );

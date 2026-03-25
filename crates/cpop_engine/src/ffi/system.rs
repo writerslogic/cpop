@@ -307,7 +307,7 @@ pub fn ffi_get_identity_mnemonic() -> FfiResult {
     match crate::identity::secure_storage::SecureStorage::load_mnemonic() {
         Ok(Some(phrase)) => FfiResult {
             success: true,
-            message: Some(phrase),
+            message: Some((*phrase).clone()),
             error_message: None,
         },
         Ok(None) => FfiResult {

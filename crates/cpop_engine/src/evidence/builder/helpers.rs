@@ -95,6 +95,10 @@ pub struct EphemeralSnapshot {
 /// Constructs a signed declaration and checkpoint chain from in-memory
 /// snapshots. The caller provides the signing key and session metadata;
 /// this function handles all evidence assembly.
+///
+/// Note: packets built here lack VDF proofs, jitter bindings, and
+/// physical context that the full Builder pipeline provides. The resulting
+/// evidence is structurally simpler (Basic strength tier).
 pub fn build_ephemeral_packet(
     final_hash_hex: &str,
     statement: &str,
@@ -106,10 +110,14 @@ pub fn build_ephemeral_packet(
 ) -> crate::error::Result<Packet> {
     let final_hash = hex::decode(final_hash_hex)
         .map_err(|e| Error::evidence(format!("invalid final hash: {e}")))?;
-    let mut doc_hash = [0u8; 32];
-    if final_hash.len() >= 32 {
-        doc_hash.copy_from_slice(&final_hash[..32]);
+    if final_hash.len() != 32 {
+        return Err(Error::evidence(format!(
+            "final hash must be 32 bytes, got {}",
+            final_hash.len()
+        )));
     }
+    let mut doc_hash = [0u8; 32];
+    doc_hash.copy_from_slice(&final_hash[..32]);
 
     let chain_hash = snapshots
         .last()
@@ -150,8 +158,9 @@ pub fn build_ephemeral_packet(
         let ended = snapshots.last().map(|s| s.timestamp_ns).unwrap_or(0);
         let started_at = chrono::DateTime::from_timestamp_nanos(started);
         let ended_at = chrono::DateTime::from_timestamp_nanos(ended);
-        let duration_secs = (ended - started).max(0) as f64 / 1_000_000_000.0;
-        let duration = std::time::Duration::from_nanos((ended - started).max(0) as u64);
+        let elapsed_ns = ended.saturating_sub(started).max(0) as u64;
+        let duration_secs = elapsed_ns as f64 / 1_000_000_000.0;
+        let duration = std::time::Duration::from_nanos(elapsed_ns);
 
         let total_keystrokes = keystroke_count;
         let kpm = if duration_secs > 0.0 {
@@ -169,9 +178,9 @@ pub fn build_ephemeral_packet(
             ended_at,
             duration,
             total_keystrokes,
-            total_samples: jitter_intervals.len() as i32,
+            total_samples: i32::try_from(jitter_intervals.len()).unwrap_or(i32::MAX),
             keystrokes_per_minute: kpm,
-            unique_doc_states: snapshots.len() as i32,
+            unique_doc_states: i32::try_from(snapshots.len()).unwrap_or(i32::MAX),
             chain_valid: true,
             plausible_human_rate: plausible,
             samples: vec![],

@@ -105,7 +105,12 @@ pub fn save_sealed(
         fs::create_dir_all(parent)?;
     }
     let tmp_path = path.with_extension("tmp");
-    fs::write(&tmp_path, &output)?;
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp_path)?;
+        f.write_all(&output)?;
+        f.sync_all()?;
+    }
     fs::rename(&tmp_path, path)?;
 
     Ok(())
@@ -197,8 +202,11 @@ pub fn read_sealed_document_id(path: &Path) -> Result<[u8; 32]> {
 
 /// Check if a file is a sealed chain file (by magic bytes).
 pub fn is_sealed_file(path: &Path) -> bool {
-    fs::read(path)
-        .map(|data| data.len() >= 4 && &data[0..4] == SEALED_MAGIC)
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut magic))
+        .map(|()| &magic == SEALED_MAGIC)
         .unwrap_or(false)
 }
 

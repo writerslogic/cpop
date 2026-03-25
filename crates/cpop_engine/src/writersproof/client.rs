@@ -40,7 +40,7 @@ impl WritersProofClient {
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
-                .unwrap_or_default(),
+                .map_err(|e| Error::crypto(format!("HTTP client build failed: {e}")))?,
         })
     }
 
@@ -117,7 +117,12 @@ impl WritersProofClient {
         hardware_key_id: &str,
         signing_key: &SigningKey,
     ) -> Result<AttestResponse> {
-        let signature = signing_key.sign(evidence_cbor);
+        let mut sign_payload =
+            Vec::with_capacity(nonce.len() + hardware_key_id.len() + evidence_cbor.len());
+        sign_payload.extend_from_slice(nonce);
+        sign_payload.extend_from_slice(hardware_key_id.as_bytes());
+        sign_payload.extend_from_slice(evidence_cbor);
+        let signature = signing_key.sign(&sign_payload);
         let url = format!("{}/v1/attest", self.base_url);
 
         let mut req = self
@@ -182,14 +187,21 @@ impl WritersProofClient {
             )));
         }
 
+        const MAX_CERT_SIZE: u64 = 10_000_000; // 10 MB
+        if let Some(cl) = resp.content_length() {
+            if cl > MAX_CERT_SIZE {
+                return Err(Error::crypto(format!(
+                    "certificate Content-Length too large: {cl} bytes (max {MAX_CERT_SIZE})"
+                )));
+            }
+        }
         let body = resp
             .bytes()
             .await
             .map_err(|e| Error::crypto(format!("certificate response read failed: {e}")))?;
-        // Cap response body to 10 MB to prevent OOM from oversized responses
-        if body.len() > 10_000_000 {
+        if body.len() as u64 > MAX_CERT_SIZE {
             return Err(Error::crypto(format!(
-                "certificate response too large: {} bytes (max 10MB)",
+                "certificate response too large: {} bytes (max {MAX_CERT_SIZE})",
                 body.len()
             )));
         }

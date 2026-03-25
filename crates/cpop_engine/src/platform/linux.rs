@@ -266,6 +266,9 @@ pub fn get_active_focus() -> Result<FocusInfo> {
     get_focus_from_proc()
 }
 
+/// Known editor binary names for focus detection.
+const KNOWN_EDITORS: &[&str] = &["vim", "nvim", "emacs", "code", "sublime_text", "gedit"];
+
 /// Fallback: scan /proc for known editor processes.
 fn get_focus_from_proc() -> Result<FocusInfo> {
     let entries = fs::read_dir("/proc")?;
@@ -277,22 +280,14 @@ fn get_focus_from_proc() -> Result<FocusInfo> {
 
         let pid_str = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if pid_str.chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(cmdline) = fs::read_to_string(path.join("cmdline")) {
-                if cmdline.contains("vim")
-                    || cmdline.contains("emacs")
-                    || cmdline.contains("code")
-                    || cmdline.contains("sublime")
-                    || cmdline.contains("gedit")
-                {
+            // Use /proc/pid/exe readlink for reliable binary identification
+            // instead of substring-matching the cmdline.
+            let exe_link = path.join("exe");
+            if let Ok(exe_path) = fs::read_link(&exe_link) {
+                let exe_name = exe_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if KNOWN_EDITORS.iter().any(|&ed| exe_name == ed) {
                     let pid: i32 = pid_str.parse().unwrap_or(0);
-                    let app_name = cmdline
-                        .split('\0')
-                        .next()
-                        .unwrap_or("")
-                        .split('/')
-                        .next_back()
-                        .unwrap_or("unknown")
-                        .to_string();
+                    let app_name = exe_name.to_string();
 
                     return Ok(FocusInfo {
                         app_name: app_name.clone(),
@@ -495,6 +490,12 @@ impl KeystrokeCapture for LinuxKeystrokeCapture {
 }
 
 impl LinuxKeystrokeCapture {
+    /// Read keystroke events from a single evdev device until `running` is cleared.
+    ///
+    /// **Limitation:** `device.fetch_events()` blocks until the next input event arrives.
+    /// If `stop()` is called while this thread is blocked, the thread will not exit until
+    /// the next input event is received on this device. There is no portable non-blocking
+    /// evdev API to work around this without polling or epoll, which would add complexity.
     fn device_reader_thread(
         path: PathBuf,
         tx: mpsc::Sender<KeystrokeEvent>,
@@ -699,6 +700,15 @@ impl FocusMonitor for LinuxFocusMonitor {
 
     fn is_monitoring(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for LinuxFocusMonitor {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::SeqCst);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 

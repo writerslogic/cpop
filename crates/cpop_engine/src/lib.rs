@@ -53,6 +53,9 @@ pub mod wal;
 pub mod war;
 pub mod writersproof;
 
+/// Maximum file size accepted for evidence operations (500 MB).
+pub const MAX_FILE_SIZE: u64 = 500_000_000;
+
 /// Safe nanosecond timestamps, falling back to millis-derived nanos on i64 overflow (~2262+).
 pub(crate) trait DateTimeNanosExt {
     fn timestamp_nanos_safe(&self) -> i64;

@@ -54,7 +54,7 @@ impl SecureStore {
                 e.context_note,
                 e.vdf_input.as_ref().map(|h| &h[..]),
                 e.vdf_output.as_ref().map(|h| &h[..]),
-                e.vdf_iterations as i64,
+                i64::try_from(e.vdf_iterations).unwrap_or(i64::MAX),
                 e.forensic_score,
                 e.is_paste as i32,
                 e.hardware_counter.map(|c| c as i64),
@@ -81,12 +81,29 @@ impl SecureStore {
 
     /// Retrieve all events for a file path, ordered by insertion.
     pub fn get_events_for_file(&self, path: &str) -> anyhow::Result<Vec<SecureEvent>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, device_id, machine_id, timestamp_ns, file_path, content_hash, file_size, size_delta,
+        self.get_events_for_file_limited(path, None)
+    }
+
+    /// Retrieve events for a file path, ordered by insertion, with an optional limit.
+    pub fn get_events_for_file_limited(
+        &self,
+        path: &str,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<SecureEvent>> {
+        let query = match limit {
+            Some(n) => format!(
+                "SELECT id, device_id, machine_id, timestamp_ns, file_path, content_hash, file_size, size_delta,
+                        previous_hash, event_hash, context_type, context_note, vdf_input, vdf_output,
+                        vdf_iterations, forensic_score, is_paste, hardware_counter, input_method
+                 FROM secure_events WHERE file_path = ? ORDER BY id ASC LIMIT {}",
+                n
+            ),
+            None => "SELECT id, device_id, machine_id, timestamp_ns, file_path, content_hash, file_size, size_delta,
                     previous_hash, event_hash, context_type, context_note, vdf_input, vdf_output,
                     vdf_iterations, forensic_score, is_paste, hardware_counter, input_method
-             FROM secure_events WHERE file_path = ? ORDER BY id ASC"
-        )?;
+             FROM secure_events WHERE file_path = ? ORDER BY id ASC".to_string(),
+        };
+        let mut stmt = self.conn.prepare(&query)?;
 
         let rows = stmt.query_map([path], |row| {
             let device_id: Vec<u8> = row.get(1)?;
@@ -182,13 +199,11 @@ impl SecureStore {
 
     /// Return (timestamp, 1) pairs for all events after `start_ts`.
     pub fn get_global_activity(&self, start_ts: i64) -> anyhow::Result<Vec<(i64, i64)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT timestamp_ns FROM secure_events WHERE timestamp_ns >= ? ORDER BY timestamp_ns ASC"
-        )?;
-
-        let rows = stmt.query_map([start_ts], |row| row.get(0))?;
-        rows.map(|r| r.map(|ts: i64| (ts, 1i64)).map_err(anyhow::Error::from))
-            .collect()
+        Ok(self
+            .get_all_event_timestamps(start_ts)?
+            .into_iter()
+            .map(|ts| (ts, 1i64))
+            .collect())
     }
 
     /// Return all event timestamps after `start_ts`, ascending.
@@ -245,6 +260,9 @@ impl SecureStore {
     }
 
     /// Null out context notes and VDF data for events older than `days_to_keep`.
+    ///
+    /// Pruned fields (`vdf_input`, `vdf_output`) are NOT included in event HMAC
+    /// computation, so pruning does not break integrity verification.
     pub fn prune_payloads(&self, days_to_keep: i64) -> anyhow::Result<usize> {
         if days_to_keep < 1 {
             return Err(anyhow::anyhow!("days_to_keep must be >= 1"));

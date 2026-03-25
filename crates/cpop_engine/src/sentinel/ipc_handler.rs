@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zeroize::Zeroizing;
 
 /// IPC message handler that dispatches requests to the sentinel.
 pub struct SentinelIpcHandler {
@@ -29,9 +30,10 @@ impl SentinelIpcHandler {
         let db_path = self.sentinel.config.writersproof_dir.join("events.db");
         let guard = self.sentinel.signing_key.read_recover();
         let signing_key = guard.as_ref().ok_or("Signing key not initialized")?;
-        let key_bytes = signing_key.to_bytes();
-        let hmac_key = crate::crypto::derive_hmac_key(&key_bytes);
-        crate::store::SecureStore::open(&db_path, hmac_key)
+        let key_bytes = Zeroizing::new(signing_key.to_bytes());
+        let mut hmac_key = crate::crypto::derive_hmac_key(key_bytes.as_ref());
+        drop(guard);
+        crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))
             .map_err(|e| format!("Database error: {e}"))
     }
 
@@ -325,18 +327,20 @@ impl SentinelIpcHandler {
             digest_signature: None,
         };
 
-        let (identity_fingerprint, hmac_key) = {
+        let (identity_fingerprint, mut hmac_key) = {
             let guard = self.sentinel.signing_key.read_recover();
             let key = guard.as_ref().ok_or("Signing key not initialized")?;
             let mut hasher = Sha256::new();
             hasher.update(key.verifying_key().to_bytes());
             let fingerprint = hasher.finalize().to_vec();
-            let hmac = crate::crypto::derive_hmac_key(&key.to_bytes());
+            let key_bytes = Zeroizing::new(key.to_bytes());
+            let hmac = crate::crypto::derive_hmac_key(key_bytes.as_ref());
             (fingerprint, hmac)
         };
 
         let db_path = self.sentinel.config.writersproof_dir.join("events.db");
-        if let Ok(store) = crate::store::SecureStore::open(&db_path, hmac_key) {
+        if let Ok(store) = crate::store::SecureStore::open(&db_path, std::mem::take(&mut *hmac_key))
+        {
             if let Ok(Some((cbor, sig))) = store.get_baseline_digest(&identity_fingerprint) {
                 if let Ok(digest) =
                     serde_json::from_slice::<cpop_protocol::baseline::BaselineDigest>(&cbor)

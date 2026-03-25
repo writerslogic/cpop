@@ -34,10 +34,10 @@ pub(super) fn write_header(html: &mut String, r: &WarReport) -> fmt::Result {
 </p>
 <hr>
 "#,
-        id = r.report_id,
-        alg = r.algorithm_version,
+        id = html_escape(&r.report_id),
+        alg = html_escape(&r.algorithm_version),
         ts = r.generated_at.format("%B %-d, %Y at %-I:%M:%S %p UTC"),
-        schema = r.schema_version,
+        schema = html_escape(&r.schema_version),
     )
 }
 
@@ -712,9 +712,9 @@ This report documents process analysis only. It does not constitute legal advice
 &copy; {year} WritersLogic
 </div>
 "#,
-        id = r.report_id,
-        alg = r.algorithm_version,
-        schema = r.schema_version,
+        id = html_escape(&r.report_id),
+        alg = html_escape(&r.algorithm_version),
+        schema = html_escape(&r.schema_version),
         year = r.generated_at.format("%Y"),
     )
 }

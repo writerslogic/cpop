@@ -66,13 +66,29 @@ impl SecureStore {
         )?;
 
         // Migration: add `hardware_counter` to pre-existing schemas
-        let has_column: bool = self
-            .conn
-            .prepare("SELECT hardware_counter FROM secure_events LIMIT 0")
-            .is_ok();
+        let has_column: bool = {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
+            let found = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .any(|name| matches!(name.as_deref(), Ok("hardware_counter")));
+            found
+        };
         if !has_column {
             self.conn
                 .execute_batch("ALTER TABLE secure_events ADD COLUMN hardware_counter INTEGER;")?;
+        }
+
+        // Migration: add `input_method` to pre-existing schemas
+        let has_input_method: bool = {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
+            let found = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .any(|name| matches!(name.as_deref(), Ok("input_method")));
+            found
+        };
+        if !has_input_method {
+            self.conn
+                .execute_batch("ALTER TABLE secure_events ADD COLUMN input_method TEXT;")?;
         }
 
         Ok(())

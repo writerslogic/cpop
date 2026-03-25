@@ -51,6 +51,7 @@ impl SecureStorage {
 
     fn save(account: &str, data: &[u8]) -> Result<()> {
         if Self::is_keychain_disabled() {
+            log::warn!("Keychain disabled (CPOP_NO_KEYCHAIN=1); data not persisted");
             return Ok(());
         }
         #[cfg(target_os = "macos")]
@@ -132,6 +133,7 @@ impl SecureStorage {
         let service_cf = CFString::new(SERVICE_NAME);
         let account_cf = CFString::new(account);
 
+        // "pdmn" is the Keychain schema column name for kSecAttrAccessible
         let k_sec_attr_accessible = CFString::new("pdmn");
         let v_sec_attr_accessible = unsafe {
             core_foundation::base::CFType::wrap_under_get_rule(
@@ -189,6 +191,7 @@ impl SecureStorage {
         let k_sec_match_limit = unsafe { CFString::wrap_under_get_rule(kSecMatchLimit as _) };
         let v_sec_match_limit_one = core_foundation::number::CFNumber::from(1).as_CFType();
 
+        // "r_Data" is the Keychain schema column name for kSecReturnData
         let k_sec_return_data = CFString::new("r_Data");
 
         let query = CFDictionary::from_CFType_pairs(&[
@@ -364,7 +367,13 @@ impl SecureStorage {
                 }
             }
 
-            let _ = std::fs::create_dir_all(&data_dir);
+            if let Err(e) = std::fs::create_dir_all(&data_dir) {
+                log::error!(
+                    "Failed to create data directory {}: {e}",
+                    data_dir.display()
+                );
+                return;
+            }
 
             // Verify flag_path is not a symlink before writing (race window
             // is narrow but check anyway as a defense-in-depth measure)
@@ -390,15 +399,19 @@ impl SecureStorage {
 
     /// Load the identity seed from the platform keychain, with caching.
     pub fn load_seed() -> Result<Option<Zeroizing<Vec<u8>>>> {
-        if let Ok(guard) = SEED_CACHE.lock() {
-            if let Some(ref cached) = *guard {
-                return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+        match SEED_CACHE.lock() {
+            Ok(guard) => {
+                if let Some(ref cached) = *guard {
+                    return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+                }
             }
+            Err(e) => log::error!("Seed cache poisoned: {e}"),
         }
         let res = Self::load(SEED_ACCOUNT)?;
         if let Some(data) = res {
-            if let Ok(mut guard) = SEED_CACHE.lock() {
-                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            match SEED_CACHE.lock() {
+                Ok(mut guard) => *guard = Some(ProtectedBuf::new(data.to_vec())),
+                Err(e) => log::error!("Seed cache poisoned: {e}"),
             }
             Ok(Some(data))
         } else {
@@ -415,8 +428,9 @@ impl SecureStorage {
 
     /// Reset the seed cache, forcing the next load to read from keychain.
     pub fn reset_seed_cache() {
-        if let Ok(mut guard) = SEED_CACHE.lock() {
-            *guard = None;
+        match SEED_CACHE.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(e) => log::error!("Seed cache poisoned: {e}"),
         }
     }
 
@@ -424,30 +438,36 @@ impl SecureStorage {
     pub fn save_hmac_key(key: &[u8]) -> Result<()> {
         Self::save(HMAC_ACCOUNT, key)?;
         // Update the cache so subsequent load_hmac_key() calls return the new key
-        if let Ok(mut guard) = HMAC_CACHE.lock() {
-            *guard = Some(ProtectedBuf::new(key.to_vec()));
+        match HMAC_CACHE.lock() {
+            Ok(mut guard) => *guard = Some(ProtectedBuf::new(key.to_vec())),
+            Err(e) => log::error!("HMAC cache poisoned: {e}"),
         }
         Ok(())
     }
 
     /// Reset the HMAC key cache, forcing the next load to read from keychain.
     pub fn reset_hmac_cache() {
-        if let Ok(mut guard) = HMAC_CACHE.lock() {
-            *guard = None;
+        match HMAC_CACHE.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(e) => log::error!("HMAC cache poisoned: {e}"),
         }
     }
 
     /// Load the HMAC key from the platform keychain, with caching.
     pub fn load_hmac_key() -> Result<Option<Zeroizing<Vec<u8>>>> {
-        if let Ok(guard) = HMAC_CACHE.lock() {
-            if let Some(ref cached) = *guard {
-                return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+        match HMAC_CACHE.lock() {
+            Ok(guard) => {
+                if let Some(ref cached) = *guard {
+                    return Ok(Some(Zeroizing::new(cached.as_slice().to_vec())));
+                }
             }
+            Err(e) => log::error!("HMAC cache poisoned: {e}"),
         }
         let res = Self::load(HMAC_ACCOUNT)?;
         if let Some(data) = res {
-            if let Ok(mut guard) = HMAC_CACHE.lock() {
-                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            match HMAC_CACHE.lock() {
+                Ok(mut guard) => *guard = Some(ProtectedBuf::new(data.to_vec())),
+                Err(e) => log::error!("HMAC cache poisoned: {e}"),
             }
             Ok(Some(data))
         } else {
@@ -461,16 +481,17 @@ impl SecureStorage {
     }
 
     /// Load the mnemonic phrase from the platform keychain, with caching.
-    pub fn load_mnemonic() -> Result<Option<String>> {
+    /// Returns `Zeroizing<String>` so callers zeroize the mnemonic when done.
+    pub fn load_mnemonic() -> Result<Option<Zeroizing<String>>> {
         if let Some(cached) = MNEMONIC_CACHE.get() {
-            return Ok(Some(cached.as_str().to_owned()));
+            return Ok(Some(Zeroizing::new(cached.as_str().to_owned())));
         }
         let bytes = Self::load(MNEMONIC_ACCOUNT)?;
         if let Some(b) = bytes {
             let s = String::from_utf8(b.to_vec())
                 .map_err(|e| anyhow!("Invalid UTF-8 in mnemonic: {}", e))?;
             let _ = MNEMONIC_CACHE.set(Zeroizing::new(s.clone()));
-            Ok(Some(s))
+            Ok(Some(Zeroizing::new(s)))
         } else {
             Ok(None)
         }
@@ -530,15 +551,19 @@ impl SecureStorage {
 
     /// Load the fingerprint key from the platform keychain, with caching.
     pub fn load_fingerprint_key() -> Result<Option<Vec<u8>>> {
-        if let Ok(guard) = FINGERPRINT_KEY_CACHE.lock() {
-            if let Some(ref cached) = *guard {
-                return Ok(Some(cached.as_slice().to_vec()));
+        match FINGERPRINT_KEY_CACHE.lock() {
+            Ok(guard) => {
+                if let Some(ref cached) = *guard {
+                    return Ok(Some(cached.as_slice().to_vec()));
+                }
             }
+            Err(e) => log::error!("Fingerprint key cache poisoned: {e}"),
         }
         let res = Self::load(FINGERPRINT_KEY_ACCOUNT)?;
         if let Some(data) = res {
-            if let Ok(mut guard) = FINGERPRINT_KEY_CACHE.lock() {
-                *guard = Some(ProtectedBuf::new(data.to_vec()));
+            match FINGERPRINT_KEY_CACHE.lock() {
+                Ok(mut guard) => *guard = Some(ProtectedBuf::new(data.to_vec())),
+                Err(e) => log::error!("Fingerprint key cache poisoned: {e}"),
             }
             Ok(Some(data.to_vec()))
         } else {
@@ -548,8 +573,9 @@ impl SecureStorage {
 
     /// Reset the fingerprint key cache, forcing the next load to read from keychain.
     pub fn reset_fingerprint_key_cache() {
-        if let Ok(mut guard) = FINGERPRINT_KEY_CACHE.lock() {
-            *guard = None;
+        match FINGERPRINT_KEY_CACHE.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(e) => log::error!("Fingerprint key cache poisoned: {e}"),
         }
     }
 }

@@ -873,7 +873,7 @@ fn test_ordinal_gap_detected() {
     assert!(!report.valid);
     assert!(!report.ordinal_gaps.is_empty());
     assert_eq!(report.ordinal_gaps[0], (1, 5));
-    assert!(report.error.as_ref().unwrap().contains("ordinal gap"));
+    assert!(report.errors.iter().any(|e| e.contains("ordinal gap")));
     drop(dir);
 }
 
@@ -984,10 +984,9 @@ fn test_metadata_count_mismatch_detected() {
     assert!(!report.valid);
     assert!(!report.metadata_valid);
     assert!(report
-        .error
-        .as_ref()
-        .unwrap()
-        .contains("metadata checkpoint count mismatch"));
+        .errors
+        .iter()
+        .any(|e| e.contains("metadata checkpoint count mismatch")));
     drop(dir);
 }
 

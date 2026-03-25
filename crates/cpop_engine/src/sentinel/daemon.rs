@@ -57,10 +57,10 @@ impl DaemonHandle {
     /// Gracefully shut down the IPC server, sentinel, and clean up daemon files.
     pub async fn shutdown(self) -> Result<()> {
         let _ = self.ipc_shutdown_tx.send(()).await;
-        self.sentinel.stop().await?;
+        let stop_result = self.sentinel.stop().await;
         self.ipc_handle.abort();
         self.daemon_mgr.cleanup();
-        Ok(())
+        stop_result
     }
 }
 
@@ -392,31 +392,49 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
 
     sentinel.start().await?;
 
-    let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
-        .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
+    let setup = async {
+        let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
+            .map_err(|e| SentinelError::Ipc(format!("Failed to bind IPC socket: {}", e)))?;
 
-    let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
-    let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
+        let ipc_handler = Arc::new(SentinelIpcHandler::new(Arc::clone(&sentinel)));
+        let (ipc_shutdown_tx, ipc_shutdown_rx) = mpsc::channel::<()>(1);
 
-    let ipc_handle = tokio::spawn(async move {
-        if let Err(e) = ipc_server
-            .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
-            .await
-        {
-            log::error!("IPC server error: {}", e);
+        let ipc_handle = tokio::spawn(async move {
+            if let Err(e) = ipc_server
+                .run_with_shutdown(ipc_handler, ipc_shutdown_rx)
+                .await
+            {
+                log::error!("IPC server error: {}", e);
+            }
+        });
+
+        let pid = std::process::id();
+        if !daemon_mgr.acquire_pid_file(pid)? {
+            return Err(SentinelError::DaemonAlreadyRunning(pid as i32));
         }
-    });
+        daemon_mgr.write_state(&DaemonState {
+            pid: pid as i32,
+            started_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            identity: None,
+        })?;
 
-    daemon_mgr.write_pid()?;
-    daemon_mgr.write_state(&DaemonState {
-        pid: std::process::id() as i32,
-        started_at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        identity: None,
-    })?;
+        Ok((ipc_shutdown_tx, ipc_handle))
+    }
+    .await;
+
+    let (ipc_shutdown_tx, ipc_handle) = match setup {
+        Ok(val) => val,
+        Err(e) => {
+            if let Err(stop_err) = sentinel.stop().await {
+                log::error!("Failed to stop sentinel after setup failure: {stop_err}");
+            }
+            return Err(e);
+        }
+    };
 
     Ok(DaemonSetup {
         sentinel,

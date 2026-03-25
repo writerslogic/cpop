@@ -49,6 +49,8 @@ pub enum TpmError {
     SealedDataTooShort,
     #[error("sealed data corrupted")]
     SealedCorrupted,
+    #[error("configuration error: {0}")]
+    Configuration(String),
     #[error("communication error: {0}")]
     CommunicationError(String),
     #[error("io error: {0}")]

@@ -13,6 +13,8 @@ pub(super) const HEADER_SIZE: usize = 64;
 pub(super) const MAX_ENTRY_SIZE: u32 = 16 * 1024 * 1024; // 16 MiB
 /// Reject WAL files claiming more entries than this to prevent OOM on corrupt data.
 pub(super) const MAX_WAL_ENTRIES: u64 = 10_000_000;
+/// Maximum WAL file size in bytes (256 MiB). Prevents unbounded disk growth.
+pub(super) const MAX_WAL_SIZE: u64 = 256 * 1024 * 1024;
 
 /// WAL entry type discriminant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +88,9 @@ pub enum WalError {
     /// WAL exceeds the maximum allowed entry count
     #[error("entry count exceeds maximum ({0})")]
     TooManyEntries(u64),
+    /// WAL file exceeds the maximum allowed size
+    #[error("WAL size exceeds maximum ({0} bytes)")]
+    TooLarge(u64),
     /// WAL header session_id does not match the session_id passed to open()
     #[error("WAL session_id mismatch")]
     SessionMismatch,

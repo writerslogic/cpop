@@ -55,7 +55,7 @@ pub struct VerificationReport {
     pub metadata_valid: bool,
     /// Non-fatal issues (e.g., unsigned under `Optional` policy)
     pub warnings: Vec<String>,
-    pub error: Option<String>,
+    pub errors: Vec<String>,
 }
 
 impl VerificationReport {
@@ -67,13 +67,13 @@ impl VerificationReport {
             ordinal_gaps: Vec::new(),
             metadata_valid: true,
             warnings: Vec::new(),
-            error: None,
+            errors: Vec::new(),
         }
     }
 
     pub(super) fn fail(&mut self, msg: String) {
         self.valid = false;
-        self.error = Some(msg);
+        self.errors.push(msg);
     }
 }
 

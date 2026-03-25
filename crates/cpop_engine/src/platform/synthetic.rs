@@ -118,7 +118,7 @@ impl StatisticalAnomalyDetector {
             .iter()
             .map(|x| (x - mean).powi(2))
             .sum::<f64>()
-            / n;
+            / (n - 1.0);
         let std = variance.sqrt();
         let std = if std.is_finite() { std } else { 0.0 };
 
@@ -131,7 +131,7 @@ impl StatisticalAnomalyDetector {
         }
 
         let ikis: Vec<f64> = self.iki_window.iter().copied().collect();
-        let tolerance_ms = 5.0;
+        let tolerance_ms = 2.0;
 
         for pattern_len in 5..=10 {
             if ikis.len() < pattern_len * 2 {
@@ -420,6 +420,10 @@ impl TypingRhythmAnalyzer {
             self.session_ikis[..first_quarter_len].iter().sum::<f64>() / first_quarter_len as f64;
         let last_mean: f64 =
             self.session_ikis[last_quarter_start..].iter().sum::<f64>() / first_quarter_len as f64;
+
+        if first_mean <= 0.0 {
+            return None;
+        }
 
         Some((last_mean - first_mean) / first_mean)
     }

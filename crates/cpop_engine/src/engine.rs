@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 /// Snapshot of the engine's runtime state.
 #[derive(Clone, Debug, Serialize)]
@@ -57,6 +57,7 @@ const CONTENT_HASH_MAP_MAX_ENTRIES: usize = 1000;
 /// Maximum age (in nanoseconds) of a content hash entry to be considered for rename detection.
 const RENAME_WINDOW_NS: i64 = 60_000_000_000; // 60 seconds
 
+// Lock ordering: status -> store -> jitter_session (always acquire in this order)
 struct EngineInner {
     running: AtomicBool,
     status: Mutex<EngineStatus>,
@@ -205,7 +206,7 @@ impl Engine {
             .map(|(file_path, last_ts, count)| ReportFile {
                 file_path,
                 last_event_timestamp_ns: last_ts,
-                event_count: count as u64,
+                event_count: count.max(0) as u64,
             })
             .collect())
     }
@@ -257,17 +258,16 @@ fn start_file_watcher(inner: &Arc<EngineInner>, watch_dirs: Vec<PathBuf>) -> Res
     let inner_clone = Arc::clone(inner);
     let handle = std::thread::spawn(move || {
         while inner_clone.running.load(Ordering::SeqCst) {
-            let event = match rx.recv() {
+            let event = match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(event) => event,
-                Err(_) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
 
             if let Ok(event) = event {
                 if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     for path in event.paths {
                         if let Err(err) = process_file_event(&inner_clone, &path) {
-                            let mut status = inner_clone.status.lock_recover();
-                            status.last_event_timestamp_ns = Some(now_ns());
                             log::error!("file event error: {err}");
                         }
                     }
@@ -314,14 +314,26 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
     // that no longer exists, treat it as a file rename.
     {
         let now = now_ns();
-        let mut hash_map = inner.content_hash_map.lock_recover();
 
-        if let Some((old_path, ts)) = hash_map.get(&content_hash) {
-            let is_different_path = *old_path != resolved_path;
-            let is_recent = (now - ts) < RENAME_WINDOW_NS;
-            let old_gone = !old_path.exists();
+        // Extract candidate rename info under the lock, then drop lock before filesystem I/O.
+        let rename_candidate = {
+            let hash_map = inner.content_hash_map.lock_recover();
+            if let Some((old_path, ts)) = hash_map.get(&content_hash) {
+                let is_different_path = *old_path != resolved_path;
+                let is_recent = (now - ts) < RENAME_WINDOW_NS;
+                if is_different_path && is_recent {
+                    Some(old_path.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
 
-            if is_different_path && is_recent && old_gone {
+        if let Some(old_path) = rename_candidate {
+            // Filesystem check outside the lock
+            if !old_path.exists() {
                 let old_str = old_path.to_string_lossy().to_string();
                 let new_str = resolved_path.to_string_lossy().to_string();
                 log::info!("File rename detected: {} \u{2192} {}", old_str, new_str);
@@ -337,12 +349,15 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
 
                 // Copy file_sizes entry from old path to new path
                 let mut sizes = inner.file_sizes.lock_recover();
-                if let Some(&old_size) = sizes.get(&old_path.to_path_buf()) {
+                if let Some(&old_size) = sizes.get(&old_path) {
                     sizes.insert(resolved_path.clone(), old_size);
-                    sizes.remove(&old_path.to_path_buf());
+                    sizes.remove(&old_path);
                 }
             }
         }
+
+        // Re-acquire lock for hash map update
+        let mut hash_map = inner.content_hash_map.lock_recover();
 
         // Record this hash → path mapping
         hash_map.insert(content_hash, (resolved_path.clone(), now));
@@ -388,6 +403,9 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
             let is_paste = (avg_bytes_per_key > 3.0 && size_delta > 20)
                 || (i64::from(size_delta) > (keystroke_count * 5) && size_delta > 50);
 
+            // Intentional: each file event gets its own forensic score from the
+            // samples accumulated since the last event. Clearing ensures scores
+            // reflect only the inter-event typing window.
             session.samples.clear();
 
             (score, is_paste)
@@ -460,7 +478,10 @@ fn load_or_create_device_identity(data_dir: &Path) -> Result<([u8; 16], String)>
             "device_id": hex::encode(device_id),
             "machine_id": machine_id,
         });
-        fs::write(&path, payload.to_string())?;
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string()),
+        )?;
         if let Err(e) = crate::crypto::restrict_permissions(&path, 0o600) {
             log::warn!("Failed to set device identity permissions: {}", e);
         }
@@ -486,6 +507,15 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
             }
             return Ok(key);
         }
+        log::error!(
+            "HMAC key file has wrong length ({} bytes, expected 32): {}",
+            key.len(),
+            path.display()
+        );
+        return Err(anyhow!(
+            "HMAC key file has wrong length ({} bytes, expected 32)",
+            key.len()
+        ));
     }
 
     let mut key = vec![0u8; 32];

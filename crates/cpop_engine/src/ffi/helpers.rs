@@ -60,7 +60,7 @@ pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
     } else {
         return None;
     };
-    let key = Zeroizing::new(crate::crypto::derive_hmac_key(seed));
+    let key = crate::crypto::derive_hmac_key(seed);
 
     if let Err(e) = crate::identity::SecureStorage::save_hmac_key(&key) {
         log::warn!("Failed to migrate signing key to secure storage: {}", e);
@@ -179,9 +179,7 @@ pub(crate) fn derive_hmac_from_signing_key() -> Option<Zeroizing<Vec<u8>>> {
     }
     let key_data = Zeroizing::new(std::fs::read(&key_path).ok()?);
     if key_data.len() >= 32 {
-        Some(Zeroizing::new(crate::crypto::derive_hmac_key(
-            &key_data[..32],
-        )))
+        Some(crate::crypto::derive_hmac_key(&key_data[..32]))
     } else {
         None
     }

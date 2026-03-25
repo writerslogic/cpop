@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use zeroize::Zeroize;
 
+// Accepted: concurrent threads may compute duplicate XOR keys; no security impact
 /// Rolling XOR key that changes every N accesses
 static ROLLING_KEY: AtomicU64 = AtomicU64::new(0xDEADBEEF_CAFEBABE);
 
@@ -28,8 +29,14 @@ pub struct Obfuscated<T> {
 impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     /// Serialize and XOR-mask the value with a fresh rolling key.
     pub fn new(value: &T) -> Self {
-        let mut serialized = bincode::serde::encode_to_vec(value, bincode::config::standard())
-            .expect("serialization failed");
+        let mut serialized = match bincode::serde::encode_to_vec(value, bincode::config::standard())
+        {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("Obfuscated serialization failed: {e}");
+                Vec::new()
+            }
+        };
         let mask_key = next_key();
         let masked_data = Self::xor_data(&serialized, mask_key);
         serialized.zeroize();

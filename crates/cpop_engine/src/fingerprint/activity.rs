@@ -99,7 +99,11 @@ impl ActivityFingerprint {
 
         let ikis: Vec<f64> = samples
             .windows(2)
-            .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0)
+            .filter_map(|w| {
+                w[1].timestamp_ns
+                    .checked_sub(w[0].timestamp_ns)
+                    .map(|d| d as f64 / 1_000_000.0)
+            })
             .filter(|&i| i > 0.0 && i < 10000.0)
             .collect();
 
@@ -223,7 +227,11 @@ impl IkiDistribution {
 
         let n = intervals.len() as f64;
         let mean = intervals.iter().sum::<f64>() / n;
-        let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let variance = if n > 1.0 {
+            intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+        } else {
+            0.0
+        };
         let std_dev = if variance > 0.0 { variance.sqrt() } else { 0.0 };
 
         let skewness = stats::skewness(intervals, mean, std_dev);
@@ -358,7 +366,10 @@ impl ZoneProfile {
             zone_counts[z1] += 1;
             transitions[z0 * 8 + z1] += 1;
 
-            let iki_ms = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1_000_000.0;
+            let iki_ms = match w[1].timestamp_ns.checked_sub(w[0].timestamp_ns) {
+                Some(d) if d > 0 => d as f64 / 1_000_000.0,
+                _ => continue,
+            };
             let bucket = ((iki_ms / 50.0) as usize).min(19);
             if z0 == z1 {
                 profile.same_finger_histogram[bucket] += 1.0;
@@ -739,7 +750,7 @@ impl ActivityFingerprintAccumulator {
 
         let duration_secs =
             if let (Some(first), Some(last)) = (self.samples.front(), self.samples.back()) {
-                (last.timestamp_ns - first.timestamp_ns).max(0) as u64 / 1_000_000_000
+                last.timestamp_ns.saturating_sub(first.timestamp_ns).max(0) as u64 / 1_000_000_000
             } else {
                 0
             };
@@ -756,7 +767,11 @@ impl ActivityFingerprintAccumulator {
                     .samples
                     .iter()
                     .zip(self.samples.iter().skip(1))
-                    .map(|(a, b)| (b.timestamp_ns - a.timestamp_ns) as f64 / 1_000_000.0)
+                    .filter_map(|(a, b)| {
+                        b.timestamp_ns
+                            .checked_sub(a.timestamp_ns)
+                            .map(|d| d as f64 / 1_000_000.0)
+                    })
                     .filter(|&i| i > 0.0 && i < 5000.0)
                     .collect();
                 if intervals.len() >= 20 {

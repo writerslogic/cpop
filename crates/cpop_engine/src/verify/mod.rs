@@ -6,6 +6,7 @@
 //! duration cross-checks, key provenance validation, forensic analysis,
 //! and WAR appraisal into a single `FullVerificationResult`.
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -32,8 +33,8 @@ pub struct VerifyOptions {
 /// Result of HMAC seal re-derivation checks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SealVerification {
-    /// Whether the jitter tag matches re-derived value. None if no jitter binding.
-    pub jitter_tag_valid: Option<bool>,
+    /// Whether a jitter tag is present and structurally valid. None if no jitter binding.
+    pub jitter_tag_present: Option<bool>,
     /// Whether the entangled binding matches. None if no entangled MAC.
     pub entangled_binding_valid: Option<bool>,
     /// Number of checkpoints checked for seal verification.
@@ -132,7 +133,7 @@ pub fn full_verify(packet: &Packet, opts: &VerifyOptions) -> FullVerificationRes
     let (seals, duration, key_provenance, forensics, per_checkpoint) = if !structural {
         (
             SealVerification {
-                jitter_tag_valid: None,
+                jitter_tag_present: None,
                 entangled_binding_valid: None,
                 checkpoints_checked: 0,
             },
@@ -201,7 +202,9 @@ pub fn full_verify(packet: &Packet, opts: &VerifyOptions) -> FullVerificationRes
 /// Full seal verification is performed by the original author's engine which has
 /// access to the session key material.
 fn verify_seals_structural(packet: &Packet, warnings: &mut Vec<String>) -> SealVerification {
-    let mut jitter_tag_valid: Option<bool> = None;
+    let mut jitter_tag_present: Option<bool> = None;
+    // NOTE: Entangled binding verification requires session key material not available
+    // during third-party verification. This field remains None.
     let entangled_binding_valid: Option<bool> = None;
     let mut checkpoints_checked = 0;
 
@@ -212,9 +215,9 @@ fn verify_seals_structural(packet: &Packet, warnings: &mut Vec<String>) -> SealV
             // Verify the jitter hash is non-zero.
             if sealed.jitter_hash == [0u8; 32] {
                 warnings.push("Declaration jitter seal has zero hash".to_string());
-                jitter_tag_valid = Some(false);
+                jitter_tag_present = Some(false);
             } else {
-                jitter_tag_valid = Some(true);
+                jitter_tag_present = Some(true);
                 checkpoints_checked += 1;
             }
         }
@@ -241,20 +244,24 @@ fn verify_seals_structural(packet: &Packet, warnings: &mut Vec<String>) -> SealV
     if let Some(ref jb) = packet.jitter_binding {
         if jb.entropy_commitment.hash == [0u8; 32] {
             warnings.push("Jitter binding has zero entropy commitment hash".to_string());
-            jitter_tag_valid = Some(false);
-        } else if jitter_tag_valid.is_none() {
-            jitter_tag_valid = Some(true);
+            jitter_tag_present = Some(false);
+        } else if jitter_tag_present.is_none() {
+            jitter_tag_present = Some(true);
         }
     }
 
     SealVerification {
-        jitter_tag_valid,
+        jitter_tag_present,
         entangled_binding_valid,
         checkpoints_checked,
     }
 }
 
 /// Phase 5: Cross-check VDF duration against wall-clock timestamps.
+///
+/// Duration comparison is approximate: it measures the span from the first
+/// to the last checkpoint timestamp, which may under-count actual authoring
+/// time (e.g., pauses before the first checkpoint or after the last).
 fn verify_duration(
     packet: &Packet,
     vdf_params: &vdf::Parameters,
@@ -289,7 +296,7 @@ fn verify_duration(
     let claimed_seconds = if packet.checkpoints.len() >= 2 {
         let first = packet.checkpoints.first().unwrap();
         let last = packet.checkpoints.last().unwrap();
-        (last.timestamp - first.timestamp).num_seconds().max(0) as f64
+        (last.timestamp - first.timestamp).num_milliseconds().max(0) as f64 / 1000.0
     } else {
         0.0
     };
@@ -457,10 +464,10 @@ fn run_forensics(
         let mut simple = Vec::with_capacity(ks.samples.len());
         let mut prev_ns: Option<i64> = None;
         for s in &ks.samples {
-            let ts_ns = s
-                .timestamp
-                .timestamp_nanos_opt()
-                .unwrap_or_else(|| s.timestamp.timestamp_millis().saturating_mul(1_000_000));
+            let ts_ns = s.timestamp.timestamp_nanos_opt().unwrap_or_else(|| {
+                log::warn!("timestamp_nanos_opt overflow for sample; falling back to 0");
+                0
+            });
             let duration = if let Some(prev) = prev_ns {
                 (ts_ns - prev).max(0) as u64
             } else {
@@ -478,6 +485,8 @@ fn run_forensics(
         Vec::new()
     };
 
+    // Empty regions HashMap is intentional; region-based analysis requires document
+    // structure data not available in third-party verification.
     let regions: HashMap<i64, Vec<RegionData>> = HashMap::new();
 
     let context = AnalysisContext {
@@ -562,7 +571,7 @@ fn compute_verdict(
     }
 
     // Failed seal verification → confirmed forgery
-    if seals.jitter_tag_valid == Some(false) || seals.entangled_binding_valid == Some(false) {
+    if seals.jitter_tag_present == Some(false) || seals.entangled_binding_valid == Some(false) {
         return ForensicVerdict::V5ConfirmedForgery;
     }
 
@@ -621,7 +630,6 @@ fn compute_verdict(
 
 /// Decode base64 to bytes.
 fn base64_decode(s: &str) -> Vec<u8> {
-    use base64::Engine;
     base64::engine::general_purpose::STANDARD
         .decode(s)
         .unwrap_or_default()
@@ -629,7 +637,6 @@ fn base64_decode(s: &str) -> Vec<u8> {
 
 /// Decode base64 and return length if valid.
 fn base64_decode_len(s: &str) -> Option<usize> {
-    use base64::Engine;
     base64::engine::general_purpose::STANDARD
         .decode(s)
         .ok()
@@ -717,7 +724,7 @@ mod tests {
             false,
             None,
             &SealVerification {
-                jitter_tag_valid: None,
+                jitter_tag_present: None,
                 entangled_binding_valid: None,
                 checkpoints_checked: 0,
             },
@@ -744,7 +751,7 @@ mod tests {
             true,
             Some(false),
             &SealVerification {
-                jitter_tag_valid: None,
+                jitter_tag_present: None,
                 entangled_binding_valid: None,
                 checkpoints_checked: 0,
             },
@@ -771,7 +778,7 @@ mod tests {
             true,
             None,
             &SealVerification {
-                jitter_tag_valid: None,
+                jitter_tag_present: None,
                 entangled_binding_valid: None,
                 checkpoints_checked: 0,
             },

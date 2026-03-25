@@ -12,7 +12,7 @@ use super::{
 use crate::DateTimeNanosExt;
 use crate::{MutexRecover, RwLockRecover};
 use anyhow::{anyhow, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::{
@@ -154,10 +154,17 @@ pub struct KeystrokeMonitor {
 }
 
 static GLOBAL_SESSION: Mutex<Option<Arc<Mutex<SimpleJitterSession>>>> = Mutex::new(None);
+/// Guard ensuring only one KeystrokeMonitor instance exists at a time.
+static MONITOR_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 impl KeystrokeMonitor {
     /// Install the keyboard hook and begin feeding keystrokes to the session.
+    ///
+    /// Returns an error if a monitor is already active (only one instance allowed).
     pub fn start(session: Arc<Mutex<SimpleJitterSession>>) -> Result<Self> {
+        if MONITOR_ACTIVE.swap(true, Ordering::SeqCst) {
+            return Err(anyhow!("KeystrokeMonitor already active"));
+        }
         *GLOBAL_SESSION.lock_recover() = Some(Arc::clone(&session));
         unsafe {
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), None, 0)?;
@@ -170,6 +177,16 @@ impl KeystrokeMonitor {
                 _hook: hook.0 as isize,
             })
         }
+    }
+}
+
+impl Drop for KeystrokeMonitor {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = UnhookWindowsHookEx(HHOOK(self._hook as *mut _));
+        }
+        *GLOBAL_SESSION.lock_recover() = None;
+        MONITOR_ACTIVE.store(false, Ordering::SeqCst);
     }
 }
 
@@ -315,6 +332,8 @@ unsafe extern "system" fn keystroke_capture_hook(
         }
         let kbd = *ptr;
 
+        // LLKHF_INJECTED detects SendInput/keybd_event injections but not all
+        // synthetic sources (e.g., DirectInput or driver-level injection may bypass it).
         let is_injected = (kbd.flags.0 & LLKHF_INJECTED.0) != 0;
 
         let stats_arc = GLOBAL_STATS.lock().ok().and_then(|g| g.clone());
@@ -421,6 +440,9 @@ impl FocusMonitor for WindowsFocusMonitor {
     fn stop_monitoring(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
         Ok(())
     }
 
@@ -432,7 +454,9 @@ impl FocusMonitor for WindowsFocusMonitor {
 static MOUSE_GLOBAL_SENDER: Mutex<Option<mpsc::Sender<MouseEvent>>> = Mutex::new(None);
 static MOUSE_GLOBAL_IDLE_STATS: Mutex<Option<Arc<RwLock<MouseIdleStats>>>> = Mutex::new(None);
 static MOUSE_LAST_POSITION: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
-static MOUSE_KEYBOARD_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Timestamp (ms since epoch) of the last keystroke, used to determine if
+/// typing is active within a 500ms window.
+static MOUSE_LAST_KEYSTROKE_TIME: AtomicI64 = AtomicI64::new(0);
 static MOUSE_IDLE_ONLY_MODE: AtomicBool = AtomicBool::new(true);
 
 /// Windows mouse capture implementation using WH_MOUSE_LL hook.
@@ -467,7 +491,8 @@ impl WindowsMouseCapture {
         if let Ok(mut time) = self.last_keystroke_time.write() {
             *time = std::time::Instant::now();
         }
-        MOUSE_KEYBOARD_ACTIVE.store(true, Ordering::SeqCst);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        MOUSE_LAST_KEYSTROKE_TIME.store(now_ms, Ordering::SeqCst);
     }
 }
 
@@ -562,7 +587,9 @@ impl Drop for WindowsMouseCapture {
 
 unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && wparam.0 as u32 == WM_MOUSEMOVE {
-        let kb_active = MOUSE_KEYBOARD_ACTIVE.load(Ordering::SeqCst);
+        let last_ks_ms = MOUSE_LAST_KEYSTROKE_TIME.load(Ordering::SeqCst);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let kb_active = (now_ms - last_ks_ms) < 500;
 
         if MOUSE_IDLE_ONLY_MODE.load(Ordering::SeqCst) && !kb_active {
             return CallNextHookEx(None, code, wparam, lparam);
@@ -592,7 +619,7 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             y,
             dx,
             dy,
-            is_idle: kb_active,
+            is_idle: !kb_active,
             is_hardware: true,
             device_id: None,
         };
@@ -610,8 +637,6 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
         if let Some(sender) = sender {
             let _ = sender.send(event);
         }
-
-        MOUSE_KEYBOARD_ACTIVE.store(false, Ordering::SeqCst);
     }
 
     CallNextHookEx(None, code, wparam, lparam)

@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 pub mod anti_analysis;
 pub mod mem;
@@ -116,11 +116,11 @@ pub fn compute_integrity_hmac(key: &[u8], chain_hash: &[u8; 32], event_count: i6
 /// NOTE: This intentionally uses SHA-256 rather than HKDF for backwards compatibility
 /// with existing HMAC chains. Changing to HKDF would invalidate all previously stored
 /// event integrity tags.
-pub fn derive_hmac_key(priv_key_seed: &[u8]) -> Vec<u8> {
+pub fn derive_hmac_key(priv_key_seed: &[u8]) -> Zeroizing<Vec<u8>> {
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-hmac-key-v1");
     hasher.update(priv_key_seed);
-    hasher.finalize().to_vec()
+    Zeroizing::new(hasher.finalize().to_vec())
 }
 
 /// Derive PRK per draft-condrey-rats-pop §5.3:
@@ -188,16 +188,27 @@ pub fn restrict_permissions(path: &Path, mode: u32) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         let _ = mode;
-        let path_str = path.to_string_lossy();
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "CURRENT_USER".into());
-        let _ = std::process::Command::new("icacls")
-            .args([
-                &*path_str,
-                "/inheritance:r",
-                "/grant:r",
-                &format!("{user}:(F)"),
-            ])
-            .output();
+        let grant_arg = format!("{user}:(F)");
+        match std::process::Command::new("icacls")
+            .arg(path.as_os_str())
+            .args(["/inheritance:r", "/grant:r"])
+            .arg(&grant_arg)
+            .output()
+        {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "icacls failed with exit code {:?}: {}",
+                        output.status.code(),
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ));
+            }
+            Err(e) => return Err(e),
+        }
     }
     #[cfg(not(any(unix, windows)))]
     {

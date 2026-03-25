@@ -16,6 +16,7 @@ pub(super) fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
 }
 
 pub(super) fn format_lr(lr: f64) -> String {

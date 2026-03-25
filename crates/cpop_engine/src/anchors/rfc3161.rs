@@ -26,7 +26,7 @@ impl Rfc3161Provider {
     async fn request_timestamp(&self, url: &str, hash: &[u8; 32]) -> Result<Vec<u8>, AnchorError> {
         let (request, nonce) = self.build_timestamp_request(hash)?;
 
-        let response = self
+        let mut response = self
             .client
             .post(url)
             .header("Content-Type", "application/timestamp-query")
@@ -55,13 +55,43 @@ impl Rfc3161Provider {
             )));
         }
 
-        let token = response
-            .bytes()
-            .await
-            .map_err(|e| AnchorError::Network(e.to_string()))?;
+        const MAX_RESPONSE_SIZE: usize = 1024 * 1024; // 1 MB
 
+        // Pre-flight check on Content-Length header when present.
+        if let Some(content_length) = response.content_length() {
+            if content_length > MAX_RESPONSE_SIZE as u64 {
+                return Err(AnchorError::InvalidFormat(format!(
+                    "TSA response too large: {} bytes (max {})",
+                    content_length, MAX_RESPONSE_SIZE
+                )));
+            }
+        }
+
+        // Stream the body in chunks to enforce the size cap even when the
+        // server uses chunked transfer-encoding (no Content-Length header).
+        let mut body = Vec::new();
+        loop {
+            // reqwest's Response exposes chunk() which returns Option<Bytes>
+            let chunk = response
+                .chunk()
+                .await
+                .map_err(|e| AnchorError::Network(e.to_string()))?;
+            match chunk {
+                Some(bytes) => {
+                    body.extend_from_slice(&bytes);
+                    if body.len() > MAX_RESPONSE_SIZE {
+                        return Err(AnchorError::InvalidFormat(format!(
+                            "TSA response too large: >{} bytes (max {})",
+                            body.len(),
+                            MAX_RESPONSE_SIZE
+                        )));
+                    }
+                }
+                None => break,
+            }
+        }
         // H-051: Verify the nonce in the response matches the request nonce
-        let tst_info = extract_tst_info(&token)?;
+        let tst_info = extract_tst_info(&body)?;
         let response_nonce = extract_nonce(&tst_info)
             .ok_or_else(|| AnchorError::InvalidFormat("TSA response missing nonce".into()))?;
         if response_nonce != nonce {
@@ -70,7 +100,7 @@ impl Rfc3161Provider {
             ));
         }
 
-        Ok(token.to_vec())
+        Ok(body)
     }
 
     #[allow(clippy::vec_init_then_push)]
@@ -128,9 +158,12 @@ impl Rfc3161Provider {
         }
 
         let tst_info = extract_tst_info(response)?;
-        let gen_time = extract_generalized_time(&tst_info).unwrap_or_else(chrono::Utc::now);
-        let serial = extract_serial_number(&tst_info)
-            .unwrap_or_else(|| hex::encode(&response[..std::cmp::min(8, response.len())]));
+        let gen_time = extract_generalized_time(&tst_info).ok_or_else(|| {
+            AnchorError::InvalidFormat("Cannot extract genTime from TSTInfo".into())
+        })?;
+        let serial = extract_serial_number(&tst_info).ok_or_else(|| {
+            AnchorError::InvalidFormat("Cannot extract serialNumber from TSTInfo".into())
+        })?;
 
         Ok(TimestampInfo {
             timestamp: gen_time,
