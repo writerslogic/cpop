@@ -348,3 +348,32 @@ fn test_block_roundtrip_with_nonce() {
     assert_eq!(decoded.seal.signature, block.seal.signature);
     assert_eq!(decoded.seal.public_key, block.seal.public_key);
 }
+
+#[test]
+fn test_c2pa_assertion_from_appraised_block() {
+    let (packet, _dir) = create_test_evidence();
+    let signing_key = test_signing_key();
+    let policy = crate::trust_policy::profiles::basic();
+
+    let block =
+        Block::from_packet_appraised(&packet, &signing_key, &policy).expect("appraised block");
+
+    let ear = block.ear.as_ref().expect("block should have EAR token");
+    let assertion =
+        profiles::c2pa::to_c2pa_assertion(ear).expect("to_c2pa_assertion should succeed");
+
+    assert_eq!(assertion.label, profiles::c2pa::ASSERTION_LABEL);
+    assert!(!assertion.data.ear_profile.is_empty());
+    assert!(!assertion.data.status.is_empty());
+    assert!(assertion.data.seal.is_some(), "seal should be present");
+    assert!(
+        assertion.data.chain_length.is_some(),
+        "chain_length should be present"
+    );
+
+    // Verify it round-trips through JSON.
+    let json = serde_json::to_string_pretty(&assertion).expect("serialize");
+    let decoded: profiles::c2pa::C2paAssertion = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(decoded.label, assertion.label);
+    assert_eq!(decoded.data.status, assertion.data.status);
+}

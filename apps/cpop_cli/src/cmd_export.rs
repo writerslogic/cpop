@@ -649,6 +649,7 @@ fn default_output_path(file_path: &Path, format_lower: &str) -> PathBuf {
         "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
         "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
         "pdf" => PathBuf::from(format!("{}.report.pdf", name)),
+        "c2pa" => PathBuf::from(format!("{}.c2pa.json", name)),
         _ => PathBuf::from(format!("{}.evidence.json", name)),
     }
 }
@@ -981,6 +982,37 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
                     "  SHA-256: {}",
                     hex::encode(sha2::Sha256::digest(&pdf_bytes))
                 );
+            }
+        }
+        "c2pa" => {
+            let evidence_packet: evidence::Packet =
+                serde_json::from_value(ctx.packet.clone()).context("create evidence packet")?;
+
+            let policy = cpop_engine::trust_policy::profiles::basic();
+            let block = war::Block::from_packet_appraised(&evidence_packet, ctx.signer, &policy)
+                .map_err(|e| anyhow!("WAR appraisal failed: {}", e))?;
+
+            let ear = block
+                .ear
+                .as_ref()
+                .ok_or_else(|| anyhow!("Appraised block missing EAR token"))?;
+
+            let assertion = war::profiles::c2pa::to_c2pa_assertion(ear)
+                .map_err(|e| anyhow!("C2PA assertion failed: {}", e))?;
+
+            let data = serde_json::to_string_pretty(&assertion)?;
+            write_atomic(out_path, data.as_bytes())?;
+
+            if verbose {
+                println!();
+                println!(
+                    "C2PA assertion exported to {}. Embed in a C2PA manifest \
+                     using c2patool or similar tooling.",
+                    out_path.display()
+                );
+                println!("  Label: {}", assertion.label);
+                println!("  Status: {}", assertion.data.status);
+                println!("  Checkpoints: {}", events.len());
             }
         }
         _ => {
