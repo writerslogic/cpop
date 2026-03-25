@@ -10,13 +10,19 @@
 //! - **eat**: CWT encoding/decoding for EAR tokens in COSE_Sign1 envelopes
 //!   per RFC 8392 and draft-ietf-rats-ear
 //! - **corim**: CoRIM reference values manifest (draft-ietf-rats-corim)
+//! - **scitt**: SCITT transparency receipts (draft-ietf-scitt-architecture)
+//! - **toip**: ToIP Ecosystem Governance Framework and TRQP query types
 
 pub mod corim;
 pub mod eat;
+pub mod scitt;
+pub mod toip;
 pub mod types;
 
 pub use corim::CpopReferenceValues;
 pub use eat::{decode_eat_cwt, encode_eat_cwt};
+pub use scitt::{SignedStatement, TransparencyReceipt};
+pub use toip::{EcosystemGovernanceFramework, TrqpQuery, TrqpResponse};
 pub use types::{AttestationResult, Evidence, RatsRole};
 
 #[cfg(test)]
