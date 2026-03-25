@@ -91,4 +91,48 @@ mod tests {
         // Invalid ORCID returns empty string.
         assert_eq!(orcid_to_did("invalid"), "");
     }
+
+    #[test]
+    fn test_orcid_checksum_validation_iso7064() {
+        // Verify the ISO 7064 Mod 11,2 check digit algorithm.
+        // Valid: check digit 'X' means remainder maps to 10.
+        assert!(validate_orcid("0000-0002-1694-233X"));
+        // Valid: check digit '7'.
+        assert!(validate_orcid("0000-0002-1825-0097"));
+        // Valid: check digit '0'.
+        assert!(validate_orcid("0000-0001-5109-3700"));
+
+        // Off-by-one in check digit should fail.
+        assert!(!validate_orcid("0000-0002-1694-2339")); // X -> 9
+        assert!(!validate_orcid("0000-0002-1825-0098")); // 7 -> 8
+        assert!(!validate_orcid("0000-0001-5109-3701")); // 0 -> 1
+
+        // Lowercase 'x' is not valid (spec requires uppercase X).
+        assert!(!validate_orcid("0000-0002-1694-233x"));
+
+        // Too long.
+        assert!(!validate_orcid("0000-0002-1825-00977"));
+
+        // Non-digit in body.
+        assert!(!validate_orcid("0000-000A-1825-0097"));
+    }
+
+    #[test]
+    fn test_orcid_to_did_format() {
+        let did = orcid_to_did("0000-0002-1825-0097");
+        assert!(did.starts_with("did:orcid:"));
+        assert_eq!(did, "did:orcid:0000-0002-1825-0097");
+
+        // The ORCID string is preserved exactly (including hyphens).
+        let did_x = orcid_to_did("0000-0002-1694-233X");
+        assert!(did_x.ends_with("233X"));
+
+        // Without hyphens also works.
+        let did_no_hyphens = orcid_to_did("0000000218250097");
+        assert_eq!(did_no_hyphens, "did:orcid:0000000218250097");
+
+        // Invalid returns empty, not a malformed DID.
+        let bad = orcid_to_did("not-an-orcid");
+        assert!(bad.is_empty());
+    }
 }

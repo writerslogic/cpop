@@ -216,4 +216,47 @@ mod tests {
         let json2 = serde_json::to_string(&doc2).expect("serialize");
         assert_eq!(json1, json2);
     }
+
+    #[test]
+    fn test_did_document_deterministic_different_keys() {
+        let did = "did:key:z6MkTest";
+        let key_a = [0xAAu8; 32];
+        let key_b = [0xBBu8; 32];
+
+        let doc_a = generate_did_document(did, &key_a);
+        let doc_b = generate_did_document(did, &key_b);
+
+        // Same DID but different keys must produce different multibase values.
+        assert_ne!(
+            doc_a.verification_method[0].public_key_multibase,
+            doc_b.verification_method[0].public_key_multibase
+        );
+
+        // Same key called twice must produce identical output.
+        let doc_a2 = generate_did_document(did, &key_a);
+        assert_eq!(
+            doc_a.verification_method[0].public_key_multibase,
+            doc_a2.verification_method[0].public_key_multibase
+        );
+    }
+
+    #[test]
+    fn test_did_document_multibase_format() {
+        let did = "did:key:z6MkTest";
+        let doc = generate_did_document(did, &TEST_PUBKEY);
+        let mb = &doc.verification_method[0].public_key_multibase;
+
+        // Must start with 'z' (base58btc multibase prefix).
+        assert!(mb.starts_with('z'), "multibase must start with 'z'");
+
+        // Decode and verify Ed25519 multicodec prefix 0xed01.
+        let decoded = bs58::decode(&mb[1..]).into_vec().expect("base58 decode");
+        assert!(
+            decoded.len() >= 34,
+            "decoded must be at least 2 prefix + 32 key bytes"
+        );
+        assert_eq!(decoded[0], 0xed, "first multicodec byte must be 0xed");
+        assert_eq!(decoded[1], 0x01, "second multicodec byte must be 0x01");
+        assert_eq!(&decoded[2..], &TEST_PUBKEY, "key bytes must match input");
+    }
 }

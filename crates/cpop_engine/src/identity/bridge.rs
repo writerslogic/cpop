@@ -127,4 +127,55 @@ mod tests {
             "0000-0002-1694-233X"
         );
     }
+
+    #[test]
+    fn test_identity_bridge_ica_mode() {
+        let did = "did:key:z6MkTest";
+        let cred = serde_json::json!({
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": ["VerifiableCredential", "IdentityClaimsAggregation"],
+            "issuer": "did:web:writersproof.com",
+            "holder": did,
+            "credentialSubject": {
+                "id": did,
+                "authorDid": did
+            }
+        });
+
+        let bridged = BridgedIdentity::with_ica(did, cred);
+        assert_eq!(bridged.mode, IdentityBridgeMode::IdentityClaimsAggregator);
+        assert_eq!(bridged.author_did, did);
+        assert!(bridged.ica_credential.is_some());
+        assert!(bridged.x509_pem.is_none());
+
+        // ICA credential should preserve the holder field.
+        let holder = bridged.ica_credential.as_ref().unwrap()["holder"]
+            .as_str()
+            .unwrap();
+        assert_eq!(holder, did);
+
+        // Serialization should include ica_credential but skip x509_pem.
+        let json = serde_json::to_value(&bridged).expect("serialize");
+        assert!(json.get("ica_credential").is_some());
+        assert!(json.get("x509_pem").is_none());
+    }
+
+    #[test]
+    fn test_identity_bridge_self_sovereign() {
+        let did = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
+        let bridged = BridgedIdentity::self_sovereign(did);
+
+        assert_eq!(bridged.mode, IdentityBridgeMode::SelfSovereign);
+        assert_eq!(bridged.author_did, did);
+        assert!(bridged.ica_credential.is_none());
+        assert!(bridged.x509_pem.is_none());
+        assert!(bridged.orcid.is_none());
+
+        // Serialization should skip all optional fields.
+        let json = serde_json::to_value(&bridged).expect("serialize");
+        assert!(json.get("ica_credential").is_none());
+        assert!(json.get("x509_pem").is_none());
+        assert!(json.get("orcid").is_none());
+        assert_eq!(json["mode"], "SelfSovereign");
+    }
 }

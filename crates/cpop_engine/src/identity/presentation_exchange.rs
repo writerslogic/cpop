@@ -116,4 +116,47 @@ mod tests {
         let tier_filter = tier.constraints.fields[0].filter.as_ref().unwrap();
         assert_eq!(tier_filter["const"], "gold");
     }
+
+    #[test]
+    fn test_presentation_exchange_constraints_structure() {
+        let pd = cpop_attestation_request(1800, "silver");
+
+        // Verify top-level metadata.
+        assert_eq!(pd.id, "cpop-attestation-request");
+        assert!(pd.name.is_some());
+        assert!(pd.purpose.is_some());
+
+        // Chain duration descriptor.
+        let chain = &pd.input_descriptors[0];
+        assert_eq!(chain.constraints.fields.len(), 1);
+        let field = &chain.constraints.fields[0];
+        assert_eq!(field.path, vec!["$.chain_duration_secs"]);
+        let filter = field.filter.as_ref().unwrap();
+        assert_eq!(filter["type"], "number");
+        assert_eq!(filter["minimum"], 1800);
+
+        // Forensic tier descriptor.
+        let tier = &pd.input_descriptors[1];
+        assert_eq!(tier.constraints.fields.len(), 1);
+        let tier_field = &tier.constraints.fields[0];
+        assert_eq!(tier_field.path, vec!["$.forensic_tier"]);
+        let tier_filter = tier_field.filter.as_ref().unwrap();
+        assert_eq!(tier_filter["type"], "string");
+        assert_eq!(tier_filter["const"], "silver");
+
+        // JSON serialization should produce valid structure.
+        let json = serde_json::to_value(&pd).expect("serialize");
+        assert!(json["input_descriptors"].is_array());
+        assert_eq!(json["input_descriptors"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_presentation_exchange_different_tiers() {
+        for tier in &["gold", "silver", "bronze"] {
+            let pd = cpop_attestation_request(60, tier);
+            let tier_field = &pd.input_descriptors[1].constraints.fields[0];
+            let filter = tier_field.filter.as_ref().unwrap();
+            assert_eq!(filter["const"], *tier);
+        }
+    }
 }

@@ -169,4 +169,80 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_status_message_requires_readonly() {
+        assert_eq!(required_role(&IpcMessage::GetStatus), IpcRole::ReadOnly);
+        // ReadOnly role should be sufficient.
+        assert!(check_authorization(IpcRole::ReadOnly, IpcRole::ReadOnly));
+    }
+
+    #[test]
+    fn test_start_witnessing_requires_user() {
+        let msg = IpcMessage::StartWitnessing {
+            file_path: PathBuf::from("/tmp/doc.txt"),
+        };
+        assert_eq!(required_role(&msg), IpcRole::User);
+    }
+
+    #[test]
+    fn test_admin_can_access_user_operations() {
+        // Admin should be able to perform User-level operations.
+        assert!(check_authorization(IpcRole::Admin, IpcRole::User));
+        assert!(check_authorization(IpcRole::Admin, IpcRole::ReadOnly));
+
+        // Verify with actual messages.
+        let user_msg = IpcMessage::StartWitnessing {
+            file_path: PathBuf::from("/tmp/test"),
+        };
+        let required = required_role(&user_msg);
+        assert!(check_authorization(IpcRole::Admin, required));
+    }
+
+    #[test]
+    fn test_readonly_cannot_access_user() {
+        assert!(!check_authorization(IpcRole::ReadOnly, IpcRole::User));
+
+        // ReadOnly client should be denied StartWitnessing.
+        let msg = IpcMessage::StartWitnessing {
+            file_path: PathBuf::from("/tmp/test"),
+        };
+        let required = required_role(&msg);
+        assert!(!check_authorization(IpcRole::ReadOnly, required));
+    }
+
+    #[test]
+    fn test_handshake_is_readonly() {
+        let msg = IpcMessage::Handshake {
+            version: "1.0".to_string(),
+        };
+        assert_eq!(required_role(&msg), IpcRole::ReadOnly);
+    }
+
+    #[test]
+    fn test_pulse_requires_user() {
+        let sample = crate::jitter::SimpleJitterSample {
+            timestamp_ns: 1_000_000,
+            duration_since_last_ns: 50_000,
+            zone: 2,
+        };
+        let msg = IpcMessage::Pulse(sample);
+        assert_eq!(required_role(&msg), IpcRole::User);
+    }
+
+    #[test]
+    fn test_system_alert_requires_user() {
+        let msg = IpcMessage::SystemAlert {
+            level: "warning".to_string(),
+            message: "test alert".to_string(),
+        };
+        assert_eq!(required_role(&msg), IpcRole::User);
+    }
+
+    #[test]
+    fn test_role_ordering() {
+        assert!(IpcRole::ReadOnly < IpcRole::User);
+        assert!(IpcRole::User < IpcRole::Admin);
+        assert!(IpcRole::ReadOnly < IpcRole::Admin);
+    }
 }
