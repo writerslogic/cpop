@@ -3,7 +3,7 @@
 This document maps CPOP's implementation to external standards and specifications,
 documenting current alignment status, integration points, and identified gaps.
 
-Last updated: 2026-03-18
+Last updated: 2026-03-24
 
 ## Alignment Summary
 
@@ -12,6 +12,7 @@ Last updated: 2026-03-18
 | IETF RATS (EAT/EAR/AR4SI) | **Strong** | Core appraisal framework |
 | W3C DID Core 1.0 | **Strong** | Author identity (did:key, did:web) |
 | W3C VC Data Model 2.0 | **Strong** | war/profiles/vc.rs projection |
+| W3C VC COSE Securing | **Implemented** | war/profiles/vc.rs COSE_Sign1 envelope |
 | C2PA (ISO 19566-5) | **Good** | war/profiles/c2pa.rs assertion |
 | CBOR/COSE (RFC 8949/9052) | **Strong** | Wire format + signatures |
 | NIST AI RMF 1.0 | **Mapped** | war/profiles/standards.rs |
@@ -20,6 +21,18 @@ Last updated: 2026-03-18
 | IPTC Digital Source Type | **Implemented** | AiDisclosureLevel mapping |
 | W3C AI Content Disclosure CG | **Implemented** | AiDisclosureLevel + HTML meta |
 | WGA MBA / SAG-AFTRA | **Mapped** | CreativeRightsCompliance |
+| EU AI Act Article 50 | **Implemented** | AiDisclosureLevel + declaration fields |
+| CAWG Identity Assertion v1.2 | **Partial** | DID-based identity, key hierarchy |
+| CAWG Training/Data Mining v1.1 | **Partial** | Declaration AI tool disclosure |
+| IETF SCITT | **Partial** | Transparency log anchoring |
+| ToIP EGF | **Planned** | Trust policy / governance framework |
+| TRQP | **Planned** | Trust registry query integration |
+| OpenID4VC (OID4VCI) | **Implemented** | identity/openid4vc.rs issuer metadata |
+| DIF Well Known DID Config | **Implemented** | identity/did_configuration.rs |
+| ORCID | **Implemented** | identity/orcid.rs author binding |
+| JPEG Trust (ISO 21617) | **Implemented** | war/profiles/jpeg_trust.rs |
+| DIF Presentation Exchange | **Implemented** | identity/presentation_exchange.rs |
+| CoRIM | **Partial** | EAR token carries CoRIM-compatible claims |
 | WebAuthn/FIDO2 | Not applicable | User auth, not authorship proof |
 | IEEE P3119 | Not applicable | Procurement standard, not metadata |
 | NCCoE AI Agent Identity | **Partial** | DID-based author identity |
@@ -210,6 +223,211 @@ CPOP can reference P3119 compliance in procurement responses.
 ### Gap: No explicit `author_type: human | ai_agent` field in evidence packet
 (implicit via behavioral attestation — EAR verdict distinguishes human from synthetic)
 
+## 14. EU AI Act Article 50
+
+### Status: Implemented
+Article 50 of the EU AI Act (effective August 2026) requires providers of AI
+systems that generate synthetic content to ensure outputs are marked in a
+machine-readable format and are detectable as artificially generated.
+
+### Implementation
+- `AiDisclosureLevel` enum maps directly to Article 50 disclosure categories
+- Declaration's `AiExtent` field records the degree of AI involvement
+- HTML meta tag `<meta name="ai-disclosure">` satisfies machine-readable requirement
+- IPTC Digital Source Type URIs provide interoperable content labeling
+- Code path: `war/profiles/standards.rs`
+
+### Spec reference
+Regulation (EU) 2024/1689, Article 50 (Transparency obligations for certain AI systems)
+
+## 15. CAWG Identity Assertion v1.2
+
+### Status: Partial
+The C2PA-Affiliated Working Group (CAWG) Identity Assertion specification
+defines how to bind a verified identity to a C2PA manifest.
+
+### Implementation
+- Author DID (did:key, did:web) in evidence packets and VC credential subject
+- Ed25519 key hierarchy provides cryptographic identity binding
+- Session certificates link authoring sessions to master identity
+- Code path: `identity/`, `keyhierarchy/`
+
+### Gap
+- No X.509 certificate with identity claims (CAWG requires X.509 or VC)
+- No explicit CAWG `identity_assertion` JUMBF box generation
+
+### Spec reference
+CAWG Identity Assertion, version 1.2 (2025)
+
+## 16. CAWG Training and Data Mining v1.1
+
+### Status: Partial
+Defines how content creators can express preferences about AI training and
+data mining use of their content.
+
+### Implementation
+- Declaration includes `ai_tools` array disclosing AI involvement in creation
+- `AiExtent` communicates the degree of AI contribution
+- C2PA action entries carry `digitalSourceType` distinguishing human vs AI content
+- Code path: `declaration/types.rs`, `war/profiles/c2pa.rs`
+
+### Gap
+- No explicit `c2pa.training-mining` assertion with `do_not_train` / `constraint_info`
+
+### Spec reference
+CAWG Training and Data Mining Assertion, version 1.1 (2025)
+
+## 17. W3C VC COSE Securing
+
+### Status: Implemented
+The W3C "Securing Verifiable Credentials using JOSE and COSE" Recommendation
+defines how to wrap a VC payload in a COSE_Sign1 structure.
+
+### Implementation (`war/profiles/vc.rs`)
+- `to_cose_secured_vc()` serializes the VC as CBOR and wraps in COSE_Sign1
+- EdDSA (Ed25519) signing via ed25519-dalek
+- Content type set to `application/vc` in COSE protected headers
+- Data Integrity proof (`eddsa-rdfc-2022`) also supported as alternative
+
+### Spec reference
+W3C Recommendation, "Securing Verifiable Credentials using JOSE and COSE" (May 2025)
+
+## 18. IETF SCITT
+
+### Status: Partial
+Supply Chain Integrity, Transparency, and Trust (SCITT) defines append-only
+transparency logs for supply chain claims.
+
+### Implementation
+- WritersProof beacon anchoring submits evidence hashes to a transparency log
+- Beacon attestation includes counter-signatures from the log operator
+- Checkpoint chain provides an append-only evidence trail
+- Code path: `writersproof/`, `anchors/`, `ffi/beacon.rs`
+
+### Gap
+- Not a full SCITT Reference Architecture (no Receipt / COSE_Sign1 countersign per draft-ietf-scitt-architecture)
+- Transparency log is WritersProof-operated, not a generic SCITT ledger
+
+### Spec reference
+draft-ietf-scitt-architecture (IETF SCITT WG)
+
+## 19. ToIP EGF (Trust over IP Ecosystem Governance Framework)
+
+### Status: Planned
+ToIP's Ecosystem Governance Framework defines governance metadata for trust
+ecosystems including credential schemas, trust registries, and policies.
+
+### Alignment
+- CPOP's trust policy module (`trust_policy/`) evaluates evidence against
+  configurable policy profiles, which could map to ToIP governance rules
+- Key hierarchy and session certificates align with ToIP's credential lifecycle
+
+### Spec reference
+Trust over IP Foundation, Ecosystem Governance Framework Specification v1.0
+
+## 20. TRQP (Trust Registry Query Protocol)
+
+### Status: Planned
+TRQP defines how verifiers query trust registries to determine whether an
+issuer or holder is authorized within a governance framework.
+
+### Alignment
+- WritersProof API could expose a TRQP-compatible endpoint for querying
+  authorized CPOP attestation issuers
+- DID-based identity aligns with TRQP's identifier model
+
+### Spec reference
+Trust over IP Foundation, Trust Registry Query Protocol v2.0
+
+## 21. OpenID4VC (OID4VCI)
+
+### Status: Implemented
+OpenID for Verifiable Credential Issuance defines how a credential issuer
+advertises supported credential types and issues credentials to wallets.
+
+### Implementation (`identity/openid4vc.rs`)
+- `CredentialIssuerMetadata` describes WritersProof as an OID4VCI issuer
+- Supports `vc+sd-jwt` and `vc+cose` credential formats
+- Credential type: `ProcessAttestationCredential`
+- Claims: author_did, process_verdict, attestation_tier, evidence_ref,
+  chain_duration_secs, ai_disclosure
+
+### Spec reference
+OpenID for Verifiable Credential Issuance (OID4VCI), draft 13
+
+## 22. DIF Well Known DID Configuration
+
+### Status: Implemented
+Links a web domain to DIDs it controls via a `.well-known/did-configuration.json`
+resource containing domain linkage credentials.
+
+### Implementation (`identity/did_configuration.rs`)
+- Generates domain linkage credentials binding `writerslogic.com` to issuer DIDs
+- Supports `did:web` and `did:key` methods
+
+### Spec reference
+DIF Well Known DID Configuration, v0.2.0
+
+## 23. ORCID
+
+### Status: Implemented
+ORCID provides persistent digital identifiers for researchers and authors.
+
+### Implementation (`identity/orcid.rs`)
+- Binds an ORCID iD to a CPOP author identity
+- ORCID can be included in evidence packets and VC credential subjects
+- Validates ORCID format (0000-0000-0000-000X)
+
+### Spec reference
+ORCID API v3.0, ISO 27729 (ISNI)
+
+## 24. JPEG Trust (ISO/IEC 21617)
+
+### Status: Implemented
+JPEG Trust defines Trust Profiles and Trust Reports for assessing media
+trustworthiness. A Trust Report aggregates trust indicators from multiple sources.
+
+### Implementation (`war/profiles/jpeg_trust.rs`)
+- `JpegTrustProfile` maps CPOP attestation to a JPEG Trust profile
+- Three trust indicators: process_evidence, identity_binding, temporal_proof
+- Confidence levels derived from attestation strength
+- Profile ID: `cpop-pop-attestation-v1`
+
+### Spec reference
+ISO/IEC 21617 (JPEG Trust), Parts 1-4
+
+## 25. DIF Presentation Exchange
+
+### Status: Implemented
+Defines how verifiers describe proof requirements and how holders submit
+matching verifiable presentations.
+
+### Implementation (`identity/presentation_exchange.rs`)
+- Presentation definition for `ProcessAttestationCredential`
+- Input descriptors for required claims (author_did, process_verdict)
+- Supports JSON Path constraint syntax
+
+### Spec reference
+DIF Presentation Exchange, v2.1.1
+
+## 26. CoRIM (Concise Reference Integrity Manifest)
+
+### Status: Partial
+CoRIM defines a CBOR-based format for reference values used in RATS
+attestation verification.
+
+### Alignment
+- EAR token carries claims compatible with CoRIM reference value structure
+- AR4SI trust vector components map to CoRIM measurement categories
+- CBOR wire format shared between CPOP evidence and CoRIM manifests
+
+### Gap
+- No explicit CoRIM manifest generation or parsing
+- Reference values are embedded in trust policy, not in CoRIM format
+
+### Spec reference
+draft-ietf-rats-corim (IETF RATS WG)
+
 ---
 
 ## Code References
@@ -219,8 +437,15 @@ CPOP can reference P3119 compliance in procurement responses.
 | EAR Token | `war/ear.rs` | IETF RATS EAR implementation |
 | AR4SI Appraisal | `war/appraisal.rs` | Trust vector computation |
 | C2PA Profile | `war/profiles/c2pa.rs` | C2PA assertion projection |
-| VC Profile | `war/profiles/vc.rs` | W3C VC 2.0 projection |
+| VC Profile | `war/profiles/vc.rs` | W3C VC 2.0 + COSE securing |
+| JPEG Trust | `war/profiles/jpeg_trust.rs` | ISO 21617 trust profile |
+| EU AI Act | `war/profiles/eu_ai_act.rs` | Article 50 compliance |
+| CAWG | `war/profiles/cawg.rs` | Identity/Training assertions |
 | Standards Map | `war/profiles/standards.rs` | Multi-standard compliance |
+| OpenID4VC | `identity/openid4vc.rs` | OID4VCI issuer metadata |
+| DID Configuration | `identity/did_configuration.rs` | DIF Well Known DID |
+| ORCID | `identity/orcid.rs` | ORCID author binding |
+| Presentation Exchange | `identity/presentation_exchange.rs` | DIF PE definitions |
 | DID Identity | `cmd_identity.rs` | DID generation |
 | Declaration | `declaration/types.rs` | AI disclosure (AiExtent, AiToolUsage) |
 | Steganography | `steganography/` | ZWC watermarking (NIST AI 100-4) |
