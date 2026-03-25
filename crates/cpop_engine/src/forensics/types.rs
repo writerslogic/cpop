@@ -113,6 +113,35 @@ pub struct CadenceMetrics {
     pub is_robotic: bool,
     /// IKI percentiles: p10, p25, p50, p75, p90.
     pub percentiles: [f64; 5],
+    /// Ratio of cross-hand IKI std_dev to same-hand IKI std_dev.
+    /// Human typing shows >1.3; transcriptive <1.1.
+    pub cross_hand_timing_ratio: f64,
+    /// CV of the first 5 keystrokes after each pause (>1s).
+    /// Cognitive >0.25; transcriptive <0.15.
+    pub post_pause_cv: f64,
+    /// Lag-1 autocorrelation of IKI sequence.
+    /// Cognitive: -0.1 to 0.2; transcriptive: >0.3.
+    pub iki_autocorrelation: f64,
+    /// Fraction of keystrokes that are backspace/delete (zone 0xFF).
+    /// Cognitive >0.05; transcriptive <0.02.
+    pub correction_ratio: f64,
+    /// Distribution of pause durations: [sentence_1_3s, paragraph_3_10s, deep_thought_10s_plus].
+    pub pause_depth_distribution: [f64; 3],
+}
+
+/// Focus pattern metrics for cognitive/transcriptive analysis.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FocusMetrics {
+    /// Total number of focus switches during editing.
+    pub switch_count: usize,
+    /// Fraction of editing time spent out-of-focus.
+    pub out_of_focus_ratio: f64,
+    /// Number of switches to known AI/browser apps.
+    pub ai_app_switch_count: usize,
+    /// Average duration of focus-away periods in seconds.
+    pub avg_away_duration_sec: f64,
+    /// Whether the pattern suggests reading from external source.
+    pub reading_pattern_detected: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -145,6 +174,8 @@ pub struct ForensicMetrics {
     pub lyapunov: Option<LyapunovAnalysis>,
     pub iki_compression: Option<IkiCompressionAnalysis>,
     pub labyrinth: Option<LabyrinthAnalysis>,
+    /// Focus-switching pattern analysis.
+    pub focus: FocusMetrics,
 }
 
 impl ForensicMetrics {
