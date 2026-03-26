@@ -246,6 +246,12 @@ impl Drop for Engine {
 }
 
 fn start_file_watcher(inner: &Arc<EngineInner>, watch_dirs: Vec<PathBuf>) -> Result<()> {
+    // Drop the old watcher first so the channel closes and the thread unblocks.
+    *inner.watcher.lock_recover() = None;
+    if let Some(handle) = inner.watcher_thread.lock_recover().take() {
+        let _ = handle.join();
+    }
+
     let (tx, rx) = mpsc::channel();
     let mut watcher: RecommendedWatcher = RecommendedWatcher::new(tx, notify::Config::default())?;
 
@@ -300,6 +306,9 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
     if !path.is_file() {
         return Ok(());
     }
+
+    // Capture the event timestamp before any I/O so it reflects when the OS event arrived.
+    let event_timestamp_ns = now_ns();
 
     // Open once: get both hash and size from the same file handle to avoid TOCTOU.
     let (content_hash, file_size_u64) = crate::crypto::hash_file_with_size(path)?;
@@ -370,9 +379,10 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
 
     let size_delta = {
         let mut map = inner.file_sizes.lock_recover();
-        let previous = map
-            .insert(resolved_path.clone(), file_size)
-            .unwrap_or(file_size);
+        // Use entry so a rename migration (which already inserted the new path with the old size)
+        // is not overwritten here, preserving the correct previous size for delta computation.
+        let previous = *map.entry(resolved_path.clone()).or_insert(file_size);
+        map.insert(resolved_path.clone(), file_size);
         i32::try_from((file_size - previous).clamp(i32::MIN as i64, i32::MAX as i64)).unwrap_or(
             if file_size > previous {
                 i32::MAX
@@ -415,7 +425,7 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
         id: None,
         device_id: inner.device_id,
         machine_id: inner.machine_id.clone(),
-        timestamp_ns: now_ns(),
+        timestamp_ns: event_timestamp_ns,
         file_path: resolved_path.to_string_lossy().to_string(),
         content_hash,
         file_size,

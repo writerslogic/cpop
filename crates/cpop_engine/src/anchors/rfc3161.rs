@@ -24,7 +24,7 @@ impl Rfc3161Provider {
     }
 
     async fn request_timestamp(&self, url: &str, hash: &[u8; 32]) -> Result<Vec<u8>, AnchorError> {
-        let (request, nonce) = self.build_timestamp_request(hash)?;
+        let (request, nonce_sent) = self.build_timestamp_request(hash)?;
 
         let mut response = self
             .client
@@ -94,7 +94,7 @@ impl Rfc3161Provider {
         let tst_info = extract_tst_info(&body)?;
         let response_nonce = extract_nonce(&tst_info)
             .ok_or_else(|| AnchorError::InvalidFormat("TSA response missing nonce".into()))?;
-        if response_nonce != nonce {
+        if response_nonce != nonce_sent.as_slice() {
             return Err(AnchorError::InvalidFormat(
                 "TSA response nonce does not match request nonce".into(),
             ));
@@ -104,10 +104,11 @@ impl Rfc3161Provider {
     }
 
     #[allow(clippy::vec_init_then_push)]
-    fn build_timestamp_request(&self, hash: &[u8; 32]) -> Result<(Vec<u8>, [u8; 8]), AnchorError> {
+    fn build_timestamp_request(&self, hash: &[u8; 32]) -> Result<(Vec<u8>, Vec<u8>), AnchorError> {
         let mut nonce = [0u8; 8];
         getrandom::getrandom(&mut nonce)
             .map_err(|_| AnchorError::Submission("Failed to generate nonce".into()))?;
+        let nonce_vec = nonce.to_vec();
 
         let sha256_oid: &[u8] = &[
             0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
@@ -150,7 +151,7 @@ impl Rfc3161Provider {
         }
         final_request.extend_from_slice(&request);
 
-        Ok((final_request, nonce))
+        Ok((final_request, nonce_vec))
     }
 
     /// Extract timestamp, serial, and TSA name from a TimeStampResp (RFC 3161 s2.4.2).
@@ -175,7 +176,16 @@ impl Rfc3161Provider {
     }
 
     /// Verify that the embedded MessageImprint hash matches `hash`.
+    ///
+    /// WARNING: CMS signature verification is not implemented. The TSA's digital signature
+    /// over the TSTInfo is not checked. This function only verifies that the embedded hash
+    /// matches the expected value.
     fn verify_timestamp_token(&self, token: &[u8], hash: &[u8; 32]) -> Result<bool, AnchorError> {
+        log::warn!(
+            "verify_timestamp_token: CMS signature verification is not implemented; \
+             only the embedded MessageImprint hash is checked"
+        );
+
         if token.len() < 100 {
             return Err(AnchorError::InvalidFormat("Token too short".into()));
         }
@@ -399,7 +409,10 @@ fn extract_serial_number(tst_info: &[u8]) -> Option<String> {
 ///
 /// TSTInfo fields: version, policy, messageImprint, serialNumber, genTime, [accuracy],
 /// [ordering], [nonce]. The nonce is the first INTEGER (tag 0x02) after genTime (tag 0x18).
-fn extract_nonce(tst_info: &[u8]) -> Option<[u8; 8]> {
+///
+/// RFC 3161 permits nonces of 1-64 bytes. The returned `Vec<u8>` contains the canonical
+/// value (leading zero padding from DER encoding is stripped).
+fn extract_nonce(tst_info: &[u8]) -> Option<Vec<u8>> {
     let outer = read_tlv(tst_info, 0)?;
     let inner_start = if outer.tag == 0x30 {
         outer.content_start
@@ -422,17 +435,20 @@ fn extract_nonce(tst_info: &[u8]) -> Option<[u8; 8]> {
         }
         if past_gentime && child.tag == 0x02 {
             let content = child.content(tst_info);
-            if content.len() == 8 {
-                let mut nonce = [0u8; 8];
-                nonce.copy_from_slice(content);
-                return Some(nonce);
+            // RFC 3161 nonces may be 1-64 bytes; reject obviously invalid lengths.
+            if content.is_empty() || content.len() > 65 {
+                return None;
             }
-            // Handle leading zero padding (DER INTEGER may have leading 0x00)
-            if content.len() == 9 && content[0] == 0x00 {
-                let mut nonce = [0u8; 8];
-                nonce.copy_from_slice(&content[1..]);
-                return Some(nonce);
+            // DER INTEGER may have a leading 0x00 sign byte; strip it.
+            let canonical = if content.len() > 1 && content[0] == 0x00 {
+                &content[1..]
+            } else {
+                content
+            };
+            if canonical.is_empty() || canonical.len() > 64 {
+                return None;
             }
+            return Some(canonical.to_vec());
         }
     }
     None

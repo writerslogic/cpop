@@ -285,12 +285,10 @@ fn verify_duration(
         .filter_map(|cp| cp.vdf_iterations)
         .sum();
 
-    // Compute minimum wall time from iterations
-    let computed_min_seconds = if vdf_params.iterations_per_second > 0 {
-        total_iterations as f64 / vdf_params.iterations_per_second as f64
-    } else {
-        0.0
-    };
+    // Compute minimum wall time from iterations.
+    // The iterations_per_second == 0 case is already handled by the early return above,
+    // so no inner guard is needed here.
+    let computed_min_seconds = total_iterations as f64 / vdf_params.iterations_per_second as f64;
 
     // Claimed elapsed time from min to max checkpoint timestamp
     let claimed_seconds = if packet.checkpoints.len() >= 2 {
@@ -307,20 +305,25 @@ fn verify_duration(
     let ratio = if computed_min_seconds > 0.0 {
         claimed_seconds / computed_min_seconds
     } else {
-        1.0
+        // No VDF iteration data; ratio is meaningless. Use 0.0 to avoid a false
+        // "clean" 1.0 that would hide the absence of proof data.
+        0.0
     };
 
     let plausible = if computed_min_seconds > 0.0 {
         (SWF_DURATION_RATIO_MIN..=SWF_DURATION_RATIO_MAX).contains(&ratio)
-    } else if packet.checkpoints.len() > 1 {
-        // Multi-checkpoint packet should have VDF proof data
-        warnings.push("Expected VDF proof data not found".to_string());
+    } else if !packet.checkpoints.is_empty() {
+        // One or more checkpoints exist but none carried VDF iteration data.
+        // A packet with checkpoints must have VDF proofs to be considered plausible.
+        warnings.push("No VDF proof data found".to_string());
         false
     } else {
+        // Zero-checkpoint packet (e.g., a bare structural shell): no proof is expected.
         true
     };
 
-    if !plausible {
+    // Only emit ratio-based warnings when we actually have VDF data to compare against.
+    if !plausible && computed_min_seconds > 0.0 {
         if ratio < SWF_DURATION_RATIO_MIN {
             warnings.push(format!(
                 "Duration implausible: claimed {:.1}s but VDF requires minimum {:.1}s (ratio {:.2}x)",
@@ -635,9 +638,17 @@ fn compute_verdict(
         }
     }
 
-    // Defer to forensic analysis verdict if available
+    // No VDF proof data present: without time-hardness evidence, the best
+    // attainable verdict is V2LikelyHuman regardless of forensic score.
+    let no_vdf = duration.computed_min_seconds == 0.0 && !duration.plausible;
+
+    // Defer to forensic analysis verdict if available, but respect the VDF cap.
     if let Some(fm) = forensics {
-        return fm.map_to_protocol_verdict();
+        let fv = fm.map_to_protocol_verdict();
+        if no_vdf && fv == ForensicVerdict::V1VerifiedHuman {
+            return ForensicVerdict::V2LikelyHuman;
+        }
+        return fv;
     }
 
     // Duration implausible for other reasons (e.g., missing VDF data) → suspicious
@@ -652,7 +663,9 @@ fn compute_verdict(
 
     // Signed packet with valid signature, plausible duration, consistent key
     // provenance, and no suspicious flags → verified human.
-    if signature == Some(true)
+    // A packet without VDF proof data (no_vdf) cannot reach V1VerifiedHuman.
+    if !no_vdf
+        && signature == Some(true)
         && key_provenance.signing_key_consistent
         && key_provenance.hierarchy_consistent != Some(false)
     {

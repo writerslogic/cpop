@@ -23,7 +23,15 @@ const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
 const JITTER_QUANTIZATION_MS: u64 = 5;
 
 /// Convert a checkpoint chain to a spec-conformant `EvidencePacketWire`.
+///
+/// Each call mixes a fresh 8-byte random salt into the packet and checkpoint
+/// ID hashes so that re-exporting the same chain produces unique IDs and
+/// prevents accidental cross-export collisions.
 pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
+    // Random salt so each export produces unique packet/checkpoint IDs even
+    // when re-exporting an identical chain.
+    let export_nonce = rand::random::<[u8; 8]>();
+
     // Single pass: detect jitter presence and physical-state coverage for tier selection
     let (has_jitter, all_have_physical) =
         chain
@@ -43,7 +51,7 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
     let checkpoints: Vec<CheckpointWire> = chain
         .checkpoints
         .iter()
-        .map(|cp| checkpoint_to_wire(cp, use_entangled))
+        .map(|cp| checkpoint_to_wire(cp, use_entangled, &export_nonce))
         .collect();
 
     let last_cp = chain.checkpoints.last();
@@ -81,6 +89,7 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
             let mut h = Sha256::new();
             h.update(b"cpop-packet-id-v1");
             h.update(content_hash);
+            h.update(export_nonce);
             let d = h.finalize();
             let mut id = [0u8; 16];
             id.copy_from_slice(&d[..16]);
@@ -102,7 +111,11 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
     }
 }
 
-fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
+fn checkpoint_to_wire(
+    cp: &Checkpoint,
+    use_entangled: bool,
+    export_nonce: &[u8; 8],
+) -> CheckpointWire {
     let process_proof = if let Some(swf) = &cp.argon2_swf {
         // §entangled-mode-requirement: ENHANCED/MAXIMUM → algorithm 21
         let algorithm = if use_entangled {
@@ -268,6 +281,7 @@ fn checkpoint_to_wire(cp: &Checkpoint, use_entangled: bool) -> CheckpointWire {
             h.update(b"cpop-checkpoint-id-v1");
             h.update(cp.content_hash);
             h.update(cp.ordinal.to_le_bytes());
+            h.update(export_nonce);
             let d = h.finalize();
             let mut id = [0u8; 16];
             id.copy_from_slice(&d[..16]);

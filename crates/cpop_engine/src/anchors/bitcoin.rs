@@ -30,14 +30,14 @@ impl BitcoinProvider {
         rpc_user: String,
         rpc_password: String,
         network: BitcoinNetwork,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AnchorError> {
+        Ok(Self {
             rpc_url,
             rpc_user,
             rpc_password,
             network,
-            client: reqwest::Client::new(),
-        }
+            client: super::http::build_http_client(None)?,
+        })
     }
 
     /// Create from `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, `BITCOIN_RPC_PASSWORD` env vars.
@@ -52,7 +52,7 @@ impl BitcoinProvider {
             Ok("regtest") => BitcoinNetwork::Regtest,
             _ => BitcoinNetwork::Mainnet,
         };
-        Ok(Self::new(rpc_url, rpc_user, rpc_password, network))
+        Self::new(rpc_url, rpc_user, rpc_password, network)
     }
 
     async fn rpc_call(
@@ -81,31 +81,42 @@ impl BitcoinProvider {
         }
 
         let utxo = &utxos[0];
-        let txid = utxo["txid"].as_str().unwrap_or("");
+        let txid = utxo["txid"]
+            .as_str()
+            .ok_or_else(|| AnchorError::Submission("Invalid UTXO txid".into()))?;
         let vout = utxo["vout"].as_u64().unwrap_or(0);
-        let amount = utxo["amount"].as_f64().unwrap_or(0.0);
+        // Amounts from bitcoind are BTC floats; convert to satoshis immediately.
+        let amount_btc = utxo["amount"]
+            .as_f64()
+            .ok_or_else(|| AnchorError::Submission("Invalid UTXO amount".into()))?;
+        let amount_sats = (amount_btc * 100_000_000.0).round() as u64;
 
-        if txid.is_empty() || amount <= 0.0 {
+        if txid.is_empty() || amount_sats == 0 {
             return Err(AnchorError::Submission("Invalid UTXO".into()));
         }
 
         let change_address = self
             .rpc_call("getnewaddress", serde_json::json!([]))
             .await?;
-        let change_address = change_address.as_str().unwrap_or("");
+        let change_address = change_address
+            .as_str()
+            .ok_or_else(|| AnchorError::Submission("Invalid change address from node".into()))?;
 
-        let fee = 0.0001;
-        let change_amount = amount - fee;
-        if change_amount <= 0.0 {
-            return Err(AnchorError::Submission("Insufficient funds".into()));
-        }
+        // 10_000 satoshis (0.0001 BTC) fee.
+        const FEE_SATS: u64 = 10_000;
+        let change_sats = amount_sats
+            .checked_sub(FEE_SATS)
+            .filter(|&v| v > 0)
+            .ok_or_else(|| AnchorError::Submission("Insufficient funds".into()))?;
+        // Convert back to BTC float only for the RPC serialization layer.
+        let change_amount_btc = change_sats as f64 / 100_000_000.0;
 
         let inputs = serde_json::json!([
             {"txid": txid, "vout": vout}
         ]);
 
         let outputs = serde_json::json!({
-            change_address: change_amount,
+            change_address: change_amount_btc,
             "data": hex::encode(hash)
         });
 
@@ -116,13 +127,18 @@ impl BitcoinProvider {
         let signed = self
             .rpc_call("signrawtransactionwithwallet", serde_json::json!([raw_tx]))
             .await?;
-        let signed_hex = signed["hex"].as_str().unwrap_or("");
+        let signed_hex = signed["hex"].as_str().ok_or_else(|| {
+            AnchorError::Submission("Missing hex in signrawtransactionwithwallet response".into())
+        })?;
 
-        let txid = self
+        let result = self
             .rpc_call("sendrawtransaction", serde_json::json!([signed_hex]))
             .await?;
+        let txid = result
+            .as_str()
+            .ok_or_else(|| AnchorError::Submission("Invalid txid from node".into()))?;
 
-        Ok(txid.as_str().unwrap_or("").to_string())
+        Ok(txid.to_string())
     }
 
     async fn get_tx_confirmations(&self, txid: &str) -> Result<u64, AnchorError> {
@@ -208,7 +224,8 @@ mod tests {
             "user".to_string(),
             "pass".to_string(),
             BitcoinNetwork::Testnet,
-        );
+        )
+        .expect("client build should succeed");
         assert_eq!(provider.provider_type(), ProviderType::Bitcoin);
         assert_eq!(provider.name(), "Bitcoin");
     }

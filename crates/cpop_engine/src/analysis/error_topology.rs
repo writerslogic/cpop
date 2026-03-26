@@ -51,12 +51,23 @@ pub struct ErrorDistribution {
     pub isolated_errors: usize,
 }
 
+/// Score version for stored/compared results. Bump when weights change so
+/// callers can reject cross-version comparisons.
+///
+/// Version history:
+///   1 — original weights: gap=0.4, hurst=0.4, adjacency=0.2
+///   2 — hurst reduced 0.4→0.2 (single-window R/S less accurate than
+///         multi-window); adjacency raised 0.2→0.4 to compensate
+#[allow(dead_code)]
+pub(crate) const ERROR_TOPOLOGY_SCORE_VERSION: u8 = 2;
+
 impl ErrorTopology {
     pub const VALIDITY_THRESHOLD: f64 = 0.75;
     pub const WEIGHT_GAP: f64 = 0.4;
-    /// Reduced from 0.4 to 0.2 because the single-window R/S estimator is less
-    /// accurate than the multi-window analysis in `analysis/hurst.rs`. The
-    /// freed weight is redistributed to adjacency_correlation.
+    /// Reduced from 0.4 to 0.2 (version 1→2) because the single-window R/S
+    /// estimator is less accurate than the multi-window analysis in
+    /// `analysis/hurst.rs`. The freed weight is redistributed to
+    /// adjacency_correlation. See `ERROR_TOPOLOGY_SCORE_VERSION`.
     pub const WEIGHT_HURST: f64 = 0.2;
     pub const WEIGHT_ADJACENCY: f64 = 0.4;
 
