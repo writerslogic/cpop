@@ -41,10 +41,12 @@ impl From<&TrustworthinessVector> for SerializedTrustVector {
 ///
 /// Returns one of `"hardware_bound"`, `"attested_software"`, or `"software_only"`.
 pub fn derive_attestation_tier(tv: &TrustworthinessVector) -> &'static str {
-    if tv.hardware >= Ar4siStatus::Affirming as i8 {
-        "hardware_bound"
+    if tv.hardware >= Ar4siStatus::Contraindicated as i8 {
+        "software_only"
     } else if tv.hardware >= Ar4siStatus::Warning as i8 {
         "attested_software"
+    } else if tv.hardware >= Ar4siStatus::Affirming as i8 {
+        "hardware_bound"
     } else {
         "software_only"
     }
@@ -82,20 +84,18 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_attestation_tier_warning_is_hardware_bound() {
-        // Warning (32) >= Affirming (2), so it maps to hardware_bound.
+    fn test_derive_attestation_tier_warning_is_attested_software() {
+        // Warning (32) >= Warning (32) but < Contraindicated (96), so it maps to attested_software.
         let tv = TrustworthinessVector {
             hardware: Ar4siStatus::Warning as i8,
             ..Default::default()
         };
-        assert_eq!(derive_attestation_tier(&tv), "hardware_bound");
+        assert_eq!(derive_attestation_tier(&tv), "attested_software");
     }
 
     #[test]
     fn test_derive_attestation_tier_attested_software() {
-        // A value between Warning (32) and Affirming (2) that is >= Warning
-        // is unreachable with standard AR4SI values, but a raw value of 1
-        // (below Affirming but above None) maps to software_only.
+        // A raw value of 1 (below Affirming but above None) maps to software_only.
         let tv = TrustworthinessVector {
             hardware: 1,
             ..Default::default()

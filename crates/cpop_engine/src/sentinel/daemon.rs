@@ -471,9 +471,10 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm =
-            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+        let mut sigterm = signal(SignalKind::terminate())
+            .map_err(|e| anyhow::anyhow!("Failed to install SIGTERM handler: {e}"))?;
+        let mut sigint = signal(SignalKind::interrupt())
+            .map_err(|e| anyhow::anyhow!("Failed to install SIGINT handler: {e}"))?;
 
         tokio::select! {
             _ = sigterm.recv() => {
@@ -489,7 +490,7 @@ pub async fn cmd_start_foreground(writerslogic_dir: &Path) -> Result<()> {
     {
         tokio::signal::ctrl_c()
             .await
-            .expect("Failed to install Ctrl+C handler");
+            .map_err(|e| anyhow::anyhow!("Failed to install Ctrl+C handler: {e}"))?;
         log::info!("Received shutdown signal, shutting down...");
     }
 

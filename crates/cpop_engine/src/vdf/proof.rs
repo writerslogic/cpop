@@ -116,8 +116,16 @@ impl VdfProof {
         let mut output = [0u8; 32];
         input.copy_from_slice(&data[0..32]);
         output.copy_from_slice(&data[32..64]);
-        let iterations = u64::from_be_bytes(data[64..72].try_into().expect("8-byte slice"));
-        let duration_nanos = u64::from_be_bytes(data[72..80].try_into().expect("8-byte slice"));
+        let iterations = u64::from_be_bytes(
+            data[64..72]
+                .try_into()
+                .map_err(|_| "bad slice".to_string())?,
+        );
+        let duration_nanos = u64::from_be_bytes(
+            data[72..80]
+                .try_into()
+                .map_err(|_| "bad slice".to_string())?,
+        );
 
         Ok(Self {
             input,

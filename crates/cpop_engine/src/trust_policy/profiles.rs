@@ -79,6 +79,13 @@ pub fn academic() -> AppraisalPolicy {
 pub fn legal() -> AppraisalPolicy {
     AppraisalPolicy::new("urn:ietf:params:pop:policy:legal", "1.0")
         .with_computation(TrustComputation::MinimumOfFactors)
+        .add_factor(TrustFactor::new(
+            "chain-integrity",
+            FactorType::ChainIntegrity,
+            1.0,
+            0.0,
+            0.0,
+        ))
         .add_threshold(TrustThreshold::new(
             "hardware-required",
             ThresholdType::RequiredFactor,

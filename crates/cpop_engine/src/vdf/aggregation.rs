@@ -275,7 +275,10 @@ impl MerkleVdfBuilder {
         }
 
         if self.leaf_hashes.len() == 1 {
-            let digest: [u8; 32] = Sha256::digest(self.leaf_hashes[0].as_bytes()).into();
+            let mut hasher = Sha256::new();
+            hasher.update([0x00u8]); // leaf domain separation
+            hasher.update(self.leaf_hashes[0].as_bytes());
+            let digest: [u8; 32] = hasher.finalize().into();
             return hex::encode(digest);
         }
 
@@ -284,6 +287,7 @@ impl MerkleVdfBuilder {
             .iter()
             .map(|leaf| {
                 let mut hasher = Sha256::new();
+                hasher.update([0x00u8]); // leaf domain separation
                 hasher.update(leaf.as_bytes());
                 hasher.finalize().into()
             })
@@ -294,12 +298,14 @@ impl MerkleVdfBuilder {
             for chunk in level.chunks(2) {
                 let hash: [u8; 32] = if chunk.len() == 2 {
                     let mut hasher = Sha256::new();
+                    hasher.update([0x01u8]); // internal node domain separation
                     hasher.update(chunk[0]);
                     hasher.update(chunk[1]);
                     hasher.finalize().into()
                 } else {
                     // Odd node promoted: re-hash to maintain uniform structure
                     let mut hasher = Sha256::new();
+                    hasher.update([0x01u8]); // internal node domain separation
                     hasher.update(chunk[0]);
                     hasher.finalize().into()
                 };

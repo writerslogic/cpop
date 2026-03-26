@@ -49,16 +49,19 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     }
 
     /// Unmask and deserialize the stored value.
-    pub fn reveal(&self) -> T {
+    ///
+    /// Returns `None` if deserialization fails (e.g. data was corrupted or the
+    /// obfuscation key was lost). Callers should treat `None` as a tamper signal.
+    pub fn reveal(&self) -> Option<T> {
         let mut unmasked = Self::xor_data(&self.masked_data, self.mask_key);
 
-        let (value, _): (T, usize) =
-            bincode::serde::decode_from_slice(&unmasked, bincode::config::standard())
-                .expect("deserialization failed");
+        let result = bincode::serde::decode_from_slice(&unmasked, bincode::config::standard())
+            .ok()
+            .map(|(value, _): (T, usize)| value);
 
         unmasked.zeroize();
 
-        value
+        result
     }
 
     fn xor_data(data: &[u8], key: u64) -> Vec<u8> {
@@ -70,10 +73,13 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
         out
     }
 
-    /// Re-mask with a new key (call periodically to frustrate memory snapshots)
+    /// Re-mask with a new key (call periodically to frustrate memory snapshots).
+    ///
+    /// If deserialization fails the existing masked data is left unchanged.
     pub fn rotate(&mut self) {
-        let value = self.reveal();
-        *self = Self::new(&value);
+        if let Some(value) = self.reveal() {
+            *self = Self::new(&value);
+        }
     }
 }
 

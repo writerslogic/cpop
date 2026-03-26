@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+use super::helpers::html_escape;
 use crate::report::types::*;
 use std::fmt::{self, Write};
 
 pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
+    let report_id_escaped = html_escape(&r.report_id);
     write!(
         html,
         r#"<!DOCTYPE html>
@@ -340,6 +342,6 @@ table.data tr:nth-child(even) {{ background: var(--gray-50); }}
 <body>
 <div class="container">
 "#,
-        report_id = r.report_id
+        report_id = report_id_escaped
     )
 }

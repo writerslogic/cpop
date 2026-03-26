@@ -28,7 +28,9 @@ pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
     let mut autocomplete_chars: i64 = 0;
 
     for window in sorted.windows(2) {
-        let delta_ns = window[1].timestamp_ns - window[0].timestamp_ns;
+        let delta_ns = window[1]
+            .timestamp_ns
+            .saturating_sub(window[0].timestamp_ns);
         let delta_sec = delta_ns as f64 / 1e9;
 
         if delta_sec > 0.0 && delta_sec < MAX_DELTA_SEC {

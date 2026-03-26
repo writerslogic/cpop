@@ -53,7 +53,7 @@ impl OfflineQueue {
         let id = format!(
             "{}-{}",
             Utc::now().format("%Y%m%d%H%M%S"),
-            &hex::encode(&signature.to_bytes()[..4])
+            hex::encode(rand::random::<[u8; 8]>())
         );
 
         let entry = QueuedAttestation {

@@ -8,6 +8,7 @@ use super::messages::MAX_MESSAGE_SIZE;
 use super::messages::{IpcErrorCode, IpcMessage};
 use p256::{ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint, PublicKey};
 use std::path::PathBuf;
+use subtle::ConstantTimeEq;
 
 #[cfg(unix)]
 type PlatformStream = tokio::net::UnixStream;
@@ -221,7 +222,11 @@ impl AsyncIpcClient {
             AsyncIpcClientError::ProtocolError(format!("Server confirmation decrypt failed: {}", e))
         })?;
 
-        if server_confirm_plaintext != KEY_CONFIRM_PLAINTEXT {
+        if server_confirm_plaintext
+            .ct_eq(KEY_CONFIRM_PLAINTEXT)
+            .unwrap_u8()
+            != 1
+        {
             return Err(AsyncIpcClientError::ProtocolError(
                 "Server confirmation mismatch".into(),
             ));

@@ -1,7 +1,24 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::ffi::helpers::{get_data_dir, open_store};
+use std::sync::OnceLock;
 use zeroize::Zeroize;
+
+static BEACON_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+
+fn beacon_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    BEACON_RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .thread_name("cpop-beacon")
+                .build()
+                .map_err(|e| format!("Failed to create beacon tokio runtime: {e}"))
+        })
+        .as_ref()
+        .map_err(|e| e.clone())
+}
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -117,7 +134,7 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
         Err(e) => return err_beacon(format!("WritersProof API key not configured. {e}")),
     };
 
-    let rt = match tokio::runtime::Runtime::new() {
+    let rt = match beacon_runtime() {
         Ok(rt) => rt,
         Err(e) => return err_beacon(format!("Failed to create async runtime: {e}")),
     };

@@ -45,6 +45,7 @@ impl Wal {
             last_hash: [0u8; 32],
             cumulative_hasher: Hasher::new(),
             closed: false,
+            inconsistent: false,
             entry_count: 0,
             byte_count: 0,
         };
@@ -69,6 +70,9 @@ impl Wal {
         let mut state = self.inner.lock_recover();
         if state.closed {
             return Err(WalError::Closed);
+        }
+        if state.inconsistent {
+            return Err(WalError::Inconsistent);
         }
         if state.byte_count >= MAX_WAL_SIZE {
             return Err(WalError::TooLarge(state.byte_count));
@@ -329,11 +333,24 @@ impl Wal {
         drop(new_file);
 
         fs::rename(&new_path, &state.path)?;
-        state.file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&state.path)?;
-        state.file.seek(SeekFrom::End(0))?;
+
+        // Open the new file first. If this fails the rename already committed,
+        // so mark the WAL inconsistent before returning to prevent further writes
+        // against the now-stale file handle.
+        let mut reopened = match OpenOptions::new().read(true).write(true).open(&state.path) {
+            Ok(f) => f,
+            Err(e) => {
+                state.inconsistent = true;
+                return Err(WalError::Io(e));
+            }
+        };
+        if let Err(e) = reopened.seek(SeekFrom::End(0)) {
+            state.inconsistent = true;
+            return Err(WalError::Io(e));
+        }
+
+        // Assign new file handle before updating other fields so state stays consistent.
+        state.file = reopened;
         state.last_hash = last_hash;
         state.cumulative_hasher = cumulative_hasher;
         state.next_sequence = if let Some(last) = entries.last() {

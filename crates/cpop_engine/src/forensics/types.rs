@@ -212,7 +212,7 @@ impl ForensicMetrics {
                     ForensicVerdict::V3Suspicious
                 }
             }
-            RiskLevel::Insufficient => ForensicVerdict::V2LikelyHuman,
+            RiskLevel::Insufficient => ForensicVerdict::V3Suspicious,
         }
     }
 

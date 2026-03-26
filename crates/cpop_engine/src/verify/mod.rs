@@ -359,10 +359,15 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
             warnings.push("Key hierarchy has invalid key/certificate lengths".to_string());
             hierarchy_consistent = Some(false);
         } else {
-            // Verify the certificate signature
+            // Verify the certificate signature.
+            // Reuse decoded bytes from the length checks above (guaranteed Ok at this point).
+            let master_bytes = hex::decode(&kh.master_public_key)
+                .expect("master_ok guarantees valid hex with len==32");
+            let session_bytes = hex::decode(&kh.session_public_key)
+                .expect("session_ok guarantees valid hex with len==32");
             match crate::keyhierarchy::verification::validate_cert_byte_lengths(
-                &hex::decode(&kh.master_public_key).unwrap_or_default(),
-                &hex::decode(&kh.session_public_key).unwrap_or_default(),
+                &master_bytes,
+                &session_bytes,
                 &base64_decode(&kh.session_certificate),
             ) {
                 Ok(()) => hierarchy_consistent = Some(true),

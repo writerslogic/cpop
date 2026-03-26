@@ -147,31 +147,67 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     let mut seen_paths = std::collections::HashSet::new();
     let mut result = Vec::with_capacity(files.len());
 
+    // Get sentinel sessions for keystroke count enrichment
+    let sentinel_opt = crate::ffi::sentinel::get_sentinel();
+    let sentinel_sessions: Vec<_> = sentinel_opt
+        .as_ref()
+        .map(|s| s.sessions())
+        .unwrap_or_default();
+
     for (path, last_ts, count) in files {
         seen_paths.insert(path.clone());
         let events = store.get_events_for_file(&path).unwrap_or_default();
-        let profile = crate::forensics::ForensicEngine::evaluate_authorship(&path, &events);
-
-        let _score = profile.metrics.edit_entropy;
 
         let event_data = crate::ffi::helpers::events_to_forensic_data(&events);
         let regions = std::collections::HashMap::new();
         let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);
 
+        // Enrich with keystroke count from sentinel session
+        let session_keystrokes = sentinel_sessions
+            .iter()
+            .find(|s| s.path == path)
+            .map(|s| s.keystroke_count)
+            .unwrap_or(0);
+
+        // Apply keystroke-to-content penalty: if the document grew significantly
+        // but has very few keystrokes, the content was likely injected/pasted.
+        let total_content_added: i64 = events.iter().map(|e| e.size_delta.max(0) as i64).sum();
+        let keystroke_ratio_penalty = if total_content_added > 50 && session_keystrokes < 10 {
+            // Content was added but barely any keystrokes recorded
+            let ratio = session_keystrokes as f64 / total_content_added as f64;
+            // A human types ~1 byte per keystroke; ratio < 0.1 is suspicious
+            if ratio < 0.1 {
+                0.8 // Severe penalty
+            } else if ratio < 0.3 {
+                0.4
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        let adjusted_score = (metrics.assessment_score - keystroke_ratio_penalty).clamp(0.0, 1.0);
+        let adjusted_risk = if keystroke_ratio_penalty >= 0.4 {
+            "HIGH".to_string()
+        } else {
+            metrics.risk_level.to_string()
+        };
+
         result.push(FfiTrackedFile {
             path,
             last_checkpoint_ns: last_ts,
             checkpoint_count: count,
-            forensic_score: metrics.assessment_score,
-            risk_level: metrics.risk_level.to_string(),
-            keystroke_count: 0,
+            forensic_score: adjusted_score,
+            risk_level: adjusted_risk,
+            keystroke_count: session_keystrokes as u64,
         });
     }
 
     // Include sentinel auto-detected sessions that don't yet have checkpoints
-    let sentinel_opt = crate::ffi::sentinel::get_sentinel();
     if let Some(sentinel) = sentinel_opt.as_ref() {
         let all_sessions = sentinel.sessions();
+        #[cfg(debug_assertions)]
         {
             use std::io::Write;
             let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -214,9 +250,9 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
             // Compute forensic score from per-document jitter samples.
             let doc_samples = sentinel.document_jitter_samples(&session.path);
             let cadence_score = if doc_samples.len() >= 20 {
-                crate::forensics::assessment::compute_cadence_score(
-                    &crate::forensics::cadence::analyze_cadence(&doc_samples),
-                )
+                crate::forensics::compute_cadence_score(&crate::forensics::analyze_cadence(
+                    &doc_samples,
+                ))
             } else {
                 0.0
             };

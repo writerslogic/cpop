@@ -97,10 +97,10 @@ fn gaussian_similarity(a: f64, b: f64, sigma: f64) -> f64 {
     (-diff * diff / (2.0 * sigma * sigma)).exp()
 }
 
-/// Return `ln(v)` clamped to 0.0 for non-positive inputs.
+/// Return `ln(v)` for positive inputs, or 0.0 for non-positive inputs.
 fn safe_ln(v: f64) -> f64 {
     if v > 0.0 {
-        v.ln().max(0.0)
+        v.ln()
     } else {
         0.0
     }

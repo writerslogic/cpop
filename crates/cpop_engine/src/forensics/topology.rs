@@ -112,10 +112,11 @@ pub(crate) fn compute_median(values: &[f64]) -> f64 {
     let n = buf.len();
     let cmp = |a: &f64, b: &f64| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal);
     if n % 2 == 0 {
+        buf.select_nth_unstable_by(n / 2 - 1, cmp);
+        let lower = buf[n / 2 - 1];
         buf.select_nth_unstable_by(n / 2, cmp);
         let upper = buf[n / 2];
-        buf.select_nth_unstable_by(n / 2 - 1, cmp);
-        (buf[n / 2 - 1] + upper) / 2.0
+        (lower + upper) / 2.0
     } else {
         buf.select_nth_unstable_by(n / 2, cmp);
         buf[n / 2]

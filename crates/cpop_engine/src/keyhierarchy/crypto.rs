@@ -13,10 +13,9 @@ pub(crate) const RATCHET_INIT_DOMAIN: &str = "witnessd-ratchet-init-v1";
 pub(crate) const RATCHET_ADVANCE_DOMAIN: &str = "witnessd-ratchet-advance-v1";
 pub(crate) const SIGNING_KEY_DOMAIN: &str = "witnessd-signing-key-v1";
 
-/// NOTE: The `salt` and `info` parameter names match the caller convention, but
-/// `Hkdf::new(Some(salt), ikm)` passes `salt` as the HKDF salt and `ikm` as the
-/// input keying material.  Swapping them to match RFC 5869 naming would break all
-/// existing derived key hierarchies, so this ordering is intentionally preserved.
+/// HKDF-SHA256 key derivation: `ikm` is the input keying material, `salt` is the
+/// HKDF salt (passed as the info/domain label by callers), and `info` is the
+/// context-specific binding (e.g. session input or empty). Matches RFC 5869.
 pub fn hkdf_expand(ikm: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; 32], KeyHierarchyError> {
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
     let mut okm = [0u8; 32];

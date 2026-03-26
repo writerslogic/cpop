@@ -206,6 +206,13 @@ fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
 
     windowed.resize(fft_size, 0.0);
 
+    let window_energy: f64 = windowed.iter().take(n).map(|&w| w * w).sum();
+    let normalizer = if window_energy > 0.0 {
+        window_energy
+    } else {
+        fft_size as f64
+    };
+
     let mut real: Vec<f64> = windowed;
     let mut imag = vec![0.0; fft_size];
     fft_radix2(&mut real, &mut imag);
@@ -213,7 +220,7 @@ fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
     let psd: Vec<f64> = real
         .iter()
         .zip(imag.iter())
-        .map(|(&r, &i)| (r * r + i * i) / fft_size as f64)
+        .map(|(&r, &i)| (r * r + i * i) / normalizer)
         .collect();
 
     Ok(psd)

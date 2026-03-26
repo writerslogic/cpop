@@ -24,11 +24,16 @@ impl MacOSFocusMonitor {
     }
 
     fn get_active_window_info(&self) -> Option<WindowInfo> {
-        unsafe {
+        // Wrap in an autorelease pool so Objective-C temporaries are freed
+        // promptly when called from a tokio worker thread (which has no
+        // default NSAutoreleasePool).
+        let pool: *mut Object = unsafe { msg_send![class!(NSAutoreleasePool), new] };
+        let result = unsafe {
             let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
             let active_app: *mut Object = msg_send![workspace, frontmostApplication];
 
             if active_app.is_null() {
+                let _: () = msg_send![pool, drain];
                 return None;
             }
 
@@ -39,8 +44,12 @@ impl MacOSFocusMonitor {
             let app_name = nsstring_to_string(name);
             let bundle_id_str = nsstring_to_string(bundle_id);
 
+            // Try AX first (works when Accessibility permission is granted),
+            // fall back to CGWindowList (works in App Sandbox without special perms).
             let doc_path = self.get_document_path_via_ax(pid);
-            let window_title = self.get_window_title_via_ax(pid);
+            let window_title = self
+                .get_window_title_via_ax(pid)
+                .or_else(|| self.get_window_title_via_cgwindow(pid));
             let title_str = window_title.unwrap_or_default();
 
             let doc_path = doc_path.or_else(|| {
@@ -64,7 +73,11 @@ impl MacOSFocusMonitor {
                 is_unsaved: false,
                 project_root: None,
             })
+        };
+        unsafe {
+            let _: () = msg_send![pool, drain];
         }
+        result
     }
 
     /// Query the focused window's `AXDocument` attribute for its `file://` URL.
@@ -86,6 +99,88 @@ impl MacOSFocusMonitor {
         if !title.is_empty() {
             Some(title)
         } else {
+            None
+        }
+    }
+
+    /// Get the window title via CGWindowListCopyWindowInfo (works in App Sandbox).
+    fn get_window_title_via_cgwindow(&self, pid: i32) -> Option<String> {
+        unsafe {
+            use core_foundation::base::TCFType;
+            use core_foundation::string::CFString;
+            use core_foundation_sys::dictionary::CFDictionaryGetValueIfPresent;
+
+            #[link(name = "CoreGraphics", kind = "framework")]
+            extern "C" {
+                fn CGWindowListCopyWindowInfo(
+                    option: u32,
+                    relative_to_window: u32,
+                ) -> core_foundation_sys::array::CFArrayRef;
+            }
+
+            // kCGWindowListOptionOnScreenOnly = 1, kCGNullWindowID = 0
+            let list = CGWindowListCopyWindowInfo(1, 0);
+            if list.is_null() {
+                return None;
+            }
+
+            let count = core_foundation_sys::array::CFArrayGetCount(list);
+            let key_pid = CFString::from_static_string("kCGWindowOwnerPID");
+            let key_name = CFString::from_static_string("kCGWindowName");
+            let key_layer = CFString::from_static_string("kCGWindowLayer");
+
+            for i in 0..count {
+                let raw_dict = core_foundation_sys::array::CFArrayGetValueAtIndex(list, i)
+                    as core_foundation_sys::dictionary::CFDictionaryRef;
+                if raw_dict.is_null() {
+                    continue;
+                }
+
+                // Only look at layer 0 (normal windows)
+                let mut layer_ptr: *const std::ffi::c_void = std::ptr::null();
+                if CFDictionaryGetValueIfPresent(raw_dict, key_layer.as_CFTypeRef(), &mut layer_ptr)
+                    != 0
+                    && !layer_ptr.is_null()
+                {
+                    let layer_num = core_foundation::number::CFNumber::wrap_under_get_rule(
+                        layer_ptr as core_foundation::number::CFNumberRef,
+                    );
+                    if layer_num.to_i32().unwrap_or(-1) != 0 {
+                        continue;
+                    }
+                }
+
+                let mut pid_ptr: *const std::ffi::c_void = std::ptr::null();
+                if CFDictionaryGetValueIfPresent(raw_dict, key_pid.as_CFTypeRef(), &mut pid_ptr)
+                    == 0
+                    || pid_ptr.is_null()
+                {
+                    continue;
+                }
+                let pid_num = core_foundation::number::CFNumber::wrap_under_get_rule(
+                    pid_ptr as core_foundation::number::CFNumberRef,
+                );
+                if pid_num.to_i32().unwrap_or(-1) != pid {
+                    continue;
+                }
+
+                let mut name_ptr: *const std::ffi::c_void = std::ptr::null();
+                if CFDictionaryGetValueIfPresent(raw_dict, key_name.as_CFTypeRef(), &mut name_ptr)
+                    != 0
+                    && !name_ptr.is_null()
+                {
+                    let name = CFString::wrap_under_get_rule(
+                        name_ptr as core_foundation::string::CFStringRef,
+                    );
+                    let title = name.to_string();
+                    if !title.is_empty() {
+                        core_foundation_sys::base::CFRelease(list as _);
+                        return Some(title);
+                    }
+                }
+            }
+
+            core_foundation_sys::base::CFRelease(list as _);
             None
         }
     }

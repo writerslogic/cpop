@@ -121,23 +121,25 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
             }
         }
 
-        if min_dist < f64::INFINITY {
-            // Track divergence over time
-            for k in 0..max_iter {
-                let i_k = i + k;
-                let j_k = nn_idx + k;
-                if i_k < embedding.len() && j_k < embedding.len() {
-                    let dist_k: f64 = embedding[i_k]
-                        .iter()
-                        .zip(embedding[j_k].iter())
-                        .map(|(&a, &b)| (a - b).powi(2))
-                        .sum::<f64>()
-                        .sqrt();
+        if min_dist.is_infinite() {
+            continue;
+        }
 
-                    if dist_k > 0.0 {
-                        divergence_sum[k] += dist_k.ln();
-                        divergence_count[k] += 1;
-                    }
+        // Track divergence over time
+        for k in 0..max_iter {
+            let i_k = i + k;
+            let j_k = nn_idx + k;
+            if i_k < embedding.len() && j_k < embedding.len() {
+                let dist_k: f64 = embedding[i_k]
+                    .iter()
+                    .zip(embedding[j_k].iter())
+                    .map(|(&a, &b)| (a - b).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+
+                if dist_k > 0.0 {
+                    divergence_sum[k] += dist_k.ln();
+                    divergence_count[k] += 1;
                 }
             }
         }

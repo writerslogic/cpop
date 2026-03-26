@@ -181,7 +181,8 @@ pub fn validate_keystroke_event(
     };
 
     // --- pid mismatch ---
-    if source_pid != 0 {
+    // Injected/synthetic events have pid 0; real keystrokes have a non-zero source pid.
+    if source_pid == 0 {
         flags.pid_mismatch = true;
         confidence -= 0.40;
     }
@@ -290,7 +291,7 @@ mod tests {
     fn test_normal_typing_high_confidence() {
         let mut state = make_state();
         // Simulate realistic human typing at ~80 WPM (roughly 150 ms IKI)
-        // with natural variance.
+        // with natural variance. Use a non-zero source_pid (real keystroke).
         let base = 1_000_000_000_i64; // 1 s
         let intervals = [
             148, 162, 134, 155, 170, 143, 160, 138, 152, 167, 141, 158, 145, 163, 137, 156, 149,
@@ -302,7 +303,7 @@ mod tests {
             ts += ms * 1_000_000; // ms -> ns
             let keycode = (i as u16 % 26) + 4; // spread of keycodes
             let zone = (i as u8 % 4) + 1; // modest zone changes
-            let r = validate_keystroke_event(ts, keycode, zone, 0, None, true, &mut state);
+            let r = validate_keystroke_event(ts, keycode, zone, 1234, None, true, &mut state);
             last_confidence = r.confidence;
         }
         assert!(
@@ -315,11 +316,11 @@ mod tests {
     fn test_impossible_iki_penalty() {
         let mut state = make_state();
         let base = 1_000_000_000_i64;
-        // First event (clean slate).
-        let r1 = validate_keystroke_event(base, 10, 1, 0, None, true, &mut state);
+        // First event (clean slate). Use non-zero source_pid (real keystroke).
+        let r1 = validate_keystroke_event(base, 10, 1, 1234, None, true, &mut state);
         assert!(r1.confidence > 0.9);
         // Second event only 1 ms later.
-        let r2 = validate_keystroke_event(base + 1_000_000, 11, 1, 0, None, true, &mut state);
+        let r2 = validate_keystroke_event(base + 1_000_000, 11, 1, 1234, None, true, &mut state);
         assert!(r2.flags.impossible_iki);
         assert!(r2.confidence < r1.confidence);
     }
@@ -364,7 +365,8 @@ mod tests {
     #[test]
     fn test_pid_mismatch() {
         let mut state = make_state();
-        let r = validate_keystroke_event(1_000_000_000, 10, 1, 42, None, true, &mut state);
+        // source_pid == 0 indicates an injected/synthetic event; should trigger pid_mismatch.
+        let r = validate_keystroke_event(1_000_000_000, 10, 1, 0, None, true, &mut state);
         assert!(r.flags.pid_mismatch);
         assert!(r.confidence < 0.7);
     }
@@ -380,7 +382,8 @@ mod tests {
     #[test]
     fn test_clean_slate() {
         let mut state = make_state();
-        let r = validate_keystroke_event(1_000_000_000, 10, 1, 0, None, true, &mut state);
+        // Use non-zero source_pid (real keystroke) so no pid_mismatch penalty applies.
+        let r = validate_keystroke_event(1_000_000_000, 10, 1, 1234, None, true, &mut state);
         assert!(
             r.confidence > 0.9,
             "first keystroke should score high, got {}",

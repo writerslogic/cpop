@@ -52,7 +52,7 @@ pub fn is_debugger_present() -> bool {
 
         const KINFO_PROC_SIZE: usize = 648;
         // Offset of kp_proc.p_flag within kinfo_proc (validated on arm64 and x86_64).
-        const P_FLAG_OFFSET: usize = 16;
+        const P_FLAG_OFFSET: usize = 32;
         const P_TRACED: i32 = 0x00000800;
 
         unsafe {

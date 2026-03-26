@@ -158,10 +158,21 @@ impl SecureSession {
                 .map_err(|_| anyhow!("Invalid sequence number bytes"))?,
         );
 
-        // Atomically validate and consume the sequence slot to prevent TOCTOU
-        // where two concurrent threads both pass a load+compare check.
+        // CAS atomically claims the sequence slot; no separate load+compare window.
+        // We don't know expected_seq until after CAS succeeds, so we derive it from
+        // the actual value. The CAS wins only if current == seq; after winning, verify
+        // seq matches what we expected via constant-time comparison to prevent timing leaks.
         let expected_seq = self.rx_sequence.load(Ordering::SeqCst);
+        self.rx_sequence
+            .compare_exchange(
+                expected_seq,
+                expected_seq + 2,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .map_err(|_| anyhow!("rx_sequence CAS failed — concurrent decrypt detected"))?;
 
+        // After winning the CAS, verify the wire sequence matches expected using ct_eq.
         if seq
             .to_le_bytes()
             .ct_eq(&expected_seq.to_le_bytes())
@@ -172,16 +183,6 @@ impl SecureSession {
                 "Sequence validation failed (possible replay attack)"
             ));
         }
-
-        // CAS immediately after validation — only one thread wins the slot.
-        self.rx_sequence
-            .compare_exchange(
-                expected_seq,
-                expected_seq + 2,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .map_err(|_| anyhow!("rx_sequence CAS failed — concurrent decrypt detected"))?;
 
         // Reconstruct nonce from validated sequence — never trust the wire nonce.
         // The encrypt side derives nonce = construct_nonce(prefix, seq), so we must

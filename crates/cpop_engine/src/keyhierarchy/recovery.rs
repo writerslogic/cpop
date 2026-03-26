@@ -79,10 +79,12 @@ fn recover_ratchet_v1_legacy(
     );
     key.zeroize();
 
+    let protected = crate::crypto::ProtectedKey::new(ratchet_state);
+    ratchet_state.zeroize();
     Ok(Session {
         certificate: recovery.certificate.clone(),
         ratchet: RatchetState {
-            current: crate::crypto::ProtectedKey::new(ratchet_state),
+            current: protected,
             ordinal,
             wiped: false,
         },
@@ -132,10 +134,12 @@ fn recover_ratchet_v2_aead(
             .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?,
     );
 
+    let protected = crate::crypto::ProtectedKey::new(ratchet_state);
+    ratchet_state.zeroize();
     Ok(Session {
         certificate: recovery.certificate.clone(),
         ratchet: RatchetState {
-            current: crate::crypto::ProtectedKey::new(ratchet_state),
+            current: protected,
             ordinal,
             wiped: false,
         },

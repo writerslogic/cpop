@@ -15,6 +15,9 @@ use super::crypto::{
     RATCHET_INIT_DOMAIN, SESSION_DOMAIN, SIGNING_KEY_DOMAIN,
 };
 use super::error::KeyHierarchyError;
+
+/// Domain separator for chain metadata signatures, distinct from per-checkpoint signing.
+const CHAIN_METADATA_DOMAIN: &str = "witnessd-chain-metadata-signing-v1";
 use super::types::{
     CheckpointSignature, KeyHierarchyEvidence, MasterIdentity, PufProvider, RatchetState, Session,
     SessionCertificate, SessionRecoveryState, VERSION,
@@ -31,10 +34,11 @@ pub(crate) fn start_session_inner(
     let mut session_id = [0u8; 32];
     rand::rng().fill_bytes(&mut session_id);
 
+    let created_at = Utc::now();
     let session_input = {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&session_id);
-        bytes.extend_from_slice(Utc::now().to_rfc3339().as_bytes());
+        bytes.extend_from_slice(created_at.to_rfc3339().as_bytes());
         bytes
     };
 
@@ -47,8 +51,6 @@ pub(crate) fn start_session_inner(
     drop(key_bytes);
     let session_key = SigningKey::from_bytes(&session_seed);
     let session_pub = session_key.verifying_key().to_bytes().to_vec();
-
-    let created_at = Utc::now();
     let cert_data = build_cert_data(session_id, &session_pub, created_at, document_hash);
     let signature = signing_key.sign(&cert_data).to_bytes();
 
@@ -289,7 +291,7 @@ impl Session {
 
         let signing_seed = Zeroizing::new(hkdf_expand(
             self.ratchet.current.as_bytes(),
-            SIGNING_KEY_DOMAIN.as_bytes(),
+            CHAIN_METADATA_DOMAIN.as_bytes(),
             &[],
         )?);
         let signing_key = SigningKey::from_bytes(&signing_seed);

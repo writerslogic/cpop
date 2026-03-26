@@ -264,7 +264,10 @@ impl Mmr {
         }
         let offset = 1u64 << (height + 1);
 
-        let left_parent = pos + offset;
+        let left_parent = match pos.checked_add(offset) {
+            Some(v) => v,
+            None => return Ok((0, 0, false, false)),
+        };
         let right_sibling = left_parent.saturating_sub(1);
         if right_sibling < size && right_sibling != pos {
             let right_node = self.store.get(right_sibling)?;
@@ -305,16 +308,19 @@ impl Mmr {
         let mut covered: HashSet<u64> = leaf_indices.iter().copied().collect();
         let mut path: Vec<ProofElement> = Vec::new();
         let mut current_level: Vec<u64> = leaf_indices.to_vec();
-        let mut height: u8 = 0;
+        let mut height: u32 = 0;
         let mut peak_index = 0u64;
 
         while !current_level.is_empty() {
+            if height >= 64 {
+                return Err(MmrError::InvalidProof);
+            }
             current_level.sort_unstable();
             let mut next_level = Vec::new();
             let mut processed_parents: HashSet<u64> = HashSet::new();
             for pos in &current_level {
                 let (sibling_pos, parent_pos, is_right_child, found) =
-                    self.find_family(*pos, height, size)?;
+                    self.find_family(*pos, height as u8, size)?;
                 if !found {
                     peak_index = *pos;
                     continue;

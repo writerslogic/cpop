@@ -20,6 +20,9 @@ pub(super) fn html_escape(s: &str) -> String {
 }
 
 pub(super) fn format_lr(lr: f64) -> String {
+    if !lr.is_finite() || lr < 0.0 {
+        return "N/A".to_string();
+    }
     if lr >= 10_000.0 {
         format!("{:.0}", lr)
     } else if lr >= 1_000.0 {
@@ -56,6 +59,9 @@ pub(super) fn format_bytes(bytes: u64) -> String {
 }
 
 pub(super) fn format_duration_human(seconds: f64) -> String {
+    if seconds.is_nan() || seconds < 0.0 {
+        return "N/A".to_string();
+    }
     if seconds.is_infinite() {
         return "Infeasible".to_string();
     }

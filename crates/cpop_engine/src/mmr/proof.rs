@@ -240,7 +240,12 @@ impl RangeProof {
         if self.end_leaf < self.start_leaf {
             return Err(MmrError::InvalidProof);
         }
-        let expected = (self.end_leaf - self.start_leaf + 1) as usize;
+        let range_len = self
+            .end_leaf
+            .checked_sub(self.start_leaf)
+            .and_then(|v| v.checked_add(1))
+            .ok_or(MmrError::InvalidProof)?;
+        let expected = range_len as usize;
         if leaf_data.len() != expected {
             return Err(MmrError::InvalidProof);
         }

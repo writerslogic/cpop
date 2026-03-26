@@ -158,7 +158,7 @@ pub(super) fn write_category_scores(html: &mut String, r: &WarReport) -> fmt::Re
 <span class="score-bar-value">{score}</span>
 </div>"#,
             name = html_escape(&d.name),
-            score = d.score,
+            score = d.score.min(100),
             color = sanitize_css_color(&d.color),
         )?;
     }
@@ -319,7 +319,11 @@ pub(super) fn write_dimension_lr_table(html: &mut String, r: &WarReport) -> fmt:
         r#"<tr style="font-weight:700"><td>Combined</td><td>{score}</td><td>{lr}</td><td>{log_lr:.2}</td><td><div class="confidence-bar" style="width:{conf_pct:.0}px;background:#2e7d32"></div></td><td>All dimensions concordant</td></tr>"#,
         score = r.score,
         lr = format_lr(r.likelihood_ratio),
-        log_lr = r.likelihood_ratio.log10(),
+        log_lr = if r.likelihood_ratio > 0.0 {
+            r.likelihood_ratio.log10()
+        } else {
+            0.0
+        },
         conf_pct = (r.score as f64).min(100.0),
     )?;
     writeln!(html, "</table>")
@@ -512,8 +516,10 @@ pub(super) fn write_checkpoint_chain(html: &mut String, r: &WarReport) -> fmt::R
         let hash_short = if cp.content_hash.len() > 16 {
             format!(
                 "{}...{}",
-                &cp.content_hash[..8],
-                &cp.content_hash[cp.content_hash.len() - 8..]
+                cp.content_hash.get(..8).unwrap_or(&cp.content_hash),
+                cp.content_hash
+                    .get(cp.content_hash.len().saturating_sub(8)..)
+                    .unwrap_or(&cp.content_hash),
             )
         } else {
             cp.content_hash.clone()
@@ -694,7 +700,7 @@ pub(super) fn write_verification_instructions(html: &mut String) -> fmt::Result 
   <h2>How to Verify This Evidence</h2>
   <p>This evidence packet can be independently verified:</p>
   <ul>
-    <li><strong>Web:</strong> Upload this file at <a href="https://writerslogic.com/verify" target="_blank">writerslogic.com/verify</a> &mdash; verification runs in your browser, no data is uploaded</li>
+    <li><strong>Web:</strong> Upload this file at <a href="https://writerslogic.com/verify" target="_blank" rel="noopener noreferrer">writerslogic.com/verify</a> &mdash; verification runs in your browser, no data is uploaded</li>
     <li><strong>CLI:</strong> Install the open-source tool and run <code>cpop verify &lt;file&gt;</code></li>
   </ul>
   <p>Verification checks the cryptographic signatures, checkpoint chain integrity, VDF timing proofs, and behavioral consistency.</p>

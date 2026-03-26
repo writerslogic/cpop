@@ -123,6 +123,9 @@ pub fn draw_microtext(
     text: &str,
     page_width_mm: f32,
 ) {
+    if text.is_empty() {
+        return;
+    }
     let font_size = 1.5_f32; // 1.5pt — appears as a thin line at normal zoom
     let margin = 15.0_f32;
     let repeat_width = text.len() as f32 * 0.5; // approximate char width at 1.5pt

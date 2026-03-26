@@ -140,5 +140,5 @@ pub(super) fn now_nanos() -> i64 {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0));
-    dur.as_nanos() as i64
+    i64::try_from(dur.as_nanos()).unwrap_or(i64::MAX)
 }

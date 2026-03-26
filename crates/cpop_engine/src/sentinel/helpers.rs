@@ -161,6 +161,20 @@ pub fn handle_focus_event_sync(
     }
 }
 
+/// Maximum file size (10 MB) for initial hash computation during focus tracking.
+/// Files larger than this are skipped to avoid blocking the sessions write lock.
+const MAX_HASH_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// File extensions that should never be tracked as authored documents.
+const NON_DOCUMENT_EXTENSIONS: &[&str] = &[
+    "mov", "mp4", "avi", "mkv", "webm", // video
+    "mp3", "wav", "aac", "flac", "ogg", // audio
+    "dmg", "iso", "img", "pkg", // disk images
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", // archives
+    "app", "exe", "dll", "dylib", "so", // binaries
+    "o", "a", "lib", // object files
+];
+
 #[allow(clippy::too_many_arguments)]
 pub fn focus_document_sync(
     path: &str,
@@ -175,48 +189,88 @@ pub fn focus_document_sync(
     // Skip directories and paths that don't look like documents
     if !path.starts_with("shadow://") {
         let p = std::path::Path::new(path);
-        if p.is_dir() || p.extension().is_none() {
+        if p.is_dir() {
             return;
+        }
+        match p.extension().and_then(|e| e.to_str()) {
+            None => return,
+            Some(ext) => {
+                if NON_DOCUMENT_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
+                    return;
+                }
+            }
         }
     }
 
+    // Check if we already have a session (fast path, read lock only)
+    let is_new_session = !sessions.read_recover().contains_key(path);
+
+    // Compute file hash and signing key BEFORE acquiring the write lock
+    // to avoid blocking FFI calls that need to read sessions.
+    let pre_hash = if is_new_session {
+        // Check file size before hashing to avoid blocking on large files
+        let hash = match std::fs::metadata(path) {
+            Ok(meta) if meta.len() <= MAX_HASH_FILE_SIZE => compute_file_hash(path).ok(),
+            _ => None,
+        };
+        Some(hash)
+    } else {
+        None
+    };
     let key = signing_key.read_recover().clone();
-    let mut sessions_map = sessions.write_recover();
 
-    let session = sessions_map.entry(path.to_string()).or_insert_with(|| {
-        let mut session = DocumentSession::new(
-            path.to_string(),
-            event.app_bundle_id.clone(),
-            event.app_name.clone(),
-            event.window_title.clone(),
-        );
+    // Hold the write lock for the minimum time necessary
+    let new_session_info = {
+        let mut sessions_map = sessions.write_recover();
 
-        if let Ok(hash) = compute_file_hash(path) {
-            session.initial_hash = Some(hash.clone());
-            session.current_hash = Some(hash);
+        let session = sessions_map.entry(path.to_string()).or_insert_with(|| {
+            let mut session = DocumentSession::new(
+                path.to_string(),
+                event.app_bundle_id.clone(),
+                event.app_name.clone(),
+                event.window_title.clone(),
+            );
+
+            if let Some(Some(ref hash)) = pre_hash {
+                session.initial_hash = Some(hash.clone());
+                session.current_hash = Some(hash.clone());
+            }
+
+            session
+        });
+
+        session.focus_gained();
+        session.window_title = event.window_title.clone();
+
+        // Capture info for post-lock operations
+        if is_new_session {
+            Some((
+                session.session_id.clone(),
+                create_session_start_payload(session),
+            ))
+        } else {
+            None
         }
+    }; // write lock released here
 
-        let payload = create_session_start_payload(&session);
-        wal_append_session_event(
-            &session.session_id,
-            wal_dir,
-            key,
-            EntryType::SessionStart,
-            payload,
-        );
+    // WAL append and event broadcast happen outside the lock
+    if let Some((session_id, payload)) = new_session_info {
+        wal_append_session_event(&session_id, wal_dir, key, EntryType::SessionStart, payload);
 
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Started,
-            session_id: session.session_id.clone(),
+            session_id: session_id.clone(),
             document_path: path.to_string(),
             timestamp: SystemTime::now(),
         });
+    }
 
-        session
-    });
-
-    session.focus_gained();
-    session.window_title = event.window_title.clone();
+    // Read back the focus count for debug logging
+    let focus_count = sessions
+        .read_recover()
+        .get(path)
+        .map(|s| s.focus_count)
+        .unwrap_or(0);
 
     {
         use std::io::Write;
@@ -231,17 +285,24 @@ pub fn focus_document_sync(
             let _ = writeln!(
                 f,
                 "SESSION_FOCUSED: path={} focus_count={}",
-                path, session.focus_count,
+                path, focus_count
             );
         }
     }
 
-    let _ = session_events_tx.send(SessionEvent {
-        event_type: SessionEventType::Focused,
-        session_id: session.session_id.clone(),
-        document_path: path.to_string(),
-        timestamp: SystemTime::now(),
-    });
+    // Read back session_id for the Focused event
+    if let Some(session_id) = sessions
+        .read_recover()
+        .get(path)
+        .map(|s| s.session_id.clone())
+    {
+        let _ = session_events_tx.send(SessionEvent {
+            event_type: SessionEventType::Focused,
+            session_id,
+            document_path: path.to_string(),
+            timestamp: SystemTime::now(),
+        });
+    }
 }
 
 pub fn unfocus_document_sync(
@@ -286,14 +347,16 @@ pub fn handle_change_event_sync(
                 session.current_hash = current_hash.clone();
 
                 if let Some(hash) = current_hash {
-                    let payload = create_document_hash_payload(&hash, event.size.unwrap_or(0));
-                    wal_append_session_event(
-                        &session.session_id,
-                        wal_dir,
-                        key.clone(),
-                        EntryType::DocumentHash,
-                        payload,
-                    );
+                    match create_document_hash_payload(&hash, event.size.unwrap_or(0)) {
+                        Ok(payload) => wal_append_session_event(
+                            &session.session_id,
+                            wal_dir,
+                            key.clone(),
+                            EntryType::DocumentHash,
+                            payload,
+                        ),
+                        Err(e) => log::error!("Failed to build document hash payload: {e}"),
+                    }
                 }
 
                 let _ = session_events_tx.send(SessionEvent {
@@ -465,11 +528,9 @@ pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
     payload
 }
 
-pub fn create_document_hash_payload(hash: &str, size: i64) -> Vec<u8> {
-    let hash_bytes = hex::decode(hash).unwrap_or_else(|e| {
-        log::warn!("Failed to decode hash '{}': {}, using zero hash", hash, e);
-        vec![0u8; 32]
-    });
+pub fn create_document_hash_payload(hash: &str, size: i64) -> Result<Vec<u8>, String> {
+    let hash_bytes =
+        hex::decode(hash).map_err(|e| format!("Failed to decode hash '{}': {}", hash, e))?;
     let mut payload = Vec::with_capacity(32 + 8 + 8);
 
     payload.extend_from_slice(&hash_bytes[..32.min(hash_bytes.len())]);
@@ -482,7 +543,7 @@ pub fn create_document_hash_payload(hash: &str, size: i64) -> Vec<u8> {
         .unwrap_or(0);
     payload.extend_from_slice(&timestamp.to_be_bytes());
 
-    payload
+    Ok(payload)
 }
 
 /// Canonicalize and validate a user-provided path against traversal attacks.

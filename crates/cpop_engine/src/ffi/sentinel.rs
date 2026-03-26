@@ -42,6 +42,7 @@ fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_start() -> FfiResult {
     // Debug: write to data dir (sandbox blocks /tmp)
+    #[cfg(debug_assertions)]
     {
         use std::io::Write;
         let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -55,7 +56,9 @@ pub fn ffi_sentinel_start() -> FfiResult {
             let _ = writeln!(f, "ffi_sentinel_start called");
         }
     }
-    if get_sentinel().is_some_and(|s| s.is_running()) {
+    // If a sentinel already exists, reuse it (handles restart after stop)
+    let existing = get_sentinel();
+    if existing.as_ref().is_some_and(|s| s.is_running()) {
         return FfiResult {
             success: true,
             message: Some("Sentinel already running".to_string()),
@@ -118,22 +121,30 @@ pub fn ffi_sentinel_start() -> FfiResult {
         };
     }
 
-    let config = SentinelConfig::default().with_writersproof_dir(&data_dir);
-
-    let sentinel = match Sentinel::new(config) {
-        Ok(s) => Arc::new(s),
-        Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to create sentinel: {e}")),
-            };
+    // Reuse existing stopped sentinel or create a new one
+    let sentinel = if let Some(s) = existing {
+        s
+    } else {
+        let config = SentinelConfig::default().with_writersproof_dir(&data_dir);
+        let s = match Sentinel::new(config) {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("Failed to create sentinel: {e}")),
+                };
+            }
+        };
+        if let Some(mut key) = load_hmac_key() {
+            s.set_hmac_key(std::mem::take(&mut *key));
         }
+        // Store in the global before starting
+        if let Ok(mut guard) = SENTINEL.lock() {
+            *guard = Some(Arc::clone(&s));
+        }
+        s
     };
-
-    if let Some(mut key) = load_hmac_key() {
-        sentinel.set_hmac_key(std::mem::take(&mut *key));
-    }
 
     let rt = match ffi_runtime() {
         Ok(rt) => rt,
@@ -170,15 +181,6 @@ pub fn ffi_sentinel_start() -> FfiResult {
 
     let capture_active = sentinel.is_keystroke_capture_active();
 
-    if let Ok(mut guard) = SENTINEL.lock() {
-        if let Some(old) = guard.take() {
-            if old.is_running() {
-                let _ = rt.block_on(old.stop());
-            }
-        }
-        *guard = Some(sentinel);
-    }
-
     let msg = if capture_active {
         "Sentinel started".to_string()
     } else {
@@ -187,6 +189,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
             .to_string()
     };
 
+    #[cfg(debug_assertions)]
     {
         use std::io::Write;
         let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -250,10 +253,9 @@ pub fn ffi_sentinel_stop() -> FfiResult {
         };
     }
 
-    // Remove the stopped sentinel so stale sessions aren't visible
-    if let Ok(mut guard) = SENTINEL.lock() {
-        *guard = None;
-    }
+    // Keep the sentinel in the static so it can be restarted without
+    // creating a new instance (which leaks CGEventTap threads).
+    // Sessions are cleared by sentinel.stop() via end_all_sessions_sync.
 
     FfiResult {
         success: true,
@@ -444,6 +446,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
 
     let keystroke_count = session.keystroke_count;
     let global_keystrokes = sentinel.keystroke_count();
+    #[cfg(debug_assertions)]
     {
         use std::io::Write;
         let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -591,11 +594,15 @@ pub fn ffi_sentinel_inject_keystroke(
     const SOURCE_STATE_HID_SYSTEM: i64 = 1;
 
     // Debug: log inject_keystroke calls
+    #[cfg(debug_assertions)]
     {
         use std::sync::atomic::{AtomicU64, Ordering as AO};
         static INJECT_COUNT: AtomicU64 = AtomicU64::new(0);
         static REJECT_COUNT: AtomicU64 = AtomicU64::new(0);
         let n = INJECT_COUNT.fetch_add(1, AO::Relaxed);
+        if source_state_id == SOURCE_STATE_PRIVATE || keyboard_type == 0 || source_pid != 0 {
+            REJECT_COUNT.fetch_add(1, AO::Relaxed);
+        }
         if n < 5 || n % 50 == 0 {
             use std::io::Write;
             let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -617,21 +624,17 @@ pub fn ffi_sentinel_inject_keystroke(
                 );
             }
         }
-
-        if source_state_id == SOURCE_STATE_PRIVATE {
-            REJECT_COUNT.fetch_add(1, AO::Relaxed);
-            return false;
-        }
-        // keyboard_type 0 = no physical keyboard (synthetic). Values up to ~255
-        // are valid Apple keyboard types (e.g. 106 = JIS, 44/45 = standard US).
-        if keyboard_type == 0 {
-            REJECT_COUNT.fetch_add(1, AO::Relaxed);
-            return false;
-        }
-        if source_pid != 0 {
-            REJECT_COUNT.fetch_add(1, AO::Relaxed);
-            return false;
-        }
+    }
+    if source_state_id == SOURCE_STATE_PRIVATE {
+        return false;
+    }
+    // keyboard_type 0 = no physical keyboard (synthetic). Values up to ~255
+    // are valid Apple keyboard types (e.g. 106 = JIS, 44/45 = standard US).
+    if keyboard_type == 0 {
+        return false;
+    }
+    if source_pid != 0 {
+        return false;
     }
     if source_state_id != SOURCE_STATE_HID_SYSTEM {
         log::debug!("inject_keystroke: suspicious source_state_id={source_state_id} — accepted");

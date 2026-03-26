@@ -211,16 +211,19 @@ impl AccessLog {
 
         for row in rows {
             let (id, ts, actor, action, resource, result, source) = row?;
-            // Escape fields that might contain commas or quotes.
+            // Escape double-quotes per RFC 4180 and strip embedded newlines to
+            // prevent CSV row injection via malformed field values.
+            let escape_csv =
+                |s: String| -> String { s.replace('"', "\"\"").replace(['\n', '\r'], " ") };
             csv.push_str(&format!(
                 "{},{},\"{}\",{},\"{}\",{},\"{}\"\n",
                 id,
                 ts,
-                actor.replace('"', "\"\""),
+                escape_csv(actor),
                 action,
-                resource.replace('"', "\"\""),
+                escape_csv(resource),
                 result,
-                source.replace('"', "\"\""),
+                escape_csv(source),
             ));
         }
 

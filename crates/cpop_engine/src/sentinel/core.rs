@@ -41,6 +41,10 @@ pub struct Sentinel {
     bridge_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
     /// Handle for the main event loop task; aborted on Drop if stop() was never called.
     event_loop_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Active keystroke capture; stored so stop() can clean up CGEventTap threads.
+    keystroke_capture: Arc<Mutex<Option<Box<dyn KeystrokeCapture>>>>,
+    /// Active mouse capture; stored so stop() can clean up CGEventTap threads.
+    mouse_capture: Arc<Mutex<Option<Box<dyn MouseCapture>>>>,
     /// Whether keystroke capture is active (false = degraded/focus-only mode).
     pub(crate) keystroke_capture_active: Arc<AtomicBool>,
     /// Last paste character count reported by the host app.
@@ -82,6 +86,8 @@ impl Sentinel {
             session_nonce: Arc::new(RwLock::new(None)),
             bridge_threads: Arc::new(Mutex::new(Vec::new())),
             event_loop_handle: Arc::new(Mutex::new(None)),
+            keystroke_capture: Arc::new(Mutex::new(None)),
+            mouse_capture: Arc::new(Mutex::new(None)),
             keystroke_capture_active: Arc::new(AtomicBool::new(false)),
             last_paste_chars: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             start_time: Arc::new(Mutex::new(None)),
@@ -219,13 +225,12 @@ impl Sentinel {
 
     /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
     ///
-    /// The `running` flag is set **before** the event loop begins so that callers
-    /// can rely on `is_running()` returning `true` immediately after `start()`
-    /// returns `Ok`.
+    /// The `running` flag is set **after** all subsystems have initialized successfully
+    /// so that `is_running()` only returns `true` when the sentinel is fully operational.
     // TODO(L-031): Refactor start() into smaller helpers (setup_focus, setup_keystroke,
     // setup_mouse, spawn_event_loop) to reduce complexity and improve testability.
     pub async fn start(&self) -> Result<()> {
-        if self.running.swap(true, Ordering::SeqCst) {
+        if self.running.load(Ordering::SeqCst) {
             return Err(SentinelError::AlreadyRunning);
         }
 
@@ -249,7 +254,6 @@ impl Sentinel {
 
         let (available, reason) = focus_monitor.available();
         if !available {
-            self.running.store(false, Ordering::SeqCst);
             return Err(SentinelError::NotAvailable(reason));
         }
 
@@ -287,10 +291,14 @@ impl Sentinel {
         ));
 
         let keystroke_active = Arc::clone(&self.keystroke_capture_active);
+        let keystroke_capture_store = Arc::clone(&self.keystroke_capture);
         match keystroke_capture_result {
             Ok(mut keystroke_capture) => match keystroke_capture.start() {
                 Ok(sync_rx) => {
                     keystroke_active.store(true, Ordering::SeqCst);
+                    // Store capture so stop() can clean up the CGEventTap thread
+                    *keystroke_capture_store.lock_recover() =
+                        Some(Box::new(keystroke_capture) as Box<dyn KeystrokeCapture>);
                     let sync_rx: std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent> =
                         sync_rx;
                     let handle = std::thread::spawn(move || {
@@ -365,9 +373,13 @@ impl Sentinel {
             anyhow::anyhow!("Mouse capture not supported on this platform"),
         );
 
+        let mouse_capture_store = Arc::clone(&self.mouse_capture);
         match mouse_capture_result {
             Ok(mut mouse_capture) => match mouse_capture.start() {
                 Ok(sync_rx) => {
+                    // Store capture so stop() can clean up the CGEventTap thread
+                    *mouse_capture_store.lock_recover() =
+                        Some(Box::new(mouse_capture) as Box<dyn MouseCapture>);
                     let sync_rx: std::sync::mpsc::Receiver<crate::platform::MouseEvent> = sync_rx;
                     let handle = std::thread::spawn(move || {
                         while mouse_running.load(Ordering::SeqCst) {
@@ -544,7 +556,14 @@ impl Sentinel {
             if let Err(e) = focus_monitor.stop() {
                 log::debug!("focus monitor stop: {e}");
             }
-            end_all_sessions_sync(&sessions, &shadow, &session_events_tx);
+            // Unfocus all sessions but keep them so keystroke counts survive restart.
+            // Only drain sessions on true shutdown (Drop).
+            {
+                let paths: Vec<String> = sessions.read_recover().keys().cloned().collect();
+                for path in paths {
+                    unfocus_document_sync(&path, &sessions, &session_events_tx);
+                }
+            }
         });
 
         // Store the event loop handle so it can be aborted on Drop
@@ -552,10 +571,13 @@ impl Sentinel {
             *guard = Some(handle);
         }
 
+        // Mark running only after all subsystems have initialized successfully
+        self.running.store(true, Ordering::SeqCst);
+
         Ok(())
     }
 
-    /// Stop the sentinel, joining bridge threads and cleaning up shadow buffers.
+    /// Stop the sentinel, joining bridge threads and cleaning up captures.
     pub async fn stop(&self) -> Result<()> {
         if !self.running.swap(false, Ordering::SeqCst) {
             return Ok(());
@@ -567,9 +589,26 @@ impl Sentinel {
             let _ = tx.send(()).await;
         }
 
+        // Join bridge threads first (they check `running` flag)
         let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
         for handle in handles {
             let _ = handle.join();
+        }
+
+        // Stop CGEventTap threads (keystroke + mouse captures)
+        if let Some(mut cap) = self.keystroke_capture.lock_recover().take() {
+            let _ = cap.stop();
+        }
+        self.keystroke_capture_active.store(false, Ordering::SeqCst);
+        if let Some(mut cap) = self.mouse_capture.lock_recover().take() {
+            let _ = cap.stop();
+        }
+
+        // Abort the event loop task
+        if let Ok(mut guard) = self.event_loop_handle.lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
         }
 
         self.shadow.cleanup_all();

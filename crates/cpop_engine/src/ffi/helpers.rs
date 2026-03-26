@@ -28,7 +28,8 @@ pub(crate) fn get_data_dir() -> Option<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        dirs::home_dir().map(|h| h.join("Library/Application Support/CPOP"))
+        // Must match EngineService.swift's dataDirectoryPath (Application Support/WritersProof)
+        dirs::home_dir().map(|h| h.join("Library/Application Support/WritersProof"))
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -148,18 +149,29 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                 }
             }
 
-            // Strategy 2: verify key available BEFORE deleting, then recreate
+            // Strategy 2: verify key available BEFORE backing up, then recreate
             if is_hmac_mismatch {
                 // Reset the cache so load_hmac_key re-derives from signing_key
                 crate::identity::SecureStorage::reset_hmac_cache();
                 let fresh_key = load_hmac_key();
                 if let Some(mut k) = fresh_key {
-                    log::warn!("HMAC mismatch unrecoverable; deleting stale database");
-                    let _ = std::fs::remove_file(db_path);
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let backup_path = db_path.with_extension(format!("backup-{timestamp}"));
+                    log::error!(
+                        "CRITICAL: HMAC mismatch unrecoverable; renaming stale database to {}",
+                        backup_path.display()
+                    );
+                    if let Err(e) = std::fs::rename(db_path, &backup_path) {
+                        log::error!("Failed to rename stale database: {e}");
+                        return Err(format!("HMAC mismatch; database backup failed: {e}"));
+                    }
                     return SecureStore::open(db_path, std::mem::take(&mut *k))
                         .map_err(|e| format!("Failed to recreate database: {}", e));
                 }
-                // Key unavailable; do NOT delete the DB (preserve data)
+                // Key unavailable; do NOT touch the DB (preserve data)
                 log::error!("HMAC key unavailable; cannot recover database");
             }
 

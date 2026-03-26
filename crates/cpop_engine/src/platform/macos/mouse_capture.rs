@@ -162,7 +162,7 @@ impl MouseCapture for MacOSMouseCapture {
             }
         });
 
-        match ready_rx.recv() {
+        match ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 self.thread = Some(thread);
                 Ok(rx)
@@ -175,7 +175,9 @@ impl MouseCapture for MacOSMouseCapture {
             Err(_) => {
                 self.running.store(false, Ordering::SeqCst);
                 self.sender = None;
-                Err(anyhow!("Failed to initialize mouse CGEventTap thread"))
+                Err(anyhow!(
+                    "Mouse CGEventTap initialization timed out after 5s"
+                ))
             }
         }
     }

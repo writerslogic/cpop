@@ -181,7 +181,7 @@ pub fn build_ephemeral_packet(
             total_samples: i32::try_from(jitter_intervals.len()).unwrap_or(i32::MAX),
             keystrokes_per_minute: kpm,
             unique_doc_states: i32::try_from(snapshots.len()).unwrap_or(i32::MAX),
-            chain_valid: true,
+            chain_valid: false,
             plausible_human_rate: plausible,
             samples: vec![],
             phys_ratio: None,

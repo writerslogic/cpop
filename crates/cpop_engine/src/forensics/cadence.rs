@@ -191,7 +191,7 @@ fn compute_iki_autocorrelation(ikis: &[f64]) -> f64 {
         .windows(2)
         .map(|w| (w[0] - mean) * (w[1] - mean))
         .sum::<f64>()
-        / (n - 1) as f64;
+        / n as f64;
 
     (covariance / variance).clamp(-1.0, 1.0)
 }

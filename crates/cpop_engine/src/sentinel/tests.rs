@@ -3,7 +3,11 @@
 use super::*;
 use crate::config::SentinelConfig;
 use crate::crypto::ObfuscatedString;
+use ed25519_dalek::SigningKey;
+use std::collections::HashMap;
 use std::fs;
+use std::sync::{Arc, RwLock};
+use tokio::sync::broadcast;
 
 #[test]
 fn test_config_default() {
@@ -217,4 +221,185 @@ async fn test_shadow_manager() {
     assert!(shadow_mgr.get_path(&id).is_none());
 
     let _ = fs::remove_dir_all(&temp_dir);
+}
+
+// --- handle_focus_event_sync tests ---
+
+fn make_focus_test_harness() -> (
+    Arc<RwLock<HashMap<String, DocumentSession>>>,
+    SentinelConfig,
+    Arc<ShadowManager>,
+    Arc<RwLock<Option<SigningKey>>>,
+    Arc<RwLock<Option<String>>>,
+    tempfile::TempDir,
+    broadcast::Sender<SessionEvent>,
+) {
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+    let config = SentinelConfig::default();
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let shadow = Arc::new(ShadowManager::new(temp_dir.path()).expect("shadow manager"));
+    let signing_key: Arc<RwLock<Option<SigningKey>>> = Arc::new(RwLock::new(None));
+    let current_focus: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+    let (tx, _rx) = broadcast::channel(16);
+    (
+        sessions,
+        config,
+        shadow,
+        signing_key,
+        current_focus,
+        temp_dir,
+        tx,
+    )
+}
+
+fn make_focus_event(
+    event_type: FocusEventType,
+    path: &str,
+    shadow_id: &str,
+    bundle_id: &str,
+    app_name: &str,
+) -> FocusEvent {
+    FocusEvent {
+        event_type,
+        path: path.to_string(),
+        shadow_id: shadow_id.to_string(),
+        app_bundle_id: bundle_id.to_string(),
+        app_name: app_name.to_string(),
+        window_title: ObfuscatedString::new("Test Window"),
+        timestamp: std::time::SystemTime::now(),
+    }
+}
+
+#[test]
+fn test_handle_focus_gained_creates_session() {
+    let (sessions, config, shadow, signing_key, current_focus, temp_dir, tx) =
+        make_focus_test_harness();
+
+    let event = make_focus_event(
+        FocusEventType::FocusGained,
+        "/tmp/test_doc.txt",
+        "",
+        "com.microsoft.VSCode",
+        "Visual Studio Code",
+    );
+
+    handle_focus_event_sync(
+        event,
+        &sessions,
+        &config,
+        &shadow,
+        &signing_key,
+        &current_focus,
+        temp_dir.path(),
+        &tx,
+    );
+
+    let sessions_map = sessions.read().unwrap();
+    assert!(sessions_map.contains_key("/tmp/test_doc.txt"));
+    let session = &sessions_map["/tmp/test_doc.txt"];
+    assert!(session.is_focused());
+    assert_eq!(session.focus_count, 1);
+}
+
+#[test]
+fn test_handle_focus_gained_empty_path_skipped() {
+    let (sessions, config, shadow, signing_key, current_focus, temp_dir, tx) =
+        make_focus_test_harness();
+
+    let event = make_focus_event(
+        FocusEventType::FocusGained,
+        "",
+        "",
+        "com.microsoft.VSCode",
+        "Visual Studio Code",
+    );
+
+    handle_focus_event_sync(
+        event,
+        &sessions,
+        &config,
+        &shadow,
+        &signing_key,
+        &current_focus,
+        temp_dir.path(),
+        &tx,
+    );
+
+    let sessions_map = sessions.read().unwrap();
+    assert!(sessions_map.is_empty());
+}
+
+#[test]
+fn test_handle_focus_lost_clears_current() {
+    let (sessions, config, shadow, signing_key, current_focus, temp_dir, tx) =
+        make_focus_test_harness();
+
+    // First, gain focus on a document
+    let gain_event = make_focus_event(
+        FocusEventType::FocusGained,
+        "/tmp/test_doc.txt",
+        "",
+        "com.microsoft.VSCode",
+        "Visual Studio Code",
+    );
+    handle_focus_event_sync(
+        gain_event,
+        &sessions,
+        &config,
+        &shadow,
+        &signing_key,
+        &current_focus,
+        temp_dir.path(),
+        &tx,
+    );
+    assert!(current_focus.read().unwrap().is_some());
+
+    // Now lose focus
+    let lost_event = make_focus_event(
+        FocusEventType::FocusLost,
+        "/tmp/test_doc.txt",
+        "",
+        "com.microsoft.VSCode",
+        "Visual Studio Code",
+    );
+    handle_focus_event_sync(
+        lost_event,
+        &sessions,
+        &config,
+        &shadow,
+        &signing_key,
+        &current_focus,
+        temp_dir.path(),
+        &tx,
+    );
+
+    assert!(current_focus.read().unwrap().is_none());
+}
+
+#[test]
+fn test_handle_focus_blocked_app_ignored() {
+    let (sessions, config, shadow, signing_key, current_focus, temp_dir, tx) =
+        make_focus_test_harness();
+
+    let event = make_focus_event(
+        FocusEventType::FocusGained,
+        "/tmp/test_doc.txt",
+        "",
+        "com.apple.finder",
+        "Finder",
+    );
+
+    handle_focus_event_sync(
+        event,
+        &sessions,
+        &config,
+        &shadow,
+        &signing_key,
+        &current_focus,
+        temp_dir.path(),
+        &tx,
+    );
+
+    let sessions_map = sessions.read().unwrap();
+    assert!(sessions_map.is_empty());
 }

@@ -236,7 +236,7 @@ impl SecureStore {
     /// HMAC verification, because `verify_integrity()` will fail afterwards.
     /// The function checks whether the store has any verified events and returns
     /// an error if so.
-    pub fn update_file_path(&self, old_path: &str, new_path: &str) -> anyhow::Result<usize> {
+    pub fn update_file_path(&mut self, old_path: &str, new_path: &str) -> anyhow::Result<usize> {
         let has_integrity: bool = self
             .conn
             .query_row(
@@ -252,10 +252,12 @@ impl SecureStore {
                  this would break integrity verification"
             ));
         }
-        let count = self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let count = tx.execute(
             "UPDATE secure_events SET file_path = ? WHERE file_path = ?",
             params![new_path, old_path],
         )?;
+        tx.commit()?;
         Ok(count)
     }
 

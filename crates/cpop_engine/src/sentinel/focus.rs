@@ -72,6 +72,7 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
 
         let handle = tokio::spawn(async move {
             let mut last_app = String::new();
+            let mut last_path: Option<String> = None;
             let mut interval_timer = interval(poll_interval);
 
             loop {
@@ -119,6 +120,24 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
                         }
 
                         last_app = current_app;
+                        last_path = info.path.clone();
+                    } else if info.path.is_some() && info.path != last_path {
+                        // App unchanged but document path resolved (AX query latency)
+                        let app_name = info.application.clone();
+                        if config.is_app_allowed(&info.application, &app_name) {
+                            let _ = focus_tx
+                                .send(FocusEvent {
+                                    event_type: FocusEventType::FocusGained,
+                                    path: info.path.clone().unwrap_or_default(),
+                                    shadow_id: String::new(),
+                                    app_bundle_id: info.application.clone(),
+                                    app_name: info.application.clone(),
+                                    window_title: info.title.clone(),
+                                    timestamp: SystemTime::now(),
+                                })
+                                .await;
+                        }
+                        last_path = info.path.clone();
                     }
                 }
             }

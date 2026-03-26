@@ -100,6 +100,9 @@ pub enum WalError {
     /// Binary serialization/deserialization failure
     #[error("serialization error: {0}")]
     Serialization(String),
+    /// WAL state is inconsistent after a failed truncation; further writes are unsafe
+    #[error("WAL is inconsistent and must be recovered or discarded")]
+    Inconsistent,
 }
 
 /// WAL file header (64 bytes, written once at creation).
@@ -163,6 +166,7 @@ pub(super) struct WalState {
     pub(super) last_hash: [u8; 32],
     pub(super) cumulative_hasher: Hasher,
     pub(super) closed: bool,
+    pub(super) inconsistent: bool,
     pub(super) entry_count: u64,
     pub(super) byte_count: u64,
 }

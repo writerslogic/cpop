@@ -359,8 +359,8 @@ pub fn draw_page1(
         let display = if value.len() > 64 {
             format!(
                 "{}...{}",
-                &value[..8],
-                &value[value.len().saturating_sub(8)..]
+                value.get(..8).unwrap_or(value),
+                value.get(value.len().saturating_sub(8)..).unwrap_or(value),
             )
         } else {
             value.to_string()

@@ -117,10 +117,14 @@ impl WritersProofClient {
         hardware_key_id: &str,
         signing_key: &SigningKey,
     ) -> Result<AttestResponse> {
+        let hkid_bytes = hardware_key_id.as_bytes();
         let mut sign_payload =
-            Vec::with_capacity(nonce.len() + hardware_key_id.len() + evidence_cbor.len());
+            Vec::with_capacity(4 + nonce.len() + 4 + hkid_bytes.len() + 4 + evidence_cbor.len());
+        sign_payload.extend_from_slice(&(nonce.len() as u32).to_be_bytes());
         sign_payload.extend_from_slice(nonce);
-        sign_payload.extend_from_slice(hardware_key_id.as_bytes());
+        sign_payload.extend_from_slice(&(hkid_bytes.len() as u32).to_be_bytes());
+        sign_payload.extend_from_slice(hkid_bytes);
+        sign_payload.extend_from_slice(&(evidence_cbor.len() as u32).to_be_bytes());
         sign_payload.extend_from_slice(evidence_cbor);
         let signature = signing_key.sign(&sign_payload);
         let url = format!("{}/v1/attest", self.base_url);

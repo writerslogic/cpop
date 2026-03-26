@@ -210,9 +210,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
                     "Implausible keystroke rate: {:.1}/sec (max plausible: {:.0}/sec)",
                     rate, MAX_PLAUSIBLE_KEYSTROKES_PER_SEC
                 ));
-                if tv.sourced_data > Ar4siStatus::Warning as i8
-                    || tv.sourced_data == Ar4siStatus::Affirming as i8
-                {
+                if tv.sourced_data == Ar4siStatus::Affirming as i8 {
                     tv.sourced_data = Ar4siStatus::Warning as i8;
                 }
             }

@@ -436,3 +436,170 @@ async fn sentinel_capture_flag_reflects_reality() {
 
     sentinel.stop().await.ok();
 }
+
+// ---------------------------------------------------------------------------
+// 8. Mid-Layer Integration Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_sentinel_start_creates_focus_monitor() {
+    let (sentinel, _dir) = make_sentinel();
+    assert!(!sentinel.is_running());
+
+    let result = sentinel.start().await;
+    assert!(result.is_ok(), "sentinel start failed: {:?}", result.err());
+    assert!(sentinel.is_running());
+
+    let stop = sentinel.stop().await;
+    assert!(stop.is_ok(), "sentinel stop failed: {:?}", stop.err());
+    assert!(!sentinel.is_running());
+}
+
+#[tokio::test]
+async fn test_witnessing_status_tracks_active_document() {
+    let (sentinel, dir) = make_sentinel();
+    let file = make_temp_file(&dir, "tracked_doc.txt", "some document content");
+
+    sentinel.start().await.expect("start");
+
+    sentinel.start_witnessing(&file).expect("start witnessing");
+
+    let sessions = sentinel.sessions();
+    assert_eq!(sessions.len(), 1, "expected exactly one session");
+    assert_eq!(
+        sessions[0].path,
+        file.to_string_lossy(),
+        "session should track the temp file"
+    );
+
+    sentinel.stop_witnessing(&file).expect("stop witnessing");
+    sentinel.stop().await.ok();
+}
+
+#[tokio::test]
+async fn test_witnessing_keystroke_count_starts_at_zero() {
+    let (sentinel, dir) = make_sentinel();
+    let file = make_temp_file(&dir, "zero_keys.txt", "no keystrokes yet");
+
+    sentinel.start().await.expect("start");
+    sentinel.start_witnessing(&file).expect("start witnessing");
+
+    assert_eq!(
+        sentinel.keystroke_count(),
+        0,
+        "keystroke count should be 0 with no keystrokes injected"
+    );
+
+    sentinel.stop_witnessing(&file).expect("stop witnessing");
+    sentinel.stop().await.ok();
+}
+
+#[tokio::test]
+async fn test_focus_polling_detects_app_change() {
+    use cpop_engine::sentinel::{
+        PollingSentinelFocusTracker, SentinelFocusTracker, WindowInfo, WindowProvider,
+    };
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::SystemTime;
+
+    struct ScriptedWindowProvider {
+        responses: Mutex<VecDeque<WindowInfo>>,
+        fallback: WindowInfo,
+    }
+
+    impl WindowProvider for ScriptedWindowProvider {
+        fn get_active_window(&self) -> Option<WindowInfo> {
+            let mut q = self.responses.lock().expect("lock");
+            if let Some(info) = q.pop_front() {
+                Some(info)
+            } else {
+                Some(self.fallback.clone())
+            }
+        }
+    }
+
+    let textedit_info = WindowInfo {
+        path: None,
+        application: "com.apple.TextEdit".to_string(),
+        title: Default::default(),
+        pid: None,
+        timestamp: SystemTime::now(),
+        is_document: true,
+        is_unsaved: false,
+        project_root: None,
+    };
+
+    let vscode_info = WindowInfo {
+        path: None,
+        application: "com.microsoft.VSCode".to_string(),
+        title: Default::default(),
+        pid: None,
+        timestamp: SystemTime::now(),
+        is_document: true,
+        is_unsaved: false,
+        project_root: None,
+    };
+
+    let mut responses = VecDeque::new();
+    // First several polls return TextEdit, then switch to VSCode
+    for _ in 0..3 {
+        responses.push_back(textedit_info.clone());
+    }
+    for _ in 0..3 {
+        responses.push_back(vscode_info.clone());
+    }
+
+    let provider = Arc::new(ScriptedWindowProvider {
+        responses: Mutex::new(responses),
+        fallback: vscode_info.clone(),
+    });
+
+    let mut config = SentinelConfig::default();
+    config.poll_interval_ms = 10; // fast polling for test
+    let config = Arc::new(config);
+
+    let tracker = PollingSentinelFocusTracker::new(provider, config);
+    let mut rx = tracker.focus_events().expect("focus_events receiver");
+
+    tracker.start().expect("tracker start");
+
+    // Collect focus events over a short window
+    let mut events = vec![];
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(200);
+    loop {
+        tokio::select! {
+            ev = rx.recv() => {
+                if let Some(ev) = ev {
+                    events.push(ev);
+                } else {
+                    break;
+                }
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                break;
+            }
+        }
+    }
+
+    tracker.stop().expect("tracker stop");
+
+    // We expect at least a FocusGained for TextEdit and then a FocusLost + FocusGained for VSCode
+    assert!(
+        events.len() >= 2,
+        "expected at least 2 focus events, got {}",
+        events.len()
+    );
+
+    let app_ids: Vec<&str> = events.iter().map(|e| e.app_bundle_id.as_str()).collect();
+    assert!(
+        app_ids.contains(&"com.apple.TextEdit"),
+        "expected TextEdit focus event, got: {:?}",
+        app_ids
+    );
+    assert!(
+        app_ids.contains(&"com.microsoft.VSCode"),
+        "expected VSCode focus event, got: {:?}",
+        app_ids
+    );
+}

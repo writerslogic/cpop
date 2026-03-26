@@ -121,7 +121,10 @@ impl CheckpointTrigger {
         self.keystrokes_since_checkpoint += 1;
         self.accumulate_entropy(jitter_micros);
 
-        if let Some(last) = self.last_keystroke {
+        let prev_keystroke = self.last_keystroke;
+        self.last_keystroke = Some(now);
+
+        if let Some(last) = prev_keystroke {
             let pause = now.duration_since(last);
             if pause.as_secs_f64() >= self.config.pause_threshold_secs
                 && self.keystrokes_since_checkpoint >= self.config.min_keystroke_interval
@@ -129,8 +132,6 @@ impl CheckpointTrigger {
                 return Some(self.create_trigger(TriggerReason::TypingPause, current_doc_size));
             }
         }
-
-        self.last_keystroke = Some(now);
 
         if self.keystrokes_since_checkpoint >= self.config.max_keystroke_interval {
             return Some(self.create_trigger(TriggerReason::MaxKeystrokes, current_doc_size));

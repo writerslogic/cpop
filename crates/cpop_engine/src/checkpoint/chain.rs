@@ -247,16 +247,15 @@ impl Chain {
     ) -> Result<Checkpoint> {
         let lock_file = fs::File::open(&self.document_path)?;
         Self::acquire_lock(&lock_file)?;
-        let result = self.commit_entangled_locked(
+        let _guard = scopeguard::guard(&lock_file, Self::release_lock);
+        self.commit_entangled_locked(
             message,
             jitter_hash,
             jitter_session_id,
             keystroke_count,
             vdf_duration,
             physics,
-        );
-        Self::release_lock(&lock_file);
-        result
+        )
     }
 
     fn commit_entangled_locked(
@@ -328,16 +327,15 @@ impl Chain {
     ) -> Result<Checkpoint> {
         let lock_file = fs::File::open(&self.document_path)?;
         Self::acquire_lock(&lock_file)?;
-        let result = self.commit_rfc_locked(
+        let _guard = scopeguard::guard(&lock_file, Self::release_lock);
+        self.commit_rfc_locked(
             message,
             vdf_duration,
             rfc_jitter,
             time_evidence,
             calibration,
             physics,
-        );
-        Self::release_lock(&lock_file);
-        result
+        )
     }
 
     fn commit_rfc_locked(

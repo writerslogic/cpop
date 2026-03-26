@@ -61,12 +61,21 @@ impl RoughtimeClient {
         use roughenough_protocol::tags::Nonce;
         use roughenough_protocol::wire::{FromFrame, ToFrame};
 
-        let public_key = general_purpose::STANDARD
+        let public_key_bytes = general_purpose::STANDARD
             .decode(server.public_key_base64)
             .map_err(|e| anyhow!("Invalid server public key: {e}"))?;
-        if public_key.len() != 32 {
+        if public_key_bytes.len() != 32 {
             return Err(anyhow!("Invalid server public key length"));
         }
+        let server_long_term_key = {
+            use ed25519_dalek::VerifyingKey;
+            let bytes: [u8; 32] = public_key_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow!("Failed to convert public key bytes"))?;
+            VerifyingKey::from_bytes(&bytes)
+                .map_err(|e| anyhow!("Invalid Ed25519 public key for {}: {e}", server.name))?
+        };
 
         let mut nonce_bytes = [0u8; 32];
         getrandom::getrandom(&mut nonce_bytes)
@@ -99,6 +108,67 @@ impl RoughtimeClient {
 
         if response.nonc() != &nonce {
             return Err(anyhow!("Nonce mismatch in response from {}", server.name));
+        }
+
+        // Verify the certificate: server long-term key signs the DELE (delegation) bytes.
+        // Then verify the response SIG: the delegate key signs the SREP bytes.
+        {
+            use ed25519_dalek::{Signature as Ed25519Sig, Verifier, VerifyingKey};
+            use roughenough_protocol::wire::ToWire;
+
+            let cert = response.cert();
+            let dele = cert.dele();
+            let version = response.srep().ver();
+
+            // Step 1: verify CERT.SIG = sign(server_long_term_key, dele_prefix || DELE bytes)
+            let dele_bytes = dele
+                .as_bytes()
+                .map_err(|e| anyhow!("Failed to serialize DELE for {}: {e}", server.name))?;
+            let mut dele_msg = Vec::with_capacity(version.dele_prefix().len() + dele_bytes.len());
+            dele_msg.extend_from_slice(version.dele_prefix());
+            dele_msg.extend_from_slice(&dele_bytes);
+            let cert_sig_bytes: [u8; 64] = cert
+                .sig()
+                .as_ref()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid CERT.SIG length from {}", server.name))?;
+            let cert_sig = Ed25519Sig::from_bytes(&cert_sig_bytes);
+            server_long_term_key
+                .verify(&dele_msg, &cert_sig)
+                .map_err(|e| {
+                    anyhow!(
+                        "CERT signature verification failed for {}: {e}",
+                        server.name
+                    )
+                })?;
+
+            // Step 2: extract delegate key from DELE, verify response SIG over SREP bytes.
+            let dele_pubk_bytes: [u8; 32] = dele
+                .pubk()
+                .as_ref()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid DELE.PUBK length from {}", server.name))?;
+            let delegate_key = VerifyingKey::from_bytes(&dele_pubk_bytes)
+                .map_err(|e| anyhow!("Invalid delegate key from {}: {e}", server.name))?;
+            let srep_bytes = response
+                .srep()
+                .as_bytes()
+                .map_err(|e| anyhow!("Failed to serialize SREP for {}: {e}", server.name))?;
+            let mut srep_msg = Vec::with_capacity(version.srep_prefix().len() + srep_bytes.len());
+            srep_msg.extend_from_slice(version.srep_prefix());
+            srep_msg.extend_from_slice(&srep_bytes);
+            let resp_sig_bytes: [u8; 64] = response
+                .sig()
+                .as_ref()
+                .try_into()
+                .map_err(|_| anyhow!("Invalid response SIG length from {}", server.name))?;
+            let resp_sig = Ed25519Sig::from_bytes(&resp_sig_bytes);
+            delegate_key.verify(&srep_msg, &resp_sig).map_err(|e| {
+                anyhow!(
+                    "Response signature verification failed for {}: {e}",
+                    server.name
+                )
+            })?;
         }
 
         let midpoint = response.srep().midp();

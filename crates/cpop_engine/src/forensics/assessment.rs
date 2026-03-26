@@ -32,7 +32,9 @@ const MONOTONIC_SUSPICIOUS: f64 = 0.90;
 /// Positive-to-negative edit ratio above which pattern is suspicious.
 const POS_NEG_SUSPICIOUS: f64 = 0.95;
 /// Default score when insufficient data is available.
-const INSUFFICIENT_DATA_SCORE: f64 = 0.5;
+/// Must be below the verification threshold (0.5) so documents with
+/// too few events are never marked as "verified".
+const INSUFFICIENT_DATA_SCORE: f64 = 0.0;
 /// Penalty multiplier for high monotonic append ratio.
 const MONOTONIC_PENALTY_WEIGHT: f64 = 0.2;
 /// Penalty for low normalized edit entropy.
@@ -167,7 +169,7 @@ fn detect_temporal_anomalies(
         let prev = &window[0];
         let curr = &window[1];
 
-        let delta_ns = curr.timestamp_ns - prev.timestamp_ns;
+        let delta_ns = curr.timestamp_ns.saturating_sub(prev.timestamp_ns);
         let delta_sec = delta_ns as f64 / 1e9;
         let delta_hours = delta_sec / 3600.0;
 
@@ -182,8 +184,8 @@ fn detect_temporal_anomalies(
         }
 
         if delta_sec > 0.0 && delta_sec < VELOCITY_WINDOW_SEC {
-            let bytes_delta = curr.size_delta.abs();
-            let bytes_per_sec = bytes_delta as f64 / delta_sec;
+            let bytes_delta = curr.size_delta.unsigned_abs() as f64;
+            let bytes_per_sec = bytes_delta / delta_sec;
             if bytes_per_sec > THRESHOLD_HIGH_VELOCITY_BPS {
                 anomalies.push(Anomaly {
                     timestamp: Some(DateTime::from_timestamp_nanos(curr.timestamp_ns)),

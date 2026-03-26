@@ -46,6 +46,9 @@ impl ZoneTrackingEngine {
         let zone_transition = if self.prev_zone >= 0 {
             let encoded = encode_zone_transition(self.prev_zone, zone);
             let interval = now.signed_duration_since(self.prev_time);
+            if interval.num_nanoseconds().unwrap_or(-1) < 0 {
+                return 0xFF;
+            }
             let bucket = interval_to_bucket(interval.to_std().unwrap_or(Duration::from_secs(0)));
             self.update_profile(self.prev_zone, zone, bucket);
             encoded

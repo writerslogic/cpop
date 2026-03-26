@@ -191,8 +191,10 @@ impl SoftwarePUF {
         if let Some(parent) = seed_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(seed_path, &seed)?;
-        crate::crypto::restrict_permissions(seed_path, 0o600)?;
+        let tmp_path = seed_path.with_extension("tmp");
+        fs::write(&tmp_path, &seed)?;
+        crate::crypto::restrict_permissions(&tmp_path, 0o600)?;
+        fs::rename(&tmp_path, seed_path)?;
 
         // Also persist to SecureStorage if available (additional copy).
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {

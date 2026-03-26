@@ -78,7 +78,7 @@ impl ZwcEmbedder {
             zwc_count: self.params.zwc_count,
             document_hash: hex::encode(doc_hash),
             mmr_root: hex::encode(mmr_root),
-            positions,
+            positions: sorted_positions,
         };
 
         Ok((result, binding))

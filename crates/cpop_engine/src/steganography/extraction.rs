@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+use subtle::ConstantTimeEq;
+
 use super::embedding::compute_watermark_tag;
 use super::types::{ZwcBinding, ZwcParams, ZwcVerification, ZWC_ALPHABET};
 
@@ -47,7 +49,7 @@ impl ZwcExtractor {
 
         let expected = compute_watermark_tag(key, mmr_root, &doc_hash, self.params.zwc_count);
 
-        let valid = extracted.len() == expected.len() && extracted == expected;
+        let valid = extracted.len() == expected.len() && extracted.ct_eq(&expected).into();
 
         ZwcVerification {
             valid,
@@ -63,12 +65,23 @@ impl ZwcExtractor {
     /// Checks structural consistency: correct ZWC count, correct positions.
     pub fn verify_binding(&self, watermarked_text: &str, binding: &ZwcBinding) -> ZwcVerification {
         let extracted = self.extract_tag(watermarked_text);
-        let stored_tag: Vec<u8> = hex::decode(&binding.tag_hex).unwrap_or_else(|e| {
-            log::warn!("ZWC binding tag_hex is invalid hex: {e}");
-            vec![]
-        });
+        let stored_tag: Vec<u8> = match hex::decode(&binding.tag_hex) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("ZWC binding tag_hex is invalid hex: {e}");
+                return ZwcVerification {
+                    valid: false,
+                    zwc_found: extracted.len(),
+                    zwc_expected: binding.zwc_count,
+                    extracted_tag: hex::encode(&extracted),
+                    expected_tag: Some(binding.tag_hex.clone()),
+                };
+            }
+        };
 
-        let valid = extracted.len() == binding.zwc_count && extracted == stored_tag;
+        let valid = extracted.len() == binding.zwc_count
+            && extracted.len() == stored_tag.len()
+            && extracted.ct_eq(&stored_tag).into();
 
         ZwcVerification {
             valid,

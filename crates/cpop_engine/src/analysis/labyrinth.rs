@@ -268,12 +268,9 @@ fn compute_fnn_ratio(embedding: &[Vec<f64>], original: &[f64], dim: usize, delay
         }
 
         if min_dist > 0.0 && min_dist < f64::INFINITY {
-            // Defense-in-depth: use checked arithmetic for index computation
-            let dim_offset = (dim - 1).checked_mul(delay);
-            let orig_idx_i =
-                dim_offset.and_then(|d| i.checked_mul(delay).and_then(|v| v.checked_add(d)));
-            let orig_idx_j =
-                dim_offset.and_then(|d| nn_idx.checked_mul(delay).and_then(|v| v.checked_add(d)));
+            // Map embedding index back to original array offset: orig[i + dim * delay]
+            let orig_idx_i = dim.saturating_mul(delay).checked_add(i);
+            let orig_idx_j = dim.saturating_mul(delay).checked_add(nn_idx);
 
             if let (Some(idx_i), Some(idx_j)) = (orig_idx_i, orig_idx_j) {
                 if idx_i + delay < original.len() && idx_j + delay < original.len() {

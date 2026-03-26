@@ -47,7 +47,10 @@ pub fn kurtosis(data: &[f64], mean: f64, std: f64) -> f64 {
 
 /// Bhattacharyya coefficient between two f64 histograms.
 pub fn bhattacharyya_coefficient(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b.iter()).map(|(&x, &y)| (x * y).sqrt()).sum()
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x.max(0.0) * y.max(0.0)).sqrt())
+        .sum()
 }
 
 /// Normalize a histogram in place so entries sum to 1.0.

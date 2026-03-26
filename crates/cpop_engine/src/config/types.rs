@@ -124,7 +124,7 @@ impl Default for FingerprintConfig {
             retention_days: 365,
             min_samples: 100,
             storage_path: dirs::home_dir()
-                .expect("cannot determine home directory; refusing to use insecure fallback path")
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join(".writersproof")
                 .join("fingerprints"),
         }
@@ -177,7 +177,7 @@ impl Default for ResearchConfig {
         Self {
             contribute_to_research: false,
             research_data_dir: dirs::home_dir()
-                .expect("cannot determine home directory; refusing to use insecure fallback path")
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join(".writersproof")
                 .join("research"),
             max_sessions: 100,
@@ -245,8 +245,7 @@ pub struct SentinelConfig {
 
 impl Default for SentinelConfig {
     fn default() -> Self {
-        let home = dirs::home_dir()
-            .expect("cannot determine home directory; refusing to use insecure fallback path");
+        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let writersproof_dir = home.join(".writersproof");
 
         Self {
