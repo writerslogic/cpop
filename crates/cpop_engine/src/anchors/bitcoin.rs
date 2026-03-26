@@ -141,11 +141,42 @@ impl BitcoinProvider {
         Ok(txid.to_string())
     }
 
-    async fn get_tx_confirmations(&self, txid: &str) -> Result<u64, AnchorError> {
+    /// Returns `(confirmations, block_time_secs)`.  `block_time_secs` is 0 when unconfirmed.
+    async fn get_tx_info(&self, txid: &str) -> Result<(u64, i64), AnchorError> {
         let tx = self
             .rpc_call("gettransaction", serde_json::json!([txid]))
             .await?;
-        Ok(tx["confirmations"].as_u64().unwrap_or(0))
+        let confirmations = tx["confirmations"].as_u64().unwrap_or(0);
+        let blocktime = tx["blocktime"].as_i64().unwrap_or(0);
+        Ok((confirmations, blocktime))
+    }
+
+    /// Fetch the raw transaction and scan its outputs for an OP_RETURN carrying `hash`.
+    async fn tx_contains_op_return(
+        &self,
+        txid: &str,
+        hash: &[u8; 32],
+    ) -> Result<bool, AnchorError> {
+        let tx = self
+            .rpc_call("getrawtransaction", serde_json::json!([txid, true]))
+            .await?;
+        let vout = tx["vout"]
+            .as_array()
+            .ok_or_else(|| AnchorError::InvalidFormat("getrawtransaction missing vout".into()))?;
+        let expected = hex::encode(hash);
+        for output in vout {
+            let script_type = output["scriptPubKey"]["type"].as_str().unwrap_or("");
+            if script_type == "nulldata" {
+                let asm = output["scriptPubKey"]["asm"].as_str().unwrap_or("");
+                // asm is "OP_RETURN <hex-data>"
+                if let Some(data_hex) = asm.strip_prefix("OP_RETURN ") {
+                    if data_hex.eq_ignore_ascii_case(&expected) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -188,28 +219,51 @@ impl AnchorProvider for BitcoinProvider {
     }
 
     async fn check_status(&self, proof: &Proof) -> Result<Proof, AnchorError> {
-        let txid = proof.location.clone().unwrap_or_default();
-        if txid.is_empty() {
+        let raw_location = proof.location.clone().unwrap_or_default();
+        if raw_location.is_empty() {
             return Err(AnchorError::InvalidFormat("Missing txid".into()));
         }
+        // Strip the " (N conf)" suffix that may have been appended on a previous check.
+        let txid = raw_location
+            .split_whitespace()
+            .next()
+            .unwrap_or(&raw_location)
+            .to_string();
 
-        let confirmations = self.get_tx_confirmations(&txid).await?;
+        let (confirmations, blocktime) = self.get_tx_info(&txid).await?;
         let mut updated = proof.clone();
         if confirmations > 0 {
             updated.status = ProofStatus::Confirmed;
-            updated.confirmed_at = Some(chrono::Utc::now());
+            // Use the block timestamp recorded by the network, not wall-clock time.
+            updated.confirmed_at = Some(if blocktime > 0 {
+                chrono::DateTime::from_timestamp(blocktime, 0).unwrap_or_else(chrono::Utc::now)
+            } else {
+                chrono::Utc::now()
+            });
             updated.location = Some(format!("{} ({} conf)", txid, confirmations));
         }
         Ok(updated)
     }
 
     async fn verify(&self, proof: &Proof) -> Result<bool, AnchorError> {
-        let txid = proof.location.clone().unwrap_or_default();
-        if txid.is_empty() {
+        let raw_location = proof.location.clone().unwrap_or_default();
+        if raw_location.is_empty() {
             return Err(AnchorError::InvalidFormat("Missing txid".into()));
         }
-        let confirmations = self.get_tx_confirmations(&txid).await?;
-        Ok(confirmations > 0)
+        // Strip the " (N conf)" suffix that may have been appended by check_status.
+        let txid = raw_location
+            .split_whitespace()
+            .next()
+            .unwrap_or(&raw_location)
+            .to_string();
+
+        let (confirmations, _) = self.get_tx_info(&txid).await?;
+        if confirmations == 0 {
+            return Ok(false);
+        }
+        // Confirm the transaction actually embeds the expected hash in an OP_RETURN output.
+        self.tx_contains_op_return(&txid, &proof.anchored_hash)
+            .await
     }
 }
 

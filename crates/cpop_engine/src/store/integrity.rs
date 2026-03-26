@@ -11,11 +11,12 @@ impl SecureStore {
     pub(crate) fn init_schema(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS integrity (
-                id              INTEGER PRIMARY KEY CHECK (id = 1),
-                chain_hash      BLOB NOT NULL,
-                event_count     INTEGER NOT NULL DEFAULT 0,
-                last_verified   INTEGER,
-                hmac            BLOB NOT NULL
+                id                      INTEGER PRIMARY KEY CHECK (id = 1),
+                chain_hash              BLOB NOT NULL,
+                event_count             INTEGER NOT NULL DEFAULT 0,
+                last_verified           INTEGER,
+                last_verified_sequence  INTEGER NOT NULL DEFAULT 0,
+                hmac                    BLOB NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS secure_events (
@@ -65,6 +66,20 @@ impl SecureStore {
             CREATE INDEX IF NOT EXISTS idx_secure_events_file ON secure_events(file_path, timestamp_ns);"
         )?;
 
+        // Migration: add `last_verified_sequence` to pre-existing integrity rows
+        let has_lvs: bool = {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(integrity)")?;
+            let found = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .any(|name| matches!(name.as_deref(), Ok("last_verified_sequence")));
+            found
+        };
+        if !has_lvs {
+            self.conn.execute_batch(
+                "ALTER TABLE integrity ADD COLUMN last_verified_sequence INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+
         // Migration: add `hardware_counter` to pre-existing schemas
         let has_column: bool = {
             let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
@@ -94,22 +109,25 @@ impl SecureStore {
         Ok(())
     }
 
-    /// Verify the full event chain: HMAC integrity, hash linkage, and event count.
+    /// Verify the event chain incrementally: only events with id > last_verified_sequence
+    /// are re-checked. Already-verified events are trusted, which reduces open-time cost
+    /// from O(n) to O(new) on subsequent opens.
     pub fn verify_integrity(&mut self) -> anyhow::Result<()> {
         let res = self.conn.query_row(
-            "SELECT chain_hash, event_count, hmac FROM integrity WHERE id = 1",
+            "SELECT chain_hash, event_count, last_verified_sequence, hmac FROM integrity WHERE id = 1",
             [],
             |row| {
                 Ok((
                     row.get::<_, Vec<u8>>(0)?,
                     row.get::<_, i64>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
                 ))
             },
         );
 
         match res {
-            Ok((chain_hash, event_count, stored_hmac)) => {
+            Ok((chain_hash, event_count, last_verified_seq, stored_hmac)) => {
                 let chain_hash_arr: [u8; 32] = chain_hash
                     .try_into()
                     .map_err(|_| anyhow!("Invalid chain_hash length in integrity record"))?;
@@ -120,14 +138,34 @@ impl SecureStore {
                     return Err(anyhow!("Integrity record HMAC mismatch"));
                 }
 
+                // Fetch the hash of the last already-verified event so we can continue
+                // the chain check from that point without re-reading earlier rows.
+                let resume_hash: [u8; 32] = if last_verified_seq > 0 {
+                    let hash_bytes: Vec<u8> = self.conn.query_row(
+                        "SELECT event_hash FROM secure_events WHERE id = ? LIMIT 1",
+                        params![last_verified_seq],
+                        |row| row.get(0),
+                    )?;
+                    hash_bytes
+                        .try_into()
+                        .map_err(|_| anyhow!("Invalid event_hash for last verified event"))?
+                } else {
+                    [0u8; 32]
+                };
+
+                // Only scan events that have not yet been verified.
                 let mut stmt = self.conn.prepare(
-                    "SELECT id, event_hash, previous_hash, hmac, device_id, timestamp_ns, file_path, content_hash, file_size, size_delta 
-                     FROM secure_events ORDER BY id ASC"
+                    "SELECT id, event_hash, previous_hash, hmac, device_id, timestamp_ns,
+                            file_path, content_hash, file_size, size_delta
+                     FROM secure_events
+                     WHERE id > ?
+                     ORDER BY id ASC",
                 )?;
 
-                let mut rows = stmt.query([])?;
-                let mut last_hash = [0u8; 32];
+                let mut rows = stmt.query(params![last_verified_seq])?;
+                let mut last_hash = resume_hash;
                 let mut count = 0i64;
+                let mut new_last_seq = last_verified_seq;
 
                 while let Some(row) = rows.next()? {
                     let id: i64 = row.get(0)?;
@@ -141,17 +179,18 @@ impl SecureStore {
                     let file_size: i64 = row.get(8)?;
                     let size_delta: i32 = row.get(9)?;
 
-                    let device_id_arr = device_id
+                    let device_id_arr: [u8; 16] = device_id
                         .try_into()
                         .map_err(|_| anyhow!("Invalid device_id"))?;
-                    let content_hash_arr = content_hash
+                    let content_hash_arr: [u8; 32] = content_hash
                         .try_into()
                         .map_err(|_| anyhow!("Invalid content_hash"))?;
-                    let previous_hash_arr = previous_hash
+                    let previous_hash_arr: [u8; 32] = previous_hash
                         .try_into()
                         .map_err(|_| anyhow!("Invalid previous_hash"))?;
 
-                    if count == 0 {
+                    if last_verified_seq == 0 && count == 0 {
+                        // First event ever: previous_hash must be the zero sentinel.
                         if previous_hash_arr != [0u8; 32] {
                             return Err(anyhow!("First event {} has non-zero previous_hash", id));
                         }
@@ -188,11 +227,22 @@ impl SecureStore {
 
                     last_hash = expected_event_hash;
                     count += 1;
+                    new_last_seq = id;
                 }
 
-                if count != event_count {
+                // Total event count must match the integrity record.
+                if last_verified_seq + count != event_count {
                     return Err(anyhow!("Event count mismatch"));
                 }
+
+                // Persist the new high-water mark so the next open skips these rows.
+                if new_last_seq > last_verified_seq {
+                    self.conn.execute(
+                        "UPDATE integrity SET last_verified_sequence = ?, last_verified = ? WHERE id = 1",
+                        params![new_last_seq, chrono::Utc::now().timestamp_nanos_safe()],
+                    )?;
+                }
+
                 self.last_hash = last_hash;
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => {
@@ -200,8 +250,14 @@ impl SecureStore {
                 let initial_hmac =
                     crypto::compute_integrity_hmac(&self.hmac_key, &self.last_hash, 0);
                 self.conn.execute(
-                    "INSERT INTO integrity (id, chain_hash, event_count, last_verified, hmac) VALUES (1, ?, 0, ?, ?)",
-                    params![&self.last_hash[..], chrono::Utc::now().timestamp_nanos_safe(), &initial_hmac[..]]
+                    "INSERT INTO integrity \
+                        (id, chain_hash, event_count, last_verified, last_verified_sequence, hmac) \
+                        VALUES (1, ?, 0, ?, 0, ?)",
+                    params![
+                        &self.last_hash[..],
+                        chrono::Utc::now().timestamp_nanos_safe(),
+                        &initial_hmac[..]
+                    ],
                 )?;
             }
             Err(e) => return Err(e.into()),

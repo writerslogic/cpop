@@ -157,6 +157,9 @@ pub struct Wal {
     pub(super) inner: Mutex<WalState>,
 }
 
+/// Number of appends between automatic fdatasyncs when no force_sync is requested.
+pub const DEFAULT_SYNC_INTERVAL: u64 = 10;
+
 pub(super) struct WalState {
     pub(super) path: PathBuf,
     pub(super) file: File,
@@ -169,6 +172,10 @@ pub(super) struct WalState {
     pub(super) inconsistent: bool,
     pub(super) entry_count: u64,
     pub(super) byte_count: u64,
+    /// Sync after every N appends (0 = sync every append, same as legacy behaviour).
+    pub(super) sync_interval: u64,
+    /// Appends written since the last fdatasync.
+    pub(super) pending_syncs: u64,
 }
 
 /// Result of a full WAL integrity verification pass.

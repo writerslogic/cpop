@@ -9,6 +9,7 @@
 use crate::platform::{MouseStegoMode, MouseStegoParams};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 /// Compute HMAC-chained jitter value (microseconds) for a mouse event.
 pub fn compute_mouse_jitter(
@@ -207,6 +208,12 @@ impl MouseStegoEngine {
         }
 
         true
+    }
+}
+
+impl Drop for MouseStegoEngine {
+    fn drop(&mut self) {
+        self.seed.zeroize();
     }
 }
 

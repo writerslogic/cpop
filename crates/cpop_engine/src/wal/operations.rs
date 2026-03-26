@@ -16,10 +16,26 @@ use super::types::*;
 
 impl Wal {
     /// Open or create a WAL file, replaying existing entries to restore state.
+    ///
+    /// Uses [`DEFAULT_SYNC_INTERVAL`] for batched fdatasync. Use
+    /// [`open_with_sync_interval`](Self::open_with_sync_interval) to override.
     pub fn open(
         path: impl AsRef<Path>,
         session_id: [u8; 32],
         signing_key: ed25519_dalek::SigningKey,
+    ) -> Result<Self, WalError> {
+        Self::open_with_sync_interval(path, session_id, signing_key, DEFAULT_SYNC_INTERVAL)
+    }
+
+    /// Open or create a WAL file with an explicit sync interval.
+    ///
+    /// `sync_interval` controls how many appends are batched before an fdatasync.
+    /// Pass `1` for the legacy per-append sync behaviour.
+    pub fn open_with_sync_interval(
+        path: impl AsRef<Path>,
+        session_id: [u8; 32],
+        signing_key: ed25519_dalek::SigningKey,
+        sync_interval: u64,
     ) -> Result<Self, WalError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -36,6 +52,7 @@ impl Wal {
         // Restrict WAL to owner-only access (contains signed evidence entries)
         crate::crypto::restrict_permissions(path, 0o600)?;
 
+        let sync_interval = sync_interval.max(1);
         let mut state = WalState {
             path: path.to_path_buf(),
             file,
@@ -48,6 +65,8 @@ impl Wal {
             inconsistent: false,
             entry_count: 0,
             byte_count: 0,
+            sync_interval,
+            pending_syncs: 0,
         };
 
         let metadata = state.file.metadata()?;
@@ -66,6 +85,9 @@ impl Wal {
     }
 
     /// Append a new entry, extending the hash chain and signing.
+    ///
+    /// fdatasync is batched: it fires every `sync_interval` appends, or
+    /// immediately when `entry_type` is [`EntryType::Checkpoint`] (force_sync).
     pub fn append(&self, entry_type: EntryType, payload: Vec<u8>) -> Result<(), WalError> {
         let mut state = self.inner.lock_recover();
         if state.closed {
@@ -106,15 +128,36 @@ impl Wal {
         frame.extend_from_slice(&length.to_be_bytes());
         frame.extend_from_slice(&data);
         state.file.write_all(&frame)?;
-        // fdatasync: flush data without metadata update (cheaper than sync_all).
-        // Batch sync is left as future work.
-        state.file.sync_data()?;
+
+        state.pending_syncs += 1;
+        // Force sync for checkpoint entries or when the batch threshold is reached.
+        let force_sync = entry_type == EntryType::Checkpoint;
+        if force_sync || state.pending_syncs >= state.sync_interval {
+            state.file.sync_data()?;
+            state.pending_syncs = 0;
+        }
 
         state.last_hash = entry_hash;
         state.next_sequence += 1;
         state.entry_count += 1;
         state.byte_count += (4 + data.len()) as u64;
 
+        Ok(())
+    }
+
+    /// Flush any buffered (unsynced) appends to disk immediately.
+    ///
+    /// Call this at session boundaries or before handing off evidence to ensure
+    /// no pending writes are lost even when the batch threshold has not been reached.
+    pub fn flush(&self) -> Result<(), WalError> {
+        let mut state = self.inner.lock_recover();
+        if state.closed {
+            return Ok(());
+        }
+        if state.pending_syncs > 0 {
+            state.file.sync_data()?;
+            state.pending_syncs = 0;
+        }
         Ok(())
     }
 

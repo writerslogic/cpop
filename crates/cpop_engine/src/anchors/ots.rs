@@ -23,20 +23,20 @@ pub struct OpenTimestampsProvider {
 
 impl OpenTimestampsProvider {
     /// Create a provider using the default public calendar servers.
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self, AnchorError> {
+        Ok(Self {
             calendar_urls: OTS_CALENDAR_URLS.iter().map(|s| s.to_string()).collect(),
-            client: super::http::build_http_client(None).expect("Failed to create HTTP client"),
-        }
+            client: super::http::build_http_client(None)?,
+        })
     }
 
     #[allow(dead_code)]
     /// Create a provider using custom calendar server URLs.
-    pub fn with_calendars(urls: Vec<String>) -> Self {
-        Self {
+    pub fn with_calendars(urls: Vec<String>) -> Result<Self, AnchorError> {
+        Ok(Self {
             calendar_urls: urls,
-            client: super::http::build_http_client(None).expect("Failed to create HTTP client"),
-        }
+            client: super::http::build_http_client(None)?,
+        })
     }
 
     async fn submit_to_calendar(&self, url: &str, hash: &[u8; 32]) -> Result<Vec<u8>, AnchorError> {
@@ -94,18 +94,52 @@ impl OpenTimestampsProvider {
         Ok(None)
     }
 
+    /// Return the calendar URLs that should be polled for an upgrade.
+    ///
+    /// Stub: full OTS proof parsing to extract per-calendar pending attestation
+    /// records is not yet implemented. Returns only the calendar URL stored in
+    /// `proof.location` when present, falling back to all known calendars so
+    /// that we do not poll calendars that were never used for this submission.
     fn find_pending_calendars(&self, _proof_data: &[u8]) -> Result<Vec<String>, AnchorError> {
+        // TODO: parse OTS pending attestation records from proof_data and return
+        // only the calendar URLs embedded in those records.
+        log::warn!(
+            "find_pending_calendars: OTS proof parsing not implemented; \
+             polling all configured calendars (may hit unrelated servers)"
+        );
         Ok(self.calendar_urls.clone())
     }
 
+    /// Extract the commitment bytes that identify this proof to the calendar.
+    ///
+    /// Stub: the real commitment is the intermediate hash at the point where the
+    /// calendar's pending attestation record was inserted. Full OTS deserialization
+    /// is required to locate it. As a safe approximation, the first 32 bytes of
+    /// `proof_data` are returned when they look like a raw hash (i.e., the data
+    /// starts after the OTS magic header), otherwise the full blob is hashed.
     fn extract_commitment(&self, proof_data: &[u8], _url: &str) -> Result<Vec<u8>, AnchorError> {
-        Ok(Sha256::digest(proof_data).to_vec())
+        // TODO: deserialize the OTS proof and extract the commitment at the
+        // pending attestation record for the given calendar URL.
+        log::warn!(
+            "extract_commitment: OTS proof parsing not implemented; \
+             using heuristic commitment extraction"
+        );
+        let after_magic = OTS_MAGIC.len();
+        if proof_data.len() >= after_magic + 32 {
+            // Bytes immediately following the magic are typically the initial commitment.
+            Ok(proof_data[after_magic..after_magic + 32].to_vec())
+        } else {
+            Ok(Sha256::digest(proof_data).to_vec())
+        }
     }
 
-    fn merge_proofs(&self, original: &[u8], upgrade: &[u8]) -> Result<Vec<u8>, AnchorError> {
-        let mut merged = original.to_vec();
-        merged.extend_from_slice(upgrade);
-        Ok(merged)
+    /// Replace the stored proof with the upgraded response from the calendar.
+    ///
+    /// The upgraded proof returned by the calendar is self-contained; raw
+    /// concatenation of the original and the upgrade would corrupt the OTS
+    /// proof structure. Discard the original and return the upgrade directly.
+    fn merge_proofs(&self, _original: &[u8], upgrade: &[u8]) -> Result<Vec<u8>, AnchorError> {
+        Ok(upgrade.to_vec())
     }
 
     fn parse_attestation_path(
@@ -272,14 +306,29 @@ impl AnchorProvider for OpenTimestampsProvider {
     }
 
     async fn verify(&self, proof: &Proof) -> Result<bool, AnchorError> {
+        // NOTE: Full OTS verification requires fetching the Bitcoin block header
+        // from a trusted source and checking that the final hash in the
+        // attestation path matches it. That network check is not yet implemented.
+        // As a partial safeguard, we confirm that the path contains a Verify
+        // step (indicating a Bitcoin attestation record is present) and that the
+        // result of walking the path is exactly 32 bytes (a candidate block hash).
+        log::warn!(
+            "ots verify: Bitcoin block header cross-check not implemented; \
+             result is a structural check only"
+        );
         let path = if let Some(ref path) = proof.attestation_path {
             path.clone()
         } else {
             self.parse_attestation_path(&proof.proof_data)?
         };
 
+        let has_bitcoin = path.iter().any(|s| s.operation == AttestationOp::Verify);
+        if !has_bitcoin {
+            return Ok(false);
+        }
+
         let result = self.verify_attestation_path(&proof.anchored_hash, &path)?;
-        Ok(!result.is_empty())
+        Ok(result.len() == 32)
     }
 
     async fn upgrade(&self, proof: &Proof) -> Result<Option<Proof>, AnchorError> {
@@ -308,6 +357,6 @@ impl AnchorProvider for OpenTimestampsProvider {
 
 impl Default for OpenTimestampsProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("OTS HTTP client init failed")
     }
 }

@@ -117,10 +117,12 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
                                     timestamp: SystemTime::now(),
                                 })
                                 .await;
+                            last_path = info.path.clone();
+                        } else {
+                            last_path = None;
                         }
 
                         last_app = current_app;
-                        last_path = info.path.clone();
                     } else if info.path.is_some() && info.path != last_path {
                         // App unchanged but document path changed (intra-app document switch
                         // or AX query latency resolving the path for the first time).
@@ -152,8 +154,8 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
                                     timestamp: SystemTime::now(),
                                 })
                                 .await;
+                            last_path = info.path.clone();
                         }
-                        last_path = info.path.clone();
                     }
                 }
             }
