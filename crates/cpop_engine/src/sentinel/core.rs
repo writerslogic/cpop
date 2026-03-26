@@ -266,6 +266,9 @@ impl Sentinel {
 
         focus_monitor.start()?;
 
+        // Set running=true before spawning bridge threads so they see the flag immediately.
+        self.running.store(true, Ordering::SeqCst);
+
         let sessions = Arc::clone(&self.sessions);
         let current_focus = Arc::clone(&self.current_focus);
         let config = self.config.clone();
@@ -577,9 +580,6 @@ impl Sentinel {
         if let Ok(mut guard) = event_loop_handle_ref.lock() {
             *guard = Some(handle);
         }
-
-        // Mark running only after all subsystems have initialized successfully
-        self.running.store(true, Ordering::SeqCst);
 
         Ok(())
     }

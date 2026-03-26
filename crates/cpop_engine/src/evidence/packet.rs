@@ -410,7 +410,7 @@ impl Packet {
     pub fn verify_signature(&self, expected_nonce: Option<&[u8; 32]>) -> crate::error::Result<()> {
         match (expected_nonce, &self.verifier_nonce) {
             (Some(expected), Some(actual)) => {
-                if expected != actual {
+                if expected.ct_eq(actual).unwrap_u8() != 1 {
                     return Err(Error::signature("verifier nonce mismatch"));
                 }
             }

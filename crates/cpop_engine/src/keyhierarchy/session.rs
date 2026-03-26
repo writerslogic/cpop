@@ -49,6 +49,9 @@ pub(crate) fn start_session_inner(
         &session_input,
     )?);
     drop(key_bytes);
+    // NOTE: ed25519_dalek::SigningKey holds a copy of the seed internally. The SigningKey is
+    // dropped at end of scope, but the internal copy is not zeroized. This is a known
+    // limitation tracked as SYS-033.
     let session_key = SigningKey::from_bytes(&session_seed);
     let session_pub = session_key.verifying_key().to_bytes().to_vec();
     let cert_data = build_cert_data(session_id, &session_pub, created_at, document_hash);
