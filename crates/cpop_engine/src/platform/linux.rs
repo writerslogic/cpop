@@ -199,7 +199,12 @@ fn enumerate_input_devices(
     let entries = fs::read_dir("/dev/input")?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.to_string_lossy().contains("event") {
+        if !path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with("event"))
+            .unwrap_or(false)
+        {
             continue;
         }
 
@@ -286,7 +291,10 @@ fn get_focus_from_proc() -> Result<FocusInfo> {
             if let Ok(exe_path) = fs::read_link(&exe_link) {
                 let exe_name = exe_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
                 if KNOWN_EDITORS.iter().any(|&ed| exe_name == ed) {
-                    let pid: i32 = pid_str.parse().unwrap_or(0);
+                    let pid: i32 = match pid_str.parse() {
+                        Ok(p) => p,
+                        Err(_) => continue,
+                    };
                     let app_name = exe_name.to_string();
 
                     return Ok(FocusInfo {

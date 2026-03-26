@@ -122,7 +122,16 @@ impl AnchorProvider for NotaryProvider {
         if let Some(status) = response.get("status").and_then(|v| v.as_str()) {
             if status == "confirmed" {
                 updated.status = ProofStatus::Confirmed;
-                updated.confirmed_at = Some(chrono::Utc::now());
+                // Prefer the server-provided timestamp ("confirmed_at" or "timestamp") so
+                // the recorded time reflects when the notary actually confirmed the entry,
+                // not when this client polled. Fall back to Utc::now() if absent.
+                let server_ts = response
+                    .get("confirmed_at")
+                    .or_else(|| response.get("timestamp"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc));
+                updated.confirmed_at = Some(server_ts.unwrap_or_else(chrono::Utc::now));
             } else if status == "failed" {
                 updated.status = ProofStatus::Failed;
             }

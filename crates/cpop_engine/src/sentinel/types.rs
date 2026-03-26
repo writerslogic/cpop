@@ -86,6 +86,12 @@ impl Default for WindowInfo {
 }
 
 /// Max jitter samples retained per document to bound memory.
+///
+/// Memory implication: 50,000 samples * ~24 bytes each = ~1.2 MB per active document.
+/// This is intentional; the full session is retained so that post-hoc forensic analysis
+/// has access to the complete typing timeline without lossy downsampling. Sessions that
+/// exceed this limit drop the oldest samples via the sliding-window eviction in the
+/// sentinel. For typical writing sessions (< 10,000 keystrokes) the limit is never hit.
 pub const MAX_DOCUMENT_JITTER_SAMPLES: usize = 50_000;
 
 /// Record of a focus switch away from the tracked document.

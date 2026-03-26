@@ -517,10 +517,11 @@ impl Builder {
                 std_dev,
                 coefficient_of_variation: cv,
                 percentiles,
-                // Conservative lower bound: log2(n) bits from n independent samples.
-                // True Shannon entropy depends on the interval distribution, but
-                // log2(n) is a defensible minimum without distribution assumptions.
-                entropy_bits: (intervals_us.len() as f64).log2(),
+                // Conservative lower bound: log2(n-1) bits from n independent samples
+                // (n samples yield n-1 intervals). True Shannon entropy depends on the
+                // interval distribution, but log2(n-1) is a defensible minimum without
+                // distribution assumptions.
+                entropy_bits: ((intervals_us.len() as f64) - 1.0).log2(),
                 hurst_exponent,
             },
             binding_mac: {

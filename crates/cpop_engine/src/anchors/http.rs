@@ -6,10 +6,15 @@
 //! Ethereum and Bitcoin providers, and the common HTTP client construction
 //! used across all anchor backends.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use super::AnchorError;
 
 /// Default per-request timeout for anchor HTTP clients.
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
+
+/// Monotonically increasing counter for JSON-RPC request IDs.
+static RPC_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Build an HTTP client with the given timeout (in seconds).
 ///
@@ -33,9 +38,10 @@ pub(crate) async fn json_rpc_call(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, AnchorError> {
+    let id = RPC_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
     let request = serde_json::json!({
         "jsonrpc": "2.0",
-        "id": 1,
+        "id": id,
         "method": method,
         "params": params
     });
@@ -68,9 +74,10 @@ pub(crate) async fn json_rpc_call_with_auth(
     username: &str,
     password: &str,
 ) -> Result<serde_json::Value, AnchorError> {
+    let id = RPC_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
     let request = serde_json::json!({
         "jsonrpc": "2.0",
-        "id": 1,
+        "id": id,
         "method": method,
         "params": params
     });

@@ -170,7 +170,7 @@ impl Engine {
 
     /// Resume monitoring after a pause, restarting watchers and capture.
     pub fn resume(&self) -> Result<()> {
-        if self.inner.status.lock_recover().running {
+        if self.inner.running.load(Ordering::SeqCst) {
             return Ok(());
         }
 
@@ -309,6 +309,12 @@ fn process_file_event(inner: &Arc<EngineInner>, path: &Path) -> Result<()> {
 
     // Capture the event timestamp before any I/O so it reflects when the OS event arrived.
     let event_timestamp_ns = now_ns();
+    if event_timestamp_ns == 0 {
+        log::error!(
+            "now_ns() returned 0; skipping event recording to avoid corrupting the event chain"
+        );
+        return Ok(());
+    }
 
     // Open once: get both hash and size from the same file handle to avoid TOCTOU.
     let (content_hash, file_size_u64) = crate::crypto::hash_file_with_size(path)?;
@@ -512,7 +518,17 @@ fn load_or_create_hmac_key(data_dir: &Path) -> Result<Vec<u8>> {
             if let Err(e) = SecureStorage::save_hmac_key(&key) {
                 log::warn!("Failed to migrate HMAC key to secure storage: {e}");
             } else {
-                let _ = fs::remove_file(&path);
+                // Confirm the key actually persisted before removing the file copy.
+                match SecureStorage::load_hmac_key() {
+                    Ok(Some(_)) => {
+                        let _ = fs::remove_file(&path);
+                    }
+                    _ => {
+                        log::warn!(
+                            "HMAC key save reported success but reload failed; keeping file copy"
+                        );
+                    }
+                }
             }
             return Ok(key);
         }

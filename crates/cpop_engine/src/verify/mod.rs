@@ -419,7 +419,7 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
                     "Ratchet index negative ({}) at checkpoint {}",
                     idx, sig.ordinal
                 ));
-                break;
+                continue;
             }
             if idx <= prev_index {
                 ratchet_monotonic = false;
@@ -427,7 +427,7 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
                     "Ratchet index non-monotonic at checkpoint {}",
                     sig.ordinal
                 ));
-                break;
+                continue;
             }
             prev_index = idx;
 
@@ -440,7 +440,7 @@ fn verify_key_provenance(packet: &Packet, warnings: &mut Vec<String>) -> KeyProv
                     uidx,
                     kh.ratchet_public_keys.len()
                 ));
-                break;
+                continue;
             }
         }
     } else {
@@ -550,6 +550,12 @@ fn run_forensics(
             "All events have timestamp_ns=0 (synthetic); skipping forensic analysis".to_string(),
         );
         return (None, None);
+    }
+    if all_zero_timestamps && !jitter_samples.is_empty() {
+        warnings.push(
+            "Forensic analysis used jitter samples only; edit topology timestamps were all zero."
+                .to_string(),
+        );
     }
 
     let forensics = analyze_forensics_ext(
