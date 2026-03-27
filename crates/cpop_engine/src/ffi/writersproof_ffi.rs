@@ -1,50 +1,7 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::{get_data_dir, open_store};
+use crate::ffi::helpers::{load_api_key, load_did, load_signing_key, open_store};
 use crate::ffi::types::FfiResult;
-use zeroize::Zeroize;
-
-/// Load the Ed25519 signing key from the data directory, zeroizing intermediates.
-fn load_signing_key() -> Result<ed25519_dalek::SigningKey, String> {
-    let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
-    let key_path = data_dir.join("signing_key");
-    let mut key_data =
-        std::fs::read(&key_path).map_err(|e| format!("Failed to read signing key: {e}"))?;
-    if key_data.len() < 32 {
-        key_data.zeroize();
-        return Err("Signing key is too short".to_string());
-    }
-    let mut secret: [u8; 32] = key_data[..32]
-        .try_into()
-        .map_err(|_| "Invalid signing key length".to_string())?;
-    key_data.zeroize();
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
-    secret.zeroize();
-    Ok(signing_key)
-}
-
-/// Load the DID string from identity.json.
-fn load_did() -> Result<String, String> {
-    let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
-    let identity_path = data_dir.join("identity.json");
-    let data = std::fs::read_to_string(&identity_path)
-        .map_err(|e| format!("Failed to read identity.json: {e}"))?;
-    let v: serde_json::Value =
-        serde_json::from_str(&data).map_err(|e| format!("Invalid identity.json: {e}"))?;
-    v.get("did")
-        .and_then(|d| d.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "DID not found in identity.json".to_string())
-}
-
-/// Load the WritersProof API key, if available.
-fn load_api_key() -> Result<String, String> {
-    let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
-    let key_path = data_dir.join("writersproof_api_key");
-    std::fs::read_to_string(&key_path)
-        .map(|s| s.trim().to_string())
-        .map_err(|e| format!("Failed to read API key: {e}"))
-}
 
 /// Anchor a document's latest checkpoint to the WritersProof transparency log.
 ///
@@ -121,7 +78,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
 
     let did = load_did().unwrap_or_else(|_| "unknown".into());
     let api_key = match load_api_key() {
-        Ok(k) => zeroize::Zeroizing::new(k),
+        Ok(k) => k,
         Err(e) => {
             return FfiResult {
                 success: false,
