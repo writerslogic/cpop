@@ -205,6 +205,9 @@ impl Builder {
         metrics: Option<ForensicMetrics>,
         samples: &[jitter::SimpleJitterSample],
     ) -> Self {
+        if regions.is_empty() && metrics.is_none() && samples.len() < 2 {
+            return self;
+        }
         let fingerprint = if samples.len() >= 2 {
             Some(BehavioralFingerprint::from_samples(samples))
         } else {
@@ -423,7 +426,7 @@ impl Builder {
         });
         if ctx.is_virtualized {
             self.packet.limitations.push(
-                "Virtualized environment detected — physical hardware measurements may be \
+                "Virtualized environment detected; physical hardware measurements may be \
                  unreliable"
                     .to_string(),
             );
@@ -636,6 +639,7 @@ impl Builder {
         self
     }
 
+    /// Attach a WritersProof certificate ID for third-party attestation binding.
     pub fn with_writersproof_certificate(mut self, certificate_id: String) -> Self {
         self.packet.writersproof_certificate_id = Some(certificate_id);
         self
@@ -651,7 +655,7 @@ impl Builder {
         }
         let mut scored = events;
         for event in &mut scored {
-            if event.plausibility_score == 0.0 {
+            if event.plausibility_score <= 0.0 || event.plausibility_score.is_nan() {
                 event.plausibility_score =
                     crate::forensics::dictation::score_dictation_plausibility(event);
             }
