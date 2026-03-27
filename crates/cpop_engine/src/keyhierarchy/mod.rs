@@ -32,5 +32,6 @@ pub use types::{
 };
 pub use verification::{
     validate_cert_byte_lengths, verify_checkpoint_signatures, verify_key_hierarchy,
-    verify_ratchet_signature, verify_session_binding, verify_session_certificate,
+    verify_ratchet_key_consistency, verify_ratchet_signature, verify_session_binding,
+    verify_session_certificate,
 };

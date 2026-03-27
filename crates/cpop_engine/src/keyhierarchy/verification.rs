@@ -169,7 +169,43 @@ pub fn verify_key_hierarchy(evidence: &KeyHierarchyEvidence) -> Result<(), KeyHi
         return Err(KeyHierarchyError::InvalidCert);
     }
 
+    verify_ratchet_key_consistency(evidence)?;
     verify_checkpoint_signatures(&evidence.checkpoint_signatures)
+}
+
+/// Verify that checkpoint signature public keys are consistent with the
+/// declared ratchet public keys in the evidence.
+///
+/// This does NOT verify that the ratchet keys were correctly derived (that
+/// requires the secret seed), but it does verify the evidence is internally
+/// consistent: each checkpoint was signed by the ratchet key the evidence claims.
+pub fn verify_ratchet_key_consistency(
+    evidence: &KeyHierarchyEvidence,
+) -> Result<(), KeyHierarchyError> {
+    if evidence.ratchet_public_keys.len() != evidence.checkpoint_signatures.len() {
+        return Err(KeyHierarchyError::Crypto(format!(
+            "ratchet key count ({}) != checkpoint signature count ({})",
+            evidence.ratchet_public_keys.len(),
+            evidence.checkpoint_signatures.len(),
+        )));
+    }
+
+    for (i, (ratchet_key, sig)) in evidence
+        .ratchet_public_keys
+        .iter()
+        .zip(evidence.checkpoint_signatures.iter())
+        .enumerate()
+    {
+        if ratchet_key != &sig.public_key {
+            return Err(KeyHierarchyError::Crypto(format!(
+                "ratchet key mismatch at ordinal {}: \
+                 evidence claims different key than signature",
+                i,
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 /// Validate Ed25519 byte lengths and verify the certificate signature.
@@ -211,28 +247,33 @@ pub fn verify_ratchet_signature(
     ratchet_pubkey: &[u8],
     checkpoint_hash: &[u8],
     signature: &[u8],
-) -> Result<(), String> {
+) -> Result<(), KeyHierarchyError> {
     if ratchet_pubkey.len() != 32 {
-        return Err("invalid ratchet public key size".to_string());
+        return Err(KeyHierarchyError::Crypto(
+            "invalid ratchet public key size".to_string(),
+        ));
     }
     if checkpoint_hash.len() != 32 {
-        return Err("invalid checkpoint hash size".to_string());
+        return Err(KeyHierarchyError::Crypto(
+            "invalid checkpoint hash size".to_string(),
+        ));
     }
     if signature.len() != 64 {
-        return Err("invalid signature size".to_string());
+        return Err(KeyHierarchyError::Crypto(
+            "invalid signature size".to_string(),
+        ));
     }
 
-    let pubkey = VerifyingKey::from_bytes(
-        ratchet_pubkey
-            .try_into()
-            .map_err(|_| "invalid ratchet public key size".to_string())?,
-    )
-    .map_err(|_| "invalid ratchet public key".to_string())?;
+    let pubkey =
+        VerifyingKey::from_bytes(ratchet_pubkey.try_into().map_err(|_| {
+            KeyHierarchyError::Crypto("invalid ratchet public key size".to_string())
+        })?)
+        .map_err(|_| KeyHierarchyError::Crypto("invalid ratchet public key".to_string()))?;
     let sig_bytes: [u8; 64] = signature
         .try_into()
-        .map_err(|_| "invalid signature size".to_string())?;
+        .map_err(|_| KeyHierarchyError::Crypto("invalid signature size".to_string()))?;
     let sig = Signature::from_bytes(&sig_bytes);
     pubkey
         .verify(checkpoint_hash, &sig)
-        .map_err(|_| "signature verification failed".to_string())
+        .map_err(|_| KeyHierarchyError::SignatureFailed)
 }
