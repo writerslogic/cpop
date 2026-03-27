@@ -12,6 +12,15 @@ use std::sync::{mpsc, Arc, Mutex, RwLock};
 use crate::DateTimeNanosExt;
 use crate::RwLockRecover;
 
+/// Holds CF objects created by the mouse CGEventTap so they can be released on shutdown.
+struct MouseTapResources {
+    run_loop: *mut std::ffi::c_void,
+    tap: *mut std::ffi::c_void,
+    source: *mut std::ffi::c_void,
+}
+unsafe impl Send for MouseTapResources {}
+unsafe impl Sync for MouseTapResources {}
+
 /// macOS mouse capture implementation using CGEventTap.
 pub struct MacOSMouseCapture {
     running: Arc<AtomicBool>,
@@ -24,6 +33,7 @@ pub struct MacOSMouseCapture {
     keyboard_active: Arc<AtomicBool>,
     last_keystroke_time: Arc<RwLock<std::time::Instant>>,
     run_loop: Arc<Mutex<Option<RunLoopHandle>>>,
+    tap_resources: Arc<Mutex<Option<MouseTapResources>>>,
 }
 
 impl MacOSMouseCapture {
@@ -39,6 +49,7 @@ impl MacOSMouseCapture {
             keyboard_active: Arc::new(AtomicBool::new(false)),
             last_keystroke_time: Arc::new(RwLock::new(std::time::Instant::now())),
             run_loop: Arc::new(Mutex::new(None)),
+            tap_resources: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -69,6 +80,7 @@ impl MouseCapture for MacOSMouseCapture {
         let last_keystroke_time = Arc::clone(&self.last_keystroke_time);
         let idle_only_mode = self.idle_only_mode;
         let run_loop = Arc::clone(&self.run_loop);
+        let tap_resources = Arc::clone(&self.tap_resources);
 
         running.store(true, Ordering::SeqCst);
 
@@ -155,8 +167,15 @@ impl MouseCapture for MacOSMouseCapture {
                 if let Ok(mut rl) = run_loop.lock() {
                     *rl = Some(RunLoopHandle(rl_ref));
                 }
-                let _ = ready_tx.send(Ok(()));
+                if let Ok(mut res) = tap_resources.lock() {
+                    *res = Some(MouseTapResources {
+                        run_loop: rl_ref,
+                        tap,
+                        source,
+                    });
+                }
                 CFRunLoopAddSource(rl_ref, source, kCFRunLoopCommonModes);
+                let _ = ready_tx.send(Ok(()));
                 CGEventTapEnable(tap, true);
                 CFRunLoopRun();
             }
@@ -185,16 +204,32 @@ impl MouseCapture for MacOSMouseCapture {
     fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
-        if let Ok(mut rl) = self.run_loop.lock() {
-            if let Some(handle) = rl.take() {
-                unsafe {
-                    CFRunLoopStop(handle.0);
-                    CFRelease(handle.0);
-                }
+        // Take the run_loop handle to stop it, but defer CFRelease until after thread exits
+        let ptr = self
+            .run_loop
+            .lock()
+            .ok()
+            .and_then(|mut rl| rl.take().map(|h| h.0));
+        if let Some(p) = ptr {
+            unsafe {
+                CFRunLoopStop(p);
             }
         }
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
+        }
+        // Release all CF objects after the thread has exited
+        if let Some(res) = self.tap_resources.lock().ok().and_then(|mut r| r.take()) {
+            unsafe {
+                CFRelease(res.source);
+                CFRelease(res.tap);
+                CFRelease(res.run_loop);
+            }
+        } else if let Some(p) = ptr {
+            // Fallback: release run loop if tap_resources wasn't populated
+            unsafe {
+                CFRelease(p);
+            }
         }
         Ok(())
     }
@@ -227,5 +262,11 @@ impl MouseCapture for MacOSMouseCapture {
 
     fn is_idle_only_mode(&self) -> bool {
         self.idle_only_mode
+    }
+}
+
+impl Drop for MacOSMouseCapture {
+    fn drop(&mut self) {
+        let _ = self.stop();
     }
 }

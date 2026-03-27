@@ -271,8 +271,8 @@ impl RangeProof {
             }
         }
 
-        use std::collections::HashMap;
-        let mut current: HashMap<u64, [u8; HASH_SIZE]> = HashMap::new();
+        use std::collections::BTreeMap;
+        let mut current: BTreeMap<u64, [u8; HASH_SIZE]> = BTreeMap::new();
         for (i, hash) in self.leaf_hashes.iter().enumerate() {
             current.insert(self.leaf_indices[i], *hash);
         }
@@ -283,8 +283,8 @@ impl RangeProof {
             if height >= 63 {
                 return Err(MmrError::InvalidProof);
             }
-            let mut next: HashMap<u64, [u8; HASH_SIZE]> = HashMap::new();
-            let mut processed: HashMap<u64, bool> = HashMap::new();
+            let mut next: BTreeMap<u64, [u8; HASH_SIZE]> = BTreeMap::new();
+            let mut processed: BTreeMap<u64, bool> = BTreeMap::new();
             let mut positions: Vec<u64> = current.keys().copied().collect();
             positions.sort_unstable();
             for pos in positions {

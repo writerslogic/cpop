@@ -294,7 +294,17 @@ pub fn ffi_sentinel_start_witnessing(path: String) -> FfiResult {
         };
     }
 
-    match sentinel.start_witnessing(std::path::Path::new(&path)) {
+    // AUD-084: Validate path to prevent traversal attacks
+    let p = std::path::Path::new(&path);
+    if path.contains("..") || !p.is_absolute() {
+        return FfiResult {
+            success: false,
+            message: None,
+            error_message: Some("Invalid path: must be absolute with no traversal".to_string()),
+        };
+    }
+
+    match sentinel.start_witnessing(p) {
         Ok(()) => FfiResult {
             success: true,
             message: Some(format!("Now witnessing: {path}")),
@@ -551,8 +561,8 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         document_path: Some(session.path.clone()),
         keystroke_count,
         elapsed_secs,
-        change_count: session.change_count as u64,
-        save_count: session.save_count as u64,
+        change_count: u64::from(session.change_count),
+        save_count: u64::from(session.save_count),
         checkpoint_count,
         forensic_score,
         last_paste_chars,

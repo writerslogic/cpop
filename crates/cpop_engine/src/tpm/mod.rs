@@ -124,7 +124,7 @@ pub fn generate_attestation_report(
         attestation_nonce: attestation_nonce.to_vec(),
         evidence_hash,
         hardware_quote: quote,
-        signature: Vec::new(),
+        signature: provider.sign(&quote_payload)?,
     })
 }
 

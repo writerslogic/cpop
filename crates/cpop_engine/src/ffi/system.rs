@@ -28,6 +28,8 @@ pub fn ffi_init() -> FfiResult {
         };
     }
 
+    // AUD-089/AUD-090: Atomic key file creation to prevent TOCTOU race
+    // and world-readable window on crash
     let key_path = data_dir.join("signing_key");
     if !key_path.exists() {
         use ed25519_dalek::SigningKey;
@@ -43,18 +45,30 @@ pub fn ffi_init() -> FfiResult {
         use zeroize::Zeroize;
         seed.zeroize();
         let key_bytes = zeroize::Zeroizing::new(signing_key.to_bytes());
-        if let Err(e) = std::fs::write(&key_path, key_bytes.as_ref()) {
+
+        // Write to temp file first, restrict permissions, then atomic rename
+        let tmp_path = key_path.with_extension("tmp");
+        if let Err(e) = std::fs::write(&tmp_path, key_bytes.as_ref()) {
             return FfiResult {
                 success: false,
                 message: None,
                 error_message: Some(format!("Failed to write signing key: {}", e)),
             };
         }
-        if let Err(e) = crate::crypto::restrict_permissions(&key_path, 0o600) {
+        if let Err(e) = crate::crypto::restrict_permissions(&tmp_path, 0o600) {
+            let _ = std::fs::remove_file(&tmp_path);
             return FfiResult {
                 success: false,
                 message: None,
                 error_message: Some(format!("Failed to set key file permissions: {}", e)),
+            };
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &key_path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to finalize signing key: {}", e)),
             };
         }
     }

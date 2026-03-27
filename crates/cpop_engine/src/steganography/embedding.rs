@@ -85,25 +85,37 @@ impl ZwcEmbedder {
     }
 }
 
-/// HMAC-SHA256(key, DST || mmr_root || doc_hash), extracting 2 bits per ZWC.
+/// Counter-based HMAC-SHA256 expansion for watermark tags.
+///
+/// AUD-148: Uses counter-mode HMAC to generate unique bytes for any zwc_count,
+/// preventing the tag repetition that occurred with the old modular indexing.
 pub(super) fn compute_watermark_tag(
     key: &[u8; 32],
     mmr_root: &[u8; 32],
     doc_hash: &[u8; 32],
     zwc_count: usize,
 ) -> Vec<u8> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key length");
-    mac.update(DST_WATERMARK);
-    mac.update(mmr_root);
-    mac.update(doc_hash);
-
-    let hash = mac.finalize().into_bytes();
+    // Generate enough HMAC blocks to cover all ZWCs (4 ZWCs per byte, 32 bytes per block)
+    let bytes_needed = zwc_count / 4 + 1;
+    let mut expanded = Vec::with_capacity(bytes_needed);
+    let mut counter: u32 = 0;
+    while expanded.len() < bytes_needed {
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key length");
+        mac.update(DST_WATERMARK);
+        mac.update(mmr_root);
+        mac.update(doc_hash);
+        mac.update(&counter.to_be_bytes());
+        let block = mac.finalize().into_bytes();
+        expanded.extend_from_slice(&block);
+        counter += 1;
+    }
 
     let mut tag = Vec::with_capacity(zwc_count);
     for i in 0..zwc_count {
-        let byte_idx = (i / 4) % hash.len();
+        let byte_idx = i / 4;
         let bit_offset = (i % 4) * 2;
-        let two_bits = (hash[byte_idx] >> bit_offset) & 0x03;
+        let two_bits = (expanded[byte_idx] >> bit_offset) & 0x03;
         tag.push(two_bits);
     }
 

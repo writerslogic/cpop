@@ -746,7 +746,13 @@ impl SecureEnclaveProvider {
         }
 
         let expected_proof = Sha256::digest(&expected_data).to_vec();
-        if attestation.attestation_proof != expected_proof {
+        // AUD-132: Use constant-time comparison to prevent timing side-channel
+        if attestation
+            .attestation_proof
+            .ct_eq(&expected_proof)
+            .unwrap_u8()
+            == 0
+        {
             return Ok(false);
         }
 

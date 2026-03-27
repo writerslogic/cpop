@@ -297,13 +297,14 @@ impl KeystrokeMonitor {
     }
 
     pub fn stop(&mut self) {
-        // C-001: extract pointer now, but defer CFRelease until after thread exits
-        let ptr = self
+        // C-001: Stop the run loop first so the thread can exit, but take the
+        // handle so a second call to stop() (e.g. from Drop) is a no-op.
+        let rl_ptr = self
             .run_loop
             .lock()
             .ok()
             .and_then(|mut rl| rl.take().map(|h| h.0));
-        if let Some(p) = ptr {
+        if let Some(p) = rl_ptr {
             unsafe {
                 CFRunLoopStop(p);
             }
@@ -311,17 +312,14 @@ impl KeystrokeMonitor {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        // H-071: Release tap, source, and run loop after thread has exited
+        // H-071: Release tap, source, and run loop after thread has exited.
+        // tap_resources holds the canonical copies; run_loop was only taken
+        // above to call CFRunLoopStop. Release everything exactly once here.
         if let Some(res) = self.tap_resources.lock().ok().and_then(|mut r| r.take()) {
             unsafe {
                 CFRelease(res.source);
                 CFRelease(res.tap);
                 CFRelease(res.run_loop);
-            }
-        } else if let Some(p) = ptr {
-            // Fallback: release run loop if tap_resources wasn't populated
-            unsafe {
-                CFRelease(p);
             }
         }
     }
@@ -518,13 +516,14 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
     fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
-        // C-001: defer CFRelease until after thread exits to prevent use-after-free
-        let ptr = self
+        // C-001: Stop the run loop first so the thread can exit, but take the
+        // handle so a second call to stop() (e.g. from Drop) is a no-op.
+        let rl_ptr = self
             .run_loop
             .lock()
             .ok()
             .and_then(|mut rl| rl.take().map(|h| h.0));
-        if let Some(p) = ptr {
+        if let Some(p) = rl_ptr {
             unsafe {
                 CFRunLoopStop(p);
             }
@@ -532,16 +531,14 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-        // H-072: Release tap, source, and run loop after thread has exited
+        // H-072: Release tap, source, and run loop after thread has exited.
+        // tap_resources holds the canonical copies; run_loop was only taken
+        // above to call CFRunLoopStop. Release everything exactly once here.
         if let Some(res) = self.tap_resources.lock().ok().and_then(|mut r| r.take()) {
             unsafe {
                 CFRelease(res.source);
                 CFRelease(res.tap);
                 CFRelease(res.run_loop);
-            }
-        } else if let Some(p) = ptr {
-            unsafe {
-                CFRelease(p);
             }
         }
         Ok(())

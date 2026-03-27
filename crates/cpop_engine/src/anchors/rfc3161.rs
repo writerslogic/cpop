@@ -177,9 +177,13 @@ impl Rfc3161Provider {
 
     /// Verify that the embedded MessageImprint hash matches `hash`.
     ///
-    /// WARNING: CMS signature verification is not implemented. The TSA's digital signature
-    /// over the TSTInfo is not checked. This function only verifies that the embedded hash
-    /// matches the expected value.
+    /// # Security
+    ///
+    /// **CMS signature verification is NOT implemented** (AUD-124). The TSA's digital
+    /// signature over the TSTInfo is not checked. This function only verifies that the
+    /// embedded hash matches the expected value. A forged timestamp token with the correct
+    /// hash will pass this check. Full CMS/PKCS#7 signature verification requires a
+    /// DER/X.509 parsing library and TSA certificate chain validation.
     fn verify_timestamp_token(&self, token: &[u8], hash: &[u8; 32]) -> Result<bool, AnchorError> {
         log::warn!(
             "verify_timestamp_token: CMS signature verification is not implemented; \

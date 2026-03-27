@@ -56,7 +56,12 @@ impl ZwcExtractor {
             zwc_found: extracted.len(),
             zwc_expected: self.params.zwc_count,
             extracted_tag: hex::encode(&extracted),
-            expected_tag: Some(hex::encode(&expected)),
+            // AUD-151: Only reveal expected tag on success to prevent forgery
+            expected_tag: if valid {
+                Some(hex::encode(&expected))
+            } else {
+                None
+            },
         }
     }
 
@@ -74,7 +79,8 @@ impl ZwcExtractor {
                     zwc_found: extracted.len(),
                     zwc_expected: binding.zwc_count,
                     extracted_tag: hex::encode(&extracted),
-                    expected_tag: Some(binding.tag_hex.clone()),
+                    // AUD-151: Don't leak expected tag on failure
+                    expected_tag: None,
                 };
             }
         };
@@ -88,7 +94,12 @@ impl ZwcExtractor {
             zwc_found: extracted.len(),
             zwc_expected: binding.zwc_count,
             extracted_tag: hex::encode(&extracted),
-            expected_tag: Some(binding.tag_hex.clone()),
+            // AUD-151: Only reveal expected tag on success
+            expected_tag: if valid {
+                Some(binding.tag_hex.clone())
+            } else {
+                None
+            },
         }
     }
 
