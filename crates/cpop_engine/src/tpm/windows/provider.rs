@@ -40,11 +40,11 @@ pub fn try_init() -> Option<WindowsTpmProvider> {
                 let public_key = match create_srk_public_key(&context) {
                     Ok(key) => key,
                     Err(e) => {
-                        log::warn!(
-                            "Failed to derive SRK public key: {}. Falling back to TPM random.",
+                        log::error!(
+                            "Failed to derive SRK public key: {}. TPM provider unavailable.",
                             e
                         );
-                        context.get_random(32).unwrap_or_else(|_| vec![0u8; 32])
+                        return None;
                     }
                 };
 
@@ -542,15 +542,16 @@ impl WindowsTpmProvider {
         Ok(())
     }
 
-    /// Hardware-bound: derived from TPM device ID so sealed blobs
-    /// can't be moved to another machine.
-    fn derive_seal_auth_value(&self) -> Vec<u8> {
+    /// Hardware-bound: derived from TPM device ID and SRK public key so sealed
+    /// blobs can't be moved to another machine.
+    fn derive_seal_auth_value(&self) -> zeroize::Zeroizing<Vec<u8>> {
         use sha2::Digest;
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-seal-auth-v1");
         hasher.update(self.context.device_id().as_bytes());
+        hasher.update(&self.public_key);
         let hash = hasher.finalize();
-        hash[..32].to_vec()
+        zeroize::Zeroizing::new(hash[..32].to_vec())
     }
 
     fn build_quote_attestation_data(

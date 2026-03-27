@@ -53,23 +53,34 @@ fn verify_binding_with_trusted(
 
     let payload = binding_payload(binding);
 
-    if binding.provider_type == "software" {
-        return verify_signature(&binding.public_key, &payload, &binding.signature);
+    // When trusted keys are provided, the binding's key must be in the trusted set.
+    // This prevents an attacker from fabricating a binding with their own keypair.
+    if !trusted_keys.is_empty() {
+        let key_to_verify = if !binding.public_key.is_empty() {
+            // Verify the binding's key is trusted before using it
+            if !trusted_keys.iter().any(|tk| tk == &binding.public_key) {
+                return Err(TpmError::Verification(
+                    "binding public key not in trusted set".into(),
+                ));
+            }
+            &binding.public_key
+        } else {
+            // No embedded key; try each trusted key
+            for key in trusted_keys {
+                if verify_signature(key, &payload, &binding.signature).is_ok() {
+                    return Ok(());
+                }
+            }
+            return Err(TpmError::Verification(
+                "signature did not match trusted keys".into(),
+            ));
+        };
+        return verify_signature(key_to_verify, &payload, &binding.signature);
     }
 
+    // No trusted keys provided; self-verify against embedded key (local-only use).
     if !binding.public_key.is_empty() {
         return verify_signature(&binding.public_key, &payload, &binding.signature);
-    }
-
-    if !trusted_keys.is_empty() {
-        for key in trusted_keys {
-            if verify_signature(key, &payload, &binding.signature).is_ok() {
-                return Ok(());
-            }
-        }
-        return Err(TpmError::Verification(
-            "signature did not match trusted keys".into(),
-        ));
     }
 
     Err(TpmError::InvalidSignature)
