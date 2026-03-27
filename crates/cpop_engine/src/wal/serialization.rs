@@ -9,7 +9,7 @@ pub(super) fn serialize_header(header: &Header) -> Vec<u8> {
     buf[0..4].copy_from_slice(&header.magic);
     buf[4..8].copy_from_slice(&header.version.to_be_bytes());
     buf[8..40].copy_from_slice(&header.session_id);
-    buf[40..48].copy_from_slice(&(header.created_at as u64).to_be_bytes());
+    buf[40..48].copy_from_slice(&header.created_at.to_be_bytes());
     buf[48..56].copy_from_slice(&header.last_checkpoint_seq.to_be_bytes());
     buf[56..64].copy_from_slice(&header.reserved);
     buf
@@ -28,11 +28,11 @@ pub(super) fn deserialize_header(data: &[u8]) -> Result<Header, WalError> {
     );
     let mut session_id = [0u8; 32];
     session_id.copy_from_slice(&data[8..40]);
-    let created_at = u64::from_be_bytes(
+    let created_at = i64::from_be_bytes(
         data[40..48]
             .try_into()
             .map_err(|e: std::array::TryFromSliceError| WalError::Serialization(e.to_string()))?,
-    ) as i64;
+    );
     let last_checkpoint_seq = u64::from_be_bytes(
         data[48..56]
             .try_into()
@@ -66,7 +66,7 @@ pub(super) fn serialize_entry(entry: &Entry) -> Result<Vec<u8>, WalError> {
 
     buf[offset..offset + 8].copy_from_slice(&entry.sequence.to_be_bytes());
     offset += 8;
-    buf[offset..offset + 8].copy_from_slice(&(entry.timestamp as u64).to_be_bytes());
+    buf[offset..offset + 8].copy_from_slice(&entry.timestamp.to_be_bytes());
     offset += 8;
     buf[offset] = entry.entry_type as u8;
     offset += 1;
@@ -94,11 +94,11 @@ pub(super) fn deserialize_entry(data: &[u8]) -> Result<Entry, WalError> {
             .map_err(|e: std::array::TryFromSliceError| WalError::Serialization(e.to_string()))?,
     );
     offset += 8;
-    let timestamp = u64::from_be_bytes(
+    let timestamp = i64::from_be_bytes(
         data[offset..offset + 8]
             .try_into()
             .map_err(|e: std::array::TryFromSliceError| WalError::Serialization(e.to_string()))?,
-    ) as i64;
+    );
     offset += 8;
     let entry_type = EntryType::try_from(data[offset])?;
     offset += 1;

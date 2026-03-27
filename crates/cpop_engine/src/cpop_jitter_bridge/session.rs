@@ -14,6 +14,7 @@ use cpop_jitter::{
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Combined jitter + zone-tracking session for a single document.
 #[derive(Debug)]
@@ -47,16 +48,17 @@ impl HybridJitterSession {
         let document_tracker = DocumentTracker::new(document_path.as_ref())?;
         let document_path_str = document_tracker.path.clone();
 
-        let material = if let Some(k) = key_material {
+        let mut material = Zeroizing::new(if let Some(k) = key_material {
             k
         } else {
             let mut k = [0u8; 32];
             getrandom::getrandom(&mut k)
                 .map_err(|e| format!("failed to generate key material: {e}"))?;
             k
-        };
+        });
 
-        let secret = derive_session_secret(&material, b"witnessd-hybrid-session-v1");
+        let secret = derive_session_secret(material.as_ref(), b"witnessd-hybrid-session-v1");
+        material.zeroize();
         let cpop_jitter_session = PhysSession::new(secret);
 
         Ok(Self {
@@ -278,10 +280,10 @@ impl HybridJitterSession {
 
         Statistics {
             total_keystrokes: self.keystroke_count,
-            total_samples: self.samples.len() as i32,
+            total_samples: i32::try_from(self.samples.len()).unwrap_or(i32::MAX),
             duration,
             keystrokes_per_min,
-            unique_doc_hashes: seen.len() as i32,
+            unique_doc_hashes: i32::try_from(seen.len()).unwrap_or(i32::MAX),
             chain_valid: self.verify_chain().is_ok(),
         }
     }
@@ -314,16 +316,17 @@ impl HybridJitterSession {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         let data: HybridSessionData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
 
-        let material = if let Some(k) = key_material {
+        let mut material = Zeroizing::new(if let Some(k) = key_material {
             k
         } else {
             let mut k = [0u8; 32];
             getrandom::getrandom(&mut k)
                 .map_err(|e| format!("failed to generate key material: {e}"))?;
             k
-        };
+        });
 
-        let secret = derive_session_secret(&material, b"witnessd-hybrid-session-v1");
+        let secret = derive_session_secret(material.as_ref(), b"witnessd-hybrid-session-v1");
+        material.zeroize();
 
         let document_tracker = DocumentTracker {
             path: data.document_path.clone(),

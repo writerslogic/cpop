@@ -261,8 +261,8 @@ impl From<&HidDeviceInfo> for InputDeviceInfo {
     fn from(hid: &HidDeviceInfo) -> Self {
         let transport = hid.transport_type();
         Self {
-            vendor_id: hid.vendor_id as u16,
-            product_id: hid.product_id as u16,
+            vendor_id: u16::try_from(hid.vendor_id).unwrap_or(0),
+            product_id: u16::try_from(hid.product_id).unwrap_or(0),
             product_name: hid.product_name.clone(),
             serial_number: hid.serial_number.clone(),
             connection_type: transport.as_str().to_string(),

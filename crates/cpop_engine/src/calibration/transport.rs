@@ -71,7 +71,7 @@ impl TransportCalibrator {
         Some(TransportCalibration {
             transport: transport.as_str().to_string(),
             baseline_latency_us: baseline,
-            latency_variance_us: std_dev as u64,
+            latency_variance_us: std_dev.round() as u64,
             calibrated_at_ms: now_ms,
         })
     }

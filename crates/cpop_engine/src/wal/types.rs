@@ -144,7 +144,7 @@ impl Entry {
     pub(super) fn compute_hash(&self) -> [u8; 32] {
         let mut hasher = Hasher::new();
         hasher.update(&self.sequence.to_le_bytes());
-        hasher.update(&(self.timestamp as u64).to_le_bytes());
+        hasher.update(&self.timestamp.to_le_bytes());
         hasher.update(&[self.entry_type as u8]);
         hasher.update(&self.payload);
         hasher.update(&self.prev_hash);

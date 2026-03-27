@@ -62,7 +62,11 @@ impl VdfProof {
     }
 
     /// Verify this proof by recomputing the full hash chain.
+    /// Returns `false` for zero-iteration proofs (trivial, no work performed).
     pub fn verify(&self) -> bool {
+        if self.iterations == 0 {
+            return false;
+        }
         self.verify_with_progress(None::<fn(f64)>)
     }
 
@@ -102,7 +106,11 @@ impl VdfProof {
         buf[0..32].copy_from_slice(&self.input);
         buf[32..64].copy_from_slice(&self.output);
         buf[64..72].copy_from_slice(&self.iterations.to_be_bytes());
-        buf[72..80].copy_from_slice(&(self.duration.as_nanos() as u64).to_be_bytes());
+        buf[72..80].copy_from_slice(
+            &u64::try_from(self.duration.as_nanos())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
         buf
     }
 
@@ -299,12 +307,15 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_iterations() {
+    fn test_zero_iterations_rejected() {
         let input = [0u8; 32];
         let proof = VdfProof::compute_iterations(input, 0);
 
         assert_eq!(proof.input, proof.output);
-        assert!(proof.verify());
+        assert!(
+            !proof.verify(),
+            "zero-iteration proof must be rejected as trivial"
+        );
     }
 
     #[test]
