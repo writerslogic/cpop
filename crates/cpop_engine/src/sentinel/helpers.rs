@@ -24,6 +24,7 @@ pub fn handle_focus_event_sync(
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
 ) {
+    #[cfg(debug_assertions)]
     {
         use std::io::Write;
         let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -60,6 +61,7 @@ pub fn handle_focus_event_sync(
                 if !event.shadow_id.is_empty() {
                     format!("shadow://{}", event.shadow_id)
                 } else {
+                    #[cfg(debug_assertions)]
                     {
                         use std::io::Write;
                         let debug_path = std::env::var("CPOP_DATA_DIR")
@@ -272,6 +274,7 @@ pub fn focus_document_sync(
         .map(|s| s.focus_count)
         .unwrap_or(0);
 
+    #[cfg(debug_assertions)]
     {
         use std::io::Write;
         let debug_path = std::env::var("CPOP_DATA_DIR")

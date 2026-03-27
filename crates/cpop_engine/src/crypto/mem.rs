@@ -100,21 +100,53 @@ impl<const N: usize> std::fmt::Debug for ProtectedKey<N> {
     }
 }
 
-/// Variable-length sensitive buffer, zeroized on drop.
-#[derive(Clone)]
+/// Variable-length sensitive buffer, zeroized on drop with `mlock` on Unix.
 pub struct ProtectedBuf(Vec<u8>);
 
+impl Clone for ProtectedBuf {
+    fn clone(&self) -> Self {
+        let mut buf = Self(self.0.clone());
+        buf.lock_memory();
+        buf
+    }
+}
+
 impl ProtectedBuf {
-    /// Clone bytes into a protected buffer and zeroize the source.
+    /// Move bytes into a protected buffer, mlock it, and zeroize the source.
     pub fn new(mut bytes: Vec<u8>) -> Self {
-        let buf = Self(bytes.clone());
+        let taken = std::mem::take(&mut bytes);
         bytes.zeroize();
+        let mut buf = Self(taken);
+        buf.lock_memory();
         buf
     }
 
     /// Borrow the underlying buffer bytes.
     pub fn as_slice(&self) -> &[u8] {
         &self.0
+    }
+
+    fn lock_memory(&mut self) {
+        #[cfg(unix)]
+        if !self.0.is_empty() {
+            unsafe {
+                if mlock(self.0.as_ptr() as *const libc::c_void, self.0.len()) != 0 {
+                    log::warn!(
+                        "mlock failed for ProtectedBuf: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
+            }
+        }
+    }
+
+    fn unlock_memory(&mut self) {
+        #[cfg(unix)]
+        if !self.0.is_empty() {
+            unsafe {
+                let _ = munlock(self.0.as_ptr() as *const libc::c_void, self.0.len());
+            }
+        }
     }
 }
 
@@ -135,6 +167,7 @@ impl Deref for ProtectedBuf {
 impl Drop for ProtectedBuf {
     fn drop(&mut self) {
         self.0.zeroize();
+        self.unlock_memory();
     }
 }
 

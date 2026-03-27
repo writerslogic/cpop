@@ -86,16 +86,18 @@ pub(crate) fn load_signing_key() -> Result<ed25519_dalek::SigningKey, String> {
 
     let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
     let key_path = data_dir.join("signing_key");
-    let mut key_data =
-        std::fs::read(&key_path).map_err(|e| format!("Failed to read signing key: {e}"))?;
+    let mut key_data = Zeroizing::new(
+        std::fs::read(&key_path).map_err(|e| format!("Failed to read signing key: {e}"))?,
+    );
     if key_data.len() < 32 {
-        key_data.zeroize();
         return Err("Signing key is too short".to_string());
     }
-    let mut secret: [u8; 32] = key_data[..32]
-        .try_into()
-        .map_err(|_| "Invalid signing key length".to_string())?;
-    key_data.zeroize();
+    let mut secret: Zeroizing<[u8; 32]> = Zeroizing::new(
+        key_data[..32]
+            .try_into()
+            .map_err(|_| "Invalid signing key length".to_string())?,
+    );
+    drop(key_data);
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
     secret.zeroize();
     Ok(signing_key)

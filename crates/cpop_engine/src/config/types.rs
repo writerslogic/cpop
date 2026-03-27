@@ -368,6 +368,12 @@ impl CpopConfig {
         if self.vdf.iterations_per_second == 0 {
             bail!("vdf.iterations_per_second must be > 0");
         }
+        if self.vdf.min_iterations == 0 {
+            bail!("vdf.min_iterations must be > 0");
+        }
+        if self.vdf.max_iterations == 0 {
+            bail!("vdf.max_iterations must be > 0");
+        }
         if self.vdf.min_iterations > self.vdf.max_iterations {
             bail!(
                 "vdf.min_iterations ({}) must be <= max_iterations ({})",
