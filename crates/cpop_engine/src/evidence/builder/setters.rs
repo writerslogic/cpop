@@ -328,6 +328,8 @@ impl Builder {
                 .map(|(idx, sig)| CheckpointSignature {
                     ordinal: sig.ordinal,
                     checkpoint_hash: hex::encode(sig.checkpoint_hash),
+                    // Source keyhierarchy::CheckpointSignature has no ratchet_index field;
+                    // enumerate position matches ratchet chain order by construction.
                     ratchet_index: i32::try_from(idx).unwrap_or_else(|_| {
                         log::warn!("Ratchet index {idx} exceeds i32::MAX, clamping");
                         i32::MAX
@@ -452,6 +454,7 @@ impl Builder {
         let intervals_us: Vec<f64> = keystroke
             .samples
             .iter()
+            // jitter_micros is i64; negative values filtered by the > 0.0 check below
             .map(|s| s.jitter_micros as f64)
             .filter(|&i| i > 0.0 && i < MAX_INTERVAL_US)
             .collect();
@@ -463,6 +466,8 @@ impl Builder {
         }
 
         let mean = intervals_us.iter().sum::<f64>() / intervals_us.len() as f64;
+        // Population variance (N divisor) used intentionally; the full interval set is the
+        // population of interest, not a sample from a larger one.
         let variance = intervals_us.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
             / intervals_us.len() as f64;
         let std_dev = variance.sqrt();
@@ -497,7 +502,7 @@ impl Builder {
         }
         let entropy_hash: [u8; 32] = hasher.finalize().into();
 
-        let timestamp_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
+        let timestamp_ms = u64::try_from(chrono::Utc::now().timestamp_millis().max(0)).unwrap_or(0);
 
         let binding = JitterBinding {
             entropy_commitment: rfc::EntropyCommitment {
@@ -512,26 +517,36 @@ impl Builder {
                 transport_calibration: None,
             }],
             summary: rfc::JitterSummary {
-                sample_count: intervals_us.len() as u64,
+                sample_count: u64::try_from(intervals_us.len()).unwrap_or(0),
                 mean_interval_us: mean,
                 std_dev,
                 coefficient_of_variation: cv,
                 percentiles,
+                // Uses filtered interval count (outliers removed) for conservative entropy estimate.
+                // Raw keystroke.samples.len() would overestimate entropy from timeout gaps.
                 // Conservative lower bound: log2(n-1) bits from n independent samples
                 // (n samples yield n-1 intervals). True Shannon entropy depends on the
                 // interval distribution, but log2(n-1) is a defensible minimum without
                 // distribution assumptions.
-                entropy_bits: ((intervals_us.len() as f64) - 1.0).log2(),
+                entropy_bits: {
+                    let n = intervals_us.len() as f64;
+                    if n > 1.0 {
+                        (n - 1.0).log2()
+                    } else {
+                        0.0
+                    }
+                },
                 hurst_exponent,
             },
             binding_mac: {
                 use hkdf::Hkdf;
+                use zeroize::Zeroizing;
                 let hk = Hkdf::<sha2::Sha256>::new(None, &entropy_hash);
-                let mut mac_key = [0u8; 32];
-                hk.expand(b"witnessd-binding-mac-key-v1", &mut mac_key)
+                let mut mac_key = Zeroizing::new([0u8; 32]);
+                hk.expand(b"witnessd-binding-mac-key-v1", mac_key.as_mut())
                     .expect("32 bytes is valid HKDF-Expand length");
                 rfc::BindingMac::compute(
-                    &mac_key,
+                    mac_key.as_ref(),
                     *document_hash,
                     keystroke.total_keystrokes,
                     timestamp_ms,
@@ -636,8 +651,10 @@ impl Builder {
         }
         let mut scored = events;
         for event in &mut scored {
-            event.plausibility_score =
-                crate::forensics::dictation::score_dictation_plausibility(event);
+            if event.plausibility_score == 0.0 {
+                event.plausibility_score =
+                    crate::forensics::dictation::score_dictation_plausibility(event);
+            }
         }
         let max_score = scored
             .iter()
