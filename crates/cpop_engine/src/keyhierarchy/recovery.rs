@@ -56,10 +56,19 @@ fn recover_session_with_ratchet(
 }
 
 /// Legacy v1 ratchet recovery: XOR cipher (no version byte, backward compat).
+///
+/// WARNING: v1 uses an unauthenticated XOR cipher. The ordinal bytes (32..40) can
+/// be tampered with without detection. This path exists only for migration; callers
+/// should re-save as v2 AEAD immediately after a successful v1 recovery.
 fn recover_ratchet_v1_legacy(
     puf: &dyn PufProvider,
     recovery: &SessionRecoveryState,
 ) -> Result<Session, KeyHierarchyError> {
+    log::warn!(
+        "Using legacy v1 recovery (unauthenticated XOR cipher). \
+         Re-export your recovery state to upgrade to v2 AEAD format."
+    );
+
     let challenge = Sha256::digest(b"witnessd-ratchet-recovery-v1");
     let response = puf.get_response(&challenge)?;
     let mut key = hkdf_expand(&response, b"ratchet-recovery-key", &[])?;
@@ -78,6 +87,22 @@ fn recover_ratchet_v1_legacy(
             .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?,
     );
     key.zeroize();
+
+    // Validate the decrypted ordinal against the signature chain to detect
+    // obvious tampering of the unauthenticated ordinal bytes.
+    let expected_ordinal = recovery
+        .signatures
+        .last()
+        .map_or(0u64, |s| s.ordinal.saturating_add(1));
+    if ordinal != expected_ordinal {
+        log::warn!(
+            "v1 recovery ordinal mismatch: decrypted {}, expected {} from signature chain. \
+             Possible tampering of unauthenticated recovery data.",
+            ordinal,
+            expected_ordinal,
+        );
+        return Err(KeyHierarchyError::SessionRecoveryFailed);
+    }
 
     let protected = crate::crypto::ProtectedKey::new(ratchet_state);
     ratchet_state.zeroize();
