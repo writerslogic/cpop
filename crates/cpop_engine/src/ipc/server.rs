@@ -104,8 +104,9 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
         WireProtocol::SecureJson
     } else {
         log::error!(
-            "IPC: Rejected insecure connection attempt (magic: {:?}) on {}. Only secure JSON protocol (WS) is allowed.",
-            peek_buf,
+            "IPC: Rejected insecure connection attempt (magic: 0x{:02x}{:02x}) on {}. Only secure JSON protocol (WS) is allowed.",
+            peek_buf[0],
+            peek_buf[1],
             transport_label
         );
         return;
@@ -363,7 +364,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                 );
                 let error_response = IpcMessage::Error {
                     code: IpcErrorCode::InvalidMessage,
-                    message: format!("Failed to deserialize message: {}", e),
+                    message: "Invalid message format".to_string(),
                 };
                 if let Ok(response_bytes) = encode_for_protocol(&error_response, decode_protocol) {
                     if let Some(ref session) = secure_session {
@@ -393,7 +394,19 @@ impl IpcServer {
     #[cfg(not(target_os = "windows"))]
     pub fn bind(path: PathBuf) -> Result<Self> {
         if path.exists() {
-            std::fs::remove_file(&path)?;
+            // Check if socket is active before removing
+            match std::os::unix::net::UnixStream::connect(&path) {
+                Ok(_) => {
+                    return Err(anyhow!(
+                        "Another IPC server is already listening on {}",
+                        path.display()
+                    ));
+                }
+                Err(_) => {
+                    // Stale socket file, safe to remove
+                    std::fs::remove_file(&path)?;
+                }
+            }
         }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -462,11 +475,7 @@ impl IpcServer {
                 let conn_count = Arc::clone(&active_connections);
                 let al = self.access_log.clone();
                 tokio::spawn(async move {
-                    let _ = tokio::time::timeout(
-                        std::time::Duration::from_secs(300),
-                        handle_connection(stream, handler_clone, rl, al),
-                    )
-                    .await;
+                    handle_connection(stream, handler_clone, rl, al).await;
                     conn_count.fetch_sub(1, Ordering::Relaxed);
                 });
             }
@@ -579,6 +588,15 @@ impl IpcServer {
                 }
             }
             Ok(())
+        }
+    }
+}
+
+impl Drop for IpcServer {
+    fn drop(&mut self) {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = std::fs::remove_file(&self.socket_path);
         }
     }
 }
