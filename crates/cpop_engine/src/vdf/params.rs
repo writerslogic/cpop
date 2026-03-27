@@ -188,13 +188,19 @@ pub fn swf_seed_core(prev_hash: &[u8; 32], local_nonce: &[u8; 32]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Parallel VDF proof verifier using a worker thread pool.
+/// Maximum number of threads the batch verifier will spawn, regardless of
+/// available parallelism, to prevent resource exhaustion on large proof sets.
+const MAX_BATCH_THREADS: usize = 16;
+
+/// Parallel VDF proof verifier using a bounded worker thread pool.
 pub struct BatchVerifier {
     workers: usize,
 }
 
 impl BatchVerifier {
     /// Create a verifier with the given worker count (0 = auto-detect).
+    ///
+    /// The effective worker count is capped at [`MAX_BATCH_THREADS`] (16).
     pub fn new(workers: usize) -> Self {
         let workers = if workers == 0 {
             std::thread::available_parallelism()
@@ -203,10 +209,15 @@ impl BatchVerifier {
         } else {
             workers
         };
-        Self { workers }
+        Self {
+            workers: workers.min(MAX_BATCH_THREADS),
+        }
     }
 
     /// Verify all proofs in parallel, returning per-index results.
+    ///
+    /// At most `self.workers` OS threads run concurrently; excess proofs
+    /// wait on a semaphore rather than spawning unbounded threads.
     pub fn verify_all(&self, proofs: &[Option<VdfProof>]) -> Vec<VerifyResult> {
         let results = Arc::new(Mutex::new(vec![
             VerifyResult {
@@ -220,7 +231,22 @@ impl BatchVerifier {
         let semaphore = Arc::new((Mutex::new(self.workers), Condvar::new()));
         let mut handles = Vec::new();
 
-        for (index, proof) in proofs.iter().cloned().enumerate() {
+        // Cap spawned threads: we never need more threads than proofs,
+        // and the semaphore ensures at most `self.workers` run at once.
+        let max_threads = proofs.len().min(self.workers);
+
+        // Partition work into chunks so each thread processes multiple proofs
+        // instead of spawning one thread per proof.
+        let chunk_size = (proofs.len() + max_threads - 1) / max_threads.max(1);
+        for chunk_start in (0..proofs.len()).step_by(chunk_size.max(1)) {
+            let chunk_end = (chunk_start + chunk_size).min(proofs.len());
+            let chunk: Vec<(usize, Option<VdfProof>)> = proofs[chunk_start..chunk_end]
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(i, p)| (chunk_start + i, p))
+                .collect();
+
             let results = Arc::clone(&results);
             let semaphore = Arc::clone(&semaphore);
 
@@ -233,22 +259,25 @@ impl BatchVerifier {
                     *count -= 1;
                 }
 
-                let outcome = if let Some(p) = proof {
-                    VerifyResult {
-                        index,
-                        valid: p.verify(),
-                        error: None,
-                    }
-                } else {
-                    VerifyResult {
-                        index,
-                        valid: false,
-                        error: Some("nil proof".to_string()),
-                    }
-                };
+                for (index, proof) in chunk {
+                    let outcome = if let Some(p) = proof {
+                        VerifyResult {
+                            index,
+                            valid: p.verify(),
+                            error: None,
+                        }
+                    } else {
+                        VerifyResult {
+                            index,
+                            valid: false,
+                            error: Some("nil proof".to_string()),
+                        }
+                    };
 
-                let mut res = results.lock_recover();
-                res[index] = outcome;
+                    let mut res = results.lock_recover();
+                    res[index] = outcome;
+                }
+
                 let (lock, cvar) = &*semaphore;
                 let mut count = lock.lock_recover();
                 *count += 1;

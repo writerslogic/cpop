@@ -484,6 +484,10 @@ impl Wal {
 
         fs::rename(&state.path, &archive_path)?;
 
+        // Preserve the sequence number so the new WAL continues where the old one
+        // left off (AUD-108). This prevents sequence reuse across rotations.
+        let continued_sequence = state.next_sequence;
+
         // Create a fresh WAL file.
         let file = OpenOptions::new()
             .read(true)
@@ -494,13 +498,24 @@ impl Wal {
         crate::crypto::restrict_permissions(&state.path, 0o600)?;
 
         state.file = file;
-        state.next_sequence = 0;
+        state.next_sequence = continued_sequence;
         state.last_hash = [0u8; 32];
         state.cumulative_hasher = Hasher::new();
         state.entry_count = 0;
         state.byte_count = 0;
 
-        Self::write_header(&mut state)?;
+        // Write header with last_checkpoint_seq so verify() knows the starting offset.
+        let header = Header {
+            magic: *MAGIC,
+            version: VERSION,
+            session_id: state.session_id,
+            created_at: now_nanos(),
+            last_checkpoint_seq: continued_sequence,
+            reserved: [0u8; 8],
+        };
+        let buf = serialize_header(&header);
+        state.file.write_all(&buf)?;
+        state.file.sync_all()?;
         state.byte_count = HEADER_SIZE as u64;
         state.file.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
 

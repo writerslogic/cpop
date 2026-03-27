@@ -324,6 +324,8 @@ pub enum IpcErrorCode {
     NonceInvalid = 8,
     /// Engine identity or subsystem not yet initialized.
     NotInitialized = 9,
+    /// Request rejected due to rate limiting.
+    RateLimited = 10,
 }
 
 /// Dispatch trait for handling incoming IPC messages and producing responses.

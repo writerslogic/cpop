@@ -30,6 +30,16 @@ use zeroize::Zeroize;
 const CGEVENTTAP_VERIFIED_PID: i64 = -1;
 
 /// Core sentinel daemon for document focus tracking and session management.
+///
+/// # Lock ordering convention (AUD-041)
+///
+/// When acquiring multiple locks, always acquire in this order to prevent deadlocks:
+///   1. `signing_key` (RwLock)
+///   2. `sessions` (RwLock)
+///   3. `current_focus` (RwLock)
+///   4. All other Mutex-protected fields (no ordering between them)
+///
+/// Never acquire `sessions` before `signing_key`.
 pub struct Sentinel {
     pub(crate) config: Arc<SentinelConfig>,
     pub(crate) sessions: Arc<RwLock<HashMap<String, DocumentSession>>>,
@@ -317,7 +327,7 @@ impl Sentinel {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
                                     bridge_count += 1;
-                                    // Debug: log every 100th event to file
+                                    #[cfg(debug_assertions)]
                                     if bridge_count % 100 == 0 {
                                         if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
                                             let path = std::path::Path::new(&dir)
@@ -722,6 +732,9 @@ impl Sentinel {
 
         let path_str = file_path.to_string_lossy().to_string();
 
+        // AUD-041: Acquire signing_key before sessions to maintain lock ordering.
+        let key = self.signing_key.read_recover().clone();
+
         // Single write lock for check+insert to avoid TOCTOU race
         let mut sessions = self.sessions.write_recover();
         if sessions.contains_key(&path_str) {
@@ -746,16 +759,16 @@ impl Sentinel {
             .config
             .wal_dir
             .join(format!("{}.wal", session.session_id));
-        // Session IDs are 32 random bytes hex-encoded (64 hex chars → 32 bytes).
+        // Session IDs are 32 random bytes hex-encoded (64 hex chars -> 32 bytes).
         // Wal::open requires a [u8; 32] session key derived from this ID.
         let mut session_id_bytes = [0u8; 32];
         let hex_str = &session.session_id[..64.min(session.session_id.len())];
         if hex::decode_to_slice(hex_str, &mut session_id_bytes).is_ok() {
-            if let Some(ref key) = *self.signing_key.read_recover() {
+            if let Some(ref signing_key) = key {
                 // Copy key bytes for Wal::open (which takes SigningKey by value)
                 // and zeroize the intermediate copy. SigningKey::from_bytes produces
                 // a value whose Drop impl zeroizes internal state.
-                let mut key_bytes = key.to_bytes();
+                let mut key_bytes = signing_key.to_bytes();
                 let wal_key = SigningKey::from_bytes(&key_bytes);
                 key_bytes.zeroize();
                 match Wal::open(&wal_path, session_id_bytes, wal_key) {
@@ -771,7 +784,7 @@ impl Sentinel {
                     }
                     Err(e) => {
                         log::error!(
-                            "WAL::open() failed for session {}: {} — session continues without persistent proof",
+                            "WAL::open() failed for session {}: {}; session continues without persistent proof",
                             session.session_id,
                             e
                         );

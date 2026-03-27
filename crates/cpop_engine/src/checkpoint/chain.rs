@@ -221,18 +221,48 @@ impl Chain {
         }
     }
 
-    /// Acquire an exclusive advisory lock (Windows: no-op, use OS file locking).
+    /// Acquire an exclusive advisory lock on the document file (Windows).
+    ///
+    /// Uses `LockFileEx` with `LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY`
+    /// to get a non-blocking exclusive byte-range lock, matching the Unix `flock`
+    /// semantics on the other platform branch.
     #[cfg(not(unix))]
-    fn acquire_lock(_file: &fs::File) -> Result<()> {
-        // Windows file locking is implicit via CreateFile sharing modes;
-        // advisory flock is not available. Accept the TOCTOU risk on Windows
-        // until a cross-platform lock crate (e.g. fs2) is added.
+    fn acquire_lock(file: &fs::File) -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+        };
+        use windows::Win32::System::IO::OVERLAPPED;
+
+        let handle = HANDLE(file.as_raw_handle());
+        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+        unsafe {
+            LockFileEx(
+                handle,
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                1, // lock 1 byte
+                0,
+                &mut overlapped,
+            )
+        }
+        .map_err(|_| Error::checkpoint("concurrent commit: could not acquire file lock"))?;
         Ok(())
     }
 
-    /// Release the advisory lock (Windows: no-op).
+    /// Release the advisory lock (Windows).
     #[cfg(not(unix))]
-    fn release_lock(_file: &fs::File) {}
+    fn release_lock(file: &fs::File) {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::UnlockFileEx;
+        use windows::Win32::System::IO::OVERLAPPED;
+
+        let handle = HANDLE(file.as_raw_handle());
+        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+        let _ = unsafe { UnlockFileEx(handle, 0, 1, 0, &mut overlapped) };
+    }
 
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
     /// Prevents precomputation since each VDF depends on the previous VDF's actual output.

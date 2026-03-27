@@ -235,7 +235,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         RateLimitConfig::max_ops(key)
                     );
                     let error_response = IpcMessage::Error {
-                        code: IpcErrorCode::InternalError,
+                        code: IpcErrorCode::RateLimited,
                         message: format!("Rate limit exceeded for operation: {}", key),
                     };
                     if let Ok(response_bytes) = encode_message_json(&error_response) {
