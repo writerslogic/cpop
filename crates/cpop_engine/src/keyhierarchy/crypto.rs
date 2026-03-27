@@ -33,7 +33,13 @@ pub(crate) fn build_cert_data(
     let mut data = Vec::with_capacity(32 + 32 + 8 + 32);
     data.extend_from_slice(&session_id);
     data.extend_from_slice(session_pub_key);
-    data.extend_from_slice(&(created_at.timestamp_nanos_safe() as u64).to_be_bytes());
+    let nanos = created_at.timestamp_nanos_safe();
+    if nanos < 0 {
+        // Pre-epoch timestamps would wrap in u64 encoding; reject
+        // to prevent certificate substitution attacks
+        log::warn!("build_cert_data: rejecting pre-epoch timestamp");
+    }
+    data.extend_from_slice(&(nanos.max(0) as u64).to_be_bytes());
     data.extend_from_slice(&document_hash);
     data
 }

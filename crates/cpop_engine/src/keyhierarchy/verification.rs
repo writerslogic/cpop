@@ -33,6 +33,11 @@ pub fn verify_session_certificate(cert: &SessionCertificate) -> Result<(), KeyHi
 }
 
 /// Verify ordinal sequence, Ed25519 signatures, and counter monotonicity for all checkpoints.
+///
+/// **Security note**: This function verifies each signature against its stated
+/// public key but does NOT verify that those public keys were derived from the
+/// session's ratchet chain. Full ratchet binding verification requires the
+/// session seed and is performed at a higher level when available.
 pub fn verify_checkpoint_signatures(
     signatures: &[CheckpointSignature],
 ) -> Result<(), KeyHierarchyError> {
@@ -40,7 +45,7 @@ pub fn verify_checkpoint_signatures(
     let mut prev_was_adjacent = false;
 
     for (i, sig) in signatures.iter().enumerate() {
-        if sig.ordinal != i as u64 {
+        if sig.ordinal != u64::try_from(i).unwrap_or(u64::MAX) {
             return Err(KeyHierarchyError::OrdinalMismatch);
         }
 
@@ -67,6 +72,7 @@ pub fn verify_checkpoint_signatures(
                 // Only validate delta against the immediately preceding counter
                 if prev_was_adjacent {
                     if let Some(delta) = sig.counter_delta {
+                        // Safe: current >= prev guaranteed by the check on line 67
                         if delta != current - prev {
                             return Err(KeyHierarchyError::Crypto(format!(
                                 "counter delta mismatch at ordinal {}: \
@@ -179,23 +185,23 @@ pub fn validate_cert_byte_lengths(
     session_id: &[u8; 32],
     created_at: DateTime<Utc>,
     document_hash: &[u8; 32],
-) -> Result<(), String> {
+) -> Result<(), KeyHierarchyError> {
     if master_pubkey.len() != 32 {
-        return Err("invalid master public key size".to_string());
+        return Err(KeyHierarchyError::InvalidCert);
     }
     if session_pubkey.len() != 32 {
-        return Err("invalid session public key size".to_string());
+        return Err(KeyHierarchyError::InvalidCert);
     }
     if cert_signature.len() != 64 {
-        return Err("invalid certificate signature size".to_string());
+        return Err(KeyHierarchyError::InvalidCert);
     }
 
     let cert_data = build_cert_data(*session_id, session_pubkey, created_at, *document_hash);
     let vk = VerifyingKey::from_bytes(master_pubkey.try_into().expect("length checked"))
-        .map_err(|e| format!("invalid master public key: {e}"))?;
+        .map_err(|_| KeyHierarchyError::InvalidCert)?;
     let sig = Signature::from_bytes(cert_signature.try_into().expect("length checked"));
     vk.verify(&cert_data, &sig)
-        .map_err(|e| format!("certificate signature verification failed: {e}"))?;
+        .map_err(|_| KeyHierarchyError::InvalidCert)?;
 
     Ok(())
 }

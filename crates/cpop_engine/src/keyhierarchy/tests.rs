@@ -52,7 +52,7 @@ fn test_validate_cert_byte_lengths_invalid() {
         &dummy_hash,
     )
     .unwrap_err();
-    assert!(err.contains("invalid master public key size"));
+    assert!(matches!(err, KeyHierarchyError::InvalidCert));
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn test_validate_cert_byte_lengths_invalid_session_pubkey() {
         &dummy_hash,
     )
     .unwrap_err();
-    assert!(err.contains("invalid session public key size"));
+    assert!(matches!(err, KeyHierarchyError::InvalidCert));
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn test_validate_cert_byte_lengths_invalid_cert_signature() {
         &dummy_hash,
     )
     .unwrap_err();
-    assert!(err.contains("invalid certificate signature size"));
+    assert!(matches!(err, KeyHierarchyError::InvalidCert));
 }
 
 #[test]
