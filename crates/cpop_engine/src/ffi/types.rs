@@ -178,7 +178,7 @@ pub struct FfiWitnessingStatus {
     pub elapsed_secs: f64,
     pub change_count: u64,
     pub save_count: u64,
-    pub checkpoint_count: u64,
+    pub event_count: u64,
     pub forensic_score: f64,
     pub last_paste_chars: i64,
     pub event_confidence: f64,

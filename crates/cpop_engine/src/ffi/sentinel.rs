@@ -415,7 +415,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
                 elapsed_secs: 0.0,
                 change_count: 0,
                 save_count: 0,
-                checkpoint_count: 0,
+                event_count: 0,
                 forensic_score: 0.0,
                 last_paste_chars: 0,
                 event_confidence: 1.0,
@@ -444,7 +444,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
                 elapsed_secs: 0.0,
                 change_count: 0,
                 save_count: 0,
-                checkpoint_count: 0,
+                event_count: 0,
                 forensic_score: 0.0,
                 last_paste_chars: 0,
                 event_confidence: 1.0,
@@ -509,45 +509,42 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         0.0
     };
 
-    let (checkpoint_count, forensic_score, store_paste_chars) =
-        match crate::ffi::helpers::open_store() {
-            Ok(store) => {
-                let events = store.get_events_for_file(&session.path).unwrap_or_default();
-                let count = events.len() as u64;
-                let store_score = if events.len() >= 2 {
-                    let profile = crate::forensics::ForensicEngine::evaluate_authorship(
-                        &session.path,
-                        &events,
-                    );
-                    profile.metrics.edit_entropy / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
-                } else {
-                    0.0
-                };
-                // Blend: use store score when available, fall back to cadence score.
-                let score = if store_score > 0.0 {
-                    (store_score - focus_penalty).clamp(0.0, 1.0)
-                } else if cadence_score > 0.0 {
-                    (cadence_score - focus_penalty).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                let paste = events
-                    .last()
-                    .filter(|e| e.is_paste)
-                    .map(|e| e.size_delta as i64)
-                    .unwrap_or(0);
-                (count, score, paste)
-            }
-            Err(_) => {
-                // No store; use cadence score if available.
-                let score = if cadence_score > 0.0 {
-                    (cadence_score - focus_penalty).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                (0, score, 0)
-            }
-        };
+    let (event_count, forensic_score, store_paste_chars) = match crate::ffi::helpers::open_store() {
+        Ok(store) => {
+            let events = store.get_events_for_file(&session.path).unwrap_or_default();
+            let count = events.len() as u64;
+            let store_score = if events.len() >= 2 {
+                let profile =
+                    crate::forensics::ForensicEngine::evaluate_authorship(&session.path, &events);
+                profile.metrics.edit_entropy / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
+            } else {
+                0.0
+            };
+            // Blend: use store score when available, fall back to cadence score.
+            let score = if store_score > 0.0 {
+                (store_score - focus_penalty).clamp(0.0, 1.0)
+            } else if cadence_score > 0.0 {
+                (cadence_score - focus_penalty).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let paste = events
+                .last()
+                .filter(|e| e.is_paste)
+                .map(|e| e.size_delta as i64)
+                .unwrap_or(0);
+            (count, score, paste)
+        }
+        Err(_) => {
+            // No store; use cadence score if available.
+            let score = if cadence_score > 0.0 {
+                (cadence_score - focus_penalty).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (0, score, 0)
+        }
+    };
 
     // Prefer host-reported paste (real-time) over store-derived (checkpoint-time)
     let last_paste_chars = if host_paste_chars > 0 {
@@ -563,7 +560,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         elapsed_secs,
         change_count: u64::from(session.change_count),
         save_count: u64::from(session.save_count),
-        checkpoint_count,
+        event_count,
         forensic_score,
         last_paste_chars,
         event_confidence: session.average_event_confidence(),
@@ -769,7 +766,7 @@ mod tests {
         assert!(!status.is_tracking);
         assert!(status.document_path.is_none());
         assert_eq!(status.keystroke_count, 0);
-        assert_eq!(status.checkpoint_count, 0);
+        assert_eq!(status.event_count, 0);
         assert!(!status.keystroke_capture_active);
     }
 
