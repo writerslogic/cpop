@@ -152,21 +152,21 @@
 - [x] **EH-025** `evidence/wire_conversion.rs:74` — attestation_tier hardcoded SoftwareOnly; ignores hardware evidence.
 - [x] **EH-026** `evidence/rfc_conversion.rs:98-100` — Unit mismatch: raw microsecond std_dev in decibits field.
 - [x] **EH-027** `evidence/rfc_conversion.rs:83-84` — CV guard max(1.0) ineffective for microsecond-scale means.
-- [ ] **EH-028** `evidence/builder/setters.rs:479` — select_nth_unstable_by percentile indices in wrong order; corrupts p25/p75.
-- [ ] **EH-029** `evidence/builder/setters.rs:524` — entropy_bits is -inf when intervals_us.len() == 1.
-- [ ] **EH-030** `baseline/digest.rs:40-45` — mean_iki computed from non-normalized histogram.
-- [ ] **EH-031** `baseline/verification.rs:30` — Similarity score can exceed 1.0 with unnormalized histograms.
-- [ ] **EH-032** `behavioral_fingerprint.rs:279` — Integer division truncation in forgery threshold check.
-- [ ] **EH-033** `iki_compression.rs:45` — Negative IKI values silently clamp to 0ms; inflates zero-byte frequency.
-- [ ] **EH-034** `perplexity.rs:47` — expect() panics on counts key missing when totals key exists.
-- [ ] **EH-035** `stats.rs:126-127` — Exact float equality check `ss_xx == 0.0` is brittle; near-zero produces garbage.
-- [ ] **EH-036** `comparison.rs:49-53` — safe_ln(0.0) = 0.0 creates false perfect similarity for zero-interval profiles.
-- [ ] **EH-037** `dictation.rs:56-63` — No penalty for extremely slow short utterances (WPM=0 blind spot).
-- [ ] **EH-038** `forgery_cost.rs:282-290` — partial_cmp unwrap_or(Equal) allows NaN to win weakest-link.
-- [ ] **EH-039** `topology.rs:99` — Zero-interval duplicate timestamps silently depress median_interval.
-- [ ] **EH-040** `continuation.rs:131` — u32 overflow in packet_sequence + 1 validation.
-- [ ] **EH-041** `keyhierarchy/migration.rs:78-98` — Expanded key second half not validated for consistency.
-- [ ] **EH-042** `checkpoint/chain.rs:281,356` — checkpoints.len() as u64 truncating cast on 32-bit.
+- [x] **EH-028** `evidence/builder/setters.rs:479` — select_nth_unstable_by percentile indices in wrong order; corrupts p25/p75.
+- [x] **EH-029** `evidence/builder/setters.rs:524` — entropy_bits is -inf when intervals_us.len() == 1.
+- [x] **EH-030** `baseline/digest.rs:40-45` — mean_iki computed from non-normalized histogram.
+- [x] **EH-031** `baseline/verification.rs:30` — Similarity score can exceed 1.0 with unnormalized histograms.
+- [x] **EH-032** `behavioral_fingerprint.rs:279` — Integer division truncation in forgery threshold check.
+- [x] **EH-033** `iki_compression.rs:45` — Negative IKI values silently clamp to 0ms; inflates zero-byte frequency.
+- [x] **EH-034** `perplexity.rs:47` — expect() panics on counts key missing when totals key exists.
+- [x] **EH-035** `stats.rs:126-127` — Exact float equality check `ss_xx == 0.0` is brittle; near-zero produces garbage.
+- [x] **EH-036** `comparison.rs:49-53` — safe_ln(0.0) = 0.0 creates false perfect similarity for zero-interval profiles.
+- [x] **EH-037** `dictation.rs:56-63` — No penalty for extremely slow short utterances (WPM=0 blind spot).
+- [x] **EH-038** `forgery_cost.rs:282-290` — partial_cmp unwrap_or(Equal) allows NaN to win weakest-link.
+- [x] **EH-039** `topology.rs:99` — Zero-interval duplicate timestamps silently depress median_interval.
+- [x] **EH-040** `continuation.rs:131` — u32 overflow in packet_sequence + 1 validation.
+- [x] **EH-041** `keyhierarchy/migration.rs:78-98` — Expanded key second half not validated for consistency.
+- [x] **EH-042** `checkpoint/chain.rs:281,356` — checkpoints.len() as u64 truncating cast on 32-bit.
 - [ ] **EH-043** `checkpoint_mmr.rs:39-44` — append_checkpoint has no rollback on sync failure; duplicate leaf.
 - [ ] **EH-044** `config/loading.rs:14-20` — TOCTOU between exists() and read_to_string on config file.
 - [ ] **EH-045** `ffi/attestation.rs:204,230` — sysctl/sw_vers spawned as child process; PATH injection risk.
