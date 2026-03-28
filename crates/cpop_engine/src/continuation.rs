@@ -74,7 +74,9 @@ impl ContinuationSection {
     ) -> Self {
         Self {
             series_id: prev_series_id,
-            packet_sequence: prev_sequence + 1,
+            packet_sequence: prev_sequence
+                .checked_add(1)
+                .expect("packet_sequence overflow"),
             prev_packet_chain_hash: Some(prev_chain_hash),
             prev_packet_id: Some(prev_packet_id),
             cumulative_summary: ContinuationSummary {

@@ -95,6 +95,7 @@ impl AccessLog {
             crate::crypto::restrict_permissions(path, 0o600)?;
         }
         let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+        conn.execute_batch("PRAGMA synchronous=FULL;")?;
         conn.execute_batch("PRAGMA busy_timeout=5000;")?;
 
         conn.execute_batch(
@@ -224,13 +225,13 @@ impl AccessLog {
             let escape_csv =
                 |s: String| -> String { s.replace('"', "\"\"").replace(['\n', '\r'], " ") };
             csv.push_str(&format!(
-                "{},{},\"{}\",{},\"{}\",{},\"{}\"\n",
+                "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                 id,
                 ts,
                 escape_csv(actor),
-                action,
+                escape_csv(action),
                 escape_csv(resource),
-                result,
+                escape_csv(result),
                 escape_csv(source),
             ));
         }

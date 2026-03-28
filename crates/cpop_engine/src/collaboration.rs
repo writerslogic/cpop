@@ -119,7 +119,11 @@ pub struct Collaborator {
     /// Inclusive (start, end) checkpoint ranges authored
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_ranges: Option<Vec<(u32, u32)>>,
-    /// Signature over this collaborator's attestation
+    /// Signature over this collaborator's attestation.
+    ///
+    /// **Note:** Verification of this signature is deferred until a multi-party
+    /// attestation verification flow is implemented. Currently stored but not
+    /// cryptographically validated on deserialization.
     pub attestation_signature: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contribution_summary: Option<ContributionSummary>,

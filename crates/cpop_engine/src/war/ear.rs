@@ -153,12 +153,20 @@ impl TrustworthinessVector {
     }
 
     /// Parse from header string format.
+    ///
+    /// Returns `None` if any value is not a known AR4SI status code
+    /// (0 = None, 2 = Affirming, 32 = Warning, 96 = Contraindicated).
     pub fn parse_header(s: &str) -> Option<Self> {
+        const VALID_AR4SI: &[i8] = &[0, 2, 32, 96];
         let mut vals = [0i8; 8];
         let labels = ["II=", "CO=", "EX=", "FS=", "HW=", "RO=", "SO=", "SD="];
         for (i, label) in labels.iter().enumerate() {
             let part = s.split_whitespace().find(|p| p.starts_with(label))?;
-            vals[i] = part[label.len()..].parse().ok()?;
+            let v: i8 = part[label.len()..].parse().ok()?;
+            if !VALID_AR4SI.contains(&v) {
+                return None;
+            }
+            vals[i] = v;
         }
         Some(Self {
             instance_identity: vals[0],

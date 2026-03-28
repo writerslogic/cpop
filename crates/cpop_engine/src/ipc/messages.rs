@@ -116,10 +116,12 @@ pub(crate) fn is_blocked_system_path(path: &Path) -> Result<bool, String> {
     {
         let s = path.to_string_lossy();
         let lower = s.to_lowercase();
-        // Strip UNC extended-length prefix so \\?\C:\Windows\... is caught.
+        // Strip UNC extended-length and device namespace prefixes so
+        // \\?\C:\Windows\..., \??\C:\..., and \\.\C:\... are all caught.
         let normalized = lower
             .strip_prefix(r"\\?\")
             .or_else(|| lower.strip_prefix(r"\??\"))
+            .or_else(|| lower.strip_prefix(r"\\.\"))
             .unwrap_or(&lower);
         for prefix in BLOCKED_WINDOWS_PREFIXES {
             if normalized.starts_with(prefix) {
@@ -270,9 +272,15 @@ pub enum IpcMessage {
 }
 
 impl IpcMessage {
-    /// Validate all PathBuf fields in this message against traversal attacks.
+    /// Validate all PathBuf fields in this message against traversal attacks,
+    /// and bounds-check attacker-controlled numeric fields (e.g. Pulse jitter).
     /// Must be called immediately after deserialization, before dispatching to any handler.
     pub(crate) fn validate_paths(&self) -> Result<(), String> {
+        /// Maximum plausible jitter interval: 1 minute in nanoseconds.
+        const MAX_JITTER_INTERVAL_NS: u64 = 60_000_000_000;
+        /// Maximum plausible absolute timestamp: year ~2100 in nanoseconds.
+        const MAX_TIMESTAMP_NS: i64 = 4_102_444_800_000_000_000;
+
         match self {
             IpcMessage::StartWitnessing { file_path } => {
                 validate_ipc_path(file_path)?;
@@ -301,6 +309,20 @@ impl IpcMessage {
             }
             IpcMessage::CreateFileCheckpoint { path, .. } => {
                 validate_ipc_path(path)?;
+            }
+            IpcMessage::Pulse(sample) => {
+                if sample.timestamp_ns < 0 || sample.timestamp_ns > MAX_TIMESTAMP_NS {
+                    return Err(format!(
+                        "Pulse timestamp_ns out of bounds: {}",
+                        sample.timestamp_ns
+                    ));
+                }
+                if sample.duration_since_last_ns > MAX_JITTER_INTERVAL_NS {
+                    return Err(format!(
+                        "Pulse duration_since_last_ns out of bounds: {}",
+                        sample.duration_since_last_ns
+                    ));
+                }
             }
             _ => {}
         }

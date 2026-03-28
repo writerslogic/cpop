@@ -260,8 +260,8 @@ impl SecureStore {
     /// The function checks whether the store has any verified events and returns
     /// an error if so.
     pub fn update_file_path(&mut self, old_path: &str, new_path: &str) -> anyhow::Result<usize> {
-        let has_integrity: bool = self
-            .conn
+        let tx = self.conn.transaction()?;
+        let has_integrity: bool = tx
             .query_row(
                 "SELECT COUNT(*) FROM integrity WHERE id = 1 AND event_count > 0",
                 [],
@@ -275,7 +275,6 @@ impl SecureStore {
                  this would break integrity verification"
             ));
         }
-        let tx = self.conn.transaction()?;
         let count = tx.execute(
             "UPDATE secure_events SET file_path = ? WHERE file_path = ?",
             params![new_path, old_path],

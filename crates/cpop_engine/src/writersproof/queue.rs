@@ -98,7 +98,10 @@ impl OfflineQueue {
         Ok(id)
     }
 
-    /// List all queued entries, sorted by creation time.
+    /// Maximum number of queue entries returned by `list()`.
+    const MAX_LIST_ENTRIES: usize = 1000;
+
+    /// List queued entries, sorted by creation time, capped at 1000.
     pub fn list(&self) -> Result<Vec<QueuedAttestation>> {
         let mut entries = Vec::new();
         for entry in fs::read_dir(&self.queue_dir)? {
@@ -115,6 +118,13 @@ impl OfflineQueue {
                         continue;
                     }
                 }
+            }
+            if entries.len() >= Self::MAX_LIST_ENTRIES {
+                log::warn!(
+                    "Queue list capped at {} entries; remaining entries skipped",
+                    Self::MAX_LIST_ENTRIES
+                );
+                break;
             }
         }
         entries.sort_by(|a, b| a.created_at.cmp(&b.created_at));

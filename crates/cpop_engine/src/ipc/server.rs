@@ -387,6 +387,7 @@ pub struct IpcServer {
     pipe_name: String,
     socket_path: PathBuf,
     access_log: Option<Arc<Mutex<AccessLog>>>,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
 impl IpcServer {
@@ -409,6 +410,7 @@ impl IpcServer {
                     listener,
                     socket_path: path,
                     access_log: None,
+                    rate_limiter: Arc::new(Mutex::new(RateLimiter::new(60))),
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
@@ -431,6 +433,7 @@ impl IpcServer {
             listener,
             socket_path: path,
             access_log: None,
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new(60))),
         })
     }
 
@@ -447,6 +450,7 @@ impl IpcServer {
             pipe_name,
             socket_path: path,
             access_log: None,
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new(60))),
         })
     }
 
@@ -461,7 +465,7 @@ impl IpcServer {
 
     /// Run the IPC server with a message handler
     pub async fn run_with_handler<H: IpcMessageHandler>(self, handler: Arc<H>) -> Result<()> {
-        let rate_limiter = Arc::new(Mutex::new(RateLimiter::new(60)));
+        let rate_limiter = Arc::clone(&self.rate_limiter);
         let active_connections = Arc::new(AtomicUsize::new(0));
         #[cfg(not(target_os = "windows"))]
         {
@@ -542,7 +546,7 @@ impl IpcServer {
         handler: Arc<H>,
         mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
     ) -> Result<()> {
-        let rate_limiter = Arc::new(Mutex::new(RateLimiter::new(60)));
+        let rate_limiter = Arc::clone(&self.rate_limiter);
         let active_connections = Arc::new(AtomicUsize::new(0));
         #[cfg(not(target_os = "windows"))]
         {

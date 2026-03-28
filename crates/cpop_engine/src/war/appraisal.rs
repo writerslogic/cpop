@@ -143,7 +143,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
             (Ar4siStatus::Affirming as i8, Ar4siStatus::Affirming as i8)
         }
         AttestationTier::HardwareBound => {
-            (Ar4siStatus::Affirming as i8, Ar4siStatus::Affirming as i8)
+            (Ar4siStatus::Warning as i8, Ar4siStatus::Affirming as i8)
         }
         AttestationTier::AttestedSoftware => {
             (Ar4siStatus::Warning as i8, Ar4siStatus::Warning as i8)
@@ -266,10 +266,15 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     })
 }
 
-/// SHA-256 of the packet's JSON encoding for the evidence reference.
+/// SHA-256 of the packet's canonical JSON encoding for the evidence reference.
+///
+/// Uses `serde_json::Value` round-trip to produce sorted-key JSON, ensuring
+/// deterministic hashing regardless of struct field declaration order.
 fn packet_hash(packet: &Packet) -> Result<[u8; 32]> {
-    let data = serde_json::to_vec(packet)
+    let value: serde_json::Value = serde_json::to_value(packet)
         .map_err(|e| Error::evidence(format!("packet serialization failed: {e}")))?;
+    let data = serde_json::to_vec(&value)
+        .map_err(|e| Error::evidence(format!("canonical JSON serialization failed: {e}")))?;
     let digest = Sha256::digest(&data);
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&digest);

@@ -161,15 +161,15 @@ impl AppraisalPolicy {
                     }
                 }
                 ThresholdType::MinimumFactor => {
-                    let met = policy
-                        .factors
-                        .iter()
-                        .any(|f| f.normalized_score >= threshold.required_value);
+                    let met = policy.factors.iter().any(|f| {
+                        f.factor_name == threshold.threshold_name
+                            && f.normalized_score >= threshold.required_value
+                    });
                     threshold.met = met;
                     if !met {
                         threshold.failure_reason = Some(format!(
-                            "No factor meets minimum score of {:.2}",
-                            threshold.required_value
+                            "Factor '{}' does not meet minimum score of {:.2}",
+                            threshold.threshold_name, threshold.required_value
                         ));
                     }
                 }
