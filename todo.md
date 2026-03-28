@@ -135,23 +135,23 @@
 - [x] **EH-010** `ffi/report.rs:156-166` — Identity signing key used as guilloche seed oracle; should use HKDF.
 - [x] **EH-011** `ffi/beacon.rs:119-120` — checkpoint_hash and evidence_hash both carry event_hash; evidence binding broken.
 - [x] **EH-012** `ffi/ephemeral.rs:245,523` — device_id and machine_id zero-filled in all persisted ephemeral events.
-- [ ] **EH-013** `ffi/evidence.rs:405,526` — device_id and machine_id zero-filled in link_derivative and create_checkpoint.
-- [ ] **EH-014** `writersproof/client.rs:115-131` — sign_payload Vec not zeroized after use; evidence CBOR left on heap.
-- [ ] **EH-015** `writersproof/queue.rs:52` — enqueue signature has no nonce/DST; deterministic replay risk.
-- [ ] **EH-016** `writersproof/queue.rs:76,190` — Non-atomic file writes violate RT-07; data loss on crash.
-- [ ] **EH-017** `store/access_log.rs:179-190` — Unknown DB action/result falls back to Read/Success; audit corruption.
+- [x] **EH-013** `ffi/evidence.rs:405,526` — device_id and machine_id zero-filled in link_derivative and create_checkpoint.
+- [x] **EH-014** `writersproof/client.rs:115-131` — sign_payload Vec not zeroized after use; evidence CBOR left on heap.
+- [x] **EH-015** `writersproof/queue.rs:52` — enqueue signature has no nonce/DST; deterministic replay risk.
+- [x] **EH-016** `writersproof/queue.rs:76,190` — Non-atomic file writes violate RT-07; data loss on crash.
+- [x] **EH-017** `store/access_log.rs:179-190` — Unknown DB action/result falls back to Read/Success; audit corruption.
 
 #### Correctness
-- [ ] **EH-018** `war/ear.rs:128-136` — overall_status min-over-i8 treats None=0 as worst; wrong direction.
-- [ ] **EH-019** `war/appraisal.rs:107` — Integer division masks implausible checkpoint density.
-- [ ] **EH-020** `war/appraisal.rs:264` — iat uses wall clock; EAR replay detection broken.
-- [ ] **EH-021** `trust_policy/evaluation.rs:43` — compute_score reads stale contribution field; wrong before evaluate().
-- [ ] **EH-022** `store/events.rs:68` — Full-table COUNT scan on every insert; O(n) per write.
-- [ ] **EH-023** `store/events.rs:103` — SQL LIMIT via format!() not parameterized query.
-- [ ] **EH-024** `evidence/wire_conversion.rs:20` — PROFILE_URI uses non-canonical form vs rats:eat: everywhere else.
-- [ ] **EH-025** `evidence/wire_conversion.rs:74` — attestation_tier hardcoded SoftwareOnly; ignores hardware evidence.
-- [ ] **EH-026** `evidence/rfc_conversion.rs:98-100` — Unit mismatch: raw microsecond std_dev in decibits field.
-- [ ] **EH-027** `evidence/rfc_conversion.rs:83-84` — CV guard max(1.0) ineffective for microsecond-scale means.
+- [x] **EH-018** `war/ear.rs:128-136` — overall_status min-over-i8 treats None=0 as worst; wrong direction.
+- [x] **EH-019** `war/appraisal.rs:107` — Integer division masks implausible checkpoint density.
+- [x] **EH-020** `war/appraisal.rs:264` — iat uses wall clock; EAR replay detection broken.
+- [x] **EH-021** `trust_policy/evaluation.rs:43` — compute_score reads stale contribution field; wrong before evaluate().
+- [x] **EH-022** `store/events.rs:68` — Full-table COUNT scan on every insert; O(n) per write.
+- [x] **EH-023** `store/events.rs:103` — SQL LIMIT via format!() not parameterized query.
+- [x] **EH-024** `evidence/wire_conversion.rs:20` — PROFILE_URI uses non-canonical form vs rats:eat: everywhere else.
+- [x] **EH-025** `evidence/wire_conversion.rs:74` — attestation_tier hardcoded SoftwareOnly; ignores hardware evidence.
+- [x] **EH-026** `evidence/rfc_conversion.rs:98-100` — Unit mismatch: raw microsecond std_dev in decibits field.
+- [x] **EH-027** `evidence/rfc_conversion.rs:83-84` — CV guard max(1.0) ineffective for microsecond-scale means.
 - [ ] **EH-028** `evidence/builder/setters.rs:479` — select_nth_unstable_by percentile indices in wrong order; corrupts p25/p75.
 - [ ] **EH-029** `evidence/builder/setters.rs:524` — entropy_bits is -inf when intervals_us.len() == 1.
 - [ ] **EH-030** `baseline/digest.rs:40-45` — mean_iki computed from non-normalized histogram.
