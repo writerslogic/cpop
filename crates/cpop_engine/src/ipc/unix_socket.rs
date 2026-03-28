@@ -70,11 +70,16 @@ pub struct SecureUnixSocket {
 
 impl SecureUnixSocket {
     pub fn bind(path: &Path) -> Result<Self, IpcError> {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-        }
-
-        let listener = UnixListener::bind(path)?;
+        // Try bind first; only remove-and-retry on EADDRINUSE to avoid a
+        // TOCTOU race between exists() and remove_file().
+        let listener = match UnixListener::bind(path) {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                let _ = std::fs::remove_file(path);
+                UnixListener::bind(path)?
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         crate::crypto::restrict_permissions(path, 0o600)?;
 
@@ -113,6 +118,14 @@ pub struct VerifiedConnection {
 }
 
 impl VerifiedConnection {
+    /// Verify that the connected peer is an expected executable.
+    ///
+    /// On Linux this resolves `/proc/<pid>/exe` and checks against `allowed_names`.
+    /// On macOS, UID-based peer credential verification (in `SecureUnixSocket::accept`)
+    /// is the primary defense; executable path resolution requires `proc_pidpath` via
+    /// unsafe FFI or the Endpoint Security entitlement, neither of which is available
+    /// yet. The `allowed_names` parameter is therefore **ignored** on macOS and a
+    /// warning is logged.
     pub fn verify_peer_executable(&self, allowed_names: &[&str]) -> Result<(), IpcError> {
         #[cfg(target_os = "linux")]
         {
@@ -154,11 +167,17 @@ impl VerifiedConnection {
                 log::warn!("Peer PID is 1 (launchd), rejecting as likely invalid client");
                 return Err(IpcError::InvalidPeerExecutable);
             }
+            if !allowed_names.is_empty() {
+                log::warn!(
+                    "macOS peer verification: allowed_names {:?} ignored; \
+                     executable path resolution not yet available",
+                    allowed_names
+                );
+            }
             log::debug!(
-                "macOS peer verification: PID {} accepted (basic validation, no path check)",
+                "macOS peer verification: PID {} accepted (UID check only, no path check)",
                 self.peer_pid
             );
-            let _ = allowed_names;
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]

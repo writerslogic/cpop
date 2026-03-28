@@ -121,14 +121,25 @@ impl SecureSession {
 
     /// Encrypt a payload. Returns [8-byte seq][12-byte nonce][ciphertext+tag].
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        // H-007: guard against sequence overflow — nonce reuse would be fatal.
-        let current = self.tx_sequence.load(Ordering::SeqCst);
-        if current > u64::MAX - 2 {
-            return Err(anyhow!(
-                "tx_sequence exhausted (would overflow) — session must be rekeyed"
-            ));
-        }
-        let seq = self.tx_sequence.fetch_add(2, Ordering::SeqCst);
+        // H-007: guard against sequence overflow with CAS loop to eliminate
+        // the race between load and fetch_add.
+        let seq = loop {
+            let current = self.tx_sequence.load(Ordering::SeqCst);
+            if current > u64::MAX - 2 {
+                return Err(anyhow!(
+                    "tx_sequence exhausted (would overflow); session must be rekeyed"
+                ));
+            }
+            match self.tx_sequence.compare_exchange(
+                current,
+                current + 2,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(v) => break v,
+                Err(_) => continue, // CAS failed, retry
+            }
+        };
         let nonce_bytes = construct_nonce(&self.tx_nonce_prefix, seq);
         let nonce = AesNonce::from_slice(&nonce_bytes);
 
@@ -211,6 +222,10 @@ impl Drop for SecureSession {
     }
 }
 
+/// Per-connection rate limiter. The `operations` map is keyed by a small, fixed
+/// set of category strings defined in `RateLimitConfig::max_ops` (~8 entries),
+/// so the HashMap is bounded in practice and does not require periodic cleanup.
+/// If dynamic keys are ever introduced, add an eviction pass in `check()`.
 pub(crate) struct RateLimiter {
     operations: HashMap<String, (u32, Instant)>,
     window_secs: u64,

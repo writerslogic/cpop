@@ -62,6 +62,12 @@ impl ShadowManager {
         Ok(id)
     }
 
+    /// Write shadow content to the shadow directory on disk.
+    ///
+    /// **Known limitation**: content is written unencrypted. The shadow directory
+    /// inherits the application data directory's file-system permissions (mode 0700).
+    /// Full encryption at rest is deferred; it would require key management for
+    /// temporary files that may outlive the process.
     pub fn update(&self, id: &str, content: &[u8]) -> Result<()> {
         let mut shadows = self.shadows.write_recover();
         let shadow = shadows
@@ -128,6 +134,11 @@ impl ShadowManager {
         removed
     }
 
+    /// List active shadow buffers. Window titles are returned in their
+    /// obfuscated form (`***OBFUSCATED***`) to avoid leaking plaintext
+    /// through diagnostic or IPC surfaces. Callers that genuinely need
+    /// the plaintext title should retrieve the shadow by ID and call
+    /// `reveal()` explicitly.
     pub fn list(&self) -> Vec<(String, String, String)> {
         self.shadows
             .read_recover()
@@ -136,7 +147,7 @@ impl ShadowManager {
                 (
                     s.id.clone(),
                     s.app_name.clone(),
-                    (*s.window_title.reveal()).clone(),
+                    format!("{:?}", s.window_title),
                 )
             })
             .collect()

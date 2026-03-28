@@ -526,7 +526,7 @@ pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
     let timestamp = session
         .start_time
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
+        .map(|d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
         .unwrap_or(0);
     payload.extend_from_slice(&timestamp.to_be_bytes());
 
