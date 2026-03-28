@@ -45,7 +45,11 @@ impl AppraisalPolicy {
                 if total_weight == 0.0 {
                     return 0.0;
                 }
-                let weighted_sum: f32 = self.factors.iter().map(|f| f.contribution).sum();
+                let weighted_sum: f32 = self
+                    .factors
+                    .iter()
+                    .map(|f| f.weight * f.normalized_score)
+                    .sum();
                 weighted_sum / total_weight
             }
             TrustComputation::MinimumOfFactors => self
@@ -63,7 +67,11 @@ impl AppraisalPolicy {
                 if total_weight == 0.0 {
                     return 0.0;
                 }
-                self.factors.iter().map(|f| f.contribution).sum::<f32>() / total_weight
+                self.factors
+                    .iter()
+                    .map(|f| f.weight * f.normalized_score)
+                    .sum::<f32>()
+                    / total_weight
             }
         }
     }

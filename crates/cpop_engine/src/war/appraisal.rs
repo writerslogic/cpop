@@ -8,7 +8,6 @@
 
 use std::collections::BTreeMap;
 
-use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
@@ -104,7 +103,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
                 elapsed_secs, MIN_AFFIRMING_DURATION_SECS
             ));
             Ar4siStatus::Warning as i8
-        } else if cp_count > 1 && elapsed_secs / cp_count == 0 {
+        } else if cp_count > 1 && (elapsed_secs as f64 / cp_count as f64) < 1.0 {
             warnings.push(format!(
                 "Implausible timing: {} checkpoints in {}s",
                 cp_count, elapsed_secs
@@ -261,7 +260,7 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
 
     Ok(EarToken {
         eat_profile: POP_EAR_PROFILE.to_string(),
-        iat: Utc::now().timestamp(),
+        iat: packet.exported_at.timestamp(),
         ear_verifier_id: VerifierId::default(),
         submods,
     })

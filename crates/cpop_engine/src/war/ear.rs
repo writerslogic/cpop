@@ -105,8 +105,9 @@ pub struct TrustworthinessVector {
 }
 
 impl TrustworthinessVector {
-    /// Returns the minimum component value (weakest link).
-    pub fn min_component(&self) -> i8 {
+    /// Returns the maximum (worst) component value (weakest link).
+    /// Higher AR4SI values indicate worse status (Contraindicated=96 > Warning=32 > Affirming=2).
+    pub fn worst_component(&self) -> i8 {
         [
             self.instance_identity,
             self.configuration,
@@ -118,13 +119,13 @@ impl TrustworthinessVector {
             self.sourced_data,
         ]
         .into_iter()
-        .min()
-        .unwrap_or(0)
+        .max()
+        .unwrap_or(Ar4siStatus::None as i8)
     }
 
     /// Derive overall AR4SI status from the weakest component.
     pub fn overall_status(&self) -> Ar4siStatus {
-        let min = self.min_component();
+        let min = self.worst_component();
         if min >= Ar4siStatus::Contraindicated as i8 {
             Ar4siStatus::Contraindicated
         } else if min >= Ar4siStatus::Warning as i8 {
