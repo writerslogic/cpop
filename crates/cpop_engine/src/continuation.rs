@@ -128,11 +128,14 @@ impl ContinuationSection {
             );
         }
 
-        if self.cumulative_summary.packets_in_series != self.packet_sequence + 1 {
+        let expected = self
+            .packet_sequence
+            .checked_add(1)
+            .ok_or_else(|| "packet_sequence overflow: u32::MAX reached".to_string())?;
+        if self.cumulative_summary.packets_in_series != expected {
             return Err(format!(
                 "packets_in_series ({}) does not match sequence + 1 ({})",
-                self.cumulative_summary.packets_in_series,
-                self.packet_sequence + 1
+                self.cumulative_summary.packets_in_series, expected
             ));
         }
 

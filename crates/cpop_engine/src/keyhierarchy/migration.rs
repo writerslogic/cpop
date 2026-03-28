@@ -88,6 +88,12 @@ fn load_legacy_private_key(path: impl AsRef<Path>) -> Result<SigningKey, KeyHier
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&data[0..32]);
         let key = SigningKey::from_bytes(&seed);
+        // Validate that the second half is the corresponding public key
+        let expected_pub = key.verifying_key().to_bytes();
+        if data[32..64] != expected_pub[..] {
+            seed.zeroize();
+            return Err(KeyHierarchyError::LegacyKeyNotFound);
+        }
         seed.zeroize();
         Ok(key)
     } else {

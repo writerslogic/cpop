@@ -308,7 +308,8 @@ impl Chain {
 
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
-        let ordinal = self.checkpoints.len() as u64;
+        let ordinal = u64::try_from(self.checkpoints.len())
+            .map_err(|_| Error::checkpoint("checkpoint count exceeds u64"))?;
 
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
@@ -383,7 +384,8 @@ impl Chain {
 
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
-        let ordinal = self.checkpoints.len() as u64;
+        let ordinal = u64::try_from(self.checkpoints.len())
+            .map_err(|_| Error::checkpoint("checkpoint count exceeds u64"))?;
 
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
@@ -760,7 +762,7 @@ impl Chain {
         }
 
         if let Some(metadata) = &self.metadata {
-            let actual_count = self.checkpoints.len() as u64;
+            let actual_count = u64::try_from(self.checkpoints.len()).unwrap_or(u64::MAX);
             if metadata.checkpoint_count != actual_count {
                 report.metadata_valid = false;
                 report.fail(format!(
