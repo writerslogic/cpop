@@ -1,11 +1,29 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+use std::sync::OnceLock;
+
 use crate::ffi::helpers::{detect_attestation_tier, open_store};
 use crate::ffi::types::FfiResult;
 use cpop_protocol::rfc::wire_types::{
     CheckpointWire, DocumentRef, EditDelta, EvidencePacketWire, HashValue, ProcessProof,
     ProofAlgorithm, ProofParams,
 };
+
+/// Cached device identity for populating evidence events (EH-013).
+static DEVICE_IDENTITY: OnceLock<([u8; 16], String)> = OnceLock::new();
+
+fn device_identity() -> &'static ([u8; 16], String) {
+    DEVICE_IDENTITY.get_or_init(|| {
+        crate::identity::secure_storage::SecureStorage::load_device_identity()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                let machine_id =
+                    sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
+                ([0u8; 16], machine_id)
+            })
+    })
+}
 
 /// Export stored events for a file as a CBOR evidence packet at the given tier.
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -400,10 +418,11 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
             }
         };
 
+    let (dev_id, mach_id) = device_identity();
     let mut event = crate::store::SecureEvent {
         id: None,
-        device_id: [0u8; 16],
-        machine_id: String::new(),
+        device_id: *dev_id,
+        machine_id: mach_id.clone(),
         timestamp_ns: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
@@ -521,10 +540,11 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
         Some(message)
     };
 
+    let (dev_id, mach_id) = device_identity();
     let mut event = crate::store::SecureEvent {
         id: None,
-        device_id: [0u8; 16],
-        machine_id: String::new(),
+        device_id: *dev_id,
+        machine_id: mach_id.clone(),
         timestamp_ns: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)

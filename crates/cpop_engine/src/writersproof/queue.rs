@@ -7,6 +7,7 @@
 //! can be drained when connectivity is restored.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -15,6 +16,16 @@ use ed25519_dalek::{Signer, SigningKey};
 use super::client::WritersProofClient;
 use super::types::{AttestResponse, QueuedAttestation};
 use crate::error::{Error, Result};
+
+/// Write data to a temp file in the same directory, then rename for atomicity (EH-016).
+fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
+    let dir = path.parent().unwrap_or(path);
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.write_all(data)?;
+    tmp.persist(path)
+        .map_err(|e| Error::checkpoint(format!("atomic rename failed: {e}")))?;
+    Ok(())
+}
 
 /// Disk-backed attestation queue.
 pub struct OfflineQueue {
@@ -49,7 +60,15 @@ impl OfflineQueue {
         hardware_key_id: &str,
         signing_key: &SigningKey,
     ) -> Result<String> {
-        let signature = signing_key.sign(evidence_cbor);
+        // Include DST and random nonce in signed payload to prevent replay (EH-015).
+        let queue_nonce: [u8; 16] = rand::random();
+        let mut sign_buf = Vec::with_capacity(
+            b"cpop-queue-sign-v1".len() + queue_nonce.len() + evidence_cbor.len(),
+        );
+        sign_buf.extend_from_slice(b"cpop-queue-sign-v1");
+        sign_buf.extend_from_slice(&queue_nonce);
+        sign_buf.extend_from_slice(evidence_cbor);
+        let signature = signing_key.sign(&sign_buf);
         let id = format!(
             "{}-{}",
             Utc::now().format("%Y%m%d%H%M%S"),
@@ -65,6 +84,7 @@ impl OfflineQueue {
             nonce: nonce.map(hex::encode),
             hardware_key_id: hardware_key_id.to_string(),
             signature: hex::encode(signature.to_bytes()),
+            queue_nonce: Some(hex::encode(queue_nonce)),
             retry_count: 0,
             last_error: None,
             created_at: Utc::now().to_rfc3339(),
@@ -73,7 +93,7 @@ impl OfflineQueue {
         let path = self.queue_dir.join(format!("{id}.json"));
         let data = serde_json::to_vec_pretty(&entry)
             .map_err(|e| Error::checkpoint(format!("queue serialize failed: {e}")))?;
-        fs::write(&path, data)?;
+        atomic_write(&path, &data)?;
 
         Ok(id)
     }
@@ -195,7 +215,7 @@ impl OfflineQueue {
         let path = self.queue_dir.join(format!("{}.json", entry.id));
         let data = serde_json::to_vec_pretty(entry)
             .map_err(|e| Error::checkpoint(format!("queue update serialize failed: {e}")))?;
-        fs::write(&path, data)?;
+        atomic_write(&path, &data)?;
         Ok(())
     }
 }

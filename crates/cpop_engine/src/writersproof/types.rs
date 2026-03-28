@@ -202,8 +202,11 @@ pub struct QueuedAttestation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce: Option<String>,
     pub hardware_key_id: String,
-    /// Hex-encoded Ed25519 signature over evidence
+    /// Hex-encoded Ed25519 signature over DST + queue_nonce + evidence
     pub signature: String,
+    /// Hex-encoded random nonce included in signature to prevent replay (EH-015)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_nonce: Option<String>,
     pub retry_count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
