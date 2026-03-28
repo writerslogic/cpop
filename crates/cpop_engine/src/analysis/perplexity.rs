@@ -41,12 +41,13 @@ impl PerplexityModel {
             // Lookup by &str avoids allocation for existing contexts (the common case).
             if let Some(total) = self.totals.get_mut(buf.as_str()) {
                 *total += 1;
-                *self
-                    .counts
-                    .get_mut(buf.as_str())
-                    .expect("counts key exists when totals key exists")
-                    .entry(next_char)
-                    .or_default() += 1;
+                if let Some(char_map) = self.counts.get_mut(buf.as_str()) {
+                    *char_map.entry(next_char).or_default() += 1;
+                } else {
+                    let mut char_map = HashMap::new();
+                    char_map.insert(next_char, 1);
+                    self.counts.insert(buf.clone(), char_map);
+                }
             } else {
                 let key = buf.clone();
                 self.totals.insert(key.clone(), 1);

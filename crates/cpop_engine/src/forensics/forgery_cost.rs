@@ -327,7 +327,7 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
         .min_by(|a, b| {
             a.cost_cpu_sec
                 .partial_cmp(&b.cost_cpu_sec)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(std::cmp::Ordering::Greater)
         })
         .map(|c| c.name.clone());
 

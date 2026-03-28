@@ -45,12 +45,20 @@ pub fn compare_profiles(
             profile_b.metrics.edit_entropy,
             0.5,
         ),
-        // Compare in log-space; guard against ln(0) = -inf and ln(neg) = NaN
-        interval_similarity: gaussian_similarity(
-            safe_ln(profile_a.metrics.median_interval),
-            safe_ln(profile_b.metrics.median_interval),
-            0.5,
-        ),
+        // Compare in log-space; guard against ln(0) = -inf and ln(neg) = NaN.
+        // When both intervals are zero (no data), similarity is undefined; use NaN
+        // so it does not masquerade as a perfect match.
+        interval_similarity: if profile_a.metrics.median_interval <= 0.0
+            && profile_b.metrics.median_interval <= 0.0
+        {
+            f64::NAN
+        } else {
+            gaussian_similarity(
+                safe_ln(profile_a.metrics.median_interval),
+                safe_ln(profile_b.metrics.median_interval),
+                0.5,
+            )
+        },
         pos_neg_ratio_similarity: gaussian_similarity(
             profile_a.metrics.positive_negative_ratio,
             profile_b.metrics.positive_negative_ratio,
@@ -63,11 +71,19 @@ pub fn compare_profiles(
         ),
     };
 
-    let similarity_score = 0.25 * scores.monotonic_append_similarity
+    // When interval_similarity is NaN (both profiles lack interval data),
+    // exclude it and redistribute its weight proportionally among the rest.
+    let (interval_contrib, interval_weight) = if scores.interval_similarity.is_nan() {
+        (0.0, 0.0)
+    } else {
+        (0.15 * scores.interval_similarity, 0.15)
+    };
+    let other = 0.25 * scores.monotonic_append_similarity
         + 0.20 * scores.entropy_similarity
-        + 0.15 * scores.interval_similarity
         + 0.20 * scores.pos_neg_ratio_similarity
         + 0.20 * scores.deletion_clustering_similarity;
+    let total_weight = 0.85 + interval_weight;
+    let similarity_score = (other + interval_contrib) / total_weight;
 
     let is_consistent = similarity_score >= 0.6;
 

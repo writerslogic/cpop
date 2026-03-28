@@ -123,7 +123,7 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
         ss_yy += dy * dy;
     }
 
-    if ss_xx == 0.0 {
+    if ss_xx.abs() < f64::EPSILON {
         return Err("No variance in x data".to_string());
     }
 
