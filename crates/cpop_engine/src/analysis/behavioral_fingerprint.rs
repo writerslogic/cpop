@@ -143,7 +143,7 @@ impl BehavioralFingerprint {
             .filter(|&&i| i > PARAGRAPH_PAUSE_MS)
             .count();
 
-        let thinking_freq = long_pauses as f64 / intervals.len() as f64;
+        let thinking_freq = long_pauses as f64 / samples.len() as f64;
 
         let mut bursts = Vec::new();
         let mut current_burst_len = 0;

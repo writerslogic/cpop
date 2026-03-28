@@ -46,7 +46,17 @@ pub fn kurtosis(data: &[f64], mean: f64, std: f64) -> f64 {
 }
 
 /// Bhattacharyya coefficient between two f64 histograms.
+///
+/// If the slices differ in length, only the overlapping prefix is compared
+/// and a warning is logged.
 pub fn bhattacharyya_coefficient(a: &[f64], b: &[f64]) -> f64 {
+    if a.len() != b.len() {
+        log::warn!(
+            "bhattacharyya_coefficient: length mismatch (a={}, b={}); truncating to min",
+            a.len(),
+            b.len()
+        );
+    }
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x.max(0.0) * y.max(0.0)).sqrt())
@@ -67,10 +77,22 @@ pub fn normalize_histogram(hist: &mut [f64]) {
 
 /// Weighted merge of histogram `b` into `a`: `a[i] = a[i] * a_weight + b[i] * b_weight`.
 ///
-/// Only the overlapping range `min(a.len(), b.len())` is updated.
+/// If `b` is shorter than `a`, the trailing bins in `a` are scaled by `a_weight` only
+/// (equivalent to padding `b` with zeros). A warning is logged on length mismatch.
 pub fn merge_histogram(a: &mut [f64], b: &[f64], a_weight: f64, b_weight: f64) {
-    for i in 0..a.len().min(b.len()) {
+    if a.len() != b.len() {
+        log::warn!(
+            "merge_histogram: length mismatch (a={}, b={}); padding shorter with zeros",
+            a.len(),
+            b.len()
+        );
+    }
+    let overlap = a.len().min(b.len());
+    for i in 0..overlap {
         a[i] = a[i] * a_weight + b[i] * b_weight;
+    }
+    for i in overlap..a.len() {
+        a[i] *= a_weight;
     }
 }
 

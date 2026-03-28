@@ -43,6 +43,9 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
         return None;
     }
 
+    // 50% overlapping windows (step = WINDOW_SIZE/2). Overlap inflates the
+    // reported SNR by approximately 3 dB compared to non-overlapping windows
+    // because adjacent windows share half their samples, reducing variance.
     let windows: Vec<&[f64]> = iki_intervals_ns
         .windows(WINDOW_SIZE)
         .step_by(WINDOW_SIZE / 2)

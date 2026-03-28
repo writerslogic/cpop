@@ -32,6 +32,10 @@ pub struct IkiCompressionAnalysis {
 /// Quantizes IKI intervals to millisecond precision, serializes as a byte
 /// stream, and computes normalized Shannon entropy.
 pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Option<IkiCompressionAnalysis> {
+    debug_assert!(
+        !iki_intervals_ns.iter().any(|&v| v > 1_000_000.0),
+        "IKI values exceed 10^6; likely nanoseconds passed where milliseconds expected"
+    );
     if iki_intervals_ns.len() < MIN_SAMPLES {
         return None;
     }

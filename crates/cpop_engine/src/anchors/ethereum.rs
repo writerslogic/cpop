@@ -255,8 +255,9 @@ impl EthereumProvider {
             let base_gas_price = self.get_gas_price().await?;
             let gas_limit = self.estimate_gas(&data).await?;
 
-            // Bump gas price +15% per retry to outbid stuck txns
-            let gas_multiplier = 110u128 + u128::from(attempt * 15);
+            // Bump gas price +15% per retry to outbid stuck txns.
+            // First attempt (attempt=0) uses base_gas_price * 100/100 = base_gas_price.
+            let gas_multiplier = 100u128 + u128::from(attempt * 15);
             let gas_price = base_gas_price * gas_multiplier / 100;
 
             log::debug!(
@@ -377,6 +378,9 @@ impl AnchorProvider for EthereumProvider {
 
                     if status == "0x1" {
                         updated.status = ProofStatus::Confirmed;
+                        // Note: this records the poll/observation time, not the
+                        // on-chain block timestamp. Use block_metadata for the
+                        // actual mined timestamp if precise timing is needed.
                         updated.confirmed_at = Some(chrono::Utc::now());
 
                         if let Some(bn) = block_number.as_str() {
@@ -419,6 +423,15 @@ impl AnchorProvider for EthereumProvider {
             if to.to_lowercase() != self.contract_address.to_lowercase() {
                 return Ok(false);
             }
+        }
+
+        // Verify the transaction sender matches our signing key.
+        if let Some(from) = receipt.get("from").and_then(|f| f.as_str()) {
+            if from.to_lowercase() != self.cached_address.to_lowercase() {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
         }
 
         if !receipt.get("blockNumber").is_some_and(|bn| !bn.is_null()) {

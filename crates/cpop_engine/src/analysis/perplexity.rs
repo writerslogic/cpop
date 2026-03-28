@@ -56,7 +56,7 @@ impl PerplexityModel {
                 self.counts.insert(key, char_map);
             }
         }
-        self.sample_count += text.len();
+        self.sample_count += text.chars().count();
     }
 
     /// Perplexity of `text` under the trained model.
