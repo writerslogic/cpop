@@ -199,21 +199,21 @@
 - [x] **EM-018** `config/loading.rs:27-38` — Legacy config migration silently ignores parse errors.
 - [x] **EM-019** `config/loading.rs:86-91` — persist() non-atomic write; crash = corrupt config.
 - [x] **EM-020** `calibration/transport.rs:63` — latency_variance_us stores std_dev not variance.
-- [ ] **EM-021** `crypto/obfuscated.rs:11-18` — ROLLING_KEY race can produce duplicate keys.
-- [ ] **EM-022** `crypto/obfuscation.rs:29-33` — reveal() returns String; caller cannot zeroize.
-- [ ] **EM-023** `declaration/verification.rs:171-180` — entropy_bits is sample-count-dependent, not true entropy.
-- [ ] **EM-024** `evidence/builder/helpers.rs:173` — Plausibility upper bound 600 KPM contradicts "30-300" comment.
-- [ ] **EM-025** `evidence/types.rs:302` — CheckpointProof.hash naming confusion (chain hash vs content hash).
-- [ ] **EM-026** `evidence/wire_conversion.rs:293-302` — EditDelta always zero; verifiers expecting data get zeros.
-- [ ] **EM-027** `ffi/beacon.rs:66-81` — Four independent copies of load_signing_key; drift risk.
-- [ ] **EM-028** `ffi/ephemeral.rs:100-117` — Eviction scan skips sessions when len < 4.
-- [ ] **EM-029** `ffi/ephemeral.rs:122-131` — MAX_CONTEXT_LABEL_LEN checks bytes not chars.
-- [ ] **EM-030** `ffi/evidence.rs:973` — C2PA manifest created timestamp is current time, not evidence time.
-- [ ] **EM-031** `cadence.rs:87` — ikis.clone() for percentile computation doubles peak memory.
-- [ ] **EM-032** `cadence.rs:184` — Autocorrelation covariance summed over n-1 pairs divided by n.
-- [ ] **EM-033** `comparison.rs:95-98` — gaussian_similarity output not clamped; can exceed [0,1].
-- [ ] **EM-034** `comparison.rs:72` — Magic number 0.6 for is_consistent threshold.
-- [ ] **EM-035** `forgery_cost.rs:262-279` — Magic x100 multiplier for infinite-cost components.
+- [x] **EM-021** `crypto/obfuscated.rs:11-18` — ROLLING_KEY race can produce duplicate keys.
+- [x] **EM-022** `crypto/obfuscation.rs:29-33` — reveal() returns String; caller cannot zeroize.
+- [x] **EM-023** `declaration/verification.rs:171-180` — entropy_bits is sample-count-dependent, not true entropy.
+- [x] **EM-024** `evidence/builder/helpers.rs:173` — Plausibility upper bound 600 KPM contradicts "30-300" comment.
+- [x] **EM-025** `evidence/types.rs:302` — CheckpointProof.hash naming confusion (chain hash vs content hash).
+- [x] **EM-026** `evidence/wire_conversion.rs:293-302` — EditDelta always zero; verifiers expecting data get zeros.
+- [x] **EM-027** `ffi/beacon.rs:66-81` — Four independent copies of load_signing_key; drift risk.
+- [x] **EM-028** `ffi/ephemeral.rs:100-117` — Eviction scan skips sessions when len < 4.
+- [x] **EM-029** `ffi/ephemeral.rs:122-131` — MAX_CONTEXT_LABEL_LEN checks bytes not chars.
+- [x] **EM-030** `ffi/evidence.rs:973` — C2PA manifest created timestamp is current time, not evidence time.
+- [x] **EM-031** `cadence.rs:87` — ikis.clone() for percentile computation doubles peak memory.
+- [x] **EM-032** `cadence.rs:184` — Autocorrelation covariance summed over n-1 pairs divided by n.
+- [x] **EM-033** `comparison.rs:95-98` — gaussian_similarity output not clamped; can exceed [0,1].
+- [x] **EM-034** `comparison.rs:72` — Magic number 0.6 for is_consistent threshold.
+- [x] **EM-035** `forgery_cost.rs:262-279` — Magic x100 multiplier for infinite-cost components.
 - [ ] **EM-036** `forgery_cost.rs:137` — Magic constant 0.1 for jitter cost per sample.
 - [ ] **EM-037** `ipc/messages.rs:108-125` — Windows device namespace `\\.\` not stripped.
 - [ ] **EM-038** `ipc/messages.rs:154` — Pulse jitter fields unvalidated; attacker-controlled.
