@@ -72,16 +72,22 @@ impl ZoneTrackingEngine {
     }
 
     fn update_profile(&mut self, from_zone: i32, to_zone: i32, bucket: u8) {
+        let idx = bucket as usize;
+        if idx >= self.profile.same_finger_hist.len() {
+            return;
+        }
         let trans = ZoneTransition {
             from: from_zone,
             to: to_zone,
         };
         if trans.is_same_finger() {
-            self.profile.same_finger_hist[bucket as usize] += 1;
+            self.profile.same_finger_hist[idx] =
+                self.profile.same_finger_hist[idx].saturating_add(1);
         } else if trans.is_same_hand() {
-            self.profile.same_hand_hist[bucket as usize] += 1;
+            self.profile.same_hand_hist[idx] = self.profile.same_hand_hist[idx].saturating_add(1);
         } else {
-            self.profile.alternating_hist[bucket as usize] += 1;
+            self.profile.alternating_hist[idx] =
+                self.profile.alternating_hist[idx].saturating_add(1);
         }
 
         self.profile.total_transitions += 1;

@@ -30,6 +30,10 @@ pub struct HybridJitterSession {
     pub(crate) samples: Vec<HybridSample>,
     pub(crate) keystroke_count: u64,
     pub(crate) last_jitter: u32,
+    /// True if this session was loaded from disk. Loaded sessions cannot record
+    /// new keystrokes because the cpop_jitter crate does not support restoring
+    /// PhysSession state from serialized evidence.
+    loaded_readonly: bool,
 }
 
 impl HybridJitterSession {
@@ -74,6 +78,7 @@ impl HybridJitterSession {
             samples: Vec::new(),
             keystroke_count: 0,
             last_jitter: 0,
+            loaded_readonly: false,
         })
     }
 
@@ -89,7 +94,16 @@ impl HybridJitterSession {
     }
 
     /// Record a keystroke, returning `(jitter_micros, was_sampled)`.
+    ///
+    /// Returns an error if this session was loaded from disk, since the
+    /// cpop_jitter PhysSession cannot be restored from serialized evidence.
     pub fn record_keystroke(&mut self, keycode: u16) -> Result<(u32, bool), String> {
+        if self.loaded_readonly {
+            return Err(
+                "cannot record keystrokes on a loaded session; PhysSession state was not restored"
+                    .into(),
+            );
+        }
         self.keystroke_count += 1;
 
         if self.keystroke_count % self.params.sample_interval != 0 {
@@ -379,6 +393,7 @@ impl HybridJitterSession {
             samples: data.samples,
             keystroke_count: data.keystroke_count,
             last_jitter: data.last_jitter,
+            loaded_readonly: true,
         })
     }
 }
