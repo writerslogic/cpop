@@ -214,18 +214,18 @@
 - [x] **EM-033** `comparison.rs:95-98` — gaussian_similarity output not clamped; can exceed [0,1].
 - [x] **EM-034** `comparison.rs:72` — Magic number 0.6 for is_consistent threshold.
 - [x] **EM-035** `forgery_cost.rs:262-279` — Magic x100 multiplier for infinite-cost components.
-- [ ] **EM-036** `forgery_cost.rs:137` — Magic constant 0.1 for jitter cost per sample.
-- [ ] **EM-037** `ipc/messages.rs:108-125` — Windows device namespace `\\.\` not stripped.
-- [ ] **EM-038** `ipc/messages.rs:154` — Pulse jitter fields unvalidated; attacker-controlled.
-- [ ] **EM-039** `ipc/server.rs:437,510` — Rate limiter created fresh per run_* call.
-- [ ] **EM-040** `war/appraisal.rs:143` — HardwareHardened and HardwareBound produce identical scores.
-- [ ] **EM-041** `war/appraisal.rs:272` — Evidence reference hashed via non-deterministic JSON.
-- [ ] **EM-042** `war/ear.rs:155` — parse_header accepts arbitrary i8; bypasses AR4SI validation.
-- [ ] **EM-043** `trust_policy/evaluation.rs:155` — MinimumFactor checks any factor not named factor.
-- [ ] **EM-044** `store/events.rs:248` — update_file_path TOCTOU between check and UPDATE.
-- [ ] **EM-045** `store/events.rs:277` — 80-line row-mapping closure duplicated verbatim.
-- [ ] **EM-046** `store/access_log.rs:223` — CSV export doesn't quote action/result fields.
-- [ ] **EM-047** `store/access_log.rs:97` — No PRAGMA synchronous set; WAL alone insufficient for audit.
-- [ ] **EM-048** `collaboration.rs:123` — attestation_signature unvalidated; no verification method.
-- [ ] **EM-049** `continuation.rs:77` — packet_sequence increment no overflow check.
-- [ ] **EM-050** `writersproof/queue.rs:82-101` — list() loads unbounded queue into memory.
+- [x] **EM-036** `forgery_cost.rs:137` — Magic constant 0.1 for jitter cost per sample.
+- [x] **EM-037** `ipc/messages.rs:108-125` — Windows device namespace `\\.\` not stripped.
+- [x] **EM-038** `ipc/messages.rs:154` — Pulse jitter fields unvalidated; attacker-controlled.
+- [x] **EM-039** `ipc/server.rs:437,510` — Rate limiter created fresh per run_* call.
+- [x] **EM-040** `war/appraisal.rs:143` — HardwareHardened and HardwareBound produce identical scores.
+- [x] **EM-041** `war/appraisal.rs:272` — Evidence reference hashed via non-deterministic JSON.
+- [x] **EM-042** `war/ear.rs:155` — parse_header accepts arbitrary i8; bypasses AR4SI validation.
+- [x] **EM-043** `trust_policy/evaluation.rs:155` — MinimumFactor checks any factor not named factor.
+- [x] **EM-044** `store/events.rs:248` — update_file_path TOCTOU between check and UPDATE.
+- [x] **EM-045** `store/events.rs:277` — 80-line row-mapping closure duplicated verbatim.
+- [x] **EM-046** `store/access_log.rs:223` — CSV export doesn't quote action/result fields.
+- [x] **EM-047** `store/access_log.rs:97` — No PRAGMA synchronous set; WAL alone insufficient for audit.
+- [x] **EM-048** `collaboration.rs:123` — attestation_signature unvalidated; no verification method.
+- [x] **EM-049** `continuation.rs:77` — packet_sequence increment no overflow check.
+- [x] **EM-050** `writersproof/queue.rs:82-101` — list() loads unbounded queue into memory.
