@@ -15,7 +15,14 @@ pub fn build_empty_auth_area(handle: u32) -> Vec<u8> {
 }
 
 /// Build a TPM_RS_PW authorization area with the given password.
+///
+/// # Panics
+/// Panics if `password.len() > 65535` (TPM auth value size limit).
 pub fn build_auth_area_with_password(handle: u32, password: &[u8]) -> Vec<u8> {
+    assert!(
+        password.len() <= u16::MAX as usize,
+        "TPM auth password exceeds u16 max"
+    );
     let mut auth = Vec::new();
     auth.extend_from_slice(&0x40000009u32.to_be_bytes()); // TPM_RS_PW
     auth.extend_from_slice(&0u16.to_be_bytes());

@@ -323,6 +323,9 @@ fn load_or_create_se_key(tag_str: &str) -> Result<(SecKeyRef, Vec<u8>), TpmError
     let key_ref = unsafe { SecKeyCreateRandomKey(key_attrs.as_concrete_TypeRef(), &mut error) };
 
     if key_ref.is_null() {
+        if !error.is_null() {
+            unsafe { core_foundation_sys::base::CFRelease(error as CFTypeRef) };
+        }
         return Err(TpmError::KeyGeneration(format!(
             "Secure Enclave key generation failed for tag {tag_str}"
         )));
@@ -371,6 +374,9 @@ fn sign(state: &SecureEnclaveState, data: &[u8]) -> Result<Vec<u8>, TpmError> {
         )
     };
     if signature.is_null() {
+        if !error.is_null() {
+            unsafe { core_foundation_sys::base::CFRelease(error as CFTypeRef) };
+        }
         return Err(TpmError::Signing("Secure Enclave signing failed".into()));
     }
     let sig = unsafe { CFData::wrap_under_create_rule(signature) };
@@ -569,14 +575,17 @@ impl Provider for SecureEnclaveProvider {
 
     fn bind(&self, data: &[u8]) -> Result<Binding, TpmError> {
         let mut state = self.state.lock_recover();
-        state.counter += 1;
-        save_counter(&state);
 
         let timestamp = Utc::now();
         let data_hash = Sha256::digest(data).to_vec();
+        let next_counter = state.counter + 1;
         let payload = super::build_binding_payload(&data_hash, &timestamp, &state.device_id);
 
         let signature = sign(&state, &payload)?;
+
+        // Persist counter only after signing succeeds to avoid gaps
+        state.counter = next_counter;
+        save_counter(&state);
 
         Ok(Binding {
             version: 1,
@@ -731,6 +740,8 @@ impl SecureEnclaveProvider {
     }
 
     /// Verify a key attestation against the expected challenge.
+    /// NOTE: This is local-only verification; it reconstructs expected data
+    /// from the current device's hardware_info, so it will fail on a different device.
     pub fn verify_key_attestation(
         &self,
         attestation: &KeyAttestation,
@@ -864,6 +875,9 @@ fn sign_with_key(key_ref: SecKeyRef, data: &[u8]) -> Result<Vec<u8>, TpmError> {
         )
     };
     if signature.is_null() {
+        if !error.is_null() {
+            unsafe { core_foundation_sys::base::CFRelease(error as CFTypeRef) };
+        }
         return Err(TpmError::Signing("Secure Enclave signing failed".into()));
     }
     let sig = unsafe { CFData::wrap_under_create_rule(signature) };

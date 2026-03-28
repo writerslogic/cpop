@@ -59,6 +59,8 @@ pub fn build_pcr_read_command(pcr_selection: &[u32]) -> Vec<u8> {
     for &pcr_index in pcr_selection {
         if pcr_index < 24 {
             pcr_bitmap[(pcr_index / 8) as usize] |= 1 << (pcr_index % 8);
+        } else {
+            log::warn!("PCR index {pcr_index} >= 24 not supported by 3-byte bitmap; skipped");
         }
     }
 

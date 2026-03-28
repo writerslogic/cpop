@@ -140,6 +140,9 @@ impl TbsContext {
         if response.len() < 12 + digest_size {
             return Err(TbsError::ResponseTooShort);
         }
+        if digest_size < num_bytes as usize {
+            return Err(TbsError::ResponseTooShort);
+        }
 
         Ok(response[12..12 + digest_size].to_vec())
     }
