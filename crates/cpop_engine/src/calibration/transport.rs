@@ -60,8 +60,6 @@ impl TransportCalibrator {
             })
             .sum::<f64>()
             / samples.len() as f64;
-        let std_dev = variance.max(0.0).sqrt();
-
         let ts = chrono::Utc::now().timestamp_millis();
         if ts < 0 {
             log::warn!("Negative timestamp_millis ({ts}) in transport calibration; clamping to 0");
@@ -71,7 +69,7 @@ impl TransportCalibrator {
         Some(TransportCalibration {
             transport: transport.as_str().to_string(),
             baseline_latency_us: baseline,
-            latency_variance_us: std_dev.round() as u64,
+            latency_variance_us: variance.max(0.0).round() as u64,
             calibrated_at_ms: now_ms,
         })
     }

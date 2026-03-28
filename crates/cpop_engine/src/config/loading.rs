@@ -4,6 +4,7 @@ use super::defaults;
 use super::types::*;
 use anyhow::Result;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 impl CpopConfig {
@@ -52,7 +53,11 @@ impl CpopConfig {
                     }
                 }
                 Err(e) => {
-                    log::warn!("failed to parse legacy {}: {}", cli_path.display(), e);
+                    log::warn!(
+                        "failed to parse legacy {}; settings will use defaults: {}",
+                        cli_path.display(),
+                        e
+                    );
                 }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -77,7 +82,11 @@ impl CpopConfig {
                     }
                 }
                 Err(e) => {
-                    log::warn!("failed to parse legacy {}: {}", gui_path.display(), e);
+                    log::warn!(
+                        "failed to parse legacy {}; settings will use defaults: {}",
+                        gui_path.display(),
+                        e
+                    );
                 }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -113,12 +122,20 @@ impl CpopConfig {
         }
     }
 
-    /// Write config to `writersproof.json` with restrictive permissions (0600 on Unix).
+    /// Write config to `writersproof.json` atomically with restrictive permissions (0600 on Unix).
+    ///
+    /// Uses write-to-temp + rename so a crash mid-write cannot corrupt the config.
     pub fn persist(&self) -> Result<()> {
         fs::create_dir_all(&self.data_dir)?;
         let config_path = self.data_dir.join("writersproof.json");
         let raw = serde_json::to_string_pretty(self)?;
-        fs::write(&config_path, raw)?;
+
+        let mut tmp = tempfile::NamedTempFile::new_in(&self.data_dir)?;
+        tmp.write_all(raw.as_bytes())?;
+        tmp.flush()?;
+        let tmp_path = tmp.into_temp_path();
+        tmp_path.persist(&config_path)?;
+
         crate::crypto::restrict_permissions(&config_path, 0o600)?;
         Ok(())
     }

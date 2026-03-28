@@ -6,19 +6,20 @@ pub(super) fn default_data_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         dirs::home_dir()
-            .expect("cannot determine home directory")
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join("Library/Application Support/CPOP")
     }
     #[cfg(target_os = "windows")]
     {
         dirs::data_local_dir()
-            .unwrap_or_else(|| dirs::home_dir().expect("cannot determine home directory"))
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| PathBuf::from("C:\\ProgramData"))
             .join("CPOP")
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         dirs::home_dir()
-            .expect("cannot determine home directory")
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join(".writersproof")
     }
 }

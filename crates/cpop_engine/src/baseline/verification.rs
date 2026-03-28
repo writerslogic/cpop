@@ -4,6 +4,12 @@ use crate::analysis::stats::bhattacharyya_coefficient;
 use cpop_protocol::baseline::{BaselineDigest, SessionBehavioralSummary};
 
 /// Score a session against the baseline digest, returning 0.0..1.0 similarity.
+///
+/// When the baseline has fewer than 2 sessions (`count < 2`), all Gaussian
+/// similarity terms return 0.8 (lenient). This means a single-session baseline
+/// yields ~0.8 for the similarity components, which is intentional: with only
+/// one prior session there is no statistical basis for comparison, so we allow
+/// the session through with a moderately high score rather than rejecting it.
 pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavioralSummary) -> f64 {
     let b_coeff =
         bhattacharyya_coefficient(&digest.aggregate_iki_histogram, &session.iki_histogram);

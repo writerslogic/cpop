@@ -564,6 +564,11 @@ impl Chain {
     }
 
     /// Verify the chain and return a detailed report with warnings and failures.
+    ///
+    /// This performs structural verification only: hash linkage, ordinal sequence,
+    /// genesis prev-hash, and timestamp sanity. Cryptographic signature verification
+    /// of individual checkpoints is deferred to the caller (see `unsigned_checkpoints`
+    /// in the returned report for checkpoints that lack signatures).
     pub fn verify_detailed(&self) -> VerificationReport {
         let mut report = VerificationReport::new();
 

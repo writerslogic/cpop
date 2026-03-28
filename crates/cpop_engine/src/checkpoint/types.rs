@@ -265,7 +265,9 @@ impl Checkpoint {
             hasher.update(rfc_jitter.entropy_commitment.hash);
             hasher.update(rfc_jitter.summary.sample_count.to_be_bytes());
             if let Some(hurst) = rfc_jitter.summary.hurst_exponent {
-                hasher.update(hurst.to_be_bytes());
+                // Canonicalize NaN to a single bit pattern for hash stability.
+                let canonical = if hurst.is_nan() { f64::NAN } else { hurst };
+                hasher.update(canonical.to_be_bytes());
             }
         }
 

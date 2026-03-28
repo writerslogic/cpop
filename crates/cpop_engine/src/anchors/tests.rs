@@ -154,12 +154,11 @@ fn best_proof_prefers_ethereum_when_no_bitcoin() {
 }
 
 #[test]
-fn best_proof_falls_back_to_first_when_none_confirmed() {
+fn best_proof_returns_none_when_none_confirmed() {
     let mut anchor = Anchor::new(test_hash());
     anchor.add_proof(make_proof(ProviderType::Notary, ProofStatus::Pending));
     anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Failed));
-    let best = anchor.best_proof().expect("should fall back to first");
-    assert_eq!(best.provider, ProviderType::Notary);
+    assert!(anchor.best_proof().is_none());
 }
 
 // --- verify_proof_format ---

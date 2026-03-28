@@ -189,16 +189,16 @@
 - [ ] **EM-008** `ethereum.rs:254` — Gas price off-by-one; first attempt already bumped 10%.
 - [ ] **EM-009** `ethereum.rs:375` — confirmed_at is poll time not block timestamp.
 - [ ] **EM-010** `ethereum.rs:413` — verify() does not check tx.from address.
-- [ ] **EM-011** `types.rs:142` — Anchor.status never demotes from Confirmed to Failed.
-- [ ] **EM-012** `types.rs:161` — best_proof fallback returns failed/pending proofs.
-- [ ] **EM-013** `streaming.rs:23-24` — f64::MIN sentinel for max is confusing.
-- [ ] **EM-014** `verification.rs:34-36` — Undocumented: single-session baseline returns 1.0 for all metrics.
-- [ ] **EM-015** `checkpoint/chain.rs:598-609` — verify_detailed structural check only; deferred crypto not surfaced.
-- [ ] **EM-016** `checkpoint/types.rs:258-260` — NaN hurst_exponent hashed differently; breaks hash stability.
-- [ ] **EM-017** `config/defaults.rs:8-11` — default_data_dir panics on missing home directory.
-- [ ] **EM-018** `config/loading.rs:27-38` — Legacy config migration silently ignores parse errors.
-- [ ] **EM-019** `config/loading.rs:86-91` — persist() non-atomic write; crash = corrupt config.
-- [ ] **EM-020** `calibration/transport.rs:63` — latency_variance_us stores std_dev not variance.
+- [x] **EM-011** `types.rs:142` — Anchor.status never demotes from Confirmed to Failed.
+- [x] **EM-012** `types.rs:161` — best_proof fallback returns failed/pending proofs.
+- [x] **EM-013** `streaming.rs:23-24` — f64::MIN sentinel for max is confusing.
+- [x] **EM-014** `verification.rs:34-36` — Undocumented: single-session baseline returns 1.0 for all metrics.
+- [x] **EM-015** `checkpoint/chain.rs:598-609` — verify_detailed structural check only; deferred crypto not surfaced.
+- [x] **EM-016** `checkpoint/types.rs:258-260` — NaN hurst_exponent hashed differently; breaks hash stability.
+- [x] **EM-017** `config/defaults.rs:8-11` — default_data_dir panics on missing home directory.
+- [x] **EM-018** `config/loading.rs:27-38` — Legacy config migration silently ignores parse errors.
+- [x] **EM-019** `config/loading.rs:86-91` — persist() non-atomic write; crash = corrupt config.
+- [x] **EM-020** `calibration/transport.rs:63` — latency_variance_us stores std_dev not variance.
 - [ ] **EM-021** `crypto/obfuscated.rs:11-18` — ROLLING_KEY race can produce duplicate keys.
 - [ ] **EM-022** `crypto/obfuscation.rs:29-33` — reveal() returns String; caller cannot zeroize.
 - [ ] **EM-023** `declaration/verification.rs:171-180` — entropy_bits is sample-count-dependent, not true entropy.

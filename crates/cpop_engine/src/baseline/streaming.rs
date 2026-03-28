@@ -21,7 +21,7 @@ impl StreamingStatsExt for StreamingStats {
             mean: 0.0,
             m2: 0.0,
             min: f64::MAX,
-            max: f64::MIN,
+            max: f64::NEG_INFINITY,
         }
     }
 

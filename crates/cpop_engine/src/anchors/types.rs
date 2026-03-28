@@ -138,12 +138,30 @@ impl Anchor {
         }
     }
 
-    /// Append a proof, promoting anchor status to confirmed if the proof is.
+    /// Append a proof, updating anchor status based on the best proof state.
+    ///
+    /// Promotes to `Confirmed` when any proof is confirmed; demotes back to
+    /// `Pending` or `Failed` if the last confirmed proof is removed or replaced.
     pub fn add_proof(&mut self, proof: Proof) {
-        if proof.status == ProofStatus::Confirmed {
-            self.status = ProofStatus::Confirmed;
-        }
         self.proofs.push(proof);
+        self.recompute_status();
+    }
+
+    /// Recompute aggregate status from the current set of proofs.
+    fn recompute_status(&mut self) {
+        if self
+            .proofs
+            .iter()
+            .any(|p| p.status == ProofStatus::Confirmed)
+        {
+            self.status = ProofStatus::Confirmed;
+        } else if self.proofs.iter().all(|p| p.status == ProofStatus::Failed)
+            && !self.proofs.is_empty()
+        {
+            self.status = ProofStatus::Failed;
+        } else {
+            self.status = ProofStatus::Pending;
+        }
     }
 
     /// Return the highest-priority confirmed proof, preferring blockchain anchors.
@@ -158,7 +176,7 @@ impl Anchor {
                 ProviderType::Rfc3161 => 3,
                 ProviderType::Notary => 4,
             })
-            .or_else(|| self.proofs.first())
+        // Only return confirmed proofs; callers should handle None explicitly.
     }
 
     /// Return true if at least one proof is confirmed.
