@@ -116,25 +116,25 @@
 
 ### Critical (Engine)
 
-- [ ] **EC-001** `forensics/cadence.rs:49` — Unsigned subtraction on signed i64 timestamps; negative IKI corrupts all metrics. Use saturating_sub or cast to i128.
-- [ ] **EC-002** `forensics/dictation.rs:67` — `i64::saturating_sub` saturates to `i64::MIN` not 0 on inverted timestamps; negative duration treated as enormous negative.
-- [ ] **EC-003** `forensics/forgery_cost.rs:273` — `ln()` on geometric mean not fully guarded against subnormals; `ln(subnormal)` collapses geo_mean toward 0.
+- [x] **EC-001** `forensics/cadence.rs:49` — Unsigned subtraction on signed i64 timestamps; negative IKI corrupts all metrics. Use saturating_sub or cast to i128.
+- [x] **EC-002** `forensics/dictation.rs:67` — `i64::saturating_sub` saturates to `i64::MIN` not 0 on inverted timestamps; negative duration treated as enormous negative.
+- [x] **EC-003** `forensics/forgery_cost.rs:273` — `ln()` on geometric mean not fully guarded against subnormals; `ln(subnormal)` collapses geo_mean toward 0.
 
 ### High (Engine)
 
 #### Security
-- [ ] **EH-001** `ipc/sync_client.rs:36,103` — `encoded.len() as u32` truncates silently; no outgoing message size check.
-- [ ] **EH-002** `ipc/sync_client.rs` — Protocol mismatch: sync client sends bincode; server only accepts SecureJson magic.
-- [ ] **EH-003** `ipc/messages.rs:36-63` — Hand-rolled path normalizer doesn't handle all Component types (Windows UNC).
-- [ ] **EH-004** `ipc/messages.rs:68-82` — `/usr/` not in Unix blocked prefix list.
-- [ ] **EH-005** `ipc/server.rs:394-396` — TOCTOU between remove_file and bind on Unix socket path.
-- [ ] **EH-006** `ipc/server.rs:450` — `Ordering::Relaxed` on connection counter insufficient for guard correctness.
-- [ ] **EH-007** `crypto/mem.rs:27-30` — ProtectedKey::new panic in lock_memory leaves stack copy unzeroized.
-- [ ] **EH-008** `crypto/mem.rs:89-92` — ProtectedBuf::new clone-then-zeroize; panic loses zeroize on input.
-- [ ] **EH-009** `crypto/obfuscated.rs:23-27` — mask_key stored in plaintext alongside masked_data; trivially recoverable.
-- [ ] **EH-010** `ffi/report.rs:156-166` — Identity signing key used as guilloche seed oracle; should use HKDF.
-- [ ] **EH-011** `ffi/beacon.rs:119-120` — checkpoint_hash and evidence_hash both carry event_hash; evidence binding broken.
-- [ ] **EH-012** `ffi/ephemeral.rs:245,523` — device_id and machine_id zero-filled in all persisted ephemeral events.
+- [x] **EH-001** `ipc/sync_client.rs:36,103` — `encoded.len() as u32` truncates silently; no outgoing message size check.
+- [x] **EH-002** `ipc/sync_client.rs` — Protocol mismatch: sync client sends bincode; server only accepts SecureJson magic.
+- [x] **EH-003** `ipc/messages.rs:36-63` — Hand-rolled path normalizer doesn't handle all Component types (Windows UNC).
+- [x] **EH-004** `ipc/messages.rs:68-82` — `/usr/` not in Unix blocked prefix list.
+- [x] **EH-005** `ipc/server.rs:394-396` — TOCTOU between remove_file and bind on Unix socket path.
+- [x] **EH-006** `ipc/server.rs:450` — `Ordering::Relaxed` on connection counter insufficient for guard correctness.
+- [x] **EH-007** `crypto/mem.rs:27-30` — ProtectedKey::new panic in lock_memory leaves stack copy unzeroized.
+- [x] **EH-008** `crypto/mem.rs:89-92` — ProtectedBuf::new clone-then-zeroize; panic loses zeroize on input.
+- [x] **EH-009** `crypto/obfuscated.rs:23-27` — mask_key stored in plaintext alongside masked_data; trivially recoverable.
+- [x] **EH-010** `ffi/report.rs:156-166` — Identity signing key used as guilloche seed oracle; should use HKDF.
+- [x] **EH-011** `ffi/beacon.rs:119-120` — checkpoint_hash and evidence_hash both carry event_hash; evidence binding broken.
+- [x] **EH-012** `ffi/ephemeral.rs:245,523` — device_id and machine_id zero-filled in all persisted ephemeral events.
 - [ ] **EH-013** `ffi/evidence.rs:405,526` — device_id and machine_id zero-filled in link_derivative and create_checkpoint.
 - [ ] **EH-014** `writersproof/client.rs:115-131` — sign_payload Vec not zeroized after use; evidence CBOR left on heap.
 - [ ] **EH-015** `writersproof/queue.rs:52` — enqueue signature has no nonce/DST; deterministic replay risk.
