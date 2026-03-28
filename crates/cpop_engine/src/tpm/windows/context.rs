@@ -62,7 +62,11 @@ impl TbsContext {
                 ctx.device_id = format!("windows-tpm-{}", hex::encode(&random_bytes[..8]));
             }
             Err(_) => {
-                ctx.device_id = format!("windows-tpm-{:x}", Utc::now().timestamp());
+                ctx.device_id = format!(
+                    "windows-tpm-{:x}-{}",
+                    Utc::now().timestamp(),
+                    std::process::id()
+                );
             }
         }
 

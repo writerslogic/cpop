@@ -3,7 +3,6 @@
 use super::{Attestation, Binding, Capabilities, Provider, Quote, TpmError};
 use crate::DateTimeNanosExt;
 use crate::MutexRecover;
-use anyhow::Result;
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Nonce as AeadNonce,

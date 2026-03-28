@@ -432,7 +432,7 @@ pub fn transition_histogram_divergence(
 
 fn safe_log(x: f64) -> f64 {
     if x <= 0.0 {
-        -1e10
+        0.0
     } else {
         x.ln()
     }

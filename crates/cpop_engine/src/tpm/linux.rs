@@ -538,7 +538,9 @@ fn get_device_id(state: &mut LinuxState) -> Result<Vec<u8>, TpmError> {
         .marshall()
         .map_err(|_| TpmError::NotAvailable)?;
 
-    state.context.flush_context(result.key_handle.into()).ok();
+    if let Err(e) = state.context.flush_context(result.key_handle.into()) {
+        log::warn!("flush_context after fingerprint: {e}");
+    }
 
     let hash = Sha256::digest(&pub_bytes);
     Ok(hash.to_vec())

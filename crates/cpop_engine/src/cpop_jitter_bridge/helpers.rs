@@ -12,8 +12,5 @@ pub fn interval_to_bucket(duration: Duration) -> u8 {
     if bucket >= NUM_INTERVAL_BUCKETS {
         bucket = NUM_INTERVAL_BUCKETS - 1;
     }
-    if bucket < 0 {
-        bucket = 0;
-    }
     bucket as u8
 }

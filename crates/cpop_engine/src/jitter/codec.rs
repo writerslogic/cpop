@@ -12,6 +12,10 @@ use super::timestamp_nanos_u64;
 use super::verification::verify_sample;
 use crate::error::Error;
 
+/// Size of the binary chain header: version(1) + min_jitter(4) + max_jitter(4)
+/// + sample_interval(4) + inject_enabled(1) + sample_count(4).
+const CHAIN_HEADER_SIZE: usize = 18;
+
 /// Encode a single sample into a 116-byte big-endian binary representation.
 pub fn encode_sample_binary(sample: &Sample) -> Vec<u8> {
     let mut buf = vec![0u8; 116];
@@ -86,7 +90,7 @@ pub fn encode_chain_binary(
     samples: &[Sample],
     params: Parameters,
 ) -> crate::error::Result<Vec<u8>> {
-    let header_size = 1 + 13 + 4;
+    let header_size = CHAIN_HEADER_SIZE;
     let total_size = header_size
         + samples
             .len()
@@ -128,7 +132,7 @@ pub fn encode_chain_binary(
 
 /// Decode a binary-encoded chain into samples and parameters.
 pub fn decode_chain_binary(data: &[u8]) -> crate::error::Result<(Vec<Sample>, Parameters)> {
-    if data.len() < 18 {
+    if data.len() < CHAIN_HEADER_SIZE {
         return Err(Error::validation("data too short for chain header"));
     }
 
@@ -177,7 +181,7 @@ pub fn decode_chain_binary(data: &[u8]) -> crate::error::Result<(Vec<Sample>, Pa
         )));
     }
 
-    let expected_len = 18
+    let expected_len = CHAIN_HEADER_SIZE
         + sample_count
             .checked_mul(116)
             .ok_or_else(|| Error::validation("sample count overflow in binary decoding"))?;

@@ -17,8 +17,13 @@ impl DocumentTracker {
         let abs_path =
             fs::canonicalize(path.as_ref()).map_err(|e| format!("invalid document path: {e}"))?;
 
+        let path_str = abs_path.to_string_lossy();
+        if path_str.contains('\u{FFFD}') {
+            log::warn!("document path contains non-UTF-8 bytes, lossy conversion applied");
+        }
+
         Ok(Self {
-            path: abs_path.to_string_lossy().to_string(),
+            path: path_str.to_string(),
             last_mtime: None,
             last_size: None,
             last_hash: None,

@@ -164,7 +164,7 @@ pub fn create_srk_public_key(context: &TbsContext) -> Result<Vec<u8>, String> {
     let mut flush_cmd = Vec::with_capacity(14);
     flush_cmd.extend_from_slice(&TPM2_ST_NO_SESSIONS.to_be_bytes());
     flush_cmd.extend_from_slice(&14u32.to_be_bytes());
-    flush_cmd.extend_from_slice(&0x00000165u32.to_be_bytes()); // TPM2_CC_FlushContext
+    flush_cmd.extend_from_slice(&TPM2_CC_FLUSH_CONTEXT.to_be_bytes());
     flush_cmd.extend_from_slice(&handle.to_be_bytes());
     let _ = context.submit_command(&flush_cmd);
 

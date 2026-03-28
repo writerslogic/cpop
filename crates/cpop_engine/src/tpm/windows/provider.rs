@@ -558,7 +558,7 @@ impl WindowsTpmProvider {
         let command_size: u32 = 14;
         cmd.extend_from_slice(&TPM2_ST_NO_SESSIONS.to_be_bytes());
         cmd.extend_from_slice(&command_size.to_be_bytes());
-        cmd.extend_from_slice(&0x00000165u32.to_be_bytes()); // CC_FlushContext
+        cmd.extend_from_slice(&TPM2_CC_FLUSH_CONTEXT.to_be_bytes());
         cmd.extend_from_slice(&handle.to_be_bytes());
         ctx.submit_command(&cmd)?;
         Ok(())
