@@ -914,6 +914,7 @@ impl Sentinel {
 
         let digest_cbor = serde_json::to_vec(&updated_digest)?;
         let signature = signing_key_local.sign(&digest_cbor);
+        // SigningKey zeroizes its secret material on Drop.
         drop(signing_key_local);
 
         store.save_baseline_digest(&identity_fingerprint, &digest_cbor, &signature.to_bytes())?;
