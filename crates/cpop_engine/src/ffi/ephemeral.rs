@@ -21,6 +21,22 @@ use dashmap::DashMap;
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+/// Cached device identity for populating ephemeral events (EH-012).
+static DEVICE_IDENTITY: OnceLock<([u8; 16], String)> = OnceLock::new();
+
+fn device_identity() -> &'static ([u8; 16], String) {
+    DEVICE_IDENTITY.get_or_init(|| {
+        crate::identity::secure_storage::SecureStorage::load_device_identity()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                let machine_id =
+                    sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
+                ([0u8; 16], machine_id)
+            })
+    })
+}
+
 /// Max context label length (chars).
 const MAX_CONTEXT_LABEL_LEN: usize = 256;
 /// Max content size for checkpoint/finalize (bytes).
@@ -242,8 +258,8 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     if let Ok(mut store) = open_store() {
         let mut event = crate::store::SecureEvent {
             id: None,
-            device_id: [0u8; 16],
-            machine_id: String::new(),
+            device_id: device_identity().0,
+            machine_id: device_identity().1.clone(),
             timestamp_ns: now_ns(),
             file_path: ephemeral_path,
             content_hash,
@@ -520,8 +536,8 @@ pub fn ffi_ephemeral_checkpoint_hash(
     if let Ok(mut store) = open_store() {
         let mut event = crate::store::SecureEvent {
             id: None,
-            device_id: [0u8; 16],
-            machine_id: String::new(),
+            device_id: device_identity().0,
+            machine_id: device_identity().1.clone(),
             timestamp_ns: now_ns(),
             file_path: ephemeral_path,
             content_hash,

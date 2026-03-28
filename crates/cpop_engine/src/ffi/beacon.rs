@@ -76,7 +76,8 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
     };
 
     let checkpoint_hash = hex::encode(latest.event_hash);
-    let evidence_hash = hex::encode(latest.event_hash);
+    // EH-011: evidence_hash must bind to the document content, not duplicate event_hash.
+    let evidence_hash = hex::encode(latest.content_hash);
 
     let signing_key = match load_signing_key() {
         Ok(k) => k,

@@ -29,10 +29,13 @@ impl<const N: usize> ProtectedKey<N> {
     /// variable may still hold key material on the stack. Prefer
     /// [`from_zeroizing`](Self::from_zeroizing) which guarantees the caller's
     /// copy is zeroized on drop.
-    pub fn new(mut bytes: [u8; N]) -> Self {
-        let mut key = Self(bytes);
+    pub fn new(bytes: [u8; N]) -> Self {
+        // Wrap in Zeroizing so the stack copy is zeroized on drop, even if
+        // lock_memory panics (EH-007).
+        let zeroizing = Zeroizing::new(bytes);
+        let mut key = Self(*zeroizing);
         key.lock_memory();
-        bytes.zeroize();
+        // `zeroizing` drops here, zeroizing the parameter copy.
         key
     }
 
@@ -114,10 +117,14 @@ impl Clone for ProtectedBuf {
 impl ProtectedBuf {
     /// Move bytes into a protected buffer, mlock it, and zeroize the source.
     pub fn new(mut bytes: Vec<u8>) -> Self {
-        let taken = std::mem::take(&mut bytes);
+        // Wrap in Zeroizing so the input is zeroized on drop, even if the
+        // allocation in Self() panics (EH-008).
+        let taken = Zeroizing::new(std::mem::take(&mut bytes));
+        // `bytes` is now empty (taken), but zeroize the header for hygiene.
         bytes.zeroize();
-        let mut buf = Self(taken);
+        let mut buf = Self((*taken).clone());
         buf.lock_memory();
+        // `taken` drops here, zeroizing the intermediate copy.
         buf
     }
 

@@ -5,24 +5,50 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use zeroize::Zeroize;
 
+/// Process-wide random secret, initialized once. Combined with the per-instance
+/// nonce so that the mask is not recoverable from a memory snapshot of the
+/// `Obfuscated` struct alone (EH-009).
+static PROCESS_SECRET: OnceLock<u64> = OnceLock::new();
+
+fn process_secret() -> u64 {
+    *PROCESS_SECRET.get_or_init(|| {
+        let mut buf = [0u8; 8];
+        getrandom::getrandom(&mut buf).unwrap_or_else(|_| {
+            // Fallback: use address-space entropy if getrandom fails
+            buf = ((&buf as *const _ as u64) ^ 0xA5A5A5A5_5A5A5A5A).to_ne_bytes();
+        });
+        u64::from_ne_bytes(buf)
+    })
+}
+
 // Accepted: concurrent threads may compute duplicate XOR keys; no security impact
-/// Rolling XOR key that changes every N accesses
+/// Rolling nonce that changes every N accesses
 static ROLLING_KEY: AtomicU64 = AtomicU64::new(0xDEADBEEF_CAFEBABE);
 
-fn next_key() -> u64 {
+fn next_nonce() -> u64 {
     let current = ROLLING_KEY.load(Ordering::Relaxed);
     let next = current.rotate_left(7) ^ current.wrapping_mul(0x5851F42D4C957F2D);
     ROLLING_KEY.store(next, Ordering::Relaxed);
     next
 }
 
-/// Obfuscated wrapper that keeps data XOR-masked in memory
+/// Derive the effective mask key by mixing the per-instance nonce with the
+/// process secret. The nonce is stored in the struct; the secret is not.
+fn effective_key(nonce: u64) -> u64 {
+    nonce ^ process_secret()
+}
+
+/// Obfuscated wrapper that keeps data XOR-masked in memory.
+/// The effective mask is derived from combining a per-instance nonce with a
+/// process-wide secret, so a memory dump of this struct alone cannot recover
+/// the plaintext.
 #[derive(Clone)]
 pub struct Obfuscated<T> {
     masked_data: Vec<u8>,
-    mask_key: u64,
+    mask_nonce: u64,
     _phantom: std::marker::PhantomData<T>,
 }
 
@@ -37,13 +63,13 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
                 Vec::new()
             }
         };
-        let mask_key = next_key();
-        let masked_data = Self::xor_data(&serialized, mask_key);
+        let mask_nonce = next_nonce();
+        let masked_data = Self::xor_data(&serialized, effective_key(mask_nonce));
         serialized.zeroize();
 
         Self {
             masked_data,
-            mask_key,
+            mask_nonce,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -53,7 +79,7 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     /// Returns `None` if deserialization fails (e.g. data was corrupted or the
     /// obfuscation key was lost). Callers should treat `None` as a tamper signal.
     pub fn reveal(&self) -> Option<T> {
-        let mut unmasked = Self::xor_data(&self.masked_data, self.mask_key);
+        let mut unmasked = Self::xor_data(&self.masked_data, effective_key(self.mask_nonce));
 
         let result = bincode::serde::decode_from_slice(&unmasked, bincode::config::standard())
             .ok()

@@ -4,6 +4,7 @@ use crate::ffi::helpers::{detect_attestation_tier_info, open_store};
 use crate::ffi::report_types::*;
 use crate::report::*;
 use chrono::DateTime;
+use zeroize::Zeroize;
 
 /// Build the core WAR report data from stored events for a tracked file.
 ///
@@ -156,12 +157,19 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
     let guilloche_seed_hex = crate::ffi::helpers::load_signing_key()
         .ok()
         .map(|signing_key| {
-            use ed25519_dalek::Signer;
-            use sha2::Digest;
-            let h3_placeholder =
-                sha2::Sha256::digest(format!("cpop-security-v1{}", "seed").as_bytes());
-            let sig = signing_key.sign(&h3_placeholder);
-            hex::encode(sig.to_bytes())
+            // Derive a separate seed via HKDF so the signing key is never used
+            // directly as an oracle for non-signing purposes (EH-010).
+            use hkdf::Hkdf;
+            use sha2::Sha256;
+            let hk = Hkdf::<Sha256>::new(None, signing_key.as_bytes());
+            let mut seed = [0u8; 32];
+            hk.expand(b"witnessd-guilloche-seed-v1", &mut seed)
+                .unwrap_or_else(|_| {
+                    log::warn!("HKDF expand failed for guilloche seed");
+                });
+            let result = hex::encode(seed);
+            seed.zeroize();
+            result
         })
         .unwrap_or_default();
 
