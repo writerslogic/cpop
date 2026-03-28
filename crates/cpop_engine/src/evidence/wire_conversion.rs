@@ -237,6 +237,7 @@ fn checkpoint_to_wire(
                 thermal: vec![],
                 entropy_delta: 0,
                 kernel_commitment: Some(seed),
+                inertial_samples: None,
             })
         });
 

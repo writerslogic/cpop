@@ -547,7 +547,7 @@ impl WindowsTpmProvider {
     fn derive_seal_auth_value(&self) -> zeroize::Zeroizing<Vec<u8>> {
         use sha2::Digest;
         let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-seal-auth-v1");
+        hasher.update(b"witnessd-seal-auth-v2");
         hasher.update(self.context.device_id().as_bytes());
         hasher.update(&self.public_key);
         let hash = hasher.finalize();
