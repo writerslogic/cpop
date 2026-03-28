@@ -391,26 +391,40 @@ pub struct IpcServer {
 
 impl IpcServer {
     /// Bind to a Unix domain socket at the given path (mode 0600).
+    ///
+    /// Attempts bind first to avoid a TOCTOU race between remove_file and bind.
+    /// On EADDRINUSE, checks whether the socket is live (another server) or stale,
+    /// then retries once after removing the stale socket.
     #[cfg(not(target_os = "windows"))]
     pub fn bind(path: PathBuf) -> Result<Self> {
-        if path.exists() {
-            // Check if socket is active before removing
-            match std::os::unix::net::UnixStream::connect(&path) {
-                Ok(_) => {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Try binding directly first to avoid TOCTOU between remove and bind.
+        match UnixListener::bind(&path) {
+            Ok(listener) => {
+                crate::crypto::restrict_permissions(&path, 0o600)?;
+                return Ok(Self {
+                    listener,
+                    socket_path: path,
+                    access_log: None,
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                // Socket file exists; check if another server is actively listening.
+                if std::os::unix::net::UnixStream::connect(&path).is_ok() {
                     return Err(anyhow!(
                         "Another IPC server is already listening on {}",
                         path.display()
                     ));
                 }
-                Err(_) => {
-                    // Stale socket file, safe to remove
-                    std::fs::remove_file(&path)?;
-                }
+                // Stale socket; remove and retry.
+                std::fs::remove_file(&path)?;
             }
+            Err(e) => return Err(e.into()),
         }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+
         let listener = UnixListener::bind(&path)?;
         crate::crypto::restrict_permissions(&path, 0o600)?;
         Ok(Self {
@@ -482,7 +496,7 @@ impl IpcServer {
                 let al = self.access_log.clone();
                 tokio::spawn(async move {
                     handle_connection(stream, handler_clone, rl, al).await;
-                    conn_count.fetch_sub(1, Ordering::Relaxed);
+                    conn_count.fetch_sub(1, Ordering::AcqRel);
                 });
             }
         }
@@ -516,7 +530,7 @@ impl IpcServer {
                 let al = self.access_log.clone();
                 tokio::spawn(async move {
                     handle_windows_connection(server, handler_clone, rl, al).await;
-                    conn_count.fetch_sub(1, Ordering::Relaxed);
+                    conn_count.fetch_sub(1, Ordering::AcqRel);
                 });
             }
         }
@@ -553,7 +567,7 @@ impl IpcServer {
                                 let al = self.access_log.clone();
                                 tokio::spawn(async move {
                                     handle_connection(stream, handler_clone, rl, al).await;
-                                    conn_count.fetch_sub(1, Ordering::Relaxed);
+                                    conn_count.fetch_sub(1, Ordering::AcqRel);
                                 });
                             }
                             Err(e) => {
@@ -596,7 +610,7 @@ impl IpcServer {
                             let al = self.access_log.clone();
                             tokio::spawn(async move {
                                 handle_windows_connection(server, handler_clone, rl, al).await;
-                                conn_count.fetch_sub(1, Ordering::Relaxed);
+                                conn_count.fetch_sub(1, Ordering::AcqRel);
                             });
                         }
                     }

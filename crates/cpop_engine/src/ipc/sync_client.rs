@@ -9,6 +9,13 @@ use std::time::Duration;
 #[cfg(not(target_os = "windows"))]
 use std::io::{Read, Write};
 
+/// Synchronous IPC client using length-prefixed bincode framing.
+///
+/// NOTE: This client uses a raw bincode wire protocol (no SecureJson magic header).
+/// The async `IpcServer` only accepts SecureJson connections and will reject this
+/// client. This client is intended for local-only, same-process or test scenarios
+/// where the server side also speaks raw bincode (e.g. the sentinel's synchronous
+/// command socket). It must NOT be used against the async IPC server.
 #[cfg(not(target_os = "windows"))]
 pub struct IpcClient {
     stream: std::os::unix::net::UnixStream,
@@ -33,7 +40,15 @@ impl IpcClient {
 
     pub fn send_message(&mut self, msg: &IpcMessage) -> Result<()> {
         let encoded = encode_message(msg)?;
-        let len = encoded.len() as u32;
+        if encoded.len() > super::messages::MAX_MESSAGE_SIZE {
+            return Err(anyhow!(
+                "Outgoing message too large: {} bytes (max {})",
+                encoded.len(),
+                super::messages::MAX_MESSAGE_SIZE
+            ));
+        }
+        let len =
+            u32::try_from(encoded.len()).map_err(|_| anyhow!("Message length exceeds u32::MAX"))?;
         self.stream.write_all(&len.to_le_bytes())?;
         self.stream.write_all(&encoded)?;
         self.stream.flush()?;
@@ -99,7 +114,15 @@ impl IpcClient {
         use std::io::Write;
 
         let encoded = encode_message(msg)?;
-        let len = encoded.len() as u32;
+        if encoded.len() > super::messages::MAX_MESSAGE_SIZE {
+            return Err(anyhow!(
+                "Outgoing message too large: {} bytes (max {})",
+                encoded.len(),
+                super::messages::MAX_MESSAGE_SIZE
+            ));
+        }
+        let len =
+            u32::try_from(encoded.len()).map_err(|_| anyhow!("Message length exceeds u32::MAX"))?;
         self.pipe.write_all(&len.to_le_bytes())?;
         self.pipe.write_all(&encoded)?;
         self.pipe.flush()?;

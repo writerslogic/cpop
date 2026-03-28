@@ -36,14 +36,20 @@ fn validate_ipc_path(path: &Path) -> Result<(), String> {
     let canonical: std::borrow::Cow<'_, Path> = match std::fs::canonicalize(path) {
         Ok(p) => std::borrow::Cow::Owned(p),
         Err(_) => {
-            let mut stack: Vec<std::ffi::OsString> = Vec::new();
+            let mut stack: Vec<Component<'_>> = Vec::new();
             for component in path.components() {
                 match component {
                     Component::ParentDir => {
-                        stack.pop();
+                        // Don't pop past Prefix or RootDir (e.g. `C:\` or `/`).
+                        match stack.last() {
+                            Some(Component::Prefix(_) | Component::RootDir) | None => {}
+                            _ => {
+                                stack.pop();
+                            }
+                        }
                     }
                     Component::CurDir => {}
-                    other => stack.push(other.as_os_str().to_owned()),
+                    other => stack.push(other),
                 }
             }
             let mut resolved = PathBuf::new();
@@ -79,6 +85,7 @@ pub(crate) const BLOCKED_UNIX_PREFIXES: &[&str] = &[
     "/boot/",
     "/sbin/",
     "/bin/",
+    "/usr/",
 ];
 
 /// Blocked system directory prefixes for Windows platforms.
