@@ -46,7 +46,7 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
 
     let ikis: Vec<f64> = samples
         .windows(2)
-        .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64)
+        .map(|w| (w[1].timestamp_ns.saturating_sub(w[0].timestamp_ns)).max(0) as f64)
         .collect();
 
     if ikis.is_empty() {

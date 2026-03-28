@@ -303,8 +303,11 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
             0.0
         }
     } else {
-        // Guard: only take ln of positive values (already filtered above).
-        let log_sum: f64 = finite_costs.iter().map(|c| c.ln()).sum();
+        // Guard: clamp subnormals to MIN_POSITIVE before ln() to avoid collapse.
+        let log_sum: f64 = finite_costs
+            .iter()
+            .map(|c| c.max(f64::MIN_POSITIVE).ln())
+            .sum();
         let geo_mean_raw = (log_sum / finite_costs.len() as f64).exp();
         let geo_mean = if geo_mean_raw.is_finite() {
             geo_mean_raw

@@ -64,7 +64,7 @@ pub fn score_dictation_plausibility(event: &DictationEvent) -> f64 {
     }
 
     // Duration check: dictation sessions are typically 10s-10min.
-    let duration_sec = event.end_ns.saturating_sub(event.start_ns) as f64 / 1e9;
+    let duration_sec = event.end_ns.saturating_sub(event.start_ns).max(0) as f64 / 1e9;
     if duration_sec < MIN_DURATION_SEC && event.word_count > SHORT_DURATION_WORD_LIMIT {
         score *= PENALTY_SHORT_BURST;
     }
