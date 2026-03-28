@@ -96,7 +96,8 @@ pub fn is_human_plausible(profile: TypingProfile) -> bool {
         return true;
     }
 
-    if profile.hand_alternation < MIN_HAND_ALTERNATION
+    if profile.hand_alternation.is_nan()
+        || profile.hand_alternation < MIN_HAND_ALTERNATION
         || profile.hand_alternation > ALTERNATION_TOLERANCE
     {
         return false;

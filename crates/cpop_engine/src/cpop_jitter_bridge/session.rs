@@ -316,7 +316,9 @@ impl HybridJitterSession {
         if let Some(parent) = path.as_ref().parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        fs::write(path, bytes).map_err(|e| e.to_string())?;
+        let tmp_path = path.as_ref().with_extension("tmp");
+        fs::write(&tmp_path, &bytes).map_err(|e| e.to_string())?;
+        fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -324,6 +326,24 @@ impl HybridJitterSession {
     pub fn load(path: impl AsRef<Path>, key_material: Option<[u8; 32]>) -> Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         let data: HybridSessionData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+
+        if data.params.sample_interval == 0 {
+            return Err("sample_interval must be > 0".into());
+        }
+
+        // Verify hash chain integrity of loaded samples
+        for (i, sample) in data.samples.iter().enumerate() {
+            if sample.compute_hash() != sample.hash {
+                return Err(format!("sample {i}: hash mismatch in loaded data"));
+            }
+            if i > 0 {
+                if sample.previous_hash != data.samples[i - 1].hash {
+                    return Err(format!("sample {i}: broken chain link in loaded data"));
+                }
+            } else if sample.previous_hash != [0u8; 32] {
+                return Err("sample 0: non-zero previous hash in loaded data".into());
+            }
+        }
 
         let mut material = Zeroizing::new(if let Some(k) = key_material {
             k

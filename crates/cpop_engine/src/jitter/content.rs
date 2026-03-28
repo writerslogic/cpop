@@ -131,6 +131,16 @@ pub fn verify_with_secret(
     secret.zeroize();
 
     for (i, sample) in samples.iter().enumerate() {
+        // Producer computes jitter with pre-increment ordinal, then increments.
+        // Validate ordinal matches expected post-increment value.
+        let expected_ordinal = engine.ordinal + 1;
+        if sample.ordinal != expected_ordinal {
+            return Err(Error::validation(format!(
+                "sample {i}: ordinal mismatch (expected {expected_ordinal}, got {})",
+                sample.ordinal
+            )));
+        }
+
         let expected = engine.compute_expected_jitter(
             sample.doc_hash,
             sample.zone_transition,
@@ -163,6 +173,7 @@ pub fn verify_with_secret(
 
 pub(super) fn compute_jitter_sample_hash(sample: &JitterSample) -> [u8; 32] {
     let mut hasher = Sha256::new();
+    hasher.update(b"witnessd-jitter-sample-v2");
     hasher.update(sample.ordinal.to_be_bytes());
     hasher.update(timestamp_nanos_u64(sample.timestamp).to_be_bytes());
     hasher.update(sample.doc_hash);

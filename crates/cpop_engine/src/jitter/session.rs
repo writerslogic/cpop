@@ -399,6 +399,10 @@ impl Session {
     }
 
     fn verify_loaded_integrity(&self) -> crate::error::Result<()> {
+        if self.params.sample_interval == 0 {
+            return Err(Error::validation("sample_interval must be > 0"));
+        }
+
         self.verify_chain()?;
 
         if let Some(ended) = self.ended_at {

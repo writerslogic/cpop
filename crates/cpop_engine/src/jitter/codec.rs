@@ -222,13 +222,14 @@ pub fn compare_chains(a: &[Sample], b: &[Sample]) -> bool {
 }
 
 /// Return true if two samples are field-by-field identical.
+/// Hash fields use constant-time comparison to avoid timing side-channels.
 pub fn compare_samples(a: &Sample, b: &Sample) -> bool {
     a.timestamp == b.timestamp
         && a.keystroke_count == b.keystroke_count
         && a.document_hash == b.document_hash
         && a.jitter_micros == b.jitter_micros
-        && a.hash == b.hash
-        && a.previous_hash == b.previous_hash
+        && a.hash.ct_eq(&b.hash).unwrap_u8() == 1
+        && a.previous_hash.ct_eq(&b.previous_hash).unwrap_u8() == 1
 }
 
 /// Return the index where two chains first diverge, or -1 if identical.
