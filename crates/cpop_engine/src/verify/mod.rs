@@ -120,13 +120,17 @@ pub fn full_verify(packet: &Packet, opts: &VerifyOptions) -> FullVerificationRes
     };
 
     // Declaration verification
-    if let Some(decl) = &packet.declaration {
+    let declaration_valid = if let Some(decl) = &packet.declaration {
         if !decl.verify() {
             warnings.push("Declaration signature is invalid".to_string());
+            false
+        } else {
+            true
         }
     } else {
         warnings.push("No declaration present".to_string());
-    }
+        false
+    };
 
     // Short-circuit: if structural verification failed, skip all subsequent phases
     // to avoid producing misleading "valid" results on tampered evidence.
@@ -175,6 +179,7 @@ pub fn full_verify(packet: &Packet, opts: &VerifyOptions) -> FullVerificationRes
     let verdict = compute_verdict(
         structural,
         signature,
+        declaration_valid,
         &seals,
         &duration,
         &key_provenance,
@@ -594,9 +599,11 @@ fn run_forensics(
 }
 
 /// Compute overall verdict from all verification phases.
+#[allow(clippy::too_many_arguments)]
 fn compute_verdict(
     structural: bool,
     signature: Option<bool>,
+    declaration_valid: bool,
     seals: &SealVerification,
     duration: &DurationCheck,
     key_provenance: &KeyProvenanceCheck,
@@ -644,16 +651,28 @@ fn compute_verdict(
         }
     }
 
+    // H-001 (verify): Invalid declaration downgrades the verdict.
+    if !declaration_valid {
+        // Declaration is missing or has an invalid signature; the best
+        // attainable verdict is V2LikelyHuman.
+    }
+
+    // H-003 (verify): Cap forensic verdict when seals are structural-only
+    // (no HMAC re-derivation) or declaration is invalid, because the
+    // verification strength is insufficient for V1VerifiedHuman.
+    let seals_structural_only = seals.entangled_binding_valid.is_none();
+    let capped = !declaration_valid || seals_structural_only;
+
     // No VDF proof data present: without time-hardness evidence, the best
     // attainable verdict is V2LikelyHuman regardless of forensic score.
     // This also covers zero-checkpoint packets where computed_min_seconds == 0.0
     // and plausible == true (no checkpoints means no time-hardness proof at all).
     let no_vdf = duration.computed_min_seconds == 0.0;
 
-    // Defer to forensic analysis verdict if available, but respect the VDF cap.
+    // Defer to forensic analysis verdict if available, but respect caps.
     if let Some(fm) = forensics {
         let fv = fm.map_to_protocol_verdict();
-        if no_vdf && fv == ForensicVerdict::V1VerifiedHuman {
+        if (no_vdf || capped) && fv == ForensicVerdict::V1VerifiedHuman {
             return ForensicVerdict::V2LikelyHuman;
         }
         return fv;
@@ -672,7 +691,9 @@ fn compute_verdict(
     // Signed packet with valid signature, plausible duration, consistent key
     // provenance, and no suspicious flags → verified human.
     // A packet without VDF proof data (no_vdf) cannot reach V1VerifiedHuman.
+    // Capped when seals are structural-only or declaration is invalid.
     if !no_vdf
+        && !capped
         && signature == Some(true)
         && key_provenance.signing_key_consistent
         && key_provenance.hierarchy_consistent != Some(false)
@@ -778,6 +799,7 @@ mod tests {
         let v = compute_verdict(
             false,
             None,
+            true,
             &SealVerification {
                 jitter_tag_present: None,
                 entangled_binding_valid: None,
@@ -805,6 +827,7 @@ mod tests {
         let v = compute_verdict(
             true,
             Some(false),
+            true,
             &SealVerification {
                 jitter_tag_present: None,
                 entangled_binding_valid: None,
@@ -832,6 +855,7 @@ mod tests {
         let v = compute_verdict(
             true,
             None,
+            true,
             &SealVerification {
                 jitter_tag_present: None,
                 entangled_binding_valid: None,

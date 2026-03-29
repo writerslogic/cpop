@@ -12,15 +12,15 @@ use chrono::Utc;
 
 /// Derive the master signing key from the PUF challenge-response.
 /// Shared by both `derive_master_identity` and `derive_master_private_key`.
+///
+/// The returned `SigningKey` implements `ZeroizeOnDrop` (ed25519-dalek),
+/// so its key material is automatically zeroized when the value is dropped.
+/// No additional manual zeroization is required by callers.
 fn derive_signing_key(puf: &dyn PufProvider) -> Result<SigningKey, KeyHierarchyError> {
     let challenge = Sha256::digest(format!("{}-challenge", IDENTITY_DOMAIN).as_bytes());
     let puf_response = Zeroizing::new(puf.get_response(&challenge)?);
 
-    let seed = Zeroizing::new(hkdf_expand(
-        &puf_response,
-        IDENTITY_DOMAIN.as_bytes(),
-        b"master-seed",
-    )?);
+    let seed = hkdf_expand(&puf_response, IDENTITY_DOMAIN.as_bytes(), b"master-seed")?;
     Ok(SigningKey::from_bytes(&seed))
 }
 

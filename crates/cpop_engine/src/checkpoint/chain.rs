@@ -179,6 +179,9 @@ impl Chain {
         let mut checkpoint =
             Checkpoint::new_base(ordinal, previous_hash, content_hash, content_size, message);
 
+        // H-001: Genesis checkpoint (ordinal 0) intentionally skips VDF in Legacy
+        // mode for backward compatibility. Entangled mode (the default for new
+        // chains) computes VDF for genesis via commit_rfc_locked.
         if ordinal > 0 {
             let duration = vdf_duration.unwrap_or_else(|| {
                 let now = checkpoint.timestamp;
@@ -578,6 +581,23 @@ impl Chain {
                 return report;
             }
 
+            // H-002: Warn (not error) on non-monotonic timestamps for backward
+            // compatibility with existing chains that may have clock skew.
+            if i > 0 {
+                let prev_ts = self.checkpoints[i - 1].timestamp;
+                if checkpoint.timestamp < prev_ts {
+                    log::warn!(
+                        "checkpoint {}: timestamp {} is before previous checkpoint's {}",
+                        i,
+                        checkpoint.timestamp,
+                        prev_ts
+                    );
+                    report.warnings.push(format!(
+                        "checkpoint {i}: non-monotonic timestamp (before previous checkpoint)"
+                    ));
+                }
+            }
+
             if checkpoint.compute_hash() != checkpoint.hash {
                 report.fail(format!("checkpoint {i}: hash mismatch"));
                 return report;
@@ -633,11 +653,11 @@ impl Chain {
                     }
                 }
                 Some(sig) => {
-                    // Structural format check: verify Ed25519 signature length.
-                    // Full cryptographic verification (Ed25519 verify against
-                    // the signing public key) is performed separately in
+                    // H-004: Intentionally structural-only; we verify Ed25519
+                    // signature length but defer cryptographic verification to
                     // keyhierarchy/verification.rs (verify_checkpoint_signatures)
-                    // because the Chain struct does not hold the public key.
+                    // which has access to the session's public key. The Chain
+                    // struct never holds key material by design.
                     if sig.len() != 64 {
                         report.signature_failures.push(checkpoint.ordinal);
                         report.fail(format!(
@@ -749,6 +769,10 @@ impl Chain {
                 }
             }
 
+            // H-003: Argon2 SWF verification checks internal consistency only
+            // (Merkle proof over the Argon2id output). Verifying that the SWF
+            // input was correctly derived requires the session context, which
+            // is not available during standalone chain verification.
             if let Some(swf) = &checkpoint.argon2_swf {
                 match vdf::swf_argon2::verify(swf) {
                     Ok(true) => {}
@@ -785,7 +809,10 @@ impl Chain {
                 return report;
             }
 
-            // Format check only; full crypto verification at key_hierarchy level
+            // H-005: Format check only; cryptographic signature verification
+            // requires the session's public key, performed at the keyhierarchy
+            // level (verify_checkpoint_signatures). The Chain struct does not
+            // hold key material by design.
             match &metadata.metadata_signature {
                 None => {
                     report.metadata_valid = false;

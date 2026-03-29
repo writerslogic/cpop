@@ -244,29 +244,24 @@ fn writersproof_dir() -> PathBuf {
 
 struct HardwarePUF {
     device_id: String,
-    seed: [u8; 32],
-}
-
-impl Drop for HardwarePUF {
-    fn drop(&mut self) {
-        self.seed.zeroize();
-    }
+    seed: crate::crypto::ProtectedKey<32>,
 }
 
 impl HardwarePUF {
     fn new() -> Result<Self, KeyHierarchyError> {
         let seed = SiliconPUF::generate_fingerprint();
         let digest = Sha256::digest(seed);
+        let device_id = format!("puf-{}", hex::encode(&digest[0..4]));
         Ok(Self {
-            device_id: format!("puf-{}", hex::encode(&digest[0..4])),
-            seed,
+            device_id,
+            seed: crate::crypto::ProtectedKey::new(seed),
         })
     }
 }
 
 impl PufProvider for HardwarePUF {
     fn get_response(&self, challenge: &[u8]) -> Result<Vec<u8>, KeyHierarchyError> {
-        let hk = Hkdf::<Sha256>::new(Some(challenge), &self.seed);
+        let hk = Hkdf::<Sha256>::new(Some(challenge), self.seed.as_bytes());
         let mut response = [0u8; 32];
         hk.expand(b"puf-response-v1", &mut response)
             .map_err(|_| KeyHierarchyError::Crypto("HKDF expand failed".to_string()))?;
