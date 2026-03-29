@@ -374,9 +374,10 @@ fn compute_error_distribution(
 
         let is_burst = if i > 0 {
             let prev_idx = error_indices[i - 1];
-            let time_diff = (events[error_idx].timestamp_ns - events[prev_idx].timestamp_ns) as f64
-                / 1_000_000_000.0;
-            time_diff < 1.0
+            let time_diff = events[error_idx]
+                .timestamp_ns
+                .saturating_sub(events[prev_idx].timestamp_ns);
+            time_diff > 0 && (time_diff as f64 / 1_000_000_000.0) < 1.0
         } else {
             false
         };

@@ -33,15 +33,12 @@ fn lower_thread_priority() -> i32 {
     unsafe {
         // SCHED_IDLE (5) — thread runs only when no other runnable thread
         // wants the CPU. Saves the previous policy to restore later.
+        let mut old_policy: i32 = 0;
         let mut old_param: libc::sched_param = std::mem::zeroed();
-        let _ = libc::pthread_getschedparam(
-            libc::pthread_self(),
-            &mut 0i32 as *mut i32,
-            &mut old_param,
-        );
+        let _ = libc::pthread_getschedparam(libc::pthread_self(), &mut old_policy, &mut old_param);
         let idle_param: libc::sched_param = std::mem::zeroed();
         libc::pthread_setschedparam(libc::pthread_self(), 5 /* SCHED_IDLE */, &idle_param);
-        0 // SCHED_OTHER — restore target
+        old_policy
     }
     #[cfg(windows)]
     unsafe {

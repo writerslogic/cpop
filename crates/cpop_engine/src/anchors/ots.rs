@@ -235,6 +235,13 @@ impl OpenTimestampsProvider {
     }
 }
 
+/// # Security
+///
+/// Bitcoin block header cross-checking is **not yet implemented**. The
+/// `verify` method only confirms that the attestation path contains a
+/// `Verify` step and yields a 32-byte candidate hash; it does not fetch
+/// or validate the actual block header from a trusted source. Results
+/// should be treated as structural-only until full cross-check is added.
 #[async_trait]
 impl AnchorProvider for OpenTimestampsProvider {
     fn provider_type(&self) -> ProviderType {

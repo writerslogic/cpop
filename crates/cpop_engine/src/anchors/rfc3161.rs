@@ -495,6 +495,13 @@ struct TimestampInfo {
     tsa_name: String,
 }
 
+/// # Security
+///
+/// CMS signature verification is **not yet implemented** (AUD-124). The
+/// `verify_timestamp_token` method only checks that the embedded
+/// `MessageImprint` hash matches the expected value; it does not verify
+/// the TSA's digital signature. Results should be treated as
+/// structural-only until full CMS/PKCS#7 verification is added.
 #[async_trait]
 impl AnchorProvider for Rfc3161Provider {
     fn provider_type(&self) -> ProviderType {

@@ -18,11 +18,16 @@ pub enum EnfsiTier {
     Strong,
     /// LR >= 10,000
     VeryStrong,
+    /// Non-finite LR (NaN or Inf)
+    Inconclusive,
 }
 
 impl EnfsiTier {
     /// Classify a likelihood ratio into the corresponding ENFSI tier.
     pub fn from_lr(lr: f64) -> Self {
+        if !lr.is_finite() {
+            return Self::Inconclusive;
+        }
         if lr < 1.0 {
             Self::Against
         } else if lr < 10.0 {
@@ -47,6 +52,7 @@ impl EnfsiTier {
             Self::ModeratelyStrong => "Moderately strong",
             Self::Strong => "Strong support",
             Self::VeryStrong => "Very strong support",
+            Self::Inconclusive => "Inconclusive",
         }
     }
 }

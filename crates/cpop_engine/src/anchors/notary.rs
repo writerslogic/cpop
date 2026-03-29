@@ -43,16 +43,25 @@ impl NotaryProvider {
         if let Some(ref key) = self.api_key {
             req = req.bearer_auth(key);
         }
+        const MAX_BODY: usize = 10_000_000;
         let response = req
             .send()
             .await
             .map_err(|e| AnchorError::Network(e.to_string()))?;
 
+        if let Some(cl) = response.content_length() {
+            if cl as usize > MAX_BODY {
+                return Err(AnchorError::Network(
+                    "response Content-Length exceeds 10 MB limit".into(),
+                ));
+            }
+        }
+
         let bytes = response
             .bytes()
             .await
             .map_err(|e| AnchorError::Network(e.to_string()))?;
-        if bytes.len() > 10_000_000 {
+        if bytes.len() > MAX_BODY {
             return Err(AnchorError::Network(
                 "response body exceeds 10 MB limit".into(),
             ));

@@ -681,13 +681,15 @@ pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
                 FlagSignal::Neutral => "—",
             };
 
-            let category_display = if f.category.len() > 40 {
-                format!("{}...", &f.category[..40])
+            let category_display = if f.category.chars().count() > 40 {
+                let truncated: String = f.category.chars().take(40).collect();
+                format!("{truncated}...")
             } else {
                 f.category.clone()
             };
-            let flag_display = if f.flag.len() > 60 {
-                format!("{}...", &f.flag[..60])
+            let flag_display = if f.flag.chars().count() > 60 {
+                let truncated: String = f.flag.chars().take(60).collect();
+                format!("{truncated}...")
             } else {
                 f.flag.clone()
             };

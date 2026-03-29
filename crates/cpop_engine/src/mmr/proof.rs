@@ -145,6 +145,14 @@ impl InclusionProof {
                 .map_err(|_| MmrError::InvalidNodeData)?,
         ) as usize;
         offset += 2;
+        // Each path element is 33 bytes (32-byte hash + 1-byte direction).
+        // Reject if claimed length exceeds remaining data.
+        if path_len
+            .checked_mul(33)
+            .map_or(true, |need| offset + need > data.len())
+        {
+            return Err(MmrError::InvalidNodeData);
+        }
         let mut merkle_path = Vec::with_capacity(path_len);
         for _ in 0..path_len {
             if offset + 33 > data.len() {
