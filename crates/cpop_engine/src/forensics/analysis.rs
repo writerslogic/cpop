@@ -318,10 +318,9 @@ pub fn per_checkpoint_flags(
             0
         };
 
-        let interval_events: Vec<&EventData> = sorted_events
-            .iter()
-            .filter(|e| e.timestamp_ns > prev_ts && e.timestamp_ns <= cp_ts)
-            .collect();
+        let start_idx = sorted_events.partition_point(|e| e.timestamp_ns <= prev_ts);
+        let end_idx = sorted_events.partition_point(|e| e.timestamp_ns <= cp_ts);
+        let interval_events: Vec<&EventData> = sorted_events[start_idx..end_idx].iter().collect();
 
         let event_count = interval_events.len();
 
@@ -350,7 +349,7 @@ pub fn per_checkpoint_flags(
             interval_events
                 .windows(2)
                 .map(|w| {
-                    let dt = (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1e9;
+                    let dt = w[1].timestamp_ns.saturating_sub(w[0].timestamp_ns) as f64 / 1e9;
                     if dt > 0.0 {
                         w[1].size_delta.unsigned_abs() as f64 / dt
                     } else {

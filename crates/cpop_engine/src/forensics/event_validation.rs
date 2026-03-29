@@ -79,6 +79,8 @@ pub struct EventValidationState {
     pub recent_zones: VecDeque<u8>,
     pub last_timestamp_ns: i64,
     pub confidence_sum: f64,
+    /// Kahan compensation variable for `confidence_sum` accumulation.
+    pub confidence_compensation: f64,
     pub confidence_count: u64,
 }
 
@@ -90,6 +92,7 @@ impl Default for EventValidationState {
             recent_zones: VecDeque::with_capacity(ROBOTIC_CV_WINDOW),
             last_timestamp_ns: 0,
             confidence_sum: 0.0,
+            confidence_compensation: 0.0,
             confidence_count: 0,
         }
     }
@@ -270,7 +273,11 @@ pub fn validate_keystroke_event(
     state.recent_zones.push_back(zone);
 
     state.last_timestamp_ns = timestamp_ns;
-    state.confidence_sum += confidence;
+    // Kahan compensated summation to avoid f64 drift over millions of events
+    let y = confidence - state.confidence_compensation;
+    let t = state.confidence_sum + y;
+    state.confidence_compensation = (t - state.confidence_sum) - y;
+    state.confidence_sum = t;
     state.confidence_count += 1;
 
     EventValidationResult { confidence, flags }

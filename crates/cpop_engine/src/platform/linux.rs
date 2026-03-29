@@ -703,6 +703,9 @@ impl FocusMonitor for LinuxFocusMonitor {
     fn stop_monitoring(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
         self.sender = None;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
         Ok(())
     }
 

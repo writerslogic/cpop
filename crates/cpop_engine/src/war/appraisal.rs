@@ -270,6 +270,11 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
 ///
 /// Uses `serde_json::Value` round-trip to produce sorted-key JSON, ensuring
 /// deterministic hashing regardless of struct field declaration order.
+///
+/// Note: `serde_json::Value` uses `BTreeMap` for objects, so top-level keys are
+/// sorted lexicographically. However, arrays preserve insertion order, and
+/// floating-point formatting is platform-dependent, so true canonicalization
+/// would require a specification like JCS (RFC 8785).
 fn packet_hash(packet: &Packet) -> Result<[u8; 32]> {
     let value: serde_json::Value = serde_json::to_value(packet)
         .map_err(|e| Error::evidence(format!("packet serialization failed: {e}")))?;

@@ -300,12 +300,12 @@ pub struct EarToken {
 }
 
 impl EarToken {
-    /// Overall status: the worst (lowest) status across all submodule appraisals.
+    /// Overall status: the worst (highest) status across all submodule appraisals.
     pub fn overall_status(&self) -> Ar4siStatus {
         self.submods
             .values()
             .map(|a| a.ear_status as i8)
-            .min()
+            .max()
             .map(Ar4siStatus::from_i8)
             .unwrap_or(Ar4siStatus::None)
     }

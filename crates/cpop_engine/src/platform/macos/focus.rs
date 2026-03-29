@@ -15,6 +15,10 @@ use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
+/// SAFETY: `ns_str` must be a valid Objective-C `NSString *` (or null).
+/// The returned `UTF8String` pointer is only valid for the lifetime of the
+/// autorelease pool that owns `ns_str`; the caller must ensure the pool is
+/// still alive when this function runs.
 unsafe fn nsstring_to_string(ns_str: *mut Object) -> String {
     if ns_str.is_null() {
         return String::new();

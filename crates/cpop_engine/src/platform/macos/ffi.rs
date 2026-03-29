@@ -181,6 +181,9 @@ pub type TapCallback = Box<dyn FnMut(*mut std::ffi::c_void, u32) + Send>;
 /// C trampoline for CGEventTap callbacks.
 ///
 /// SAFETY: `user_info` must be a valid `*mut TapCallback` that outlives the event tap.
+/// The caller must ensure the `TapCallback` is not dropped until after the event tap
+/// is invalidated (via `CGEventTapEnable(tap, false)`) and the run loop thread has
+/// been joined, so that no further callbacks can fire against freed memory.
 pub unsafe extern "C" fn event_tap_trampoline(
     _proxy: *mut std::ffi::c_void,
     event_type: u32,

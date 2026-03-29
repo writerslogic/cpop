@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 
 use crate::DateTimeNanosExt;
+use crate::MutexRecover;
 use crate::RwLockRecover;
 
 /// Holds CF objects created by the mouse CGEventTap so they can be released on shutdown.
@@ -167,7 +168,8 @@ impl MouseCapture for MacOSMouseCapture {
                 if let Ok(mut rl) = run_loop.lock() {
                     *rl = Some(RunLoopHandle(rl_ref));
                 }
-                if let Ok(mut res) = tap_resources.lock() {
+                {
+                    let mut res = tap_resources.lock_recover();
                     *res = Some(MouseTapResources {
                         run_loop: rl_ref,
                         tap,

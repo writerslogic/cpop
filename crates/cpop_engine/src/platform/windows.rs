@@ -12,7 +12,7 @@ use super::{
 use crate::DateTimeNanosExt;
 use crate::{MutexRecover, RwLockRecover};
 use anyhow::{anyhow, Result};
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -153,6 +153,8 @@ fn looks_like_path(s: &str) -> bool {
 pub struct KeystrokeMonitor {
     session: Arc<Mutex<SimpleJitterSession>>,
     _hook: isize,
+    pump_thread: Option<std::thread::JoinHandle<()>>,
+    pump_thread_id: u32,
 }
 
 static GLOBAL_SESSION: Mutex<Option<Arc<Mutex<SimpleJitterSession>>>> = Mutex::new(None);
@@ -170,13 +172,22 @@ impl KeystrokeMonitor {
         *GLOBAL_SESSION.lock_recover() = Some(Arc::clone(&session));
         unsafe {
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), None, 0)?;
-            std::thread::spawn(|| {
+            let tid = Arc::new(AtomicU32::new(0));
+            let tid_clone = Arc::clone(&tid);
+            let handle = std::thread::spawn(move || {
+                tid_clone.store(GetCurrentThreadId(), Ordering::Release);
                 let mut msg = MSG::default();
                 while GetMessageW(&mut msg, None, 0, 0).into() {}
             });
+            // Spin briefly until the pump thread publishes its thread ID.
+            while tid.load(Ordering::Acquire) == 0 {
+                std::thread::yield_now();
+            }
             Ok(Self {
                 session,
                 _hook: hook.0 as isize,
+                pump_thread: Some(handle),
+                pump_thread_id: tid.load(Ordering::Acquire),
             })
         }
     }
@@ -186,6 +197,11 @@ impl Drop for KeystrokeMonitor {
     fn drop(&mut self) {
         unsafe {
             let _ = UnhookWindowsHookEx(HHOOK(self._hook as *mut _));
+            // Signal the message pump thread to exit and join it.
+            let _ = PostThreadMessageW(self.pump_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+        if let Some(handle) = self.pump_thread.take() {
+            let _ = handle.join();
         }
         *GLOBAL_SESSION.lock_recover() = None;
         MONITOR_ACTIVE.store(false, Ordering::SeqCst);
@@ -234,6 +250,8 @@ pub struct WindowsKeystrokeCapture {
 static GLOBAL_SENDER: Mutex<Option<mpsc::Sender<KeystrokeEvent>>> = Mutex::new(None);
 static GLOBAL_STATS: Mutex<Option<Arc<RwLock<SyntheticStats>>>> = Mutex::new(None);
 static GLOBAL_STRICT_MODE: AtomicBool = AtomicBool::new(true);
+/// Guard ensuring only one WindowsKeystrokeCapture instance is active at a time.
+static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 impl WindowsKeystrokeCapture {
     pub fn new() -> Result<Self> {
@@ -253,6 +271,11 @@ impl KeystrokeCapture for WindowsKeystrokeCapture {
     fn start(&mut self) -> Result<mpsc::Receiver<KeystrokeEvent>> {
         if self.running.load(Ordering::SeqCst) {
             return Err(anyhow!("Keystroke capture already running"));
+        }
+        if CAPTURE_ACTIVE.swap(true, Ordering::SeqCst) {
+            return Err(anyhow!(
+                "Another WindowsKeystrokeCapture instance is already active"
+            ));
         }
 
         let (tx, rx) = mpsc::channel();
@@ -316,6 +339,7 @@ impl KeystrokeCapture for WindowsKeystrokeCapture {
         }
 
         self.sender = None;
+        CAPTURE_ACTIVE.store(false, Ordering::SeqCst);
         Ok(())
     }
 
@@ -668,7 +692,7 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             device_id: None,
         };
 
-        if event.is_micro_movement() && kb_active {
+        if event.is_micro_movement() && !kb_active {
             let idle_stats = MOUSE_GLOBAL_IDLE_STATS.lock().ok().and_then(|g| g.clone());
             if let Some(stats) = idle_stats {
                 if let Ok(mut s) = stats.write() {

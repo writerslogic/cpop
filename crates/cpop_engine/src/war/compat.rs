@@ -262,7 +262,9 @@ impl EarToken {
             absence_claims: appr.and_then(|a| a.pop_absence_claims.clone()),
             warnings: appr.and_then(|a| a.pop_warnings.clone()),
             verifier_signature: Vec::new(),
-            created: (self.iat as u64) * 1000,
+            created: u64::try_from(self.iat.max(0))
+                .unwrap_or(0)
+                .saturating_mul(1000),
             forensic_summary: appr.and_then(|a| a.pop_forensic_summary.clone()),
             effort_attribution: None,
             confidence_tier: None,

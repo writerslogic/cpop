@@ -48,6 +48,9 @@ pub(crate) struct SealedBlob {
     pub last_known_counter: Option<u64>,
     pub boot_count_at_seal: Option<u32>,
     pub restart_count_at_seal: Option<u32>,
+    /// HMAC-SHA256 over all other fields, keyed from machine_salt.
+    #[serde(default)]
+    pub integrity_hmac: Option<Vec<u8>>,
 }
 
 pub const SEALED_BLOB_VERSION: u32 = 1;

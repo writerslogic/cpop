@@ -177,23 +177,24 @@ fn check_content_growth_rate(input: &CrossModalInput<'_>) -> CrossModalCheck {
         };
     }
 
-    let net_additions: i64 = input
+    // Track gross additions (sum of positive deltas) to prevent bypass via
+    // alternating +/- deltas that cancel to a small net value.
+    let gross_additions: i64 = input
         .events
         .iter()
-        .map(|e| e.size_delta as i64)
-        .filter(|&d| d > 0)
+        .map(|e| (e.size_delta as i64).max(0))
         .sum();
-    // When net_additions is 0 but document_length > 0, the event stream shows no
-    // recorded growth despite an existing document — treat as suspicious.
-    if net_additions == 0 && input.document_length > 0 {
+    // When gross_additions is 0 but document_length > 0, the event stream shows no
+    // recorded growth despite an existing document; treat as suspicious.
+    if gross_additions == 0 && input.document_length > 0 {
         return CrossModalCheck {
             name: "content_growth_rate".into(),
             passed: false,
             score: 0.3,
-            detail: "zero net additions with non-empty document".into(),
+            detail: "zero gross additions with non-empty document".into(),
         };
     }
-    let chars_per_sec = net_additions as f64 / input.session_duration_sec;
+    let chars_per_sec = gross_additions as f64 / input.session_duration_sec;
     let passed = chars_per_sec <= MAX_SUSTAINED_CHARS_PER_SEC;
 
     let score = if chars_per_sec <= MAX_SUSTAINED_CHARS_PER_SEC {

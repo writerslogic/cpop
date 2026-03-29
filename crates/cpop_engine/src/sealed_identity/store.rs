@@ -7,9 +7,11 @@ use chacha20poly1305::{
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
+use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::keyhierarchy::{
@@ -99,6 +101,7 @@ impl SealedIdentityStore {
             last_known_counter: counter,
             boot_count_at_seal: clock.as_ref().map(|c| c.reset_count),
             restart_count_at_seal: clock.as_ref().map(|c| c.restart_count),
+            integrity_hmac: None,
         };
 
         self.persist_blob(&blob)?;
@@ -112,6 +115,10 @@ impl SealedIdentityStore {
     ///
     /// **Anti-hammering**: authValue is machine-specific, so the sealed file
     /// cannot be brute-forced on a different device.
+    ///
+    /// # Security
+    /// Callers must protect the returned `SigningKey`. The key implements
+    /// `ZeroizeOnDrop`, so it will be cleared when dropped.
     pub fn unseal_master_key(&self) -> Result<SigningKey, SealedIdentityError> {
         let mut blob = self.load_blob()?;
 
@@ -119,26 +126,31 @@ impl SealedIdentityStore {
         // last-known values, closing the gap where an older blob could be
         // replayed if only last_known_counter was checked.
         if blob.counter_at_seal.is_some() || blob.last_known_counter.is_some() {
-            if let Ok(binding) = self.provider.bind(b"identity-counter-check") {
-                if let Some(current) = binding.monotonic_counter {
-                    if let Some(at_seal) = blob.counter_at_seal {
-                        if current < at_seal {
-                            return Err(SealedIdentityError::RollbackDetected {
-                                current,
-                                last_known: at_seal,
-                            });
+            match self.provider.bind(b"identity-counter-check") {
+                Ok(binding) => {
+                    if let Some(current) = binding.monotonic_counter {
+                        if let Some(at_seal) = blob.counter_at_seal {
+                            if current < at_seal {
+                                return Err(SealedIdentityError::RollbackDetected {
+                                    current,
+                                    last_known: at_seal,
+                                });
+                            }
                         }
-                    }
-                    if let Some(last_known) = blob.last_known_counter {
-                        if current < last_known {
-                            return Err(SealedIdentityError::RollbackDetected {
-                                current,
-                                last_known,
-                            });
+                        if let Some(last_known) = blob.last_known_counter {
+                            if current < last_known {
+                                return Err(SealedIdentityError::RollbackDetected {
+                                    current,
+                                    last_known,
+                                });
+                            }
                         }
+                        blob.last_known_counter = Some(current);
+                        self.persist_blob(&blob)?;
                     }
-                    blob.last_known_counter = Some(current);
-                    self.persist_blob(&blob)?;
+                }
+                Err(e) => {
+                    log::warn!("anti-rollback check skipped: bind failed: {e}");
                 }
             }
         } else if blob.last_known_counter.is_none() {
@@ -170,6 +182,12 @@ impl SealedIdentityStore {
 
         let signing_key = SigningKey::from_bytes(&key_bytes);
         key_bytes.zeroize();
+
+        // Verify the unsealed seed produces the expected public key (catches
+        // v1 XOR-only wrapping corruption and tampering).
+        if signing_key.verifying_key().to_bytes().as_slice() != blob.public_key.as_slice() {
+            return Err(SealedIdentityError::BlobCorrupted);
+        }
 
         Ok(signing_key)
     }
@@ -239,6 +257,20 @@ impl SealedIdentityStore {
             self.software_unwrap(&old_blob.sealed_seed)?
         });
 
+        // Verify identity continuity: the re-derived seed must produce the
+        // same public key as the original blob.
+        if seed.len() == 32 {
+            let mut key_bytes = [0u8; 32];
+            key_bytes.copy_from_slice(&seed);
+            let derived_pub = SigningKey::from_bytes(&key_bytes)
+                .verifying_key()
+                .to_bytes();
+            key_bytes.zeroize();
+            if derived_pub.as_slice() != old_blob.public_key.as_slice() {
+                return Err(SealedIdentityError::BlobCorrupted);
+            }
+        }
+
         let sealed_seed = if caps.supports_sealing {
             self.provider
                 .seal(&seed, &[])
@@ -261,6 +293,7 @@ impl SealedIdentityStore {
             last_known_counter: old_blob.last_known_counter,
             boot_count_at_seal: clock.as_ref().map(|c| c.reset_count),
             restart_count_at_seal: clock.as_ref().map(|c| c.restart_count),
+            integrity_hmac: None,
         };
 
         self.persist_blob(&blob)?;
@@ -292,14 +325,31 @@ impl SealedIdentityStore {
 
     fn load_blob(&self) -> Result<SealedBlob, SealedIdentityError> {
         let data = fs::read(&self.store_path)?;
-        serde_json::from_slice(&data).map_err(|e| SealedIdentityError::Serialization(e.to_string()))
+        let blob: SealedBlob = serde_json::from_slice(&data)
+            .map_err(|e| SealedIdentityError::Serialization(e.to_string()))?;
+
+        // Verify integrity HMAC if present (blobs written before HMAC
+        // support will have integrity_hmac == None and are accepted).
+        if let Some(ref stored_hmac) = blob.integrity_hmac {
+            let expected = self.compute_blob_hmac(&blob)?;
+            if !bool::from(stored_hmac.ct_eq(&expected)) {
+                return Err(SealedIdentityError::BlobCorrupted);
+            }
+        }
+
+        Ok(blob)
     }
 
     fn persist_blob(&self, blob: &SealedBlob) -> Result<(), SealedIdentityError> {
+        // Compute HMAC over blob contents (excluding the hmac field itself).
+        let hmac_value = self.compute_blob_hmac(blob)?;
+        let mut blob_with_hmac = blob.clone();
+        blob_with_hmac.integrity_hmac = Some(hmac_value);
+
         if let Some(parent) = self.store_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let data = serde_json::to_vec_pretty(blob)
+        let data = serde_json::to_vec_pretty(&blob_with_hmac)
             .map_err(|e| SealedIdentityError::Serialization(e.to_string()))?;
         let tmp_path = self.store_path.with_extension("tmp");
         fs::write(&tmp_path, data)?;
@@ -308,6 +358,19 @@ impl SealedIdentityStore {
             log::warn!("Failed to set sealed identity permissions: {}", e);
         }
         Ok(())
+    }
+
+    /// Compute HMAC-SHA256 over the blob with `integrity_hmac` set to `None`.
+    fn compute_blob_hmac(&self, blob: &SealedBlob) -> Result<Vec<u8>, SealedIdentityError> {
+        let mut canonical = blob.clone();
+        canonical.integrity_hmac = None;
+        let payload = serde_json::to_vec(&canonical)
+            .map_err(|e| SealedIdentityError::Serialization(e.to_string()))?;
+        let salt = self.machine_salt();
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&salt)
+            .map_err(|e| SealedIdentityError::SealFailed(format!("HMAC init: {e}")))?;
+        mac.update(&payload);
+        Ok(mac.finalize().into_bytes().to_vec())
     }
 
     fn software_wrap(&self, seed: &[u8]) -> Result<Vec<u8>, SealedIdentityError> {
@@ -400,6 +463,11 @@ impl SealedIdentityStore {
         Ok(plaintext)
     }
 
+    /// Derive a machine-specific salt from device_id and hostname.
+    ///
+    /// **Known limitation**: this is a weak binding (device_id + hostname only)
+    /// used as a software-only fallback. Proper OS keychain integration is
+    /// tracked separately and will replace this path.
     fn machine_salt(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-machine-salt-v1");
