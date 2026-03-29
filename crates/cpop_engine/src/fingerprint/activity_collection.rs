@@ -29,17 +29,17 @@ impl ActivityFingerprintAccumulator {
         let fp = self.current_fingerprint();
 
         // 50-bin (50ms each) -> 9-bin edges: 0,50,100,150,200,300,500,1000,2000ms
-        let mut sum_hist = [0.0; 9];
+        let mut sum_hist = [0.0f32; 9];
         let h = &fp.iki_distribution.histogram;
-        sum_hist[0] = h[0];
-        sum_hist[1] = h[1];
-        sum_hist[2] = h[2];
-        sum_hist[3] = h[3];
-        sum_hist[4] = h[4] + h[5];
-        sum_hist[5] = h[6] + h[7] + h[8] + h[9];
-        sum_hist[6] = h[10..20].iter().sum();
-        sum_hist[7] = h[20..40].iter().sum();
-        sum_hist[8] = h[40..50].iter().sum();
+        sum_hist[0] = h[0] as f32;
+        sum_hist[1] = h[1] as f32;
+        sum_hist[2] = h[2] as f32;
+        sum_hist[3] = h[3] as f32;
+        sum_hist[4] = (h[4] + h[5]) as f32;
+        sum_hist[5] = (h[6] + h[7] + h[8] + h[9]) as f32;
+        sum_hist[6] = h[10..20].iter().sum::<f64>() as f32;
+        sum_hist[7] = h[20..40].iter().sum::<f64>() as f32;
+        sum_hist[8] = h[40..50].iter().sum::<f64>() as f32;
 
         let duration_secs =
             if let (Some(first), Some(last)) = (self.samples.front(), self.samples.back()) {
@@ -51,7 +51,7 @@ impl ActivityFingerprintAccumulator {
         SessionBehavioralSummary {
             iki_histogram: sum_hist,
             iki_cv: if fp.iki_distribution.mean > 0.0 {
-                fp.iki_distribution.std_dev / fp.iki_distribution.mean
+                (fp.iki_distribution.std_dev / fp.iki_distribution.mean) as f32
             } else {
                 0.0
             },
@@ -69,15 +69,15 @@ impl ActivityFingerprintAccumulator {
                     .collect();
                 if intervals.len() >= 20 {
                     crate::analysis::hurst::compute_hurst_rs(&intervals)
-                        .map(|h| h.exponent)
+                        .map(|h| h.exponent as f32)
                         .unwrap_or(0.5)
                 } else {
                     0.5
                 }
             },
-            pause_frequency: fp.pause_signature.sentence_pause_frequency
+            pause_frequency: (fp.pause_signature.sentence_pause_frequency
                 + fp.pause_signature.paragraph_pause_frequency
-                + fp.pause_signature.thinking_pause_frequency,
+                + fp.pause_signature.thinking_pause_frequency) as f32,
             duration_secs,
             keystroke_count: self.samples.len() as u64,
         }

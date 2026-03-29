@@ -37,27 +37,28 @@ pub fn update_digest(
     let bin_centers: [f64; 9] = [
         25.0, 75.0, 125.0, 175.0, 250.0, 400.0, 750.0, 1500.0, 2500.0,
     ];
-    let total_weight: f64 = summary.iki_histogram.iter().sum();
+    let total_weight: f64 = summary.iki_histogram.iter().map(|&w| w as f64).sum();
     let mean_iki: f64 = if total_weight > 0.0 {
         summary
             .iki_histogram
             .iter()
             .zip(bin_centers.iter())
-            .map(|(w, c)| w * c)
+            .map(|(&w, &c)| w as f64 * c)
             .sum::<f64>()
             / total_weight
     } else {
         0.0
     };
     digest.iki_stats.update(mean_iki);
-    digest.cv_stats.update(summary.iki_cv);
-    digest.hurst_stats.update(summary.hurst);
-    digest.pause_stats.update(summary.pause_frequency);
+    digest.cv_stats.update(summary.iki_cv as f64);
+    digest.hurst_stats.update(summary.hurst as f64);
+    digest.pause_stats.update(summary.pause_frequency as f64);
 
     let n = digest.session_count as f64;
     for i in 0..9 {
-        digest.aggregate_iki_histogram[i] =
-            (digest.aggregate_iki_histogram[i] * (n - 1.0) + summary.iki_histogram[i]) / n;
+        let prev = digest.aggregate_iki_histogram[i] as f64;
+        let cur = summary.iki_histogram[i] as f64;
+        digest.aggregate_iki_histogram[i] = ((prev * (n - 1.0) + cur) / n) as f32;
     }
 
     digest.confidence_tier = ConfidenceTier::from_session_count(digest.session_count);

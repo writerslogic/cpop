@@ -20,23 +20,26 @@ impl StreamingStatsExt for StreamingStats {
             count: 0,
             mean: 0.0,
             m2: 0.0,
-            min: f64::MAX,
-            max: f64::NEG_INFINITY,
+            min: f32::MAX,
+            max: f32::NEG_INFINITY,
         }
     }
 
     fn update(&mut self, value: f64) {
         self.count += 1;
-        let delta = value - self.mean;
-        self.mean += delta / self.count as f64;
-        let delta2 = value - self.mean;
-        self.m2 += delta * delta2;
+        let mean = self.mean as f64;
+        let delta = value - mean;
+        let new_mean = mean + delta / self.count as f64;
+        self.mean = new_mean as f32;
+        let delta2 = value - new_mean;
+        self.m2 = (self.m2 as f64 + delta * delta2) as f32;
 
-        if value < self.min {
-            self.min = value;
+        let v32 = value as f32;
+        if v32 < self.min {
+            self.min = v32;
         }
-        if value > self.max {
-            self.max = value;
+        if v32 > self.max {
+            self.max = v32;
         }
     }
 
@@ -44,7 +47,7 @@ impl StreamingStatsExt for StreamingStats {
         if self.count < 2 {
             0.0
         } else {
-            self.m2 / (self.count - 1) as f64
+            self.m2 as f64 / (self.count - 1) as f64
         }
     }
 

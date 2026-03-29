@@ -54,7 +54,7 @@ impl From<&Packet> for rfc::PacketRfc {
                 .sample_count
                 .saturating_mul(8)
                 .saturating_mul(1000)
-                .min(20_000_000) as u32;
+                .min(20_000_000) as u64;
             JitterSealStructure {
                 lang: "en-US".to_string(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),

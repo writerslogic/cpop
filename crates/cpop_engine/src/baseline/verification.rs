@@ -11,25 +11,30 @@ use cpop_protocol::baseline::{BaselineDigest, SessionBehavioralSummary};
 /// one prior session there is no statistical basis for comparison, so we allow
 /// the session through with a moderately high score rather than rejecting it.
 pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavioralSummary) -> f64 {
-    let b_coeff =
-        bhattacharyya_coefficient(&digest.aggregate_iki_histogram, &session.iki_histogram);
+    let digest_hist: Vec<f64> = digest
+        .aggregate_iki_histogram
+        .iter()
+        .map(|&v| v as f64)
+        .collect();
+    let session_hist: Vec<f64> = session.iki_histogram.iter().map(|&v| v as f64).collect();
+    let b_coeff = bhattacharyya_coefficient(&digest_hist, &session_hist);
 
     let cv_sim = gaussian_similarity(
-        session.iki_cv,
-        digest.cv_stats.mean,
-        digest.cv_stats.m2,
+        session.iki_cv as f64,
+        digest.cv_stats.mean as f64,
+        digest.cv_stats.m2 as f64,
         digest.session_count,
     );
     let hurst_sim = gaussian_similarity(
-        session.hurst,
-        digest.hurst_stats.mean,
-        digest.hurst_stats.m2,
+        session.hurst as f64,
+        digest.hurst_stats.mean as f64,
+        digest.hurst_stats.m2 as f64,
         digest.session_count,
     );
     let pause_sim = gaussian_similarity(
-        session.pause_frequency,
-        digest.pause_stats.mean,
-        digest.pause_stats.m2,
+        session.pause_frequency as f64,
+        digest.pause_stats.mean as f64,
+        digest.pause_stats.m2 as f64,
         digest.session_count,
     );
 
