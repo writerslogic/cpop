@@ -3,6 +3,8 @@
 //! Cryptographic checkpoint chains with VDF time proofs.
 
 mod chain;
+mod chain_helpers;
+mod chain_verification;
 mod types;
 
 #[cfg(test)]
