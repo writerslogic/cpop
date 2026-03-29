@@ -75,10 +75,10 @@ fn add_confirmed_proof_promotes_anchor_status() {
 }
 
 #[test]
-fn add_failed_proof_does_not_promote_status() {
+fn add_failed_proof_demotes_to_failed() {
     let mut anchor = Anchor::new(test_hash());
     anchor.add_proof(make_proof(ProviderType::Notary, ProofStatus::Failed));
-    assert_eq!(anchor.status, ProofStatus::Pending);
+    assert_eq!(anchor.status, ProofStatus::Failed);
 }
 
 #[test]

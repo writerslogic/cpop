@@ -477,7 +477,13 @@ fn test_start_session_from_legacy_key() {
 fn test_legacy_key_64_bytes() {
     let dir = TempDir::new().expect("create temp dir");
     let legacy_path = dir.path().join("legacy_key_64");
-    let key_data = [42u8; 64];
+    // Build a valid 64-byte expanded key: seed || public_key_from_seed
+    let seed = [42u8; 32];
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let pub_bytes = signing_key.verifying_key().to_bytes();
+    let mut key_data = [0u8; 64];
+    key_data[..32].copy_from_slice(&seed);
+    key_data[32..].copy_from_slice(&pub_bytes);
     std::fs::write(&legacy_path, &key_data).expect("write 64 byte key");
 
     let session =
