@@ -29,7 +29,6 @@ pub use attestation::*;
 pub use beacon::*;
 pub use chain::*;
 pub use ephemeral::*;
-pub use evidence::*;
 pub use evidence_checkpoint::*;
 pub use evidence_derivative::*;
 pub use evidence_export::*;
