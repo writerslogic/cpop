@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+use crate::evidence::{CheckpointProof, DocumentInfo, Packet, Strength};
 use crate::ffi::helpers::detect_attestation_tier_info;
+use crate::vdf;
 use crate::verify::{full_verify, VerifyOptions};
+use cpop_protocol::rfc::wire_types::EvidencePacketWire;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -66,9 +69,14 @@ pub fn ffi_verify_evidence_detailed(path: String) -> FfiVerifyDetail {
         Err(e) => return err(format!("Failed to read file: {e}")),
     };
 
-    let packet = match crate::evidence::Packet::decode(&data) {
-        Ok(p) => p,
-        Err(e) => return err(format!("Failed to decode evidence: {e}")),
+    // Try wire format (EvidencePacketWire) first since ffi_export_evidence produces it,
+    // then fall back to the legacy engine Packet format.
+    let packet = match EvidencePacketWire::decode_cbor(&data) {
+        Ok(wire) => wire_to_packet(&wire),
+        Err(_) => match Packet::decode(&data) {
+            Ok(p) => p,
+            Err(e) => return err(format!("Failed to decode evidence: {e}")),
+        },
     };
 
     let checkpoint_count = packet.checkpoints.len() as u32;
@@ -163,5 +171,103 @@ pub fn ffi_verify_evidence_detailed(path: String) -> FfiVerifyDetail {
         warnings: result.warnings,
         checkpoint_flags,
         error_message: None,
+    }
+}
+
+/// Convert an RFC wire-format `EvidencePacketWire` into the engine's internal `Packet`
+/// so it can pass through `full_verify`.
+fn wire_to_packet(wire: &EvidencePacketWire) -> Packet {
+    let checkpoints: Vec<CheckpointProof> = wire
+        .checkpoints
+        .iter()
+        .map(|cp| {
+            let content_hash = hex::encode(&cp.content_hash.digest);
+            let prev_hash = hex::encode(&cp.prev_hash.digest);
+            let checkpoint_hash = hex::encode(&cp.checkpoint_hash.digest);
+            let vdf_input = Some(hex::encode(&cp.process_proof.input));
+            let vdf_output = Some(hex::encode(&cp.process_proof.merkle_root));
+            let vdf_iterations = Some(cp.process_proof.params.steps);
+            let elapsed = if cp.process_proof.claimed_duration > 0 {
+                Some(std::time::Duration::from_millis(
+                    cp.process_proof.claimed_duration,
+                ))
+            } else {
+                None
+            };
+
+            CheckpointProof {
+                ordinal: cp.sequence,
+                content_hash,
+                content_size: cp.char_count,
+                timestamp: chrono::DateTime::from_timestamp_millis(cp.timestamp as i64)
+                    .unwrap_or_default(),
+                message: None,
+                vdf_input,
+                vdf_output,
+                vdf_iterations,
+                elapsed_time: elapsed,
+                previous_hash: prev_hash,
+                hash: checkpoint_hash,
+                signature: None,
+            }
+        })
+        .collect();
+
+    let last_cp = checkpoints.last();
+    let final_hash = last_cp
+        .map(|cp| cp.content_hash.clone())
+        .unwrap_or_default();
+    let final_size = last_cp.map(|cp| cp.content_size).unwrap_or(0);
+    let chain_hash = last_cp.map(|cp| cp.hash.clone()).unwrap_or_default();
+
+    let filename = wire
+        .document
+        .filename
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Packet {
+        version: wire.version as i32,
+        exported_at: chrono::DateTime::from_timestamp_millis(wire.created as i64)
+            .unwrap_or_default(),
+        strength: Strength::Basic,
+        provenance: None,
+        document: DocumentInfo {
+            title: filename.clone(),
+            path: filename,
+            final_hash,
+            final_size,
+        },
+        checkpoints,
+        vdf_params: vdf::default_parameters(),
+        chain_hash,
+        declaration: None,
+        presence: None,
+        hardware: None,
+        keystroke: None,
+        behavioral: None,
+        contexts: vec![],
+        external: None,
+        key_hierarchy: None,
+        jitter_binding: None,
+        time_evidence: None,
+        provenance_links: None,
+        continuation: None,
+        collaboration: None,
+        vdf_aggregate: None,
+        verifier_nonce: None,
+        packet_signature: None,
+        signing_public_key: None,
+        biology_claim: None,
+        physical_context: None,
+        trust_tier: None,
+        mmr_root: None,
+        mmr_proof: None,
+        writersproof_certificate_id: None,
+        baseline_verification: None,
+        dictation_events: vec![],
+        claims: vec![],
+        limitations: vec![],
+        beacon_attestation: None,
     }
 }

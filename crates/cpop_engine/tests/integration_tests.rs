@@ -417,16 +417,8 @@ fn test_export_verify_roundtrip() {
     assert!(file_size > 0, "evidence file is empty");
 
     // Verify the exported evidence.
-    // BUG: Export produces CBOR missing `version` field that verifier expects.
-    // This is a real export/verify incompatibility that needs fixing.
     let verify = cpop_engine::ffi::verify_detail::ffi_verify_evidence_detailed(output_str);
-    if !verify.success {
-        eprintln!(
-            "KNOWN BUG: export/verify roundtrip fails: {:?}",
-            verify.error_message
-        );
-        return; // Don't fail the test suite for a known bug
-    }
+    assert!(verify.success, "verify failed: {:?}", verify.error_message);
     assert!(
         verify.checkpoint_count >= 3,
         "expected >= 3 checkpoints, got {}",

@@ -6,6 +6,7 @@ use cpop_protocol::rfc::wire_types::{
     CheckpointWire, DocumentRef, EditDelta, EvidencePacketWire, HashValue, ProcessProof,
     ProofAlgorithm, ProofParams,
 };
+use sha2::{Digest, Sha256};
 
 /// Export stored events for a file as a CBOR evidence packet at the given tier.
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -83,6 +84,9 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         _ => Some(cpop_protocol::rfc::wire_types::ContentTier::Core),
     };
 
+    // Random salt so each export produces unique packet/checkpoint IDs.
+    let export_nonce = rand::random::<[u8; 8]>();
+
     let checkpoints: Vec<CheckpointWire> = match events
         .iter()
         .enumerate()
@@ -103,9 +107,21 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             let vdf_output_bytes = ev.vdf_output.map(|b| b.to_vec());
             let merkle_root = vdf_output_bytes.clone().unwrap_or_else(|| vec![0u8; 32]);
 
+            let checkpoint_id = {
+                let mut h = Sha256::new();
+                h.update(b"cpop-checkpoint-id-v1");
+                h.update(ev.content_hash);
+                h.update((i as u64).to_le_bytes());
+                h.update(export_nonce);
+                let d = h.finalize();
+                let mut id = [0u8; 16];
+                id.copy_from_slice(&d[..16]);
+                id
+            };
+
             Ok(CheckpointWire {
                 sequence: i as u64,
-                checkpoint_id: ev.device_id,
+                checkpoint_id,
                 timestamp: timestamp_ms,
                 content_hash: HashValue::try_sha256(ev.content_hash.to_vec())?,
                 char_count: ev.file_size as u64,
@@ -170,10 +186,21 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         }
     };
 
+    let packet_id = {
+        let mut h = Sha256::new();
+        h.update(b"cpop-packet-id-v1");
+        h.update(latest.content_hash);
+        h.update(export_nonce);
+        let d = h.finalize();
+        let mut id = [0u8; 16];
+        id.copy_from_slice(&d[..16]);
+        id
+    };
+
     let wire_packet = EvidencePacketWire {
         version: 1,
         profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
-        packet_id: latest.device_id,
+        packet_id,
         created: now_ms,
         document: DocumentRef {
             content_hash: doc_content_hash,
