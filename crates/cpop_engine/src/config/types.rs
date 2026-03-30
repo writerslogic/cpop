@@ -241,6 +241,11 @@ pub struct SentinelConfig {
     pub hash_on_focus: bool,
     pub hash_on_save: bool,
     pub poll_interval_ms: u64,
+    pub auto_witness_enabled: bool,
+    pub auto_witness_min_keystrokes: u32,
+    pub auto_witness_min_cv: f64,
+    pub auto_witness_max_same_key_pct: f64,
+    pub auto_witness_min_zones: usize,
 }
 
 impl Default for SentinelConfig {
@@ -307,6 +312,11 @@ impl Default for SentinelConfig {
             hash_on_focus: true,
             hash_on_save: true,
             poll_interval_ms: 100,
+            auto_witness_enabled: true,
+            auto_witness_min_keystrokes: 10,
+            auto_witness_min_cv: 0.12,
+            auto_witness_max_same_key_pct: 0.60,
+            auto_witness_min_zones: 2,
         }
     }
 }

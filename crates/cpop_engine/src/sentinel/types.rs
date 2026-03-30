@@ -2,6 +2,7 @@
 
 use crate::crypto::ObfuscatedString;
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -493,6 +494,142 @@ fn looks_like_document_name(s: &str) -> bool {
     }
 
     true
+}
+
+/// Decision from pre-witness human-plausibility validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoWitnessDecision {
+    NotEnoughData,
+    HumanPlausible,
+    RejectedRobotic,
+    RejectedBurst,
+    RejectedRepetitive,
+    RejectedNoZoneDiversity,
+    RejectedTranscription,
+}
+
+/// A single keystroke captured before witnessing begins.
+#[derive(Debug, Clone)]
+pub struct PreWitnessKeystroke {
+    pub timestamp_ns: i64,
+    pub keycode: u16,
+    pub zone: u8,
+    pub source_pid: i64,
+}
+
+/// Accumulates keystrokes for an untracked focused document.
+/// When the buffer passes human-plausibility checks, auto-witnessing begins.
+#[derive(Debug)]
+pub struct PreWitnessBuffer {
+    pub path: String,
+    pub keystrokes: Vec<PreWitnessKeystroke>,
+    pub created_at: SystemTime,
+    pub rejected: bool,
+}
+
+impl PreWitnessBuffer {
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            keystrokes: Vec::new(),
+            created_at: SystemTime::now(),
+            rejected: false,
+        }
+    }
+
+    /// Evaluate accumulated keystrokes for human-plausibility.
+    pub fn should_auto_witness(
+        &self,
+        min_keystrokes: u32,
+        min_cv: f64,
+        max_same_key_pct: f64,
+        min_zones: usize,
+    ) -> AutoWitnessDecision {
+        let n = self.keystrokes.len();
+        if (n as u32) < min_keystrokes {
+            return AutoWitnessDecision::NotEnoughData;
+        }
+
+        // Check 2: time span > 1.5s
+        let first_ts = self.keystrokes[0].timestamp_ns;
+        let last_ts = self.keystrokes[n - 1].timestamp_ns;
+        let span_ns = (last_ts - first_ts).max(0) as f64;
+        let span_s = span_ns / 1_000_000_000.0;
+        if span_s < 1.5 {
+            return AutoWitnessDecision::RejectedBurst;
+        }
+
+        // Compute inter-keystroke intervals
+        let mut intervals: Vec<f64> = Vec::with_capacity(n - 1);
+        for i in 1..n {
+            let dt = (self.keystrokes[i].timestamp_ns - self.keystrokes[i - 1].timestamp_ns).max(0)
+                as f64;
+            intervals.push(dt);
+        }
+
+        if intervals.is_empty() {
+            return AutoWitnessDecision::NotEnoughData;
+        }
+
+        let count = intervals.len() as f64;
+        let mean = intervals.iter().sum::<f64>() / count;
+
+        // Check 6: average IKI between 30ms and 3000ms
+        let mean_ms = mean / 1_000_000.0;
+        if mean_ms < 30.0 || mean_ms > 3000.0 {
+            return AutoWitnessDecision::RejectedBurst;
+        }
+
+        // Check 3: coefficient of variation > threshold
+        if mean > 0.0 {
+            let variance = intervals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count;
+            let stddev = variance.sqrt();
+            let cv = stddev / mean;
+            if !cv.is_finite() || cv < min_cv {
+                return AutoWitnessDecision::RejectedRobotic;
+            }
+        } else {
+            return AutoWitnessDecision::RejectedRobotic;
+        }
+
+        // Check 4: no more than max_same_key_pct same keycode
+        let mut key_counts: HashMap<u16, usize> = HashMap::new();
+        for ks in &self.keystrokes {
+            *key_counts.entry(ks.keycode).or_insert(0) += 1;
+        }
+        if let Some(&max_count) = key_counts.values().max() {
+            if (max_count as f64 / n as f64) > max_same_key_pct {
+                return AutoWitnessDecision::RejectedRepetitive;
+            }
+        }
+
+        // Check 5: at least min_zones different keyboard zones
+        let unique_zones: HashSet<u8> = self.keystrokes.iter().map(|ks| ks.zone).collect();
+        if unique_zones.len() < min_zones {
+            return AutoWitnessDecision::RejectedNoZoneDiversity;
+        }
+
+        // Check 7: no source PID == 0 for more than 80% of keystrokes
+        let pid_zero_count = self
+            .keystrokes
+            .iter()
+            .filter(|ks| ks.source_pid == 0)
+            .count();
+        if (pid_zero_count as f64 / n as f64) > 0.8 {
+            return AutoWitnessDecision::RejectedRobotic;
+        }
+
+        // Check 8: transcription pattern detection
+        // Sustained rate > 800 keystrokes/min with zero pauses > 500ms
+        let keystrokes_per_min = (n as f64 / span_s) * 60.0;
+        let pause_threshold_ns: f64 = 500_000_000.0; // 500ms
+        let has_pause = intervals.iter().any(|&dt| dt > pause_threshold_ns);
+        if keystrokes_per_min > 800.0 && !has_pause {
+            return AutoWitnessDecision::RejectedTranscription;
+        }
+
+        AutoWitnessDecision::HumanPlausible
+    }
 }
 
 /// Returns `None` if the path contains traversal components or cannot be resolved.

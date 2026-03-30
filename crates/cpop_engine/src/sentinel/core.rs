@@ -446,6 +446,7 @@ impl Sentinel {
             let mut last_keystroke_time = std::time::Instant::now();
             let mut last_keystroke_ts_ns: i64 = 0;
             let mut last_mouse_ts_ns: i64 = 0;
+            let mut pre_witness_buffers: HashMap<String, PreWitnessBuffer> = HashMap::new();
 
             loop {
                 tokio::select! {
@@ -484,26 +485,113 @@ impl Sentinel {
                         // acquiring sessions, matching the lock order in helpers.rs.
                         let focused_path = current_focus.read_recover().clone();
                         if let Some(ref path) = focused_path {
-                            if let Some(session) = sessions.write_recover().get_mut(path) {
-                                session.keystroke_count += 1;
-                                // Store jitter sample for per-document forensic analysis
-                                if session.jitter_samples.len() < MAX_DOCUMENT_JITTER_SAMPLES {
-                                    session.jitter_samples.push(sample.clone());
+                            let has_session = sessions.read_recover().contains_key(path);
+                            if has_session {
+                                if let Some(session) = sessions.write_recover().get_mut(path) {
+                                    session.keystroke_count += 1;
+                                    // Store jitter sample for per-document forensic analysis
+                                    if session.jitter_samples.len() < MAX_DOCUMENT_JITTER_SAMPLES {
+                                        session.jitter_samples.push(sample.clone());
+                                    }
+
+                                    let validation = crate::forensics::validate_keystroke_event(
+                                        event.timestamp_ns,
+                                        event.keycode,
+                                        sample.zone,
+                                        CGEVENTTAP_VERIFIED_PID,
+                                        None,
+                                        session.has_focus,
+                                        &mut session.event_validation,
+                                    );
+                                    if validation.confidence < 0.1 {
+                                        session.keystroke_count -= 1;
+                                        session.jitter_samples.pop();
+                                    }
+                                }
+                            } else if config.auto_witness_enabled {
+                                // No active session; buffer into PreWitnessBuffer
+                                let buffer = pre_witness_buffers
+                                    .entry(path.clone())
+                                    .or_insert_with(|| PreWitnessBuffer::new(path.clone()));
+
+                                if !buffer.rejected {
+                                    buffer.keystrokes.push(PreWitnessKeystroke {
+                                        timestamp_ns: event.timestamp_ns,
+                                        keycode: event.keycode,
+                                        zone: event.zone,
+                                        source_pid: CGEVENTTAP_VERIFIED_PID,
+                                    });
+
+                                    let decision = buffer.should_auto_witness(
+                                        config.auto_witness_min_keystrokes,
+                                        config.auto_witness_min_cv,
+                                        config.auto_witness_max_same_key_pct,
+                                        config.auto_witness_min_zones,
+                                    );
+
+                                    match decision {
+                                        AutoWitnessDecision::HumanPlausible => {
+                                            let buffered_count = buffer.keystrokes.len() as u64;
+                                            log::info!(
+                                                "Auto-witness: starting session for {:?} \
+                                                 (keystrokes={}, decision={:?})",
+                                                path, buffered_count, decision
+                                            );
+                                            // Inline session creation using event-loop's Arc refs.
+                                            // Cannot call Sentinel::start_witnessing() because
+                                            // self is not available inside tokio::spawn.
+                                            let file_path = std::path::Path::new(path);
+                                            if file_path.exists() {
+                                                let mut session = DocumentSession::new(
+                                                    path.clone(),
+                                                    "auto".to_string(),
+                                                    "auto-witness".to_string(),
+                                                    crate::crypto::ObfuscatedString::new(path),
+                                                );
+                                                if let Ok(hash) = compute_file_hash(path) {
+                                                    session.initial_hash = Some(hash.clone());
+                                                    session.current_hash = Some(hash);
+                                                }
+                                                session.keystroke_count = buffered_count;
+                                                session.focus_gained();
+                                                let _ = session_events_tx.send(SessionEvent {
+                                                    event_type: SessionEventType::Started,
+                                                    session_id: session.session_id.clone(),
+                                                    document_path: path.clone(),
+                                                    timestamp: SystemTime::now(),
+                                                });
+                                                sessions.write_recover().insert(
+                                                    path.clone(),
+                                                    session,
+                                                );
+                                            } else {
+                                                log::debug!(
+                                                    "Auto-witness: file not found {:?}",
+                                                    path
+                                                );
+                                            }
+                                            pre_witness_buffers.remove(path);
+                                        }
+                                        AutoWitnessDecision::NotEnoughData => {
+                                            // Keep buffering
+                                        }
+                                        rejected => {
+                                            log::debug!(
+                                                "Auto-witness: rejected {:?} for {:?}",
+                                                rejected, path
+                                            );
+                                            buffer.rejected = true;
+                                        }
+                                    }
                                 }
 
-                                let validation = crate::forensics::validate_keystroke_event(
-                                    event.timestamp_ns,
-                                    event.keycode,
-                                    sample.zone,
-                                    CGEVENTTAP_VERIFIED_PID, // pre-verified by CGEventTap; negative PID not penalized
-                                    None,
-                                    session.has_focus,
-                                    &mut session.event_validation,
-                                );
-                                if validation.confidence < 0.1 {
-                                    session.keystroke_count -= 1;
-                                    session.jitter_samples.pop();
-                                }
+                                // Evict stale buffers older than 60 seconds
+                                pre_witness_buffers.retain(|_, buf| {
+                                    buf.created_at
+                                        .elapsed()
+                                        .map(|d| d < Duration::from_secs(60))
+                                        .unwrap_or(true)
+                                });
                             }
                         }
 
