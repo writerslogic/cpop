@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/cpop-jitter",
+    "crates/cpop-protocol",
     "crates/cpop_engine",
     "apps/cpop_cli",
 ]
@@ -32,4 +34,5 @@ coset = "0.3"
 uniffi = "0.28"
 
 [patch.crates-io]
-cpop-protocol = { path = "../proof-of-process/crates/cpop-protocol" }
+cpop-protocol = { path = "crates/cpop-protocol" }
+cpop-jitter = { path = "crates/cpop-jitter" }
