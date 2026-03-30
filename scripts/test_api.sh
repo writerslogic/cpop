@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Comprehensive integration tests for the WritersProof API (api.writersproof.com).
 # Uses curl with simple assertions. Output: PASS/FAIL/SKIP per test.
 #
@@ -6,7 +6,7 @@
 #   ./scripts/test_api.sh                                       # default: api.writersproof.com
 #   API_BASE=http://localhost:8787 ./scripts/test_api.sh        # local dev
 
-set -euo pipefail
+set -eo pipefail
 
 API_BASE="${API_BASE:-https://api.writersproof.com}"
 STORED_JWT_PATH="$HOME/Library/Application Support/WritersProof/writersproof_api_key"
@@ -17,9 +17,9 @@ SKIP=0
 CURRENT_CATEGORY=""
 
 # Associative arrays for per-category counts (bash 4+)
-declare -A CAT_PASS
-declare -A CAT_FAIL
-declare -A CAT_SKIP
+# declare -A CAT_PASS
+# declare -A CAT_FAIL
+# declare -A CAT_SKIP
 declare -a CAT_ORDER
 
 start_category() {
