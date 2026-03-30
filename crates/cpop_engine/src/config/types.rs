@@ -245,8 +245,25 @@ pub struct SentinelConfig {
 
 impl Default for SentinelConfig {
     fn default() -> Self {
-        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        let writersproof_dir = home.join(".writersproof");
+        let writersproof_dir = {
+            #[cfg(target_os = "macos")]
+            {
+                // Must match ffi/helpers.rs get_data_dir() and EngineService.swift dataDirectoryPath
+                dirs::home_dir()
+                    .map(|h| h.join("Library/Application Support/WritersProof"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                dirs::data_local_dir()
+                    .map(|d| d.join("CPOP"))
+                    .unwrap_or_else(|| {
+                        dirs::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join(".writersproof")
+                    })
+            }
+        };
 
         Self {
             auto_start: false,
