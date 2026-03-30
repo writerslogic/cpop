@@ -158,12 +158,102 @@ impl Sentinel {
         Ok(())
     }
 
+    /// Commit a checkpoint for the given file path if the session has new keystrokes.
+    /// Returns true if a checkpoint was committed, false otherwise.
+    pub fn commit_checkpoint_for_path(&self, path: &str) -> bool {
+        let needs_checkpoint = {
+            let sessions = self.sessions.read_recover();
+            sessions
+                .get(path)
+                .is_some_and(|s| s.keystroke_count > s.last_checkpoint_keystrokes)
+        };
+        if !needs_checkpoint {
+            return false;
+        }
+
+        // Skip shadow:// paths; they have no real file to hash.
+        if path.starts_with("shadow://") {
+            return false;
+        }
+
+        let file_path = std::path::Path::new(path);
+        if !file_path.exists() {
+            log::warn!("Cannot auto-checkpoint; file not found: {path}");
+            return false;
+        }
+
+        let content_hash = match crate::crypto::hash_file(file_path) {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("Auto-checkpoint hash failed for {path}: {e}");
+                return false;
+            }
+        };
+
+        let file_size = std::fs::metadata(file_path)
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
+
+        let mut store = match self.open_event_store() {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("Auto-checkpoint store open failed: {e}");
+                return false;
+            }
+        };
+
+        let mut event = crate::store::SecureEvent {
+            id: None,
+            device_id: [0u8; 16],
+            machine_id: String::new(),
+            timestamp_ns: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
+                .unwrap_or(0),
+            file_path: path.to_string(),
+            content_hash,
+            file_size,
+            size_delta: 0,
+            previous_hash: [0u8; 32],
+            event_hash: [0u8; 32],
+            context_type: None,
+            context_note: Some("Auto-checkpoint".to_string()),
+            vdf_input: None,
+            vdf_output: None,
+            vdf_iterations: 0,
+            forensic_score: 0.0,
+            is_paste: false,
+            hardware_counter: None,
+            input_method: None,
+        };
+
+        match store.add_secure_event(&mut event) {
+            Ok(_) => {
+                log::info!("Auto-checkpoint committed for {path}");
+                // Update last_checkpoint_keystrokes so the timer doesn't re-commit
+                let mut sessions = self.sessions.write_recover();
+                if let Some(session) = sessions.get_mut(path) {
+                    session.last_checkpoint_keystrokes = session.keystroke_count;
+                }
+                true
+            }
+            Err(e) => {
+                log::warn!("Auto-checkpoint store write failed for {path}: {e}");
+                false
+            }
+        }
+    }
+
     /// Stop witnessing a file, ending its session and updating the baseline.
     pub fn stop_witnessing(
         &self,
         file_path: &Path,
     ) -> std::result::Result<(), (IpcErrorCode, String)> {
         let path_str = file_path.to_string_lossy().to_string();
+
+        // Commit a final checkpoint before removing the session so keystrokes
+        // are never lost on abrupt session end.
+        self.commit_checkpoint_for_path(&path_str);
 
         let session = self.sessions.write_recover().remove(&path_str);
 

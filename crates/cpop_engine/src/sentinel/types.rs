@@ -139,6 +139,10 @@ pub struct DocumentSession {
     pub session_number: u32,
     /// When this document was first tracked.
     pub first_tracked_at: Option<SystemTime>,
+    /// Keystroke count at the time of the last committed checkpoint.
+    pub last_checkpoint_keystrokes: u64,
+    /// When this session last had focus (for idle auto-stop).
+    pub last_focused_at: SystemTime,
 }
 
 impl DocumentSession {
@@ -176,6 +180,8 @@ impl DocumentSession {
             cumulative_focus_ms_base: 0,
             session_number: 0,
             first_tracked_at: None,
+            last_checkpoint_keystrokes: 0,
+            last_focused_at: now,
         }
     }
 
@@ -194,6 +200,7 @@ impl DocumentSession {
             self.has_focus = true;
             self.focus_started = Some(Instant::now());
             self.last_focus_time = SystemTime::now();
+            self.last_focused_at = SystemTime::now();
             self.focus_count += 1;
         }
     }

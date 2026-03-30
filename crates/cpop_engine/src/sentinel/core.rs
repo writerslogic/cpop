@@ -433,11 +433,16 @@ impl Sentinel {
         let mouse_idle_stats = Arc::clone(&self.mouse_idle_stats);
         let mouse_stego_engine = Arc::clone(&self.mouse_stego_engine);
 
+        let checkpoint_interval_secs = config.checkpoint_interval_secs;
+        let writersproof_dir = config.writersproof_dir.clone();
+        let signing_key_for_cp = Arc::clone(&self.signing_key);
+
         let event_loop_handle_ref = Arc::clone(&self.event_loop_handle);
         let handle = tokio::spawn(async move {
             let mut debounce_timer: Option<tokio::time::Instant> = None;
             let mut pending_focus: Option<FocusEvent> = None;
             let mut idle_check_interval = interval(Duration::from_secs(60));
+            let mut checkpoint_interval = interval(Duration::from_secs(checkpoint_interval_secs));
             let mut last_keystroke_time = std::time::Instant::now();
             let mut last_keystroke_ts_ns: i64 = 0;
             let mut last_mouse_ts_ns: i64 = 0;
@@ -539,7 +544,178 @@ impl Sentinel {
                     }
 
                     _ = idle_check_interval.tick() => {
-                        check_idle_sessions_sync(&sessions, idle_timeout, &session_events_tx);
+                        // Auto-checkpoint idle sessions before ending them.
+                        let idle_paths: Vec<String> = {
+                            let map = sessions.read_recover();
+                            map.iter()
+                                .filter(|(_, s)| {
+                                    !s.is_focused()
+                                        && s.last_focused_at
+                                            .elapsed()
+                                            .map(|d| d > idle_timeout)
+                                            .unwrap_or(false)
+                                })
+                                .map(|(p, _)| p.clone())
+                                .collect()
+                        };
+                        for path in &idle_paths {
+                            // Checkpoint before ending
+                            let needs = {
+                                let map = sessions.read_recover();
+                                map.get(path.as_str()).is_some_and(|s| {
+                                    s.keystroke_count > s.last_checkpoint_keystrokes
+                                        && !path.starts_with("shadow://")
+                                })
+                            };
+                            if needs {
+                                let fp = std::path::Path::new(path.as_str());
+                                if fp.exists() {
+                                    if let Ok(hash) = crate::crypto::hash_file(fp) {
+                                        let sz = std::fs::metadata(fp)
+                                            .map(|m| m.len() as i64)
+                                            .unwrap_or(0);
+                                        let store = {
+                                            let g = signing_key_for_cp.read_recover();
+                                            if let Some(ref sk) = *g {
+                                                let db = writersproof_dir.join("events.db");
+                                                let hk = crate::crypto::derive_hmac_key(
+                                                    &sk.to_bytes(),
+                                                );
+                                                crate::store::SecureStore::open(&db, hk.to_vec())
+                                                    .ok()
+                                            } else {
+                                                None
+                                            }
+                                        };
+                                        if let Some(mut store) = store {
+                                            let mut ev = crate::store::SecureEvent {
+                                                id: None,
+                                                device_id: [0u8; 16],
+                                                machine_id: String::new(),
+                                                timestamp_ns: SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .map(|d| {
+                                                        d.as_nanos().min(i64::MAX as u128) as i64
+                                                    })
+                                                    .unwrap_or(0),
+                                                file_path: path.clone(),
+                                                content_hash: hash,
+                                                file_size: sz,
+                                                size_delta: 0,
+                                                previous_hash: [0u8; 32],
+                                                event_hash: [0u8; 32],
+                                                context_type: None,
+                                                context_note: Some(
+                                                    "Auto-checkpoint on idle end".to_string(),
+                                                ),
+                                                vdf_input: None,
+                                                vdf_output: None,
+                                                vdf_iterations: 0,
+                                                forensic_score: 0.0,
+                                                is_paste: false,
+                                                hardware_counter: None,
+                                                input_method: None,
+                                            };
+                                            if let Err(e) = store.add_secure_event(&mut ev) {
+                                                log::warn!(
+                                                    "Idle auto-checkpoint failed for {path}: {e}"
+                                                );
+                                            } else {
+                                                log::info!(
+                                                    "Idle auto-checkpoint committed for {path}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            end_session_sync(path, &sessions, &session_events_tx);
+                        }
+                    }
+
+                    _ = checkpoint_interval.tick() => {
+                        // Auto-checkpoint sessions that accumulated new keystrokes.
+                        let candidates: Vec<(String, u64, u64)> = {
+                            let map = sessions.read_recover();
+                            map.iter()
+                                .filter(|(p, s)| {
+                                    s.keystroke_count > s.last_checkpoint_keystrokes
+                                        && !p.starts_with("shadow://")
+                                })
+                                .map(|(p, s)| {
+                                    (p.clone(), s.keystroke_count, s.last_checkpoint_keystrokes)
+                                })
+                                .collect()
+                        };
+                        for (path, _ks, _prev) in &candidates {
+                            let file_path = std::path::Path::new(path.as_str());
+                            if !file_path.exists() {
+                                continue;
+                            }
+                            let content_hash = match crate::crypto::hash_file(file_path) {
+                                Ok(h) => h,
+                                Err(e) => {
+                                    log::warn!("Auto-checkpoint hash failed for {path}: {e}");
+                                    continue;
+                                }
+                            };
+                            let file_size = std::fs::metadata(file_path)
+                                .map(|m| m.len() as i64)
+                                .unwrap_or(0);
+                            let store = {
+                                let guard = signing_key_for_cp.read_recover();
+                                if let Some(ref sk) = *guard {
+                                    let db_path = writersproof_dir.join("events.db");
+                                    let hmac_key =
+                                        crate::crypto::derive_hmac_key(&sk.to_bytes());
+                                    crate::store::SecureStore::open(&db_path, hmac_key.to_vec())
+                                        .ok()
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(mut store) = store {
+                                let mut event = crate::store::SecureEvent {
+                                    id: None,
+                                    device_id: [0u8; 16],
+                                    machine_id: String::new(),
+                                    timestamp_ns: SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
+                                        .unwrap_or(0),
+                                    file_path: path.clone(),
+                                    content_hash,
+                                    file_size,
+                                    size_delta: 0,
+                                    previous_hash: [0u8; 32],
+                                    event_hash: [0u8; 32],
+                                    context_type: None,
+                                    context_note: Some("Auto-checkpoint".to_string()),
+                                    vdf_input: None,
+                                    vdf_output: None,
+                                    vdf_iterations: 0,
+                                    forensic_score: 0.0,
+                                    is_paste: false,
+                                    hardware_counter: None,
+                                    input_method: None,
+                                };
+                                match store.add_secure_event(&mut event) {
+                                    Ok(_) => {
+                                        log::info!("Auto-checkpoint committed for {path}");
+                                        let mut map = sessions.write_recover();
+                                        if let Some(session) = map.get_mut(path.as_str()) {
+                                            session.last_checkpoint_keystrokes =
+                                                session.keystroke_count;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Auto-checkpoint store write failed for {path}: {e}"
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     _ = async {
