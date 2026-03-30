@@ -71,16 +71,25 @@ pub fn ffi_sentinel_inject_keystroke(
     if source_state_id == SOURCE_STATE_PRIVATE {
         return false;
     }
-    // keyboard_type 0 = no physical keyboard (synthetic). Values up to ~255
-    // are valid Apple keyboard types (e.g. 106 = JIS, 44/45 = standard US).
-    if keyboard_type == 0 {
-        return false;
-    }
-    if source_pid != 0 {
-        return false;
-    }
-    if source_state_id != SOURCE_STATE_HID_SYSTEM {
-        log::debug!("inject_keystroke: suspicious source_state_id={source_state_id} — accepted");
+    // When NSEvent.addGlobalMonitorForEvents delivers events without a backing
+    // CGEvent (sandboxed apps), all three fields are 0. Accept these as trusted
+    // in-process FFI injections from KeystrokeMonitorService. The PreWitnessBuffer
+    // will still validate human plausibility before auto-starting a session.
+    let is_unverified_ffi = source_state_id == 0 && keyboard_type == 0 && source_pid == 0;
+    if !is_unverified_ffi {
+        // keyboard_type 0 = no physical keyboard (synthetic). Values up to ~255
+        // are valid Apple keyboard types (e.g. 106 = JIS, 44/45 = standard US).
+        if keyboard_type == 0 {
+            return false;
+        }
+        if source_pid != 0 {
+            return false;
+        }
+        if source_state_id != SOURCE_STATE_HID_SYSTEM {
+            log::debug!(
+                "inject_keystroke: suspicious source_state_id={source_state_id} — accepted"
+            );
+        }
     }
 
     // Compute inter-keystroke duration from timestamps (the Swift side

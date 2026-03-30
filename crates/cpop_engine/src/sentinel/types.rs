@@ -609,15 +609,11 @@ impl PreWitnessBuffer {
             return AutoWitnessDecision::RejectedNoZoneDiversity;
         }
 
-        // Check 7: no source PID == 0 for more than 80% of keystrokes
-        let pid_zero_count = self
-            .keystrokes
-            .iter()
-            .filter(|ks| ks.source_pid == 0)
-            .count();
-        if (pid_zero_count as f64 / n as f64) > 0.8 {
-            return AutoWitnessDecision::RejectedRobotic;
-        }
+        // Check 7: source PID validation
+        // Skipped: when the in-process Swift NSEvent monitor is the keystroke source
+        // (sandboxed apps where CGEventTap fails), ALL events have source_pid == 0.
+        // This is expected and not evidence of scripting. The timing CV check (check 3)
+        // is a better indicator of robotic input than source PID.
 
         // Check 8: transcription pattern detection
         // Sustained rate > 800 keystrokes/min with zero pauses > 500ms
