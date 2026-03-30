@@ -25,7 +25,7 @@ pub(crate) fn genesis_prev_hash(
     // char_count uses content_size (byte length) as approximation; for accurate
     // character count, callers should provide actual UTF-8 char count.
     let doc_ref = DocumentRef {
-        content_hash: HashValue::sha256(content_hash.to_vec()),
+        content_hash: HashValue::try_sha256(content_hash.to_vec()).map_err(Error::checkpoint)?,
         filename,
         byte_length: content_size,
         char_count: content_size, // byte-count approximation; see comment above

@@ -56,8 +56,8 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
         }
     };
 
-    // Use event_hash directly (matches CLI: hex::encode(latest.event_hash))
-    let evidence_hash = hex::encode(latest.event_hash);
+    // EH-011: evidence_hash must bind to document content, not duplicate event_hash.
+    let evidence_hash = hex::encode(latest.content_hash);
 
     // Load signing key and sign the raw hash bytes (matches CLI: signing_key.sign(latest.event_hash.as_slice()))
     let signing_key = match load_signing_key() {

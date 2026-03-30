@@ -576,7 +576,7 @@ impl PreWitnessBuffer {
 
         // Check 6: average IKI between 30ms and 3000ms
         let mean_ms = mean / 1_000_000.0;
-        if mean_ms < 30.0 || mean_ms > 3000.0 {
+        if !(30.0..=3000.0).contains(&mean_ms) {
             return AutoWitnessDecision::RejectedBurst;
         }
 

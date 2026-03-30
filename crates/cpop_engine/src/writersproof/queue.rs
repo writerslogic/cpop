@@ -160,7 +160,7 @@ impl OfflineQueue {
             )
             .map_err(|e| Error::crypto(format!("base64 decode failed: {e}")))?;
 
-            let nonce = match client.request_nonce().await {
+            let nonce = match client.request_nonce(&entry.hardware_key_id).await {
                 Ok(resp) => {
                     let n = hex::decode(&resp.nonce)
                         .map_err(|e| Error::crypto(format!("nonce decode: {e}")))?;

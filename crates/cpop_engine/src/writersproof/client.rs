@@ -55,9 +55,10 @@ impl WritersProofClient {
     /// Request a fresh nonce from the verifier.
     ///
     /// `POST /v1/nonce`
-    pub async fn request_nonce(&self) -> Result<NonceResponse> {
+    pub async fn request_nonce(&self, hardware_key_id: &str) -> Result<NonceResponse> {
         let url = format!("{}/v1/nonce", self.base_url);
-        let mut req = self.client.post(&url);
+        let body = serde_json::json!({ "hardwareKeyId": hardware_key_id });
+        let mut req = self.client.post(&url).json(&body);
         if let Some(ref jwt) = self.jwt {
             req = req.bearer_auth(jwt);
         }
@@ -407,9 +408,9 @@ impl WritersProofClient {
 
         let url = format!("{}/v1/stego/verify", self.base_url);
         let body = serde_json::json!({
-            "doc_hash": doc_hash,
-            "extracted_tag": extracted_tag_hex,
-            "mmr_root": mmr_root,
+            "docHash": doc_hash,
+            "extractedTag": extracted_tag_hex,
+            "mmrRoot": mmr_root,
         });
 
         let mut req = self.client.post(&url).json(&body);

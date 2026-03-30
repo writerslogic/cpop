@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NonceResponse {
     /// 32-byte hex-encoded random nonce
     pub nonce: String,
@@ -14,6 +15,7 @@ pub struct NonceResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnrollRequest {
     /// Hex-encoded master public key
     pub public_key: String,
@@ -28,6 +30,7 @@ pub struct EnrollRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnrollResponse {
     pub hardware_key_id: String,
     /// Trust tier: T1, T2, or T3
@@ -36,6 +39,7 @@ pub struct EnrollResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AttestResponse {
     pub attestation_id: String,
     /// e.g. "accepted"
@@ -47,6 +51,7 @@ pub struct AttestResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnchorRequest {
     /// SHA-256 hash of the evidence packet (hex-encoded).
     pub evidence_hash: String,
@@ -59,6 +64,7 @@ pub struct AnchorRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnchorMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document_name: Option<String>,
@@ -67,6 +73,7 @@ pub struct AnchorMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnchorResponse {
     pub anchor_id: String,
     pub timestamp: String,
@@ -77,6 +84,7 @@ pub struct AnchorResponse {
 
 /// Signed Tree Head from the transparency log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignedTreeHead {
     pub tree_size: u64,
     pub root_hash: String,
@@ -84,6 +92,7 @@ pub struct SignedTreeHead {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerifyResponse {
     pub verdict: String,
     pub confidence: f64,
@@ -109,12 +118,14 @@ impl VerifyResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransparencyLogInfo {
     pub log_index: u64,
     pub inclusion_verified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EvidenceSummary {
     pub duration: String,
     pub keystrokes: u64,
@@ -125,6 +136,7 @@ pub struct EvidenceSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StegoSignRequest {
     /// MMR root hash (hex-encoded).
     pub mmr_root: String,
@@ -137,6 +149,7 @@ pub struct StegoSignRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StegoSignResponse {
     /// HMAC-based watermark tag (base64).
     pub watermark_bits: String,
@@ -151,6 +164,7 @@ pub struct StegoSignResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StegoVerifyResponse {
     pub valid: bool,
     pub zwc_found: usize,
@@ -161,8 +175,9 @@ pub struct StegoVerifyResponse {
     pub anchor_timestamp: Option<String>,
 }
 
-/// Request body for `/v1/beacon` — fetch temporal beacon attestation.
+/// Request body for `/v1/beacon` -- fetch temporal beacon attestation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BeaconRequest {
     /// SHA-256 hash of the checkpoint being attested (hex-encoded).
     pub checkpoint_hash: String,
@@ -175,6 +190,7 @@ pub struct BeaconRequest {
 /// over `(checkpoint_hash || drand_round || drand_randomness || nist_pulse_index
 /// || nist_output_value || fetched_at)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BeaconResponse {
     /// drand League of Entropy round number.
     pub drand_round: u64,
@@ -194,6 +210,7 @@ pub struct BeaconResponse {
 
 /// Queued attestation for offline submission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QueuedAttestation {
     pub id: String,
     /// Base64-encoded CBOR evidence packet

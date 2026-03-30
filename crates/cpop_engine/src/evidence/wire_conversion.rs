@@ -63,7 +63,8 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
         .map(|n| n.to_string_lossy().to_string());
 
     let document = DocumentRef {
-        content_hash: HashValue::sha256(content_hash.to_vec()),
+        content_hash: HashValue::try_sha256(content_hash.to_vec())
+            .expect("content_hash is 32 bytes"),
         filename,
         byte_length: content_size,
         char_count: content_size, // byte_length used as proxy when char count unavailable
@@ -295,7 +296,8 @@ fn checkpoint_to_wire(
             id
         },
         timestamp: u64::try_from(cp.timestamp.timestamp_millis().max(0)).unwrap_or(0),
-        content_hash: HashValue::sha256(cp.content_hash.to_vec()),
+        content_hash: HashValue::try_sha256(cp.content_hash.to_vec())
+            .expect("content_hash is 32 bytes"),
         char_count: cp.content_size,
         // Placeholder: per-checkpoint edit deltas are not tracked in the
         // internal evidence model yet. Populated with zeros until the
@@ -310,7 +312,8 @@ fn checkpoint_to_wire(
             revision_depth_histogram: None,
             pause_duration_histogram: None,
         },
-        prev_hash: HashValue::sha256(cp.previous_hash.to_vec()),
+        prev_hash: HashValue::try_sha256(cp.previous_hash.to_vec())
+            .expect("previous_hash is 32 bytes"),
         checkpoint_hash: HashValue::zero_sha256(), // overwritten by compute_hash() below
         process_proof,
         jitter_binding: jitter_binding_wire,

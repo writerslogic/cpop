@@ -420,7 +420,8 @@ impl Chain {
         // SWF seed derivation per draft-condrey-rats-pop
         let swf_seed = if ordinal == 0 {
             let doc_ref = DocumentRef {
-                content_hash: HashValue::sha256(content_hash.to_vec()),
+                content_hash: HashValue::try_sha256(content_hash.to_vec())
+                    .expect("content_hash is 32 bytes"),
                 filename: std::path::Path::new(&self.document_path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string()),

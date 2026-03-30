@@ -14,9 +14,9 @@ fn make_summary(
 ) -> SessionBehavioralSummary {
     SessionBehavioralSummary {
         iki_histogram: [0.1, 0.2, 0.15, 0.1, 0.1, 0.15, 0.1, 0.05, 0.05],
-        iki_cv,
-        hurst,
-        pause_frequency: pause_freq,
+        iki_cv: iki_cv as f32,
+        hurst: hurst as f32,
+        pause_frequency: pause_freq as f32,
         duration_secs: 600,
         keystroke_count,
     }
