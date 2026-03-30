@@ -154,7 +154,11 @@ impl Sentinel {
             log::debug!("no session event listeners for Started");
         }
 
-        sessions.insert(path_str, session);
+        sessions.insert(path_str.clone(), session);
+        // Lock ordering: sessions (2) before current_focus (3) — safe to hold both,
+        // but we no longer need sessions so drop it first.
+        drop(sessions);
+        *self.current_focus.write_recover() = Some(path_str);
         Ok(())
     }
 
