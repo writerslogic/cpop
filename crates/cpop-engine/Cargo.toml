@@ -33,11 +33,6 @@ bip39 = "2.1.0"
 zeroize = { version = "1.8.1", features = ["derive"] }
 subtle = "2.6"
 
-# Ethereum transaction signing
-k256 = { version = "0.13", features = ["ecdsa", "std"] }
-tiny-keccak = { version = "2.0", features = ["keccak"] }
-rlp = "0.5"
-
 # Storage
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 

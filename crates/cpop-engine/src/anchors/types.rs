@@ -35,15 +35,12 @@ pub enum AnchorError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderType {
-    /// OpenTimestamps calendar servers with Bitcoin attestation.
+    /// OpenTimestamps calendar servers.
     #[serde(rename = "ots")]
     OpenTimestamps,
     /// RFC 3161 Time-Stamp Authority.
     #[serde(rename = "rfc3161")]
     Rfc3161,
-    /// OP_RETURN transaction.
-    Bitcoin,
-    Ethereum,
     Notary,
 }
 
@@ -95,7 +92,7 @@ pub enum AttestationOp {
     Ripemd160,
     Append,
     Prepend,
-    /// Terminal step (e.g., Bitcoin block header match).
+    /// Terminal step (e.g., attestation record match).
     Verify,
 }
 
@@ -164,17 +161,15 @@ impl Anchor {
         }
     }
 
-    /// Return the highest-priority confirmed proof, preferring blockchain anchors.
+    /// Return the highest-priority confirmed proof, preferring TSA anchors.
     pub fn best_proof(&self) -> Option<&Proof> {
         self.proofs
             .iter()
             .filter(|p| p.status == ProofStatus::Confirmed)
             .min_by_key(|p| match p.provider {
-                ProviderType::Bitcoin => 0,
-                ProviderType::Ethereum => 1,
-                ProviderType::OpenTimestamps => 2,
-                ProviderType::Rfc3161 => 3,
-                ProviderType::Notary => 4,
+                ProviderType::Rfc3161 => 0,
+                ProviderType::OpenTimestamps => 1,
+                ProviderType::Notary => 2,
             })
         // Only return confirmed proofs; callers should handle None explicitly.
     }

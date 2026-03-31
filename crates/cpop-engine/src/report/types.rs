@@ -277,7 +277,6 @@ pub struct WarReport {
     pub total_duration_min: f64,
     pub revision_events: u64,
     pub device_attestation: String,
-    pub blockchain_anchor: Option<String>,
 
     pub checkpoints: Vec<ReportCheckpoint>,
 

@@ -90,7 +90,7 @@ pub struct Packet {
     /// Contains entropy commitment, statistical summary, active probes, and labyrinth structure.
     pub jitter_binding: Option<JitterBinding>,
     /// RFC-compliant time evidence (RFC Section: Time Evidence).
-    /// Contains TSA responses, blockchain anchors, and Roughtime samples.
+    /// Contains TSA responses and Roughtime samples.
     pub time_evidence: Option<TimeEvidence>,
     /// Cross-document provenance links (RFC Section: Provenance Links)
     pub provenance_links: Option<provenance::ProvenanceSection>,
@@ -400,7 +400,7 @@ pub struct DictationEvent {
     pub plausibility_score: f64,
 }
 
-/// External timestamping anchors (OTS, RFC 3161, blockchain).
+/// External timestamping anchors (OTS, RFC 3161, notary).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalAnchors {
     pub opentimestamps: Vec<OtsProof>,
@@ -427,7 +427,7 @@ pub struct Rfc3161Proof {
     pub timestamp: DateTime<Utc>,
 }
 
-/// External anchor proof from a timestamping provider (TSA, blockchain, etc.).
+/// External anchor proof from a timestamping provider (TSA, notary, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnchorProof {
     pub provider: String,
@@ -438,17 +438,7 @@ pub struct AnchorProof {
     pub timestamp: DateTime<Utc>,
     pub status: String,
     pub raw_proof: String,
-    pub blockchain: Option<BlockchainAnchorInfo>,
     pub verify_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockchainAnchorInfo {
-    pub chain: String,
-    pub block_height: u64,
-    pub block_hash: Option<String>,
-    pub block_time: DateTime<Utc>,
-    pub tx_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

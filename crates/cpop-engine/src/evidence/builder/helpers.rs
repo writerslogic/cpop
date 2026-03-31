@@ -3,7 +3,7 @@
 //! Helper functions for evidence packet construction.
 
 use base64::{engine::general_purpose, Engine as _};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use crate::declaration;
@@ -16,7 +16,7 @@ use crate::evidence::types::*;
 pub fn convert_anchor_proof(proof: &crate::anchors::Proof) -> AnchorProof {
     let provider = format!("{:?}", proof.provider).to_lowercase();
     let timestamp = proof.confirmed_at.unwrap_or(proof.submitted_at);
-    let mut anchor = AnchorProof {
+    AnchorProof {
         provider: provider.clone(),
         provider_name: provider,
         legal_standing: String::new(),
@@ -25,48 +25,8 @@ pub fn convert_anchor_proof(proof: &crate::anchors::Proof) -> AnchorProof {
         timestamp,
         status: format!("{:?}", proof.status).to_lowercase(),
         raw_proof: general_purpose::STANDARD.encode(&proof.proof_data),
-        blockchain: None,
         verify_url: proof.location.clone(),
-    };
-
-    if matches!(
-        proof.provider,
-        crate::anchors::ProviderType::Bitcoin | crate::anchors::ProviderType::Ethereum
-    ) {
-        let chain = match proof.provider {
-            crate::anchors::ProviderType::Bitcoin => "bitcoin",
-            crate::anchors::ProviderType::Ethereum => "ethereum",
-            _ => "unknown",
-        };
-        let block_height = proof
-            .extra
-            .get("block_height")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let block_hash = proof
-            .extra
-            .get("block_hash")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let block_time = proof
-            .extra
-            .get("block_time")
-            .and_then(|v| v.as_str())
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or(timestamp);
-        let tx_id = proof.location.clone();
-
-        anchor.blockchain = Some(BlockchainAnchorInfo {
-            chain: chain.to_string(),
-            block_height,
-            block_hash,
-            block_time,
-            tx_id,
-        });
     }
-
-    anchor
 }
 
 /// Compute binding hash over secure events.

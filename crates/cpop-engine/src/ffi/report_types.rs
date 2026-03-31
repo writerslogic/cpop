@@ -28,7 +28,6 @@ pub struct FfiWarReport {
     pub total_duration_min: f64,
     pub revision_events: u64,
     pub device_attestation: String,
-    pub blockchain_anchor: Option<String>,
     pub checkpoints: Vec<FfiReportCheckpoint>,
     pub sessions: Vec<FfiReportSession>,
     pub process: FfiProcessEvidence,

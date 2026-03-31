@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-mod bitcoin;
-mod ethereum;
 mod http;
 mod notary;
 mod ots;
@@ -33,7 +31,7 @@ pub trait AnchorProvider: Send + Sync {
     async fn check_status(&self, proof: &Proof) -> Result<Proof, AnchorError>;
     /// Verify a proof against the anchor backend.
     async fn verify(&self, proof: &Proof) -> Result<bool, AnchorError>;
-    /// Attempt to upgrade a pending proof (e.g., OTS calendar to Bitcoin).
+    /// Attempt to upgrade a pending proof (e.g., OTS calendar to confirmed).
     async fn upgrade(&self, _proof: &Proof) -> Result<Option<Proof>, AnchorError> {
         Ok(None)
     }
@@ -91,12 +89,6 @@ impl AnchorManager {
         }
         if let Ok(provider) = rfc3161::Rfc3161Provider::with_defaults() {
             manager.add_provider(Arc::new(provider));
-        }
-        if let Ok(btc) = bitcoin::BitcoinProvider::from_env() {
-            manager.add_provider(Arc::new(btc));
-        }
-        if let Ok(eth) = ethereum::EthereumProvider::from_env() {
-            manager.add_provider(Arc::new(eth));
         }
         if let Ok(notary) = notary::NotaryProvider::from_env() {
             manager.add_provider(Arc::new(notary));

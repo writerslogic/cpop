@@ -278,7 +278,7 @@ impl Builder {
         self
     }
 
-    /// Attach anchor proofs (blockchain, TSA, etc.). Boosts strength to `Maximum`.
+    /// Attach anchor proofs (TSA, notary, etc.). Boosts strength to `Maximum`.
     pub fn with_anchors(mut self, proofs: &[anchors::Proof]) -> Self {
         if proofs.is_empty() {
             return self;
@@ -399,7 +399,7 @@ impl Builder {
         self
     }
 
-    /// Attach RFC-compliant time evidence (TSA, blockchain, Roughtime). Boosts to `Enhanced`.
+    /// Attach RFC-compliant time evidence (TSA, Roughtime). Boosts to `Enhanced`.
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.packet.time_evidence = Some(evidence);
         if self.packet.strength < Strength::Enhanced {

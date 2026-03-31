@@ -11,11 +11,11 @@ mod types;
 pub mod wire_conversion;
 
 pub use self::types::{
-    AccessControlInfo, AnchorProof, BehavioralEvidence, BlockchainAnchorInfo, CheckpointProof,
-    CheckpointSignature, Claim, ClaimType, ContextPeriod, DictationEvent, DocumentInfo, EditRegion,
-    ExternalAnchors, ForensicMetrics, HardwareEvidence, InputDeviceInfo,
-    KeyHierarchyEvidencePacket, KeystrokeEvidence, OtsProof, Packet, RecordProvenance,
-    Rfc3161Proof, Strength, TrustTier, WpBeaconAttestation,
+    AccessControlInfo, AnchorProof, BehavioralEvidence, CheckpointProof, CheckpointSignature,
+    Claim, ClaimType, ContextPeriod, DictationEvent, DocumentInfo, EditRegion, ExternalAnchors,
+    ForensicMetrics, HardwareEvidence, InputDeviceInfo, KeyHierarchyEvidencePacket,
+    KeystrokeEvidence, OtsProof, Packet, RecordProvenance, Rfc3161Proof, Strength, TrustTier,
+    WpBeaconAttestation,
 };
 
 pub use self::builder::{

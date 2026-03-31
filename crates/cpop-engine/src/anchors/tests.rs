@@ -69,7 +69,7 @@ fn add_pending_proof_keeps_anchor_pending() {
 #[test]
 fn add_confirmed_proof_promotes_anchor_status() {
     let mut anchor = Anchor::new(test_hash());
-    anchor.add_proof(make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed));
+    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed));
     assert_eq!(anchor.status, ProofStatus::Confirmed);
     assert_eq!(anchor.proofs.len(), 1);
 }
@@ -88,9 +88,8 @@ fn add_multiple_proofs_accumulates() {
         ProviderType::OpenTimestamps,
         ProofStatus::Pending,
     ));
-    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Pending));
-    anchor.add_proof(make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed));
-    assert_eq!(anchor.proofs.len(), 3);
+    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed));
+    assert_eq!(anchor.proofs.len(), 2);
     assert_eq!(anchor.status, ProofStatus::Confirmed);
 }
 
@@ -120,7 +119,7 @@ fn is_confirmed_true_when_one_confirmed() {
         ProviderType::OpenTimestamps,
         ProofStatus::Pending,
     ));
-    anchor.add_proof(make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed));
+    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed));
     assert!(anchor.is_confirmed());
 }
 
@@ -134,23 +133,28 @@ fn best_proof_none_when_empty() {
 }
 
 #[test]
-fn best_proof_prefers_bitcoin_over_others() {
+fn best_proof_prefers_rfc3161_over_others() {
     let mut anchor = Anchor::new(test_hash());
     anchor.add_proof(make_proof(ProviderType::Notary, ProofStatus::Confirmed));
-    anchor.add_proof(make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed));
-    anchor.add_proof(make_proof(ProviderType::Ethereum, ProofStatus::Confirmed));
+    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed));
+    anchor.add_proof(make_proof(
+        ProviderType::OpenTimestamps,
+        ProofStatus::Confirmed,
+    ));
     let best = anchor.best_proof().expect("should have best proof");
-    assert_eq!(best.provider, ProviderType::Bitcoin);
+    assert_eq!(best.provider, ProviderType::Rfc3161);
 }
 
 #[test]
-fn best_proof_prefers_ethereum_when_no_bitcoin() {
+fn best_proof_prefers_ots_when_no_rfc3161() {
     let mut anchor = Anchor::new(test_hash());
-    anchor.add_proof(make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed));
-    anchor.add_proof(make_proof(ProviderType::Ethereum, ProofStatus::Confirmed));
     anchor.add_proof(make_proof(ProviderType::Notary, ProofStatus::Confirmed));
+    anchor.add_proof(make_proof(
+        ProviderType::OpenTimestamps,
+        ProofStatus::Confirmed,
+    ));
     let best = anchor.best_proof().expect("should have best proof");
-    assert_eq!(best.provider, ProviderType::Ethereum);
+    assert_eq!(best.provider, ProviderType::OpenTimestamps);
 }
 
 #[test]
@@ -165,7 +169,7 @@ fn best_proof_returns_none_when_none_confirmed() {
 
 #[test]
 fn verify_proof_format_rejects_empty_data() {
-    let mut proof = make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed);
+    let mut proof = make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed);
     proof.proof_data = vec![];
     let err = verify_proof_format(&proof).unwrap_err();
     assert!(matches!(err, AnchorError::InvalidFormat(_)));
@@ -173,7 +177,7 @@ fn verify_proof_format_rejects_empty_data() {
 
 #[test]
 fn verify_proof_format_rejects_zero_hash() {
-    let mut proof = make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed);
+    let mut proof = make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed);
     proof.anchored_hash = zero_hash();
     let err = verify_proof_format(&proof).unwrap_err();
     assert!(matches!(err, AnchorError::HashMismatch));
@@ -221,8 +225,6 @@ fn provider_type_serde_roundtrip() {
     let types = [
         (ProviderType::OpenTimestamps, r#""ots""#),
         (ProviderType::Rfc3161, r#""rfc3161""#),
-        (ProviderType::Bitcoin, r#""bitcoin""#),
-        (ProviderType::Ethereum, r#""ethereum""#),
         (ProviderType::Notary, r#""notary""#),
     ];
     for (variant, expected_json) in &types {
@@ -255,7 +257,7 @@ fn proof_status_serde_roundtrip() {
 
 #[test]
 fn proof_serde_roundtrip() {
-    let proof = make_proof(ProviderType::Bitcoin, ProofStatus::Confirmed);
+    let proof = make_proof(ProviderType::Rfc3161, ProofStatus::Confirmed);
     let json = serde_json::to_string(&proof).expect("serialize proof");
     let back: Proof = serde_json::from_str(&json).expect("deserialize proof");
     assert_eq!(back.id, proof.id);

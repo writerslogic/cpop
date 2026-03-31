@@ -118,7 +118,7 @@ pub struct Checkpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rfc_jitter: Option<rfc::JitterBinding>,
 
-    /// External time evidence (roughtime, TSA, blockchain anchors)
+    /// External time evidence (roughtime, TSA)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_evidence: Option<TimeEvidence>,
 
@@ -301,7 +301,7 @@ impl Checkpoint {
         self
     }
 
-    /// Attach external time evidence (roughtime, TSA, blockchain).
+    /// Attach external time evidence (roughtime, TSA).
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.time_evidence = Some(evidence);
         self

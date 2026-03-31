@@ -135,10 +135,6 @@ pub(super) fn write_chain_of_custody(html: &mut String, r: &WarReport) -> fmt::R
     row(html, "Evidence Bundle:", &bundle)?;
     row(html, "Device Attestation:", &r.device_attestation)?;
 
-    if let Some(ref anchor) = r.blockchain_anchor {
-        row(html, "Blockchain Anchor:", anchor)?;
-    }
-
     writeln!(html, "</table></div>")
 }
 
