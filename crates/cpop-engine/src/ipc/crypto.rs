@@ -121,7 +121,7 @@ impl SecureSession {
 
     /// Encrypt a payload. Returns [8-byte seq][12-byte nonce][ciphertext+tag].
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        // H-007: guard against sequence overflow with CAS loop to eliminate
+        // H-056: guard against sequence overflow with CAS loop to eliminate
         // the race between load and fetch_add.
         let seq = loop {
             let current = self.tx_sequence.load(Ordering::SeqCst);
