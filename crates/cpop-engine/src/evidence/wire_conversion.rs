@@ -110,6 +110,7 @@ pub fn chain_to_wire(chain: &Chain) -> EvidencePacketWire {
         profile: None,
         presence_challenges: None,
         channel_binding: None,
+        signing_public_key: None,
         content_tier,
         previous_packet_ref: None,
         packet_sequence: None,

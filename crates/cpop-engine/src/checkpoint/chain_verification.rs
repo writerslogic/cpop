@@ -70,20 +70,26 @@ impl Chain {
                 return report;
             }
 
-            // H-002: Warn (not error) on non-monotonic timestamps for backward
-            // compatibility with existing chains that may have clock skew.
+            // H-002: Non-monotonic timestamps indicate clock manipulation or
+            // system clock regression. Allow up to 1 second of drift tolerance
+            // for NTP corrections; reject larger regressions as evidence of
+            // backdating or tampering.
             if i > 0 {
                 let prev_ts = self.checkpoints[i - 1].timestamp;
                 if checkpoint.timestamp < prev_ts {
-                    log::warn!(
-                        "checkpoint {}: timestamp {} is before previous checkpoint's {}",
-                        i,
-                        checkpoint.timestamp,
-                        prev_ts
-                    );
-                    report.warnings.push(format!(
-                        "checkpoint {i}: non-monotonic timestamp (before previous checkpoint)"
-                    ));
+                    let drift = prev_ts
+                        .signed_duration_since(checkpoint.timestamp)
+                        .num_seconds();
+                    if drift > 1 {
+                        report.fail(format!(
+                            "checkpoint {i}: timestamp backdated by {drift}s \
+                             (before previous checkpoint)"
+                        ));
+                        return report;
+                    }
+                    report
+                        .warnings
+                        .push(format!("checkpoint {i}: minor clock drift ({drift}s)"));
                 }
             }
 

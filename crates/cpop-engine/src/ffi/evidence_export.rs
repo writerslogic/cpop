@@ -206,6 +206,12 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         .map(|s| s.chars().count() as u64)
         .unwrap_or(byte_length);
 
+    // Embed the signing public key so verifiers can identify the signer
+    // without requiring out-of-band key distribution.
+    let signing_pub = crate::ffi::helpers::load_signing_key()
+        .ok()
+        .map(|sk| serde_bytes::ByteBuf::from(sk.verifying_key().to_bytes().to_vec()));
+
     let wire_packet = EvidencePacketWire {
         version: 1,
         profile_uri: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
@@ -228,6 +234,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         profile: None,
         presence_challenges: None,
         channel_binding: None,
+        signing_public_key: signing_pub,
         content_tier,
         previous_packet_ref: None,
         packet_sequence: None,
@@ -237,10 +244,29 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
 
     match wire_packet.encode_cbor() {
         Ok(encoded) => {
+            // Sign the CBOR payload with COSE_Sign1 using the device signing key.
+            // This prevents tampering, replay, and evidence reuse; any modification
+            // to the packet content invalidates the signature.
+            let signed_bytes = match crate::ffi::helpers::load_signing_key() {
+                Ok(signing_key) => {
+                    match cpop_protocol::crypto::sign_evidence_cose(&encoded, &signing_key) {
+                        Ok(cose) => cose,
+                        Err(e) => {
+                            log::warn!("COSE signing failed, exporting unsigned: {e}");
+                            encoded
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Signing key unavailable, exporting unsigned: {e}");
+                    encoded
+                }
+            };
+
             let tmp_path = output_path.with_extension("tmp");
             let write_result = (|| -> std::io::Result<()> {
                 let mut f = std::fs::File::create(&tmp_path)?;
-                std::io::Write::write_all(&mut f, &encoded)?;
+                std::io::Write::write_all(&mut f, &signed_bytes)?;
                 f.sync_all()?;
                 std::fs::rename(&tmp_path, &output_path)?;
                 Ok(())
@@ -248,7 +274,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             match write_result {
                 Ok(()) => FfiResult {
                     success: true,
-                    message: Some(format!("Exported CBOR to {}", output_path.display())),
+                    message: Some(format!("Exported signed CBOR to {}", output_path.display())),
                     error_message: None,
                 },
                 Err(e) => {

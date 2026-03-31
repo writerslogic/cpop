@@ -77,6 +77,10 @@ pub struct EvidencePacketWire {
     #[serde(rename = "11", default, skip_serializing_if = "Option::is_none")]
     pub channel_binding: Option<ChannelBinding>,
 
+    /// Ed25519 public key that signed this packet (32 bytes).
+    #[serde(rename = "12", default, skip_serializing_if = "Option::is_none")]
+    pub signing_public_key: Option<serde_bytes::ByteBuf>,
+
     #[serde(rename = "13", default, skip_serializing_if = "Option::is_none")]
     pub content_tier: Option<ContentTier>,
 

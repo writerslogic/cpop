@@ -17,6 +17,10 @@ use crate::RwLockRecover;
 ///
 /// Synthetic events are rejected, matching the CGEventTap `verify_event_source` behavior.
 #[cfg_attr(feature = "ffi", uniffi::export)]
+/// Maximum sustained keystroke injection rate (keystrokes per second).
+/// Human peak burst is ~15 KPS; anything above 50 is clearly synthetic.
+const MAX_INJECT_RATE_PER_SEC: u64 = 50;
+
 pub fn ffi_sentinel_inject_keystroke(
     timestamp_ns: i64,
     keycode: u16,
@@ -31,6 +35,28 @@ pub fn ffi_sentinel_inject_keystroke(
         Some(s) if s.is_running() => s,
         _ => return false,
     };
+
+    // Rate limiting: reject if injection rate exceeds MAX_INJECT_RATE_PER_SEC.
+    // Uses a sliding window counter that resets every second.
+    {
+        use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+        static WINDOW_START_NS: AtomicI64 = AtomicI64::new(0);
+        static WINDOW_COUNT: AtomicU64 = AtomicU64::new(0);
+
+        let window_start = WINDOW_START_NS.load(Ordering::Relaxed);
+        let elapsed_ns = timestamp_ns.saturating_sub(window_start);
+        if elapsed_ns > 1_000_000_000 {
+            // New 1-second window
+            WINDOW_START_NS.store(timestamp_ns, Ordering::Relaxed);
+            WINDOW_COUNT.store(1, Ordering::Relaxed);
+        } else {
+            let count = WINDOW_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+            if count > MAX_INJECT_RATE_PER_SEC {
+                log::warn!("FFI keystroke injection rate exceeded ({count}/s); rejecting");
+                return false;
+            }
+        }
+    }
 
     // Feed voice fingerprint collector if enabled.
     // Only the first character matters (NSEvent.characters can be multi-char for
