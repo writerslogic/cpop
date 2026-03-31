@@ -308,12 +308,10 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
             .iter()
             .map(|c| c.max(f64::MIN_POSITIVE).ln())
             .sum();
-        let geo_mean_raw = (log_sum / finite_costs.len() as f64).exp();
-        let geo_mean = if geo_mean_raw.is_finite() {
-            geo_mean_raw
-        } else {
-            0.0
-        };
+        // exp() of a finite value is always finite and positive, but guard
+        // against NaN from an empty log_sum (len==0 prevented above) or
+        // platform quirks.
+        let geo_mean = (log_sum / finite_costs.len() as f64).exp().max(0.0);
         if has_infinite {
             geo_mean * HARDWARE_DIFFICULTY_BOOST
         } else {

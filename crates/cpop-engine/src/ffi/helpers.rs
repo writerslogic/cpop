@@ -310,7 +310,7 @@ pub(crate) fn events_to_forensic_data(events: &[crate::store::SecureEvent]) -> V
         .iter()
         .enumerate()
         .map(|(i, e)| EventData {
-            id: e.id.unwrap_or(i64::try_from(i).unwrap_or(i64::MAX)),
+            id: e.id.unwrap_or(i as i64),
             timestamp_ns: e.timestamp_ns,
             file_size: e.file_size,
             size_delta: e.size_delta,
