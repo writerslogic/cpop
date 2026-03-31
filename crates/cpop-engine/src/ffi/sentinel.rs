@@ -164,6 +164,11 @@ pub fn ffi_sentinel_start() -> FfiResult {
     match start_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
+            if is_new_sentinel {
+                if let Ok(mut guard) = SENTINEL.lock() {
+                    *guard = None;
+                }
+            }
             return FfiResult {
                 success: false,
                 message: None,
@@ -171,6 +176,11 @@ pub fn ffi_sentinel_start() -> FfiResult {
             };
         }
         Err(_) => {
+            if is_new_sentinel {
+                if let Ok(mut guard) = SENTINEL.lock() {
+                    *guard = None;
+                }
+            }
             return FfiResult {
                 success: false,
                 message: None,
