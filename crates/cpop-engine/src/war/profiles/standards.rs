@@ -343,12 +343,7 @@ pub fn standards_compliance_report(
 
     StandardsComplianceReport {
         rats,
-        did_method: author_did.map(|d| {
-            d.split(':')
-                .nth(1)
-                .map(|m| format!("did:{}", m))
-                .unwrap_or_else(|| d.to_string())
-        }),
+        did_method: author_did.map(|d| d.splitn(3, ':').take(2).collect::<Vec<_>>().join(":")),
         ai_disclosure,
         iptc_digital_source_type: ai_disclosure.to_iptc_digital_source_type().to_string(),
         c2pa_assertion_label: super::c2pa::ASSERTION_LABEL.to_string(),

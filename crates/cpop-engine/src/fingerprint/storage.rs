@@ -214,15 +214,11 @@ impl FingerprintStorage {
                     }
                 }
                 Err(e) => {
-                    // Cannot decrypt profile — delete the file to guarantee voice data removal
-                    log::warn!(
-                        "Profile {} deleted (could not decrypt to verify voice data removal): {}",
+                    return Err(anyhow!(
+                        "Cannot decrypt profile {} to verify voice data removal: {}",
                         id,
                         e
-                    );
-                    let path = self.profile_path(&id);
-                    let _ = std::fs::remove_file(&path);
-                    self.profile_index.remove(&id);
+                    ));
                 }
             }
         }

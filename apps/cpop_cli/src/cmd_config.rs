@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cpop_engine::config::CpopConfig;
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -121,7 +121,8 @@ pub(crate) fn cmd_config(action: ConfigAction) -> Result<()> {
                         use cpop_engine::fingerprint::{ConsentManager, ConsentStatus};
 
                         let mut consent_manager = ConsentManager::new(&config.data_dir)
-                            .map_err(|e| anyhow!("consent manager: {}", e))?;
+                            .map_err(|e| anyhow!("consent manager: {}", e))
+                            .context("Failed to read consent status. Try: rm ~/.writersproof/consent.json and retry")?;
 
                         match consent_manager.status() {
                             ConsentStatus::Granted => {

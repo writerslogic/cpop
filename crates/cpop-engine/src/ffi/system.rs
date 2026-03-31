@@ -181,7 +181,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
         let session_keystrokes = sentinel_sessions
             .iter()
             .find(|s| s.path == path)
-            .map(|s| s.keystroke_count)
+            .map(|s| s.total_keystrokes())
             .unwrap_or(0);
 
         // Apply keystroke-to-content penalty: if the document grew significantly
@@ -292,7 +292,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
                 checkpoint_count: 0,
                 forensic_score,
                 risk_level: "pending".to_string(),
-                keystroke_count: session.keystroke_count,
+                keystroke_count: session.total_keystrokes(),
             });
         }
     }

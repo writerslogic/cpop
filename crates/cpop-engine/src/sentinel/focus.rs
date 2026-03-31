@@ -75,6 +75,34 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
             let mut last_path: Option<String> = None;
             let mut interval_timer = interval(poll_interval);
 
+            // Probe the currently focused window immediately on startup so
+            // the sentinel knows what document is active before keystrokes
+            // arrive.  This is critical after a stop/restart cycle where the
+            // document was already open and no OS focus event will fire.
+            if let Some(info) = provider.get_active_window() {
+                let app = if !info.application.is_empty() {
+                    info.application.clone()
+                } else {
+                    "unknown".to_string()
+                };
+                let app_name = info.application.clone();
+                if config.is_app_allowed(&info.application, &app_name) {
+                    let _ = focus_tx
+                        .send(FocusEvent {
+                            event_type: FocusEventType::FocusGained,
+                            path: info.path.clone().unwrap_or_default(),
+                            shadow_id: String::new(),
+                            app_bundle_id: info.application.clone(),
+                            app_name: info.application.clone(),
+                            window_title: info.title.clone(),
+                            timestamp: SystemTime::now(),
+                        })
+                        .await;
+                    last_path = info.path.clone();
+                }
+                last_app = app;
+            }
+
             loop {
                 interval_timer.tick().await;
 

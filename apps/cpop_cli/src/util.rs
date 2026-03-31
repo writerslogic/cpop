@@ -284,7 +284,8 @@ pub(crate) fn retry_on_busy<T, F: FnMut() -> Result<T>>(mut op: F) -> Result<T> 
             }
         }
     }
-    Err(last_err.expect("MAX_RETRIES must be > 0"))
+    Err(last_err
+        .unwrap_or_else(|| anyhow::anyhow!("retry_on_busy: no attempts made (MAX_RETRIES=0)")))
 }
 
 pub fn load_api_key(dir: &Path) -> Result<String> {

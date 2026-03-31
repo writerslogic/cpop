@@ -5,6 +5,7 @@
 use ed25519_dalek::{Signer, SigningKey};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 use super::types::{
     AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse, EnrollRequest,
@@ -17,7 +18,7 @@ use crate::steganography::{ZwcExtractor, ZwcParams};
 /// WritersProof API client.
 pub struct WritersProofClient {
     base_url: String,
-    jwt: Option<String>,
+    jwt: Option<Zeroizing<String>>,
     client: Client,
 }
 
@@ -48,7 +49,7 @@ impl WritersProofClient {
 
     /// Set the JWT token for authenticated requests.
     pub fn with_jwt(mut self, token: String) -> Self {
-        self.jwt = Some(token);
+        self.jwt = Some(Zeroizing::new(token));
         self
     }
 
@@ -60,7 +61,7 @@ impl WritersProofClient {
         let body = serde_json::json!({ "hardwareKeyId": hardware_key_id });
         let mut req = self.client.post(&url).json(&body);
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -87,7 +88,7 @@ impl WritersProofClient {
         let url = format!("{}/v1/enroll", self.base_url);
         let mut http_req = self.client.post(&url).json(&req);
         if let Some(ref jwt) = self.jwt {
-            http_req = http_req.bearer_auth(jwt);
+            http_req = http_req.bearer_auth(jwt.as_str());
         }
 
         let resp = http_req
@@ -143,7 +144,7 @@ impl WritersProofClient {
             .body(evidence_cbor.to_vec());
 
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -180,7 +181,7 @@ impl WritersProofClient {
         let url = format!("{}/v1/certificates/{}", self.base_url, id);
         let mut req = self.client.get(&url);
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -223,7 +224,7 @@ impl WritersProofClient {
         let url = format!("{}/v1/crl", self.base_url);
         let mut req = self.client.get(&url);
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -258,7 +259,7 @@ impl WritersProofClient {
         let url = format!("{}/v1/anchor", self.base_url);
         let mut http_req = self.client.post(&url).json(&req);
         if let Some(ref jwt) = self.jwt {
-            http_req = http_req.bearer_auth(jwt);
+            http_req = http_req.bearer_auth(jwt.as_str());
         }
 
         let resp = http_req
@@ -304,7 +305,7 @@ impl WritersProofClient {
             .timeout(std::time::Duration::from_secs(effective_timeout));
 
         if let Some(ref jwt) = self.jwt {
-            http_req = http_req.bearer_auth(jwt);
+            http_req = http_req.bearer_auth(jwt.as_str());
         }
 
         let resp = http_req
@@ -336,7 +337,7 @@ impl WritersProofClient {
             .body(evidence_cbor.to_vec());
 
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -366,7 +367,7 @@ impl WritersProofClient {
         let url = format!("{}/v1/stego/sign", self.base_url);
         let mut http_req = self.client.post(&url).json(&req);
         if let Some(ref jwt) = self.jwt {
-            http_req = http_req.bearer_auth(jwt);
+            http_req = http_req.bearer_auth(jwt.as_str());
         }
 
         let resp = http_req
@@ -415,7 +416,7 @@ impl WritersProofClient {
 
         let mut req = self.client.post(&url).json(&body);
         if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt);
+            req = req.bearer_auth(jwt.as_str());
         }
 
         let resp = req
@@ -472,7 +473,10 @@ mod tests {
         let client = WritersProofClient::new("https://api.writersproof.com")
             .unwrap()
             .with_jwt("test-token".to_string());
-        assert_eq!(client.jwt.as_deref(), Some("test-token"));
+        assert!(client
+            .jwt
+            .as_ref()
+            .is_some_and(|j| j.as_str() == "test-token"));
     }
 
     #[test]

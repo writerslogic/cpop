@@ -15,6 +15,7 @@ use std::io::{self, Read, Write};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -96,6 +97,13 @@ struct Session {
     last_checkpoint_ts: u64,
     bucket_tokens: f64,
     last_refill: std::time::Instant,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.session_nonce.zeroize();
+        self.prev_commitment.zeroize();
+    }
 }
 
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();

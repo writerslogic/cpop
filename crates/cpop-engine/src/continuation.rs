@@ -17,7 +17,9 @@ pub struct ContinuationSummary {
     pub total_checkpoints: u64,
     pub total_chars: u64,
     pub total_vdf_time_seconds: f64,
-    pub total_entropy_bits: f32,
+    /// Accumulated entropy in bits (f64 to avoid f32 precision loss over
+    /// thousands of packets).
+    pub total_entropy_bits: f64,
     /// Including current packet
     pub packets_in_series: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,18 +67,26 @@ impl ContinuationSection {
     }
 
     /// Build a continuation packet linked to the previous one.
+    ///
+    /// Returns `Err` if `prev_sequence` is `u32::MAX` (overflow).
     pub fn continue_from(
         prev_series_id: Uuid,
         prev_sequence: u32,
         prev_chain_hash: String,
         prev_packet_id: Uuid,
         prev_summary: &ContinuationSummary,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, String> {
+        let next_sequence = prev_sequence
+            .checked_add(1)
+            .ok_or_else(|| "packet_sequence overflow: u32::MAX reached".to_string())?;
+        let next_packets = prev_summary
+            .packets_in_series
+            .checked_add(1)
+            .ok_or_else(|| "packets_in_series overflow: u32::MAX reached".to_string())?;
+
+        Ok(Self {
             series_id: prev_series_id,
-            packet_sequence: prev_sequence
-                .checked_add(1)
-                .expect("packet_sequence overflow"),
+            packet_sequence: next_sequence,
             prev_packet_chain_hash: Some(prev_chain_hash),
             prev_packet_id: Some(prev_packet_id),
             cumulative_summary: ContinuationSummary {
@@ -84,12 +94,12 @@ impl ContinuationSection {
                 total_chars: prev_summary.total_chars,
                 total_vdf_time_seconds: prev_summary.total_vdf_time_seconds,
                 total_entropy_bits: prev_summary.total_entropy_bits,
-                packets_in_series: prev_summary.packets_in_series + 1,
+                packets_in_series: next_packets,
                 series_started_at: prev_summary.series_started_at,
                 total_elapsed_seconds: None,
             },
             series_binding_signature: None,
-        }
+        })
     }
 
     /// Accumulate this packet's statistics into the running totals.
@@ -98,10 +108,14 @@ impl ContinuationSection {
         checkpoints: u64,
         chars: u64,
         vdf_time: f64,
-        entropy_bits: f32,
+        entropy_bits: f64,
     ) {
-        self.cumulative_summary.total_checkpoints += checkpoints;
-        self.cumulative_summary.total_chars += chars;
+        self.cumulative_summary.total_checkpoints = self
+            .cumulative_summary
+            .total_checkpoints
+            .saturating_add(checkpoints);
+        self.cumulative_summary.total_chars =
+            self.cumulative_summary.total_chars.saturating_add(chars);
         self.cumulative_summary.total_vdf_time_seconds += vdf_time;
         self.cumulative_summary.total_entropy_bits += entropy_bits;
     }
@@ -144,14 +158,17 @@ impl ContinuationSection {
         Ok(())
     }
 
-    /// Generate VDF input binding this packet to previous chain hash + series identity.
+    /// Generate VDF input binding this packet to previous chain hash + series
+    /// identity.
     ///
-    /// Each variable-length field is prefixed with its 4-byte big-endian length to
-    /// prevent ambiguous concatenations (e.g. "ab"+"cd" == "a"+"bcd" without prefixes).
-    /// The optional `prev_packet_chain_hash` is included only when present; its presence
-    /// is unambiguous because the 0-length prefix is never written for the absent case.
+    /// Encoding: every variable-length field is prefixed with its 4-byte
+    /// big-endian length to prevent ambiguous concatenations. Fixed-size
+    /// fields (`series_id` = 16 bytes, `packet_sequence` = 4 bytes) are
+    /// appended without a prefix since their size is constant.
     pub fn generate_vdf_context(&self, content_hash: &[u8]) -> Vec<u8> {
-        let mut context = Vec::new();
+        // Capacity: worst case prev_hash ~64 bytes + 4 prefix + content_hash ~32 + 4 prefix
+        //           + series_id 16 + sequence 4 = ~124 bytes
+        let mut context = Vec::with_capacity(128);
 
         if let Some(ref prev_hash) = self.prev_packet_chain_hash {
             let bytes = prev_hash.as_bytes();
@@ -159,9 +176,14 @@ impl ContinuationSection {
             context.extend_from_slice(bytes);
         }
 
+        // Length-prefix content_hash to prevent boundary ambiguity if hash
+        // algorithm changes (e.g. SHA-256 32 bytes vs SHA-512 64 bytes).
+        context.extend_from_slice(&(content_hash.len() as u32).to_be_bytes());
         context.extend_from_slice(content_hash);
+
+        // Fixed-size fields: no prefix needed.
         context.extend_from_slice(self.series_id.as_bytes());
-        context.extend_from_slice(&self.packet_sequence.to_le_bytes());
+        context.extend_from_slice(&self.packet_sequence.to_be_bytes());
 
         context
     }
@@ -190,13 +212,28 @@ mod tests {
             "chain_hash_abc".to_string(),
             Uuid::new_v4(),
             &first.cumulative_summary,
-        );
+        )
+        .expect("continue_from should succeed");
 
         assert_eq!(second.packet_sequence, 1);
         assert!(!second.is_first());
         assert_eq!(second.series_id, first.series_id);
         assert_eq!(second.cumulative_summary.packets_in_series, 2);
         assert!(second.validate().is_ok());
+    }
+
+    #[test]
+    fn test_continue_from_overflow() {
+        let first = ContinuationSection::new_series();
+        let result = ContinuationSection::continue_from(
+            first.series_id,
+            u32::MAX,
+            "hash".to_string(),
+            Uuid::new_v4(),
+            &first.cumulative_summary,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("overflow"));
     }
 
     #[test]
@@ -228,18 +265,60 @@ mod tests {
     }
 
     #[test]
-    fn test_vdf_context() {
+    fn test_vdf_context_deterministic() {
         let section = ContinuationSection::new_series();
-        let context = section.generate_vdf_context(b"test_content_hash");
-
-        assert!(context.len() > 16);
+        let ctx1 = section.generate_vdf_context(b"test_content_hash");
+        let ctx2 = section.generate_vdf_context(b"test_content_hash");
+        assert_eq!(ctx1, ctx2);
+        // content_hash length prefix (4) + content_hash (17) + series_id (16) + sequence (4) = 41
+        assert_eq!(ctx1.len(), 41);
     }
 
     #[test]
-    fn test_serialization() {
+    fn test_vdf_context_with_prev_hash() {
+        let first = ContinuationSection::new_series();
+        let second = ContinuationSection::continue_from(
+            first.series_id,
+            first.packet_sequence,
+            "prev_chain".to_string(),
+            Uuid::new_v4(),
+            &first.cumulative_summary,
+        )
+        .unwrap();
+
+        let ctx = second.generate_vdf_context(b"content");
+        // prev_hash prefix (4) + "prev_chain" (10) + content prefix (4) + "content" (7)
+        // + series_id (16) + sequence (4) = 45
+        assert_eq!(ctx.len(), 45);
+    }
+
+    #[test]
+    fn test_vdf_context_no_boundary_ambiguity() {
+        let section = ContinuationSection::new_series();
+        let ctx_short = section.generate_vdf_context(b"ab");
+        let ctx_long = section.generate_vdf_context(b"abc");
+        // Different content_hash lengths must produce different contexts
+        assert_ne!(ctx_short, ctx_long);
+    }
+
+    #[test]
+    fn test_add_packet_stats_saturates() {
+        let mut section = ContinuationSection::new_series();
+        section.add_packet_stats(u64::MAX, 0, 0.0, 0.0);
+        section.add_packet_stats(1, 0, 0.0, 0.0);
+        assert_eq!(section.cumulative_summary.total_checkpoints, u64::MAX);
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
         let section = ContinuationSection::new_series();
         let json = serde_json::to_string(&section).unwrap();
         let parsed: ContinuationSection = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.series_id, section.series_id);
+        assert_eq!(parsed.packet_sequence, section.packet_sequence);
+        assert_eq!(
+            parsed.cumulative_summary.packets_in_series,
+            section.cumulative_summary.packets_in_series
+        );
     }
 }

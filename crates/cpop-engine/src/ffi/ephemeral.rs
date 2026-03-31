@@ -651,11 +651,11 @@ fn build_war_block(
     if key_data.len() < 32 {
         return Err("Signing key too short".to_string());
     }
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(
-        key_data[..32]
-            .try_into()
-            .map_err(|_| "invalid key length")?,
-    );
+    let mut key_bytes: [u8; 32] = key_data[..32]
+        .try_into()
+        .map_err(|_| "invalid key length")?;
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
+    zeroize::Zeroize::zeroize(&mut key_bytes);
 
     let snapshots: Vec<crate::evidence::EphemeralSnapshot> = session
         .content_snapshots
