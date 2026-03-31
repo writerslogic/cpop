@@ -2,6 +2,7 @@
 
 use super::{AnchorError, AnchorProvider, Proof, ProofStatus, ProviderType};
 use async_trait::async_trait;
+use subtle::ConstantTimeEq;
 
 const DEFAULT_TSA_URLS: &[&str] = &[
     "https://timestamp.digicert.com",
@@ -94,7 +95,7 @@ impl Rfc3161Provider {
         let tst_info = extract_tst_info(&body)?;
         let response_nonce = extract_nonce(&tst_info)
             .ok_or_else(|| AnchorError::InvalidFormat("TSA response missing nonce".into()))?;
-        if response_nonce != nonce_sent.as_slice() {
+        if response_nonce.ct_eq(nonce_sent.as_slice()).unwrap_u8() != 1 {
             return Err(AnchorError::InvalidFormat(
                 "TSA response nonce does not match request nonce".into(),
             ));
@@ -201,7 +202,7 @@ impl Rfc3161Provider {
         let imprint_hash = extract_message_imprint_hash(&tst_info).ok_or_else(|| {
             AnchorError::InvalidFormat("Cannot extract MessageImprint hash from TSTInfo".into())
         })?;
-        if imprint_hash != *hash {
+        if imprint_hash.ct_eq(hash).unwrap_u8() != 1 {
             return Err(AnchorError::HashMismatch);
         }
 
