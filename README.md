@@ -30,14 +30,22 @@
 
 This monorepo contains the full CPOP ecosystem:
 
-| Component | Path | Description | License |
-|:----------|:-----|:------------|:--------|
-| **cpop_engine** | [`crates/cpop_engine`](crates/cpop_engine) | Cryptographic engine | AGPL-3.0-only |
-| **cpop_protocol** | [`crates/cpop_protocol`](crates/cpop_protocol) | PoP wire format & forensic models | AGPL-3.0-only |
-| **cpop_jitter** | [`crates/cpop_jitter`](crates/cpop_jitter) | Hardware timing entropy | AGPL-3.0-only |
-| **cpop_cli** | [`apps/cpop_cli`](apps/cpop_cli) | CLI (`cpop`) | AGPL-3.0-only |
-| **cpop_macos** | [`apps/cpop_macos`](apps/cpop_macos) | macOS desktop app | Proprietary |
-| **cpop_windows** | [`apps/cpop_windows`](apps/cpop_windows) | Windows desktop app | Proprietary |
+| Component | Path | Target | Description | License |
+|:----------|:-----|:-------|:------------|:--------|
+| **cpop-engine** | [`crates/cpop-engine`](crates/cpop-engine) | Native | Cryptographic engine, FFI, platform captures, storage | SSPL-1.0 |
+| **cpop-protocol** | [`crates/cpop-protocol`](crates/cpop-protocol) | Native + **WASM** | Wire format (CBOR/COSE), forensic models, RFC types | Apache-2.0 |
+| **cpop-jitter** | [`crates/cpop-jitter`](crates/cpop-jitter) | Native + **no_std** | Timing entropy primitive for embedded and desktop use | Apache-2.0 |
+| **cpop_cli** | [`apps/cpop_cli`](apps/cpop_cli) | Native | CLI (`cpop`) | AGPL-3.0-only |
+| **cpop_macos** | [`apps/cpop_macos`](apps/cpop_macos) | macOS | macOS desktop app (submodule) | Proprietary |
+| **cpop_windows** | [`apps/cpop_windows`](apps/cpop_windows) | Windows | Windows desktop app (submodule) | Proprietary |
+
+The three library crates are split by **compilation target**:
+
+- **cpop-jitter** compiles to `no_std` (bare-metal, embedded microcontrollers with no OS)
+- **cpop-protocol** compiles to `wasm32` (browser extensions for client-side evidence verification)
+- **cpop-engine** compiles to native only (requires OS APIs: CGEventTap, TPM, SQLite, Unix sockets)
+
+Dependencies flow one direction: `engine -> protocol -> jitter`. Merging them would break WASM and embedded compilation.
 
 ## Install
 
@@ -152,7 +160,7 @@ writerslogic/
 
 ```bash
 cargo test --workspace           # Run all tests
-cargo test -p cpop_engine --lib   # Fast engine tests (~915 tests)
+cargo test -p cpop-engine --lib   # Fast engine tests (~1020 tests)
 cargo clippy --workspace -- -D warnings  # Lint (zero warnings maintained)
 cargo fmt --all -- --check       # Format check
 cargo audit && cargo deny check  # Security audit
