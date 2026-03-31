@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 //! Forensic authorship analysis: edit topology, keystroke cadence, and profile correlation.
+//!
+//! # Boundary with `analysis/`
+//!
+//! - **forensics/** = Domain-specific orchestration, scoring, and verdict logic
+//!   for authorship evidence. Calls into `analysis/` for reusable algorithms.
+//! - **analysis/** = Pure statistical algorithms (Hurst exponent, Lyapunov,
+//!   SNR, perplexity, etc.) that are domain-agnostic and could be used outside
+//!   forensics.
+//!
+//! The dependency is one-directional: `forensics -> analysis`.
 
 pub(crate) mod analysis;
 mod assessment;

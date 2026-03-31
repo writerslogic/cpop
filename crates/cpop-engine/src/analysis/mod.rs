@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+//! Reusable statistical analysis algorithms.
+//!
+//! These are domain-agnostic: Hurst exponent, Lyapunov, SNR, perplexity,
+//! labyrinth (attractor reconstruction), etc. Used by `forensics/` for
+//! authorship analysis but could apply to any time-series data.
+
 pub mod active_probes;
 pub mod behavioral_fingerprint;
 pub mod error_topology;
