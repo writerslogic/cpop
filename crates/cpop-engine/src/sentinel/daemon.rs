@@ -178,6 +178,9 @@ impl DaemonManager {
                 return Ok(false);
             }
         }
+        // Residual TOCTOU: between remove_file and the second create_new,
+        // another daemon instance could race. The retry-once pattern limits
+        // impact; the loser gets AlreadyExists and returns Ok(false).
         let _ = fs::remove_file(&self.pid_file);
 
         match OpenOptions::new()
@@ -339,6 +342,7 @@ impl DaemonManager {
         }
 
         if let Ok(state) = self.read_state() {
+            // Negative started_at (corrupt state) falls back to epoch.
             let started_at =
                 UNIX_EPOCH + Duration::from_secs(u64::try_from(state.started_at).unwrap_or(0));
             status.started_at = Some(started_at);
@@ -407,6 +411,12 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
         }
     }
 
+    // Acquire PID file BEFORE starting the sentinel to prevent races.
+    let pid = std::process::id();
+    if !daemon_mgr.acquire_pid_file(pid)? {
+        return Err(SentinelError::DaemonAlreadyRunning(pid as i32));
+    }
+
     let config = SentinelConfig::default().with_writersproof_dir(writerslogic_dir);
     let sentinel = Arc::new(Sentinel::new(config)?);
 
@@ -414,7 +424,11 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
         sentinel.set_hmac_key(hmac_key.to_vec());
     }
 
-    sentinel.start().await?;
+    // If start fails, clean up the PID file.
+    if let Err(e) = sentinel.start().await {
+        daemon_mgr.cleanup();
+        return Err(e);
+    }
 
     let setup = async {
         let ipc_server = IpcServer::bind(daemon_mgr.socket_path().to_path_buf())
@@ -432,10 +446,6 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
             }
         });
 
-        let pid = std::process::id();
-        if !daemon_mgr.acquire_pid_file(pid)? {
-            return Err(SentinelError::DaemonAlreadyRunning(pid as i32));
-        }
         daemon_mgr.write_state(&DaemonState {
             pid: pid as i32,
             started_at: SystemTime::now()
@@ -456,6 +466,7 @@ async fn setup_daemon(writerslogic_dir: &Path) -> Result<DaemonSetup> {
             if let Err(stop_err) = sentinel.stop().await {
                 log::error!("Failed to stop sentinel after setup failure: {stop_err}");
             }
+            daemon_mgr.cleanup();
             return Err(e);
         }
     };
