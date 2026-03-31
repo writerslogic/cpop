@@ -1,231 +1,268 @@
 # CPOP Project Audit — Consolidated Findings
 
-**Updated**: 2026-03-25
-**Scope**: CLI (10 Rust files), Engine (55 Rust files), Atlassian (6 TS files), Google Workspace (6 TS files)
+**Updated**: 2026-03-30
+**Scope**: Full workspace scan — CLI (19 files), Engine (170+ files), Protocol (16 files), Jitter (3 files)
+**Previous audit**: 2026-03-25 — 255 findings, all resolved
 **macOS app**: 381 findings fixed, 0 open (see apps/cpop_macos/audit-todo.md)
-**Engine deep audit**: 55 files audited, 120+ prior fixes applied, findings below are REMAINING issues
+**Baseline**: 1024 pass, 0 fail, 1 ignored (cpop-engine --lib)
 
 ## Summary
-| Severity | Open | Component |
-|----------|------|-----------|
-| CRITICAL | 5    | Google Workspace (2), Engine (3) |
-| HIGH     | 60   | CLI (3), Engine (51), Marketplace (6) |
-| MEDIUM   | 120  | CLI (17), Engine (95), Marketplace (8) |
-| LOW      | 70   | CLI (6), Engine (60), Marketplace (4) |
+| Severity | Open | Fixed | Component |
+|----------|------|-------|-----------|
+| CRITICAL | 0    | 5     | (all prior resolved) |
+| HIGH     | 30   | 60    | CLI (4), Engine (19), Protocol (7) |
+| MEDIUM   | 35   | 135   | CLI (12), Engine (28), Protocol (10) |
 
 ---
 
-## Critical
+## Prior Audit (2026-03-25) — All Resolved
 
-- [x] **C-001** `[security]` `cpop_google_workspace/src/Settings.ts:121` — API key stored in plaintext UserProperties. Any script editor can extract all user API keys.
-  Impact: API key exposure. Fix: OAuth token exchange or client-side encryption. Effort: large
-
-- [x] **C-002** `[security]` `cpop_google_workspace/src/Code.ts:321-322` — Stego HMAC tag and embedding seed in DocumentProperties, readable by any document editor.
-  Impact: Watermark forgery. Fix: Store seed server-side only. Effort: large
+All 255 findings from the prior audit (C-001..EC-003, H-001..EH-051, M-001..EM-050, L-001..L-015) are resolved. See git history for details.
 
 ---
 
-## High
-
-### CLI (Rust)
-- [x] **H-001** `cpop_cli/src/native_messaging_host.rs:189` — Subdomain allowlist permissive (`evil.notion.so` passes).
-- [x] **H-002** `cpop_cli/src/cmd_track.rs:96` — Auto-creates files at arbitrary paths without confirmation.
-- [x] **H-003** `cpop_cli/src/cmd_export.rs:80` — `--no-beacons` and `--beacon-timeout` flags silently ignored (no-ops).
-
-### Engine (Rust)
-- [x] **H-004** `cpop_engine/src/tpm/secure_enclave.rs:1032` — `writersproof_dir()` panics on missing home directory.
-- [x] **H-005** `cpop_engine/src/sentinel/core.rs:782` — HMAC key escapes `Zeroizing` wrapper via `mem::take`.
-
-### Marketplace (TypeScript)
-- [x] **H-006** `cpop_google_workspace/src/WritersProofClient.ts:168` — User email sent to API without consent.
-- [x] **H-007** `cpop_atlassian/src/services/WritersProofClient.ts:136` — Error bodies leak to Confluence UI.
-- [x] **H-008** `cpop_google_workspace/src/WritersProofClient.ts:381` — Error bodies leak to Google Workspace notifications.
-- [x] **H-009** `cpop_atlassian/src/resolvers/index.ts` — No page edit permission check on resolver invocations.
-- [x] **H-010** `cpop_google_workspace/src/Settings.ts:79` — Tier enforcement client-side only; trivially bypassable.
-- [x] **H-011** `cpop_google_workspace/src/Code.ts:598` — `downloadUrl` from API used as open-link without full validation.
-
----
-
-## Medium
+## High (2026-03-30 scan)
 
 ### CLI
-- [x] **M-001** `native_messaging_host.rs:246` — Data dir falls back to CWD if home unavailable.
-- [x] **M-002** `native_messaging_host.rs:453` — Rejects non-monotonic char count; breaks on delete/undo.
-- [x] **M-003** `cmd_track.rs:606` — ctrlc handler failure silently discarded.
-- [x] **M-004** `cmd_track.rs:640` — Symlink following may track unintended files.
-- [x] **M-005** `cmd_export.rs:582` — TOCTOU: char_count computed from different file read than hash.
-- [x] **M-006** `cmd_export.rs:1011` — Stego HMAC key uses SHA-256 not HKDF.
-- [x] **M-007** `cmd_export.rs:1335` — Timestamp subtraction may underflow on unordered events.
-- [x] **M-008** `util.rs:112` — HMAC key cloned out of Zeroizing wrapper.
-- [x] **M-009** `util.rs:191` — `with_extension("tmp")` replaces extension; temp file collision.
-- [x] **M-010** `cmd_verify.rs:46` — Evidence file deserialized twice.
-- [x] **M-011** `cmd_verify.rs:70` — Unsigned packets pass as `"valid": true` in JSON output.
-- [x] **M-012** `cmd_verify.rs:471` — No file size check on `.cwar` before read. Large file DoS.
-- [x] **M-013** `cmd_config.rs:205` — EDITOR env var doesn't handle quoted paths.
-- [x] **M-014** `cmd_config.rs:79` — Display shows "true" for integer config set to "1".
-- [x] **M-015** `cmd_status.rs:130` — `catch_unwind` around TPM; false safety for FFI panics.
-- [x] **M-016** `cmd_fingerprint.rs:186` — Error matching via string comparison.
-- [x] **M-017** `cli.rs:116` — `beacon_timeout` no upper bound validation.
 
-### Engine
-- [x] **M-018** `tpm/secure_enclave.rs:465` — Legacy v4 XOR seal non-authenticated, repeating keystream.
-- [x] **M-019** `tpm/secure_enclave.rs:600` — Seal nonce deterministic; linkable operations.
-- [x] **M-020** `checkpoint/chain.rs:152` — File lock not released on panic (relies on File drop).
-- [x] **M-021** `vdf/swf_argon2.rs:480` — `panic!` in CBOR encoding reachable from verification path.
-- [x] **M-022** `ffi/ephemeral.rs:616` — Signing key read with no size bound. OOM risk.
-- [x] **M-023** `mmr/mmr.rs:344` — `find_peaks` could infinite loop on malformed size.
+- [ ] **H-052** `[security]` `apps/cpop_cli/src/native_messaging_host.rs:85` — Session struct holds session_nonce [u8;16] and prev_commitment [u8;32] without Zeroize/Drop impl. Violates key material zeroization policy.
+  Impact: Session secrets persist in memory after drop. Fix: Derive Zeroize + ZeroizeOnDrop on Session. Effort: small
 
-### Marketplace
-- [x] **M-024** `cpop_atlassian/src/resolvers/index.ts:163` — Race condition in session state read-modify-write.
-- [x] **M-025** `cpop_google_workspace/src/Code.ts:424` — No input validation on AI tool name.
-- [x] **M-026** `cpop_google_workspace/src/Code.ts:758` — Unbounded polling document list in ScriptProperties.
-- [x] **M-027** `cpop_google_workspace/src/Code.ts:346` — Stego tag verified from editable DocumentProperties.
-- [x] **M-028** `cpop_atlassian/src/services/WritersProofClient.ts:47` — Session ID not validated before URL path interpolation.
-- [x] **M-029** `cpop_atlassian/src/services/WritersProofClient.ts:63` — Evidence ID not validated before URL interpolation.
-- [x] **M-030** `cpop_google_workspace/src/Code.ts:550` — API key validation too permissive.
-- [x] **M-031** `cpop_google_workspace/src/Settings.ts:79` — Tier stored locally without server verification.
+- [ ] **H-053** `[error_handling]` `apps/cpop_cli/src/util.rs:287` — retry_on_busy() uses .expect() after all retries exhausted; panics CLI on legitimately busy database.
+  Impact: Users see panic backtrace instead of actionable error. Fix: Return anyhow::Error. Effort: small
+
+- [ ] **H-054** `[security]` `apps/cpop_cli/src/cmd_presence.rs:23` — Session lock released during stdin interaction; TOCTOU between release and re-acquisition at line 279.
+  Impact: Concurrent session modifications possible during user input phase. Fix: Hold advisory lock or store in-memory. Effort: medium
+
+- [ ] **H-055** `[error_handling]` `apps/cpop_cli/src/cmd_config.rs:117` — Voice fingerprinting consent errors propagated as generic anyhow without recovery guidance.
+  Impact: Users get opaque error with no recovery path. Fix: Wrap with context message suggesting rm consent.json. Effort: small
+
+### Engine — IPC/FFI
+
+- [ ] **H-056** `[concurrency]` `crates/cpop-engine/src/ipc/crypto.rs:176` — Sequence number CAS validation and rx_sequence advancement are not atomic; concurrent packets can race past replay check.
+  Impact: Replay attack window during concurrent IPC message processing. Fix: Atomic compare-and-swap with SeqCst. Effort: medium
+
+- [ ] **H-057** `[error_handling]` `crates/cpop-engine/src/ipc/server_handler.rs:224` — Rate limiter lock_recover() silently swallows poisoning; may bypass rate limiting on poisoned mutex.
+  Impact: Rate limiting silently disabled after handler panic. Fix: Return error on poisoned state. Effort: small
+
+- [ ] **H-058** `[security]` `crates/cpop-engine/src/ffi/ephemeral.rs:656` — Signing key bytes not zeroized after constructing SigningKey; key_bytes Vec persists on heap.
+  Impact: Key material exposure in memory. Fix: Wrap in Zeroizing<Vec<u8>>. Effort: small
+
+### Engine — Sentinel/Platform
+
+- [x] **H-059** `[security]` `crates/cpop-engine/src/sentinel/ipc_handler.rs:36` — HMAC key escapes Zeroizing wrapper via mem::take(); not zeroized if SecureStore::open() fails.
+  Impact: Key material leaked on database open failure. Fix: Replaced mem::take with .to_vec(); Zeroizing wrapper drops naturally.
+
+- [x] **H-060** `[concurrency]` `crates/cpop-engine/src/sentinel/daemon.rs:436` — PID file acquired AFTER sentinel.start() and IPC bind; crash between start and PID write leaves stale PID.
+  Impact: Daemon fails to restart; requires manual PID cleanup. Fix: Moved acquire_pid_file() before sentinel.start() with cleanup on failure.
+
+- [x] **H-061** `[concurrency]` `crates/cpop-engine/src/sentinel/core.rs:493` — Session keystroke attribution: read lock check followed by write lock update; session can be removed between checks.
+  Impact: Keystroke silently lost if session ends between check and update. Fix: Already uses single write lock in current code.
+
+- [x] **H-062** `[concurrency]` `crates/cpop-engine/src/sentinel/core.rs:856` — Event loop handle may not be stored if lock fails; orphaned Tokio task continues after Sentinel drop.
+  Impact: Task leak; orphaned task may access freed Arc clones. Fix: Changed to lock_recover() in Drop impl.
+
+- [ ] **H-063** `[concurrency]` `crates/cpop-engine/src/platform/windows.rs:169` — MONITOR_ACTIVE check not held during hook installation; second monitor can start between check and hook setup.
+  Impact: Two monitors feed same GLOBAL_SESSION; events interleave. Fix: Extend CAS to cover hook install. Effort: medium
+
+### Engine — Evidence/Checkpoint
+
+- [ ] **H-064** `[data_integrity]` `crates/cpop-engine/src/evidence/wire_conversion.rs:225` — CBOR encoding failure silently returns empty Vec for jitter seal computation.
+  Impact: Invalid jitter_seal (zeros) breaks downstream verification. Fix: Return error on encode failure. Effort: small
+
+- [ ] **H-065** `[data_integrity]` `crates/cpop-engine/src/evidence/wire_conversion.rs:257` — CBOR encoding of jitter binding silently fails; entangled MAC computed with empty bytes.
+  Impact: Entangled checkpoint loses binding strength. Fix: Propagate encode error. Effort: small
+
+- [ ] **H-066** `[security]` `crates/cpop-engine/src/evidence/builder/setters.rs:337` — Ratchet index clamped to i32::MAX instead of error when exceeding 2^31.
+  Impact: Silent index clamping breaks signature verification on very long chains. Fix: Return error. Effort: small
+
+### Engine — Forensics/Analysis
+
+- [ ] **H-067** `[code_quality]` `crates/cpop-engine/src/forensics/assessment.rs:292` — normalized_entropy can exceed 1.0; no clamp before penalty calculation.
+  Impact: Forgery detection unreliable with poisoned entropy inputs. Fix: .min(1.0) after normalization. Effort: small
+
+- [ ] **H-068** `[error_handling]` `crates/cpop-engine/src/forensics/topology.rs:99` — No validation that inter-event intervals are positive before computing median.
+  Impact: Negative intervals from out-of-order events corrupt all downstream metrics. Fix: Clamp to [0, max]. Effort: small
+
+- [ ] **H-069** `[numeric]` `crates/cpop-engine/src/analysis/behavioral_fingerprint.rs:226` — burst_speed_variance divides by (n-1) where n=1; division by zero.
+  Impact: Panic during behavioral fingerprint generation. Fix: Guard len < 2. Effort: small
+
+- [ ] **H-070** `[numeric]` `crates/cpop-engine/src/analysis/snr.rs:80` — log10(0) produces -inf when signal_power=0; not explicitly handled.
+  Impact: SNR becomes -inf instead of explicit zero-signal flag. Fix: Guard signal_power > 0. Effort: small
+
+### Engine — Other
+
+- [ ] **H-071** `[security]` `crates/cpop-engine/src/writersproof/client.rs:50` — JWT token stored as plain String without zeroization on Drop.
+  Impact: Bearer tokens persist in memory dumps. Fix: Wrap with Zeroizing<String>. Effort: small
+
+- [ ] **H-072** `[security]` `crates/cpop-engine/src/war/profiles/standards.rs:347` — DID method extraction uses split(':').nth(1); truncates multi-component DIDs.
+  Impact: Authentication metadata lost for complex DID methods. Fix: Return full DID after 'did:' prefix. Effort: small
+
+- [ ] **H-073** `[concurrency]` `crates/cpop-engine/src/tpm/windows/provider.rs:218` — Counter not atomically incremented with binding creation; duplicate counter values possible.
+  Impact: Monotonicity violation in attestation chain. Fix: Atomic increment or lock both together. Effort: medium
+
+- [ ] **H-074** `[security]` `crates/cpop-engine/src/tpm/secure_enclave/signing.rs:34` — CFRelease called on potentially null CFErrorRef pointer.
+  Impact: Memory corruption on SE signing failure path. Fix: Check !error.is_null() before CFRelease. Effort: small
+
+- [ ] **H-075** `[numeric]` `crates/cpop-engine/src/jitter/session.rs:186` — compute_jitter_value: JITTER_RANGE can be 0 if min==max; modulo by zero.
+  Impact: Panic in jitter computation. Fix: Guard params.jitter_range == 0. Effort: small
+
+- [ ] **H-076** `[error_handling]` `crates/cpop-engine/src/fingerprint/storage.rs:216` — delete_all_voice_data silently deletes on decrypt failure.
+  Impact: Unrecoverable data loss without user notification. Fix: Return error on decrypt failure. Effort: small
+
+### Protocol
+
+- [ ] **H-077** `[numeric]` `crates/cpop-protocol/src/rfc/fixed_point.rs:51` — f64 to i32 cast without overflow check in from_float macro.
+  Impact: Silent wraparound corrupts fixed-point scores. Fix: Clamp before cast. Effort: small
+
+- [ ] **H-078** `[security]` `crates/cpop-protocol/src/codec/cbor.rs:28` — CBOR deserialization has no recursive depth limit; deeply nested structures within 16MB can cause stack overflow.
+  Impact: Stack overflow DoS on malicious CBOR input. Fix: Add max_depth=32 pre-flight validation. Effort: large
+
+- [ ] **H-079** `[security]` `crates/cpop-protocol/src/evidence.rs:101` — Zero entropy hash check insufficient; PhysJitter silent failure allows weak causality locks.
+  Impact: Forgeable evidence packets with zero-entropy checkpoints. Fix: Require entropy_bits >= 8. Effort: small
+
+- [ ] **H-080** `[error_handling]` `crates/cpop-protocol/src/codec/mod.rs:105` — decode() ignores Format::CborWar; calls cbor::decode instead of cbor::decode_cwar.
+  Impact: CWAR tag validation bypassed; wrong-tagged CBOR silently accepted. Fix: Match CborWar explicitly. Effort: small
+
+- [ ] **H-081** `[numeric]` `crates/cpop-engine/src/vdf/swf_argon2.rs:233` — Loop caps at MAX_ITERATIONS but later code assumes leaves.len() == params.iterations; OOB panic.
+  Impact: Panic when building Merkle proofs if iterations > MAX_ITERATIONS. Fix: Validate at entry. Effort: small
 
 ---
 
-## Low
+## Medium (2026-03-30 scan)
 
 ### CLI
-- [x] **L-001** `cmd_track.rs:681` — `last_checkpoint_map` unbounded between cleanups.
-- [x] **L-002** `cmd_export.rs:525` — Integer negation could use `.unsigned_abs()`.
-- [x] **L-003** `util.rs:204` — `normalize_path` doesn't resolve `..` for non-existent paths.
-- [x] **L-004** `cmd_verify.rs:387` — `write_war_appraisal` silently swallows errors.
-- [x] **L-005** `cmd_log.rs:236` — Duplicate `#[test]` attribute.
-- [x] **L-006** `cmd_fingerprint.rs:297` — Delete reads stdin in non-interactive contexts.
-- [x] **L-007** `cmd_status.rs:76` — Derived HMAC key not zeroized.
+- [ ] **M-032** `[security]` `native_messaging_host.rs:287` — Evidence file created before chmod; brief TOCTOU window.
+- [ ] **M-033** `[security]` `native_messaging_host.rs:636` — Symlink check after canonicalize uses original path reference.
+- [ ] **M-034** `[security]` `native_messaging_host.rs:470` — Hex decode timing leak in commitment verification.
+- [ ] **M-035** `[code_quality]` `cmd_track.rs:151` — is_within_target() uses lexical starts_with; unsafe for non-canonical paths.
+- [ ] **M-036** `[code_quality]` `cmd_export.rs:660` — default_output_path() no traversal check on relative paths.
+- [ ] **M-037** `[input_validation]` `cmd_config.rs:209` — parse_editor_value doesn't handle quoted paths.
+- [ ] **M-038** `[code_quality]` `smart_defaults.rs:82` — File selection ambiguous with similar names.
+- [ ] **M-039** `[error_handling]` `cmd_fingerprint.rs:189` — Error handling via string matching instead of types.
+- [ ] **M-040** `[error_handling]` `config/loading.rs:45` — Legacy config parse failure silently uses defaults.
+- [ ] **M-041** `[input_validation]` `main.rs:229` — Path traversal warning not enforced.
+- [ ] **M-042** `[code_quality]` `main.rs:131` — Auto-start logic fragile; adding commands requires manual update.
+- [ ] **M-043** `[error_handling]` `config/types.rs:353` — Config validation lacks reasonable bounds on timing intervals.
 
-### Engine
-- [x] **L-008** `tpm/secure_enclave.rs:972` — `extract_public_key` leaks SecKeyRef.
-- [x] **L-009** `checkpoint/chain.rs:802` — No fsync on parent directory after rename.
-- [x] **L-010** `ffi/evidence.rs:711` — C2PA manifest write not atomic.
-- [x] **L-011** `ffi/ephemeral.rs:119` — `.len()` checks bytes but error says "chars".
+### Engine — IPC/FFI
+- [ ] **M-044** `[security]` `ipc/messages.rs:36` — Path validation race between canonicalize and symlink check.
+- [ ] **M-045** `[security]` `ipc/messages.rs:108` — Windows UNC path normalization incomplete.
+- [ ] **M-046** `[concurrency]` `ffi/sentinel_inject.rs:136` — Pre-witness buffer and session creation TOCTOU race.
+- [ ] **M-047** `[code_quality]` `ffi/ephemeral.rs:295` — Jitter interval filtering reports no rejection count to caller.
+- [x] **M-048** `[error_handling]` `ffi/beacon.rs:104` — Empty API key not validated before client creation.
+- [ ] **M-049** `[error_handling]` `ipc/async_client.rs:366` — Poisoned stream after partial send/recv; no auto-reconnect.
+- [ ] **M-050** `[error_handling]` `ipc/server.rs:62` — Stale socket test connection not properly closed.
+- [ ] **M-051** `[security]` `ipc/messages.rs:344` — Pulse timestamp_ns not validated against wall clock.
+- [ ] **M-052** `[code_quality]` `ffi/ephemeral.rs:117` — Sessions DashMap has no LRU eviction; memory exhaustion DoS.
+- [ ] **M-053** `[security]` `ipc/secure_channel.rs:40` — ChaCha20Poly1305 cipher key not zeroized on Drop.
+- [ ] **M-054** `[code_quality]` `ffi/sentinel_witnessing.rs:249` — Forensic score blending has overlapping conditions.
+- [ ] **M-055** `[error_handling]` `ffi/evidence_derivative.rs:82` — File size TOCTOU between validation and hashing.
+- [x] **M-056** `[error_handling]` `ffi/beacon.rs:57` — Beacon runtime OnceLock caches failure permanently.
 
-### Marketplace
-- [x] **L-012** `cpop_atlassian/resolvers/index.ts:212` — Console logs may contain session IDs.
-- [x] **L-013** `cpop_google_workspace/CardBuilder.ts:734` — API key masking reveals too much for short keys.
-- [x] **L-014** `cpop_atlassian/resolvers/index.ts` — No rate limiting on resolver invocations.
-- [x] **L-015** `cpop_google_workspace/Code.ts:652` — Polling jitter uses Math.random (appropriate).
+### Engine — Sentinel/Platform
+- [x] **M-057** `[error_handling]` `sentinel/core.rs:348` — Channel full drops keystrokes silently; no metrics.
+- [x] **M-058** `[concurrency]` `sentinel/core.rs:620` — Mouse timing uses system clock; clock jump causes false positives.
+  Verified: mouse_duration_ns is unused; is_during_typing uses monotonic Instant. No fix needed.
+- [x] **M-059** `[code_quality]` `sentinel/core.rs:559` — File exists check outside session lock; file could be deleted.
+  Fix: Added benign-race comment; session for deleted file ends naturally on idle sweep.
+- [x] **M-060** `[error_handling]` `sentinel/core.rs:796` — Auto-checkpoint event may be orphaned if session ends.
+  Fix: Added benign-race comment; extra checkpoint is valid evidence data.
+- [x] **M-061** `[concurrency]` `sentinel/daemon.rs:181` — Stale PID cleanup races with concurrent daemon startup.
+  Fix: Added TOCTOU race comment; retry-once pattern limits impact.
+- [ ] **M-062** `[code_quality]` `platform/windows.rs:386` — Global static mutex poisoning silently swallowed.
+- [x] **M-063** `[security]` `sentinel/ipc_handler.rs:54` — Enumerate index cast to i64 without overflow check.
+- [x] **M-064** `[code_quality]` `platform/synthetic.rs:163` — Replay threshold uses > instead of >=; edge case.
+- [ ] **M-065** `[error_handling]` `platform/macos/keystroke.rs:189` — CGEventTap re-enable result not checked.
+- [x] **M-066** `[error_handling]` `sentinel/helpers.rs:523` — Hash slice bound may truncate below 32 bytes.
+  Fix: Replaced with fixed-size [0u8; 32] array and bounded copy.
+
+### Engine — Evidence/Checkpoint
+- [x] **M-067** `[code_quality]` `checkpoint/chain.rs:129` — expect() on checkpoint count conversion.
+- [ ] **M-068** `[code_quality]` `checkpoint/chain.rs:162` — expect() after push; logically safe but library anti-pattern.
+
+### Engine — Forensics/Analysis/VDF
+- [x] **M-069** `[numeric]` `analysis/perplexity.rs:88` — Laplace smoothing uses 0.1 not 1.0; inconsistent with standard formulation.
+- [ ] **M-070** `[error_handling]` `analysis/hurst.rs:115` — Degenerate regression NaN caught but error message generic.
+- [ ] **M-071** `[code_quality]` `analysis/stats.rs:15` — Single-sample std_dev returns 0.0 undocumented.
+- [x] **M-072** `[numeric]` `forensics/dictation.rs:60` — f64::EPSILON used as zero-WPM threshold; inappropriate.
+- [ ] **M-073** `[numeric]` `forensics/cross_modal.rs:203` — safe_ln(0) = 0.0 biases interval similarity upward.
+- [ ] **M-074** `[numeric]` `forensics/cadence.rs:168` — Percentile rounding may select wrong index for small datasets.
+- [ ] **M-075** `[code_quality]` `forensics/comparison.rs:79` — NaN weight redistribution implicit and undocumented.
+- [x] **M-076** `[numeric]` `forensics/analysis.rs:62` — Timestamp range not validated; i64::MAX corrupts time_span.
+- [ ] **M-077** `[numeric]` `vdf/params.rs:61` — Calibration duration truncated; biased low on fast hardware.
+- [ ] **M-078** `[error_handling]` `vdf/proof.rs:110` — VDF duration_nanos no plausibility check.
+- [ ] **M-079** `[error_handling]` `vdf/swf_argon2.rs:510` — Undersample returns fewer indices than requested without error.
+- [x] **M-080** `[security]` `forensics/event_validation.rs:296` — Burst detection assumes monotonic timestamps; no validation.
+
+### Engine — WAR/Trust/Anchors
+- [ ] **M-081** `[code_quality]` `trust_policy/evaluation.rs:66` — GeometricMean empty factors produces inf/nan.
+- [ ] **M-082** `[security]` `anchors/ethereum.rs:234` — EIP-155 v value computation may overflow for large chain_id.
+- [ ] **M-083** `[error_handling]` `writersproof/queue.rs:49` — home directory expect() panics in daemon context.
+- [ ] **M-084** `[error_handling]` `writersproof/client.rs:30` — Debug builds accept HTTP without strong indication.
+
+### Engine — TPM/Jitter/MMR/Other
+- [ ] **M-085** `[code_quality]` `tpm/windows/provider_signing.rs:151` — TPM return code not validated after sign/create.
+- [ ] **M-086** `[security]` `tpm/secure_enclave/key_management.rs:161` — No null check after SecKeyCopyPublicKey.
+- [ ] **M-087** `[code_quality]` `jitter/session.rs:175` — Keystroke counter saturates at u64::MAX; sampling stops.
+- [ ] **M-088** `[security]` `fingerprint/storage.rs:332` — Legacy key migration path lacks traversal check.
+- [ ] **M-089** `[security]` `mmr/proof.rs:176` — RangeProof accepts extra siblings; sibling_idx validated late.
+- [x] **M-090** `[numeric]` `mmr/proof.rs:299` — 1u64 << (height+1) overflows if height >= 63.
+- [x] **M-091** `[numeric]` `mmr/mmr.rs:127` — get_leaf_index overflows at u64::MAX.
+- [ ] **M-092** `[error_handling]` `cpop-jitter/src/evidence.rs:185` — TryFrom doesn't validate sequence uniqueness.
+- [x] **M-093** `[security]` `steganography/embedding.rs:167` — Seed bytes not zeroized after Fisher-Yates derivation.
+
+### Protocol
+- [x] **M-094** `[numeric]` `rfc/fixed_point.rs:134` — Microdollars from_dollars f64 to i64 overflow unchecked.
+- [ ] **M-095** `[security]` `rfc/jitter_binding.rs:562` — Source weight sum may overflow u32 with corrupted data.
+- [ ] **M-096** `[error_handling]` `forensics/engine.rs:122` — saturating_sub masks out-of-order timestamps.
+- [ ] **M-097** `[code_quality]` `rfc/time_evidence.rs:233` — Negative timestamp silently clamped to 0.
+- [ ] **M-098** `[code_quality]` `rfc/wire_types/components.rs:143` — CDDL limits not documented as spec constraints.
+- [ ] **M-099** `[error_handling]` `rfc/vdf.rs:64` — minimum_elapsed_ms division by zero if iterations_per_second=0.
+- [ ] **M-100** `[code_quality]` `rfc/packet.rs:446` — VDF input/output length not validated against CDDL.
+- [ ] **M-101** `[code_quality]` `baseline.rs:198` — f32/f64 precision mismatch between baseline.rs and wire_types.
+- [ ] **M-102** `[security]` `rfc/wire_types/attestation.rs:314` — Deferred deserialization validation; nested CBOR pre-decode.
+- [ ] **M-103** `[code_quality]` `codec/mod.rs:105` — ConfidenceTier validation fragile; manual bounds vs enum.
+
+### Engine — Config/Report/Other
+- [ ] **M-104** `[security]` `config/types.rs:335` — App allowlist case sensitivity inconsistent across platforms.
+- [ ] **M-105** `[code_quality]` `collaboration.rs:243` — Out-of-bounds checkpoint ranges silently clamped.
+- [ ] **M-106** `[code_quality]` `continuation.rs:153` — Mixed byte ordering (big/little-endian) in VDF context.
+- [x] **M-107** `[security]` `report/html/sections.rs:10` — sanitize_css_color allows non-standard 5-char hex.
 
 ---
 
-## Engine Deep Audit (2026-03-25) — 55 files, 10 parallel agents
+## Quick Wins (effort=small, HIGH severity)
+| ID | File:Line | Issue |
+|----|-----------|-------|
+| H-052 | native_messaging_host.rs:85 | Session struct missing Zeroize |
+| H-053 | util.rs:287 | retry_on_busy expect/panic |
+| H-055 | cmd_config.rs:117 | Opaque consent error |
+| H-057 | server_handler.rs:224 | Rate limiter poison swallowed |
+| H-058 | ephemeral.rs:656 | Signing key not zeroized |
+| H-059 | ipc_handler.rs:36 | HMAC key zeroize gap |
+| H-061 | core.rs:493 | Session TOCTOU |
+| H-062 | core.rs:856 | Task leak on lock fail |
+| H-064 | wire_conversion.rs:225 | CBOR encode fallback |
+| H-065 | wire_conversion.rs:257 | Entangled MAC encode |
+| H-066 | setters.rs:337 | Ratchet index clamp |
+| H-067 | assessment.rs:292 | Unbounded entropy |
+| H-068 | topology.rs:99 | Unsorted interval |
+| H-069 | behavioral_fingerprint.rs:226 | Div by zero |
+| H-070 | snr.rs:80 | Zero signal SNR |
+| H-071 | client.rs:50 | JWT no zeroize |
+| H-072 | standards.rs:347 | DID parsing |
+| H-074 | signing.rs:34 | CFRelease null check |
+| H-075 | session.rs:186 | Jitter modulo zero |
+| H-077 | fixed_point.rs:51 | Float overflow |
+| H-079 | evidence.rs:101 | Zero entropy |
+| H-080 | codec/mod.rs:105 | CborWar tag bypass |
+| H-081 | swf_argon2.rs:233 | VDF iteration bounds |
 
-### Critical (Engine)
+---
 
-- [x] **EC-001** `forensics/cadence.rs:49` — Unsigned subtraction on signed i64 timestamps; negative IKI corrupts all metrics. Use saturating_sub or cast to i128.
-- [x] **EC-002** `forensics/dictation.rs:67` — `i64::saturating_sub` saturates to `i64::MIN` not 0 on inverted timestamps; negative duration treated as enormous negative.
-- [x] **EC-003** `forensics/forgery_cost.rs:273` — `ln()` on geometric mean not fully guarded against subnormals; `ln(subnormal)` collapses geo_mean toward 0.
-
-### High (Engine)
-
-#### Security
-- [x] **EH-001** `ipc/sync_client.rs:36,103` — `encoded.len() as u32` truncates silently; no outgoing message size check.
-- [x] **EH-002** `ipc/sync_client.rs` — Protocol mismatch: sync client sends bincode; server only accepts SecureJson magic.
-- [x] **EH-003** `ipc/messages.rs:36-63` — Hand-rolled path normalizer doesn't handle all Component types (Windows UNC).
-- [x] **EH-004** `ipc/messages.rs:68-82` — `/usr/` not in Unix blocked prefix list.
-- [x] **EH-005** `ipc/server.rs:394-396` — TOCTOU between remove_file and bind on Unix socket path.
-- [x] **EH-006** `ipc/server.rs:450` — `Ordering::Relaxed` on connection counter insufficient for guard correctness.
-- [x] **EH-007** `crypto/mem.rs:27-30` — ProtectedKey::new panic in lock_memory leaves stack copy unzeroized.
-- [x] **EH-008** `crypto/mem.rs:89-92` — ProtectedBuf::new clone-then-zeroize; panic loses zeroize on input.
-- [x] **EH-009** `crypto/obfuscated.rs:23-27` — mask_key stored in plaintext alongside masked_data; trivially recoverable.
-- [x] **EH-010** `ffi/report.rs:156-166` — Identity signing key used as guilloche seed oracle; should use HKDF.
-- [x] **EH-011** `ffi/beacon.rs:119-120` — checkpoint_hash and evidence_hash both carry event_hash; evidence binding broken.
-- [x] **EH-012** `ffi/ephemeral.rs:245,523` — device_id and machine_id zero-filled in all persisted ephemeral events.
-- [x] **EH-013** `ffi/evidence.rs:405,526` — device_id and machine_id zero-filled in link_derivative and create_checkpoint.
-- [x] **EH-014** `writersproof/client.rs:115-131` — sign_payload Vec not zeroized after use; evidence CBOR left on heap.
-- [x] **EH-015** `writersproof/queue.rs:52` — enqueue signature has no nonce/DST; deterministic replay risk.
-- [x] **EH-016** `writersproof/queue.rs:76,190` — Non-atomic file writes violate RT-07; data loss on crash.
-- [x] **EH-017** `store/access_log.rs:179-190` — Unknown DB action/result falls back to Read/Success; audit corruption.
-
-#### Correctness
-- [x] **EH-018** `war/ear.rs:128-136` — overall_status min-over-i8 treats None=0 as worst; wrong direction.
-- [x] **EH-019** `war/appraisal.rs:107` — Integer division masks implausible checkpoint density.
-- [x] **EH-020** `war/appraisal.rs:264` — iat uses wall clock; EAR replay detection broken.
-- [x] **EH-021** `trust_policy/evaluation.rs:43` — compute_score reads stale contribution field; wrong before evaluate().
-- [x] **EH-022** `store/events.rs:68` — Full-table COUNT scan on every insert; O(n) per write.
-- [x] **EH-023** `store/events.rs:103` — SQL LIMIT via format!() not parameterized query.
-- [x] **EH-024** `evidence/wire_conversion.rs:20` — PROFILE_URI uses non-canonical form vs rats:eat: everywhere else.
-- [x] **EH-025** `evidence/wire_conversion.rs:74` — attestation_tier hardcoded SoftwareOnly; ignores hardware evidence.
-- [x] **EH-026** `evidence/rfc_conversion.rs:98-100` — Unit mismatch: raw microsecond std_dev in decibits field.
-- [x] **EH-027** `evidence/rfc_conversion.rs:83-84` — CV guard max(1.0) ineffective for microsecond-scale means.
-- [x] **EH-028** `evidence/builder/setters.rs:479` — select_nth_unstable_by percentile indices in wrong order; corrupts p25/p75.
-- [x] **EH-029** `evidence/builder/setters.rs:524` — entropy_bits is -inf when intervals_us.len() == 1.
-- [x] **EH-030** `baseline/digest.rs:40-45` — mean_iki computed from non-normalized histogram.
-- [x] **EH-031** `baseline/verification.rs:30` — Similarity score can exceed 1.0 with unnormalized histograms.
-- [x] **EH-032** `behavioral_fingerprint.rs:279` — Integer division truncation in forgery threshold check.
-- [x] **EH-033** `iki_compression.rs:45` — Negative IKI values silently clamp to 0ms; inflates zero-byte frequency.
-- [x] **EH-034** `perplexity.rs:47` — expect() panics on counts key missing when totals key exists.
-- [x] **EH-035** `stats.rs:126-127` — Exact float equality check `ss_xx == 0.0` is brittle; near-zero produces garbage.
-- [x] **EH-036** `comparison.rs:49-53` — safe_ln(0.0) = 0.0 creates false perfect similarity for zero-interval profiles.
-- [x] **EH-037** `dictation.rs:56-63` — No penalty for extremely slow short utterances (WPM=0 blind spot).
-- [x] **EH-038** `forgery_cost.rs:282-290` — partial_cmp unwrap_or(Equal) allows NaN to win weakest-link.
-- [x] **EH-039** `topology.rs:99` — Zero-interval duplicate timestamps silently depress median_interval.
-- [x] **EH-040** `continuation.rs:131` — u32 overflow in packet_sequence + 1 validation.
-- [x] **EH-041** `keyhierarchy/migration.rs:78-98` — Expanded key second half not validated for consistency.
-- [x] **EH-042** `checkpoint/chain.rs:281,356` — checkpoints.len() as u64 truncating cast on 32-bit.
-- [x] **EH-043** `checkpoint_mmr.rs:39-44` — append_checkpoint has no rollback on sync failure; duplicate leaf.
-- [x] **EH-044** `config/loading.rs:14-20` — TOCTOU between exists() and read_to_string on config file.
-- [x] **EH-045** `ffi/attestation.rs:204,230` — sysctl/sw_vers spawned as child process; PATH injection risk.
-- [x] **EH-046** `ffi/evidence.rs:34-40` — validate_path does not prevent overwriting key material files.
-- [x] **EH-047** `ethereum.rs:63` — reqwest client has no timeout.
-- [x] **EH-048** `ethereum.rs:44-54` — key_bytes heap copy not zeroized (SYS-033).
-- [x] **EH-049** `declaration/builder.rs:140-145` — NaN passes per-field percentage check.
-- [x] **EH-050** `steganography/extraction.rs:46` — verify hashes stripped text; no diagnostic if doc modified vs wrong key.
-- [x] **EH-051** `steganography/embedding.rs:103` — Tag bytes cycle/repeat when zwc_count > 128.
-
-### Medium (Engine) — Top 50
-
-- [x] **EM-001** `active_probes.rs:183-184` — Population variance instead of sample variance in std_error.
-- [x] **EM-002** `behavioral_fingerprint.rs:127` — thinking_pause_frequency denominator off by 1.
-- [x] **EM-003** `iki_compression.rs:34` — Unit mismatch risk (ns vs ms) with no runtime validation.
-- [x] **EM-004** `perplexity.rs:58` — sample_count counts bytes not chars for multibyte UTF-8.
-- [x] **EM-005** `snr.rs:46-49` — 50% overlapping windows inflate SNR by ~3dB.
-- [x] **EM-006** `stats.rs:49-53` — bhattacharyya_coefficient silent length truncation on zip.
-- [x] **EM-007** `stats.rs:71-75` — merge_histogram silently truncates mismatched lengths.
-- [x] **EM-008** `ethereum.rs:254` — Gas price off-by-one; first attempt already bumped 10%.
-- [x] **EM-009** `ethereum.rs:375` — confirmed_at is poll time not block timestamp.
-- [x] **EM-010** `ethereum.rs:413` — verify() does not check tx.from address.
-- [x] **EM-011** `types.rs:142` — Anchor.status never demotes from Confirmed to Failed.
-- [x] **EM-012** `types.rs:161` — best_proof fallback returns failed/pending proofs.
-- [x] **EM-013** `streaming.rs:23-24` — f64::MIN sentinel for max is confusing.
-- [x] **EM-014** `verification.rs:34-36` — Undocumented: single-session baseline returns 1.0 for all metrics.
-- [x] **EM-015** `checkpoint/chain.rs:598-609` — verify_detailed structural check only; deferred crypto not surfaced.
-- [x] **EM-016** `checkpoint/types.rs:258-260` — NaN hurst_exponent hashed differently; breaks hash stability.
-- [x] **EM-017** `config/defaults.rs:8-11` — default_data_dir panics on missing home directory.
-- [x] **EM-018** `config/loading.rs:27-38` — Legacy config migration silently ignores parse errors.
-- [x] **EM-019** `config/loading.rs:86-91` — persist() non-atomic write; crash = corrupt config.
-- [x] **EM-020** `calibration/transport.rs:63` — latency_variance_us stores std_dev not variance.
-- [x] **EM-021** `crypto/obfuscated.rs:11-18` — ROLLING_KEY race can produce duplicate keys.
-- [x] **EM-022** `crypto/obfuscation.rs:29-33` — reveal() returns String; caller cannot zeroize.
-- [x] **EM-023** `declaration/verification.rs:171-180` — entropy_bits is sample-count-dependent, not true entropy.
-- [x] **EM-024** `evidence/builder/helpers.rs:173` — Plausibility upper bound 600 KPM contradicts "30-300" comment.
-- [x] **EM-025** `evidence/types.rs:302` — CheckpointProof.hash naming confusion (chain hash vs content hash).
-- [x] **EM-026** `evidence/wire_conversion.rs:293-302` — EditDelta always zero; verifiers expecting data get zeros.
-- [x] **EM-027** `ffi/beacon.rs:66-81` — Four independent copies of load_signing_key; drift risk.
-- [x] **EM-028** `ffi/ephemeral.rs:100-117` — Eviction scan skips sessions when len < 4.
-- [x] **EM-029** `ffi/ephemeral.rs:122-131` — MAX_CONTEXT_LABEL_LEN checks bytes not chars.
-- [x] **EM-030** `ffi/evidence.rs:973` — C2PA manifest created timestamp is current time, not evidence time.
-- [x] **EM-031** `cadence.rs:87` — ikis.clone() for percentile computation doubles peak memory.
-- [x] **EM-032** `cadence.rs:184` — Autocorrelation covariance summed over n-1 pairs divided by n.
-- [x] **EM-033** `comparison.rs:95-98` — gaussian_similarity output not clamped; can exceed [0,1].
-- [x] **EM-034** `comparison.rs:72` — Magic number 0.6 for is_consistent threshold.
-- [x] **EM-035** `forgery_cost.rs:262-279` — Magic x100 multiplier for infinite-cost components.
-- [x] **EM-036** `forgery_cost.rs:137` — Magic constant 0.1 for jitter cost per sample.
-- [x] **EM-037** `ipc/messages.rs:108-125` — Windows device namespace `\\.\` not stripped.
-- [x] **EM-038** `ipc/messages.rs:154` — Pulse jitter fields unvalidated; attacker-controlled.
-- [x] **EM-039** `ipc/server.rs:437,510` — Rate limiter created fresh per run_* call.
-- [x] **EM-040** `war/appraisal.rs:143` — HardwareHardened and HardwareBound produce identical scores.
-- [x] **EM-041** `war/appraisal.rs:272` — Evidence reference hashed via non-deterministic JSON.
-- [x] **EM-042** `war/ear.rs:155` — parse_header accepts arbitrary i8; bypasses AR4SI validation.
-- [x] **EM-043** `trust_policy/evaluation.rs:155` — MinimumFactor checks any factor not named factor.
-- [x] **EM-044** `store/events.rs:248` — update_file_path TOCTOU between check and UPDATE.
-- [x] **EM-045** `store/events.rs:277` — 80-line row-mapping closure duplicated verbatim.
-- [x] **EM-046** `store/access_log.rs:223` — CSV export doesn't quote action/result fields.
-- [x] **EM-047** `store/access_log.rs:97` — No PRAGMA synchronous set; WAL alone insufficient for audit.
-- [x] **EM-048** `collaboration.rs:123` — attestation_signature unvalidated; no verification method.
-- [x] **EM-049** `continuation.rs:77` — packet_sequence increment no overflow check.
-- [x] **EM-050** `writersproof/queue.rs:82-101` — list() loads unbounded queue into memory.
+## Coverage
+<!-- 384 source files in workspace, 199 reviewed across 10 batches -->
+<!-- Wave 1: CLI, Crypto/Identity, IPC/FFI, Evidence/Checkpoint, Forensics/Analysis -->
+<!-- Wave 2: Sentinel/Platform, WAR/Trust/Anchors, Protocol, TPM/Jitter/MMR, Remaining -->
+<!-- Uncovered: ~185 small files (<200 lines each), mostly mod.rs, types, helpers -->
