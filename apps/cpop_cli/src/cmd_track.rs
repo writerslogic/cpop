@@ -143,6 +143,11 @@ fn should_track_file(path: &Path) -> bool {
     }
 }
 
+/// Check whether `path` falls within the given track target.
+///
+/// SAFETY: Both `path` and the target root must be canonicalized before
+/// calling this function. The lexical `starts_with` check is only reliable
+/// on canonical (absolute, symlink-resolved) paths.
 fn is_within_target(path: &Path, target: &TrackTarget) -> bool {
     match target {
         TrackTarget::SingleFile(f) => path == f.as_path(),

@@ -652,19 +652,24 @@ fn build_evidence_packet(ctx: &EvidencePacketContext<'_>) -> Result<serde_json::
 }
 
 fn default_output_path(file_path: &Path, format_lower: &str) -> PathBuf {
+    // Use only the final file name component to prevent directory traversal
+    // from relative paths containing "..".
     let name = file_path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    match format_lower {
-        "cwar" | "war" => PathBuf::from(format!("{}.cwar", name)),
-        "cpop" | "cbor" => PathBuf::from(format!("{}.cpop", name)),
-        "html" | "report" => PathBuf::from(format!("{}.report.html", name)),
-        "pdf" => PathBuf::from(format!("{}.report.pdf", name)),
-        "c2pa" => PathBuf::from(format!("{}.c2pa.json", name)),
-        _ => PathBuf::from(format!("{}.evidence.json", name)),
-    }
+    let raw = match format_lower {
+        "cwar" | "war" => format!("{}.cwar", name),
+        "cpop" | "cbor" => format!("{}.cpop", name),
+        "html" | "report" => format!("{}.report.html", name),
+        "pdf" => format!("{}.report.pdf", name),
+        "c2pa" => format!("{}.c2pa.json", name),
+        _ => format!("{}.evidence.json", name),
+    };
+    // Ensure the output filename has no path separators or traversal components.
+    let sanitized = Path::new(&raw).file_name().unwrap_or_default().to_owned();
+    PathBuf::from(sanitized)
 }
 
 fn write_atomic(out_path: &Path, data: &[u8]) -> Result<()> {

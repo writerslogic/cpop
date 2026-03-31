@@ -292,15 +292,35 @@ fn handle_start_session(document_url: String, document_title: String) -> Respons
     let safe_title_html = document_title
         .replace("--", "\u{2014}")
         .replace('>', "\u{203A}");
-    if let Err(e) = std::fs::write(&evidence_path, format!("<!-- {safe_title_html} -->\n")) {
-        return Response::Error {
-            message: format!("create evidence file: {e}"),
-            code: "IO_ERROR".into(),
+    // Write to a temp file with restricted permissions first, then rename
+    // to avoid a TOCTOU window where the file is world-readable.
+    {
+        use std::io::Write;
+        let mut tmp = match tempfile::NamedTempFile::new_in(&session_dir) {
+            Ok(t) => t,
+            Err(e) => {
+                return Response::Error {
+                    message: format!("create temp evidence file: {e}"),
+                    code: "IO_ERROR".into(),
+                };
+            }
         };
-    }
-    // Evidence files contain authorship metadata — restrict to owner-only.
-    if let Err(e) = cpop_engine::restrict_permissions(&evidence_path, 0o600) {
-        eprintln!("Warning: chmod evidence file: {e}");
+        // Restrict permissions on the temp file before writing content.
+        if let Err(e) = cpop_engine::restrict_permissions(tmp.path(), 0o600) {
+            eprintln!("Warning: chmod temp evidence file: {e}");
+        }
+        if let Err(e) = tmp.write_all(format!("<!-- {safe_title_html} -->\n").as_bytes()) {
+            return Response::Error {
+                message: format!("write evidence file: {e}"),
+                code: "IO_ERROR".into(),
+            };
+        }
+        if let Err(e) = tmp.persist(&evidence_path) {
+            return Response::Error {
+                message: format!("persist evidence file: {e}"),
+                code: "IO_ERROR".into(),
+            };
+        }
     }
 
     let checkpoint_result = cpop_engine::ffi::ffi_create_checkpoint(
@@ -475,6 +495,14 @@ fn handle_checkpoint(
             &session.session_nonce,
         );
 
+        // Validate hex length before decoding to avoid timing leaks from
+        // variable-length decode operations.
+        if browser_commitment.len() != 64 {
+            return Response::Error {
+                message: "Invalid commitment length (expected 64 hex chars)".into(),
+                code: "INVALID_COMMITMENT_HEX".into(),
+            };
+        }
         let browser_bytes = match hex::decode(browser_commitment) {
             Ok(b) => b,
             Err(_) => {
