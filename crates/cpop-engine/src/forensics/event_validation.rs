@@ -212,10 +212,12 @@ pub fn validate_keystroke_event(
     }
 
     // --- burst detection ---
+    // Filter out non-monotonic timestamps to avoid underflow bias.
     let burst_count = state
         .recent_timestamps
         .iter()
-        .filter(|&&ts| (timestamp_ns - ts) <= BURST_WINDOW_NS && (timestamp_ns - ts) >= 0)
+        .filter(|&&ts| ts <= timestamp_ns)
+        .filter(|&&ts| (timestamp_ns - ts) <= BURST_WINDOW_NS)
         .count();
     if burst_count > BURST_MAX_KEYS {
         flags.burst_superhuman = true;

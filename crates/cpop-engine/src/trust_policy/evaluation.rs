@@ -58,6 +58,9 @@ impl AppraisalPolicy {
                 .map(|f| f.normalized_score)
                 .fold(f32::INFINITY, f32::min),
             TrustComputation::GeometricMean => {
+                if self.factors.is_empty() {
+                    return 0.0;
+                }
                 let product: f32 = self
                     .factors
                     .iter()

@@ -197,6 +197,15 @@ impl WindowsTpmProvider {
             .submit_command(&cmd)
             .map_err(|e| TpmError::Signing(format!("TPM2_Sign: {e}")))?;
 
+        if response.len() < 10 {
+            return Err(TpmError::Signing("TPM2_Sign response too short".into()));
+        }
+        let rc = super::helpers::read_u32_be(&response, 6)
+            .map_err(|e| TpmError::Signing(format!("Sign rc parse: {e}")))?;
+        if rc != TPM_RC_SUCCESS {
+            return Err(TpmError::Signing(format!("TPM2_Sign rc=0x{rc:08X}")));
+        }
+
         self.parse_ecdsa_signature(&response)
     }
 

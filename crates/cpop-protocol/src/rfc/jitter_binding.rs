@@ -559,14 +559,28 @@ impl JitterBinding {
                 "no entropy sources declared",
             ));
         }
-        let total_weight: u32 = self.sources.iter().map(|s| s.weight as u32).sum();
-        if total_weight == 0 {
+        let mut total_weight: u32 = 0;
+        let mut weight_overflow = false;
+        for s in &self.sources {
+            match total_weight.checked_add(s.weight as u32) {
+                Some(sum) => total_weight = sum,
+                None => {
+                    weight_overflow = true;
+                    break;
+                }
+            }
+        }
+        if weight_overflow {
+            findings.push(ValidationFinding::error(
+                "sources.weight",
+                "total weight overflows u32",
+            ));
+        } else if total_weight == 0 {
             findings.push(ValidationFinding::error(
                 "sources.weight",
                 "total weight is zero",
             ));
-        }
-        if total_weight > 1000 {
+        } else if total_weight > 1000 {
             findings.push(ValidationFinding::error(
                 "sources.weight",
                 format!("total weight {} exceeds 1000", total_weight),

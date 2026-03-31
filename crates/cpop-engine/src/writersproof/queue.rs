@@ -42,14 +42,10 @@ impl OfflineQueue {
     }
 
     /// Return `~/.writersproof/queue/`.
-    ///
-    /// # Panics
-    /// Panics if the home directory cannot be determined.
-    pub fn default_dir() -> PathBuf {
-        dirs::home_dir()
-            .expect("cannot determine home directory; refusing to use insecure fallback path")
-            .join(".writersproof")
-            .join("queue")
+    pub fn default_dir() -> Result<PathBuf> {
+        let home = dirs::home_dir()
+            .ok_or_else(|| Error::checkpoint("cannot determine home directory for queue path"))?;
+        Ok(home.join(".writersproof").join("queue"))
     }
 
     /// Enqueue an attestation for later submission.

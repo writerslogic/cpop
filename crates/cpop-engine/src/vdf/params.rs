@@ -58,7 +58,7 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
     }
 
     let elapsed = start.elapsed().as_secs_f64();
-    let iterations_per_second = (iterations as f64 / elapsed) as u64;
+    let iterations_per_second = (iterations as f64 / elapsed).round() as u64;
 
     if iterations_per_second < CALIBRATION_MIN_ITERS_PER_SEC {
         return Err(format!(

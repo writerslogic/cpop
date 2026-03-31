@@ -117,8 +117,12 @@ impl ForensicsEngine {
         let intervals: Vec<f64> = timestamps
             .windows(2)
             .map(|w| {
-                // Clamp to zero if timestamps are out of order, rather than
-                // producing negative intervals that corrupt CV and Hurst.
+                if w[1] < w[0] {
+                    log::warn!(
+                        "out-of-order checkpoint timestamps: {} followed by {} (delta={}); clamping to zero",
+                        w[0], w[1], w[0] - w[1]
+                    );
+                }
                 w[1].saturating_sub(w[0]) as f64
             })
             .collect();

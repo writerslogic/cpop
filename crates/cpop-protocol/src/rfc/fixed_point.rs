@@ -135,7 +135,9 @@ impl Microdollars {
             return Microdollars(0);
         }
         let scaled = (value * 1_000_000.0).round();
-        let clamped = scaled.clamp(0.0, u64::MAX as f64);
+        // u64::MAX as f64 rounds up, so clamp to the largest f64 that fits in u64.
+        let max_safe = 18_446_744_073_709_549_568.0_f64; // u64::MAX - 2047, exact in f64
+        let clamped = scaled.clamp(0.0, max_safe);
         Microdollars(clamped as u64)
     }
 

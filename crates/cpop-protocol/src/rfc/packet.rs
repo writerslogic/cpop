@@ -442,12 +442,18 @@ impl PacketRfc {
             errors.push(format!("unsupported version: {}", self.version));
         }
 
-        if self.vdf.input.is_empty() {
-            errors.push("VDF input is empty".into());
+        if self.vdf.input.len() != 32 {
+            errors.push(format!(
+                "VDF input must be 32 bytes per CDDL, got {}",
+                self.vdf.input.len()
+            ));
         }
 
-        if self.vdf.output.is_empty() {
-            errors.push("VDF output is empty".into());
+        if self.vdf.output.len() != 32 && self.vdf.output.len() != 64 {
+            errors.push(format!(
+                "VDF output must be 32 or 64 bytes per CDDL, got {}",
+                self.vdf.output.len()
+            ));
         }
 
         if self.vdf.iterations == 0 {
@@ -531,7 +537,9 @@ mod tests {
         let mut packet = create_test_packet();
         packet.vdf.input = vec![];
         let errors = packet.validate();
-        assert!(errors.iter().any(|e| e.contains("VDF input is empty")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("VDF input must be 32 bytes")));
     }
 
     #[test]

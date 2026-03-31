@@ -492,6 +492,9 @@ fn fiat_shamir_challenge(
 /// Select `count` unique leaf indices via HKDF-Expand per §7.3:
 ///   okm_j = HKDF-Expand(sample_seed, I2OSP(j, 4), 4)
 ///   index_j = OS2IP(okm_j) mod (steps + 1)
+///
+/// Returns `min(count, num_leaves)` indices when `count` exceeds `num_leaves`,
+/// since unique sampling from a smaller population cannot yield more.
 fn select_indices(sample_seed: &[u8; 32], num_leaves: u64, count: usize) -> Vec<u64> {
     use hkdf::Hkdf;
 
