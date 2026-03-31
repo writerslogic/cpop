@@ -135,46 +135,6 @@ pub struct EvidenceSummary {
     pub cross_modal_consistency: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StegoSignRequest {
-    /// MMR root hash (hex-encoded).
-    pub mmr_root: String,
-    /// SHA-256 of the document text (hex-encoded).
-    pub document_hash: String,
-    pub author_did: String,
-    /// Anchor ID from a prior `POST /v1/anchor` call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StegoSignResponse {
-    /// HMAC-based watermark tag (base64).
-    pub watermark_bits: String,
-    /// PRNG seed for position computation (hex).
-    pub embedding_seed: String,
-    /// Number of ZWC characters to embed.
-    pub expected_zwc_count: usize,
-    /// Server signature over the watermark (base64).
-    pub signature: String,
-    /// Expiration of the signed watermark.
-    pub expires_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StegoVerifyResponse {
-    pub valid: bool,
-    pub zwc_found: usize,
-    pub zwc_expected: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor_timestamp: Option<String>,
-}
-
 /// Request body for `/v1/beacon` -- fetch temporal beacon attestation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

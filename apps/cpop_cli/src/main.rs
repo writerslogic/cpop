@@ -66,7 +66,6 @@ async fn run() -> Result<()> {
             tier,
             output,
             format,
-            stego,
             no_beacons,
             beacon_timeout,
         }) => {
@@ -75,7 +74,6 @@ async fn run() -> Result<()> {
                 &tier,
                 output,
                 &format,
-                stego,
                 no_beacons,
                 beacon_timeout,
                 &out,
@@ -250,7 +248,6 @@ async fn interactive_menu(out: &OutputMode) -> Result<()> {
                 "standard",
                 None,
                 "json",
-                false,
                 false,
                 5,
                 out,

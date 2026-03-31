@@ -6,7 +6,6 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use zeroize::Zeroizing;
 
 use cpop_engine::cpop_protocol::crypto::EvidenceSigner;
 use cpop_engine::cpop_protocol::rfc::{CBOR_TAG_ATTESTATION_RESULT, CBOR_TAG_EVIDENCE_PACKET};
@@ -72,7 +71,6 @@ pub(crate) async fn cmd_export(
     tier: &str,
     output: Option<PathBuf>,
     format: &str,
-    stego: bool,
     no_beacons: bool,
     beacon_timeout: u64,
     out: &OutputMode,
@@ -273,10 +271,6 @@ pub(crate) async fn cmd_export(
     } else if !out.quiet {
         println!();
         println!("Recipients can verify this evidence at: https://writerslogic.com/verify");
-    }
-
-    if stego {
-        embed_steganographic_watermark(file_path, &abs_path_str, &events, dir).await?;
     }
 
     Ok(())
@@ -1056,123 +1050,6 @@ fn write_evidence_output(ctx: &EvidenceOutputContext<'_>) -> Result<()> {
     Ok(())
 }
 
-async fn embed_steganographic_watermark(
-    file_path: &Path,
-    abs_path_str: &str,
-    events: &[cpop_engine::SecureEvent],
-    dir: &Path,
-) -> Result<()> {
-    use cpop_engine::steganography::{ZwcEmbedder, ZwcParams};
-
-    let content = fs::read_to_string(abs_path_str).context(
-        "Cannot read document as UTF-8 for steganographic embedding. \
-         Stego is only supported for text files.",
-    )?;
-
-    let latest = events
-        .last()
-        .ok_or_else(|| anyhow!("No events for steganographic embedding"))?;
-
-    let mmr_root = latest.event_hash;
-    let signing_key = crate::util::load_signing_key(dir)?;
-    let hmac_key = Zeroizing::new({
-        use hkdf::Hkdf;
-        use sha2::Sha256;
-        let hk = Hkdf::<Sha256>::new(Some(b"witnessd-stego-key-v1"), &signing_key.to_bytes());
-        let mut key = [0u8; 32];
-        hk.expand(b"stego-hmac", &mut key)
-            .expect("32 bytes is a valid HKDF-SHA256 output length");
-        key
-    });
-
-    let embedder = ZwcEmbedder::new(ZwcParams::default());
-    let result = embedder.embed(&content, &mmr_root, &hmac_key);
-    let (watermarked, binding) = result?;
-
-    let stego_path = {
-        let stem = file_path.file_stem().unwrap_or_default().to_string_lossy();
-        let ext = file_path
-            .extension()
-            .map(|e| e.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if ext.is_empty() {
-            file_path.with_file_name(format!("{}.stego", stem))
-        } else {
-            file_path.with_file_name(format!("{}.stego.{}", stem, ext))
-        }
-    };
-    let stego_tmp = stego_path.with_extension("tmp");
-    crate::util::write_restrictive(&stego_tmp, watermarked.as_bytes())?;
-    fs::rename(&stego_tmp, &stego_path)?;
-
-    let binding_path = file_path.with_extension("stego.binding.json");
-    let binding_json = serde_json::to_string_pretty(&binding)?;
-    crate::util::write_restrictive(&binding_path, binding_json.as_bytes())?;
-
-    eprintln!();
-    eprintln!("Steganographic watermark embedded:");
-    eprintln!("  Watermarked document: {}", stego_path.display());
-    eprintln!("  Binding record: {}", binding_path.display());
-    eprintln!("  ZWC characters: {}", binding.zwc_count);
-    eprintln!("  MMR root: {}...", &binding.mmr_root[..16]);
-    eprintln!(
-        "  Tag: {}...",
-        &binding.tag_hex[..16.min(binding.tag_hex.len())]
-    );
-
-    let api_key = crate::util::load_api_key(dir);
-    if let Ok(key) = api_key {
-        use cpop_engine::writersproof::{StegoSignRequest, WritersProofClient};
-
-        let did = crate::util::load_did(dir).unwrap_or_else(|_| "unknown".into());
-        let client = WritersProofClient::new("https://api.writerslogic.com")?.with_jwt(key);
-
-        print!("  Signing watermark via WritersProof...");
-        io::stdout().flush()?;
-
-        match tokio::time::timeout(
-            Duration::from_secs(30),
-            client.stego_sign(StegoSignRequest {
-                mmr_root: binding.mmr_root.clone(),
-                document_hash: binding.document_hash.clone(),
-                author_did: did,
-                anchor_id: None,
-            }),
-        )
-        .await
-        {
-            Err(_) => {
-                eprintln!();
-                eprintln!("Warning: Stego sign request timed out after 30s.");
-                eprintln!("  The watermark was embedded but NOT signed by WritersProof.");
-            }
-            Ok(inner) => match inner {
-                Ok(resp) => {
-                    println!(" done (expires: {})", resp.expires_at);
-                }
-                Err(e) => {
-                    eprintln!();
-                    eprintln!(
-                        "Warning: Steganographic watermark was embedded \
-                         but NOT signed by WritersProof."
-                    );
-                    eprintln!("  Reason: {}", e);
-                    eprintln!(
-                        "  The watermark can only be verified locally, \
-                         not by third parties."
-                    );
-                    eprintln!(
-                        "  To sign it later: cpop export {} --stego",
-                        file_path.display(),
-                    );
-                }
-            },
-        }
-    }
-
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn build_war_report(
     events: &[cpop_engine::store::SecureEvent],
@@ -1285,7 +1162,6 @@ fn build_war_report(
         total_duration_min: total_min,
         revision_events: events.len() as u64,
         device_attestation,
-        blockchain_anchor: None,
         checkpoints,
         sessions,
         process,

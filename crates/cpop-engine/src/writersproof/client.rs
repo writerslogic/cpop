@@ -4,16 +4,13 @@
 
 use ed25519_dalek::{Signer, SigningKey};
 use reqwest::Client;
-use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 use super::types::{
     AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse, EnrollRequest,
-    EnrollResponse, NonceResponse, StegoSignRequest, StegoSignResponse, StegoVerifyResponse,
-    VerifyResponse,
+    EnrollResponse, NonceResponse, VerifyResponse,
 };
 use crate::error::{Error, Result};
-use crate::steganography::{ZwcExtractor, ZwcParams};
 
 /// WritersProof API client.
 pub struct WritersProofClient {
@@ -358,82 +355,6 @@ impl WritersProofClient {
             .map_err(|e| Error::crypto(format!("verify response parse failed: {e}")))?;
         response.sanitize();
         Ok(response)
-    }
-
-    /// Request a steganographic watermark signing from WritersProof.
-    ///
-    /// `POST /v1/stego/sign`
-    pub async fn stego_sign(&self, req: StegoSignRequest) -> Result<StegoSignResponse> {
-        let url = format!("{}/v1/stego/sign", self.base_url);
-        let mut http_req = self.client.post(&url).json(&req);
-        if let Some(ref jwt) = self.jwt {
-            http_req = http_req.bearer_auth(jwt.as_str());
-        }
-
-        let resp = http_req
-            .send()
-            .await
-            .map_err(|e| Error::crypto(format!("stego sign request failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(Error::crypto(format!(
-                "stego sign request failed: HTTP {}",
-                resp.status()
-            )));
-        }
-
-        resp.json::<StegoSignResponse>()
-            .await
-            .map_err(|e| Error::crypto(format!("stego sign response parse failed: {e}")))
-    }
-
-    /// Verify a steganographic watermark via WritersProof.
-    ///
-    /// The document text is never sent to the server. Instead, this method:
-    /// 1. Hashes the clean (ZWC-stripped) document text with SHA-256 locally.
-    /// 2. Extracts the ZWC watermark tag from the document locally.
-    /// 3. Sends only `{doc_hash, extracted_tag, mmr_root}` to the server.
-    ///
-    /// `POST /v1/stego/verify`
-    pub async fn stego_verify(
-        &self,
-        document_text: &str,
-        mmr_root: &str,
-    ) -> Result<StegoVerifyResponse> {
-        // Extract ZWC tag and hash the clean text locally — never send plaintext.
-        let extractor = ZwcExtractor::new(ZwcParams::default());
-        let extracted_tag = extractor.extract_tag(document_text);
-        let clean_text = ZwcExtractor::strip_zwc(document_text);
-        let doc_hash = hex::encode(Sha256::digest(clean_text.as_bytes()));
-        let extracted_tag_hex = hex::encode(&extracted_tag);
-
-        let url = format!("{}/v1/stego/verify", self.base_url);
-        let body = serde_json::json!({
-            "docHash": doc_hash,
-            "extractedTag": extracted_tag_hex,
-            "mmrRoot": mmr_root,
-        });
-
-        let mut req = self.client.post(&url).json(&body);
-        if let Some(ref jwt) = self.jwt {
-            req = req.bearer_auth(jwt.as_str());
-        }
-
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| Error::crypto(format!("stego verify request failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(Error::crypto(format!(
-                "stego verify request failed: HTTP {}",
-                resp.status()
-            )));
-        }
-
-        resp.json::<StegoVerifyResponse>()
-            .await
-            .map_err(|e| Error::crypto(format!("stego verify response parse failed: {e}")))
     }
 
     /// Check if the WritersProof service is reachable.

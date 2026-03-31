@@ -107,9 +107,6 @@ pub enum Commands {
         /// Output format (json, cpop, cwar, html, pdf, c2pa)
         #[arg(short = 'f', long, default_value = "json")]
         format: String,
-        /// Embed zero-width watermark
-        #[arg(long)]
-        stego: bool,
         /// Disable temporal beacon attestation (caps security level at T2)
         #[arg(long)]
         no_beacons: bool,

@@ -41,7 +41,6 @@ pub mod sealed_chain;
 pub mod sealed_identity;
 pub mod sentinel;
 pub mod serde_utils;
-pub mod steganography;
 pub mod store;
 pub mod timing;
 pub mod tpm;
@@ -156,8 +155,6 @@ pub use cpop_protocol::rfc::wire_types::{
 };
 
 pub use crate::error::{Error, Result};
-
-pub use crate::steganography::{ZwcBinding, ZwcEmbedder, ZwcExtractor, ZwcParams, ZwcVerification};
 
 #[cfg(feature = "cpop_jitter")]
 pub use crate::cpop_jitter_bridge::{
