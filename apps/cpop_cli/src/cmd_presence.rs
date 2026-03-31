@@ -233,8 +233,10 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
         }
 
         PresenceAction::Challenge => {
-            // Load session under lock, issue challenge, then release lock
-            // during stdin interaction to avoid blocking other commands.
+            // Hold the lock across the entire challenge interaction to
+            // prevent TOCTOU races between lock release and re-acquisition.
+            // The lock is advisory, so other read-only commands (status)
+            // still work; mutating commands (stop) wait up to the timeout.
             let lock_file = acquire_session_lock(&session_file)?;
             let session = load_session(&session_file)?;
 
@@ -246,9 +248,6 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
             let challenge = verifier
                 .issue_challenge()
                 .map_err(|e| anyhow!("Error issuing challenge: {}", e))?;
-
-            // Release lock during user interaction.
-            drop(lock_file);
 
             if !out.quiet && !out.json {
                 println!("=== Presence Challenge ===");
@@ -275,22 +274,7 @@ pub(crate) fn cmd_presence(action: PresenceAction, out: &OutputMode) -> Result<(
                 .ok_or_else(|| anyhow!("Verifier lost session state"))?
                 .clone();
 
-            // Re-acquire lock, re-read disk state, merge our challenge result.
-            let lock_file = acquire_session_lock(&session_file)?;
-
-            let final_session = if let Ok(disk_session) = load_session(&session_file) {
-                // Merge: append only our new challenge to the current disk state.
-                let mut merged = disk_session;
-                if let Some(our_challenge) = updated_session.challenges.last() {
-                    merged.challenges.push(our_challenge.clone());
-                }
-                merged
-            } else {
-                // Disk session gone (stopped?) — save our full state.
-                updated_session
-            };
-
-            save_session(&session_file, &final_session)?;
+            save_session(&session_file, &updated_session)?;
             drop(lock_file);
 
             if out.json {
