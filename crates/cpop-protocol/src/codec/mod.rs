@@ -113,7 +113,8 @@ pub fn encode<T: Serialize>(value: &T, format: Format) -> Result<Vec<u8>> {
 /// Deserialize a value from the specified format.
 pub fn decode<T: DeserializeOwned>(data: &[u8], format: Format) -> Result<T> {
     match format {
-        Format::Cbor | Format::CborWar => cbor::decode(data),
+        Format::Cbor => cbor::decode(data),
+        Format::CborWar => cbor::decode_cwar(data),
         Format::Json => json::decode(data),
     }
 }

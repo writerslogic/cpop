@@ -98,11 +98,11 @@ impl Builder {
             .sample(content)
             .map_err(|e| Error::Crypto(format!("PhysJitter sampling failed: {}", e)))?;
 
-        if entropy.entropy_bits == 0 && entropy.hash == [0u8; 32] {
-            return Err(Error::Crypto(
-                "PhysJitter returned zero entropy; causality lock requires non-trivial entropy"
-                    .into(),
-            ));
+        if entropy.entropy_bits < 8 {
+            return Err(Error::Crypto(format!(
+                "PhysJitter entropy too low ({} bits); causality lock requires >= 8 bits",
+                entropy.entropy_bits,
+            )));
         }
 
         // Causality Lock V2: HMAC(packet_id, prev_hash | content_hash | entropy)

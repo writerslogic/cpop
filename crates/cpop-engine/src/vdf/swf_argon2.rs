@@ -223,14 +223,14 @@ pub fn compute_with_algorithm(
 
     let argon2 = build_argon2(&params)?;
 
-    let capped_iterations = params.iterations.min(MAX_ITERATIONS) as usize;
+    let iterations = params.iterations as usize;
     let start = Instant::now();
-    let mut leaves = Vec::with_capacity(capped_iterations);
-    let mut raw_outputs = Vec::with_capacity(capped_iterations);
+    let mut leaves = Vec::with_capacity(iterations);
+    let mut raw_outputs = Vec::with_capacity(iterations);
     let mut current = input;
 
     let prev_priority = lower_thread_priority();
-    for i in 0..params.iterations.min(MAX_ITERATIONS) {
+    for i in 0..params.iterations {
         // Salt per draft-condrey-rats-pop §4.2:
         //   state_0:   salt = H(0x00 || "PoP-salt-v1" || seed)
         //   state_i:   salt = H(0x01 || "PoP-salt-v1" || I2OSP(i, 4))
