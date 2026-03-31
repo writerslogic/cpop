@@ -98,10 +98,14 @@ impl Builder {
             .sample(content)
             .map_err(|e| Error::Crypto(format!("PhysJitter sampling failed: {}", e)))?;
 
-        if entropy.entropy_bits < 8 {
+        // Minimum entropy for a cryptographically meaningful causality lock.
+        // 8 bits = 256 possible values, sufficient to prevent brute-force
+        // pre-computation of the lock within a single VDF window.
+        const MIN_CAUSALITY_ENTROPY_BITS: u8 = 8;
+        if entropy.entropy_bits < MIN_CAUSALITY_ENTROPY_BITS {
             return Err(Error::Crypto(format!(
-                "PhysJitter entropy too low ({} bits); causality lock requires >= 8 bits",
-                entropy.entropy_bits,
+                "PhysJitter entropy too low ({} bits); causality lock requires >= {} bits",
+                entropy.entropy_bits, MIN_CAUSALITY_ENTROPY_BITS,
             )));
         }
 
