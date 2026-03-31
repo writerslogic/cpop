@@ -397,7 +397,13 @@ unsafe extern "system" fn keystroke_capture_hook(
         // synthetic sources (e.g., DirectInput or driver-level injection may bypass it).
         let is_injected = (kbd.flags.0 & LLKHF_INJECTED.0) != 0;
 
-        let stats_arc = GLOBAL_STATS.lock().ok().and_then(|g| g.clone());
+        let stats_arc = match GLOBAL_STATS.lock() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => {
+                log::warn!("GLOBAL_STATS mutex poisoned in hook callback: {}", poisoned);
+                poisoned.into_inner().clone()
+            }
+        };
         if let Some(stats) = stats_arc {
             if let Ok(mut s) = stats.write() {
                 s.total_events += 1;
@@ -414,7 +420,16 @@ unsafe extern "system" fn keystroke_capture_hook(
             return CallNextHookEx(None, code, wparam, lparam);
         }
 
-        let sender = GLOBAL_SENDER.lock().ok().and_then(|g| g.clone());
+        let sender = match GLOBAL_SENDER.lock() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => {
+                log::warn!(
+                    "GLOBAL_SENDER mutex poisoned in hook callback: {}",
+                    poisoned
+                );
+                poisoned.into_inner().clone()
+            }
+        };
         if let Some(sender) = sender {
             let now = chrono::Utc::now().timestamp_nanos_safe();
             let keycode = kbd.vkCode as u16;
@@ -707,7 +722,13 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
         };
 
         if event.is_micro_movement() && !kb_active {
-            let idle_stats = MOUSE_GLOBAL_IDLE_STATS.lock().ok().and_then(|g| g.clone());
+            let idle_stats = match MOUSE_GLOBAL_IDLE_STATS.lock() {
+                Ok(g) => g.clone(),
+                Err(poisoned) => {
+                    log::warn!("MOUSE_GLOBAL_IDLE_STATS mutex poisoned: {}", poisoned);
+                    poisoned.into_inner().clone()
+                }
+            };
             if let Some(stats) = idle_stats {
                 if let Ok(mut s) = stats.write() {
                     s.record(&event);
@@ -715,7 +736,13 @@ unsafe extern "system" fn mouse_capture_hook(code: i32, wparam: WPARAM, lparam: 
             }
         }
 
-        let sender = MOUSE_GLOBAL_SENDER.lock().ok().and_then(|g| g.clone());
+        let sender = match MOUSE_GLOBAL_SENDER.lock() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => {
+                log::warn!("MOUSE_GLOBAL_SENDER mutex poisoned: {}", poisoned);
+                poisoned.into_inner().clone()
+            }
+        };
         if let Some(sender) = sender {
             let _ = sender.send(event);
         }

@@ -635,38 +635,39 @@ impl Sentinel {
                                             // Inline session creation using event-loop's Arc refs.
                                             // Cannot call Sentinel::start_witnessing() because
                                             // self is not available inside tokio::spawn.
-                                            let file_path = std::path::Path::new(path);
-                                            // Benign TOCTOU: if the file is deleted between this check and
-                                            // session insertion, the session will reference a non-existent file
-                                            // and naturally end on the next idle sweep.
-                                            if file_path.exists() {
-                                                let mut session = DocumentSession::new(
-                                                    path.clone(),
-                                                    "auto".to_string(),
-                                                    "auto-witness".to_string(),
-                                                    crate::crypto::ObfuscatedString::new(path),
-                                                );
-                                                if let Ok(hash) = compute_file_hash(path) {
+                                            // Acquire session write lock before checking
+                                            // the file, avoiding TOCTOU where the file is
+                                            // deleted between exists() and session insert.
+                                            let mut sessions_guard = sessions.write_recover();
+                                            match compute_file_hash(path) {
+                                                Ok(hash) => {
+                                                    let mut session = DocumentSession::new(
+                                                        path.clone(),
+                                                        "auto".to_string(),
+                                                        "auto-witness".to_string(),
+                                                        crate::crypto::ObfuscatedString::new(path),
+                                                    );
                                                     session.initial_hash = Some(hash.clone());
                                                     session.current_hash = Some(hash);
+                                                    session.keystroke_count = buffered_count;
+                                                    session.focus_gained();
+                                                    let _ = session_events_tx.send(SessionEvent {
+                                                        event_type: SessionEventType::Started,
+                                                        session_id: session.session_id.clone(),
+                                                        document_path: path.clone(),
+                                                        timestamp: SystemTime::now(),
+                                                    });
+                                                    sessions_guard.insert(
+                                                        path.clone(),
+                                                        session,
+                                                    );
                                                 }
-                                                session.keystroke_count = buffered_count;
-                                                session.focus_gained();
-                                                let _ = session_events_tx.send(SessionEvent {
-                                                    event_type: SessionEventType::Started,
-                                                    session_id: session.session_id.clone(),
-                                                    document_path: path.clone(),
-                                                    timestamp: SystemTime::now(),
-                                                });
-                                                sessions.write_recover().insert(
-                                                    path.clone(),
-                                                    session,
-                                                );
-                                            } else {
-                                                log::debug!(
-                                                    "Auto-witness: file not found {:?}",
-                                                    path
-                                                );
+                                                Err(e) => {
+                                                    log::debug!(
+                                                        "Auto-witness: cannot hash file {:?}: {}",
+                                                        path, e
+                                                    );
+                                                }
                                             }
                                             pre_witness_buffers.remove(path);
                                         }

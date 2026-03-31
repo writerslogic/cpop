@@ -153,6 +153,7 @@ extern "C" {
     ) -> *mut std::ffi::c_void;
 
     pub fn CGEventTapEnable(tap: *mut std::ffi::c_void, enable: bool);
+    pub fn CGEventTapIsEnabled(tap: *mut std::ffi::c_void) -> bool;
     pub fn CGEventGetIntegerValueField(event: *mut std::ffi::c_void, field: u32) -> i64;
     pub fn CGEventGetLocation(event: *mut std::ffi::c_void) -> CGPoint;
 }

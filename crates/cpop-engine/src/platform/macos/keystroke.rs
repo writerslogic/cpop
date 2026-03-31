@@ -188,6 +188,10 @@ where
             let ptr = tap_ptr.load(Ordering::SeqCst);
             if !ptr.is_null() {
                 unsafe { CGEventTapEnable(ptr, true) };
+                let enabled = unsafe { CGEventTapIsEnabled(ptr) };
+                if !enabled {
+                    log::error!("CGEventTapEnable failed: tap not re-enabled after timeout");
+                }
             }
             let n = TAP_DISABLED_COUNT.fetch_add(1, Ordering::Relaxed);
             log::warn!(

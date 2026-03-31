@@ -505,21 +505,27 @@ pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
     let hash_bytes = session
         .initial_hash
         .as_ref()
-        .and_then(|h| {
-            hex::decode(h)
-                .map_err(|e| {
-                    log::warn!("Failed to decode initial hash '{}': {}", h, e);
-                    e
-                })
-                .ok()
+        .and_then(|h| match hex::decode(h) {
+            Ok(bytes) if bytes.len() == 32 => Some(bytes),
+            Ok(bytes) => {
+                log::warn!(
+                    "Initial hash '{}' decoded to {} bytes, expected 32",
+                    h,
+                    bytes.len()
+                );
+                None
+            }
+            Err(e) => {
+                log::warn!("Failed to decode initial hash '{}': {}", h, e);
+                None
+            }
         })
         .unwrap_or_else(|| {
             log::debug!("No initial hash available for session, using zero hash");
             vec![0u8; 32]
         });
     let mut hash_fixed = [0u8; 32];
-    let len = hash_bytes.len().min(32);
-    hash_fixed[..len].copy_from_slice(&hash_bytes[..len]);
+    hash_fixed.copy_from_slice(&hash_bytes[..32]);
     payload.extend_from_slice(&hash_fixed);
 
     let timestamp = session
@@ -535,11 +541,17 @@ pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
 pub fn create_document_hash_payload(hash: &str, size: i64) -> Result<Vec<u8>, String> {
     let hash_bytes =
         hex::decode(hash).map_err(|e| format!("Failed to decode hash '{}': {}", hash, e))?;
+    if hash_bytes.len() != 32 {
+        return Err(format!(
+            "Hash '{}' decoded to {} bytes, expected 32",
+            hash,
+            hash_bytes.len()
+        ));
+    }
     let mut payload = Vec::with_capacity(32 + 8 + 8);
 
     let mut hash_fixed = [0u8; 32];
-    let len = hash_bytes.len().min(32);
-    hash_fixed[..len].copy_from_slice(&hash_bytes[..len]);
+    hash_fixed.copy_from_slice(&hash_bytes);
     payload.extend_from_slice(&hash_fixed);
     payload.extend_from_slice(&(size.max(0) as u64).to_be_bytes());
 
