@@ -121,10 +121,11 @@ impl Mmr {
 
         // The MMR index of the n-th leaf (0-indexed) is: 2n - popcount(n)
         // This is O(1) instead of the previous O(N) scan.
-        // Note: overflow is theoretical (requires u64::MAX leaves, which would
-        // exceed any practical storage). The subtraction is safe because
-        // popcount(n) <= 64 and 2n >= popcount(n) for all valid leaf counts.
-        Ok(2 * leaf_ordinal - leaf_ordinal.count_ones() as u64)
+        // The subtraction is safe because popcount(n) <= 64 and 2n >= popcount(n).
+        leaf_ordinal
+            .checked_mul(2)
+            .map(|v| v - leaf_ordinal.count_ones() as u64)
+            .ok_or(MmrError::IndexOutOfRange)
     }
 
     pub fn get_leaf_indices(&self, start: u64, end: u64) -> Result<Vec<u64>, MmrError> {
@@ -140,7 +141,11 @@ impl Mmr {
         let mut indices = Vec::with_capacity((end - start + 1) as usize);
         for ordinal in start..=end {
             // I(n) = 2n - popcount(n)
-            indices.push(2 * ordinal - ordinal.count_ones() as u64);
+            let idx = ordinal
+                .checked_mul(2)
+                .map(|v| v - ordinal.count_ones() as u64)
+                .ok_or(MmrError::IndexOutOfRange)?;
+            indices.push(idx);
         }
         Ok(indices)
     }

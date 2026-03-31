@@ -5,10 +5,11 @@ use crate::report::types::*;
 use std::fmt::{self, Write};
 
 /// Validate a CSS color value to prevent XSS injection via style attributes.
-/// Only hex colors (#RGB, #RRGGBB, #RRGGBBAA) are allowed. Returns "gray" for
-/// any value that doesn't match.
+/// Only hex colors (#RGB, #RGBA, #RRGGBB, #RRGGBBAA) are allowed. Returns
+/// "gray" for any value that doesn't match.
 fn sanitize_css_color(color: &str) -> &str {
     let bytes = color.as_bytes();
+    // #RGB=4, #RGBA=5, #RRGGBB=7, #RRGGBBAA=9 are all valid CSS hex colors
     let valid = bytes.first() == Some(&b'#')
         && matches!(bytes.len(), 4 | 5 | 7 | 9)
         && bytes[1..].iter().all(|b| b.is_ascii_hexdigit());

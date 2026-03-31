@@ -36,6 +36,11 @@ const MIN_IKI_FOR_LABYRINTH: usize = 50;
 pub(crate) const PER_CHECKPOINT_SUSPICIOUS_THRESHOLD: f64 = 0.3;
 const PER_CHECKPOINT_ROBOTIC_CV: f64 = 0.10;
 
+/// Minimum plausible timestamp (2000-01-01 in nanoseconds).
+const MIN_PLAUSIBLE_TS_NS: i64 = 946_684_800_000_000_000;
+/// Maximum plausible timestamp (2100-01-01 in nanoseconds).
+const MAX_PLAUSIBLE_TS_NS: i64 = 4_102_444_800_000_000_000;
+
 pub fn build_profile(
     events: &[EventData],
     regions_by_event: &HashMap<i64, Vec<RegionData>>,
@@ -50,6 +55,13 @@ pub fn build_profile(
 
     let mut sorted = events.to_vec();
     sorted.sort_by_key(|e| e.timestamp_ns);
+
+    // Clamp implausible timestamps to prevent corrupt time_span calculations
+    for event in &mut sorted {
+        event.timestamp_ns = event
+            .timestamp_ns
+            .clamp(MIN_PLAUSIBLE_TS_NS, MAX_PLAUSIBLE_TS_NS);
+    }
 
     let file_path = sorted
         .first()

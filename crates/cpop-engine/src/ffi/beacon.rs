@@ -3,20 +3,19 @@
 use crate::ffi::helpers::{load_api_key, load_did, load_signing_key, open_store};
 use std::sync::OnceLock;
 
-static BEACON_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+static BEACON_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 fn beacon_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
-    BEACON_RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .thread_name("cpop-beacon")
-                .build()
-                .map_err(|e| format!("Failed to create beacon tokio runtime: {e}"))
-        })
-        .as_ref()
-        .map_err(|e| e.clone())
+    if let Some(rt) = BEACON_RUNTIME.get() {
+        return Ok(rt);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .thread_name("cpop-beacon")
+        .build()
+        .map_err(|e| format!("Failed to create beacon tokio runtime: {e}"))?;
+    Ok(BEACON_RUNTIME.get_or_init(|| rt))
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +92,9 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
         Ok(k) => k,
         Err(e) => return err_beacon(format!("WritersProof API key not configured. {e}")),
     };
+    if api_key.trim().is_empty() {
+        return err_beacon("WritersProof API key is empty".to_string());
+    }
 
     let rt = match beacon_runtime() {
         Ok(rt) => rt,

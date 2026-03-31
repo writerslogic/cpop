@@ -51,7 +51,7 @@ impl SentinelIpcHandler {
             .iter()
             .enumerate()
             .map(|(i, e)| crate::forensics::EventData {
-                id: e.id.unwrap_or(i as i64),
+                id: e.id.unwrap_or(i64::try_from(i).unwrap_or(i64::MAX)),
                 timestamp_ns: e.timestamp_ns,
                 file_size: e.file_size,
                 size_delta: e.size_delta,

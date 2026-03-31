@@ -160,7 +160,7 @@ impl StatisticalAnomalyDetector {
                 }
             }
 
-            if checks > 0 && (matches as f64 / checks as f64) > MAX_PATTERN_REPETITION_RATIO {
+            if checks > 0 && (matches as f64 / checks as f64) >= MAX_PATTERN_REPETITION_RATIO {
                 return true;
             }
         }

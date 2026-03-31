@@ -131,8 +131,12 @@ impl Microdollars {
 
     /// Convert from dollars to microdollars (1 USD = 1,000,000).
     pub fn from_dollars(value: f64) -> Self {
-        let scaled = (value * 1_000_000.0).round() as i64;
-        Microdollars(scaled.max(0) as u64)
+        if !value.is_finite() || value <= 0.0 {
+            return Microdollars(0);
+        }
+        let scaled = (value * 1_000_000.0).round();
+        let clamped = scaled.clamp(0.0, u64::MAX as f64);
+        Microdollars(clamped as u64)
     }
 
     /// Return the raw microdollar value.

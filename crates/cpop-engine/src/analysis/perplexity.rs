@@ -84,7 +84,7 @@ impl PerplexityModel {
                 let char_count = *context_counts.get(&next_char).unwrap_or(&0);
                 let total = *self.totals.get(buf.as_str()).unwrap_or(&1);
 
-                // Laplace smoothing
+                // Lidstone smoothing (alpha=0.1 for sharper anomaly detection)
                 (char_count as f64 + 0.1) / (total as f64 + 0.1 * 256.0)
             } else {
                 // Backoff smoothing for unseen contexts

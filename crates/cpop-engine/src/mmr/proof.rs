@@ -300,9 +300,11 @@ impl RangeProof {
                     continue;
                 }
                 let hash = current[&pos];
-                let offset = 1u64 << (height + 1);
-                let left_parent = pos + offset;
-                let right_sibling = left_parent - 1;
+                let offset = 1u64
+                    .checked_shl((height + 1) as u32)
+                    .ok_or(MmrError::InvalidProof)?;
+                let left_parent = pos.checked_add(offset).ok_or(MmrError::InvalidProof)?;
+                let right_sibling = left_parent.checked_sub(1).ok_or(MmrError::InvalidProof)?;
                 let parent_pos;
                 let combined;
                 if let Some(sib_hash) = current.get(&right_sibling) {
@@ -315,8 +317,8 @@ impl RangeProof {
                         parent_pos = pos;
                     }
                 } else {
-                    let right_parent = pos + 1;
-                    if offset <= pos + 1 {
+                    let right_parent = pos.checked_add(1).ok_or(MmrError::InvalidProof)?;
+                    if offset <= right_parent {
                         let left_sibling = right_parent - offset;
                         if let Some(sib_hash) = current.get(&left_sibling) {
                             combined = hash_internal(*sib_hash, hash);

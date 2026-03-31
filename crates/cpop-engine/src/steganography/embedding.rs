@@ -2,6 +2,7 @@
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 use super::types::{ZwcBinding, ZwcParams, DST_POSITIONS, DST_WATERMARK, ZWC_ALPHABET};
 use crate::error::{Error, Result};
@@ -176,6 +177,7 @@ pub(super) fn compute_positions(
         }
     }
 
+    seed.zeroize();
     indices[..count].to_vec()
 }
 

@@ -322,6 +322,7 @@ impl Sentinel {
                         sync_rx;
                     let handle = std::thread::spawn(move || {
                         let mut bridge_count: u64 = 0;
+                        let mut dropped_count: u64 = 0;
                         while keystroke_running.load(Ordering::SeqCst) {
                             match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                                 Ok(event) => {
@@ -348,9 +349,15 @@ impl Sentinel {
                                     if let Err(e) = keystroke_tx.try_send(event) {
                                         match e {
                                             tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                                log::debug!(
-                                                    "keystroke channel full, dropping event"
-                                                );
+                                                dropped_count += 1;
+                                                if dropped_count == 1
+                                                    || dropped_count.is_power_of_two()
+                                                {
+                                                    log::warn!(
+                                                        "keystroke channel full, {} events dropped",
+                                                        dropped_count
+                                                    );
+                                                }
                                             }
                                             tokio::sync::mpsc::error::TrySendError::Closed(_) => {
                                                 log::debug!("keystroke channel closed");

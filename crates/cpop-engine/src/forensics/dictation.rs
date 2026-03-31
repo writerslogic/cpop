@@ -46,6 +46,9 @@ const PENALTY_NO_MIC: f64 = 0.3;
 /// Penalty for zero/near-zero WPM on a non-empty utterance (likely injected text).
 const PENALTY_ZERO_WPM: f64 = 0.15;
 
+/// WPM below this is considered effectively zero (injected text with no timing).
+const WPM_ZERO_THRESHOLD: f64 = 0.1;
+
 /// Assess whether a dictation event is plausible (not forged).
 ///
 /// Returns a score in `[0.0, 1.0]` where 1.0 = fully plausible and
@@ -57,7 +60,7 @@ pub fn score_dictation_plausibility(event: &DictationEvent) -> f64 {
     // Above 250 is suspicious (sped-up playback), above 200 is somewhat fast,
     // below 40 for sustained speech (>10 words) is unusually slow.
     // Zero WPM with actual words is a strong forgery signal (injected text, no timing).
-    if event.word_count > 0 && event.words_per_minute < f64::EPSILON {
+    if event.word_count > 0 && event.words_per_minute < WPM_ZERO_THRESHOLD {
         score *= PENALTY_ZERO_WPM;
     } else if event.words_per_minute > WPM_SUSPICIOUS_THRESHOLD {
         score *= PENALTY_SUSPICIOUS_WPM;

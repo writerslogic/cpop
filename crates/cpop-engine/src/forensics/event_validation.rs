@@ -229,6 +229,7 @@ pub fn validate_keystroke_event(
             .iter()
             .zip(state.recent_timestamps.iter().skip(1))
             .map(|(&a, &b)| b - a)
+            .filter(|&iki| iki > 0)
             .collect();
         if !ikis.is_empty() && compute_cv(&ikis) < ROBOTIC_CV_LIMIT {
             flags.robotic_periodicity = true;

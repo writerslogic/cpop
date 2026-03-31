@@ -126,7 +126,8 @@ impl Chain {
     ) -> Result<Checkpoint> {
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.document_path))?;
-        let ordinal = u64::try_from(self.checkpoints.len()).expect("checkpoint count exceeds u64");
+        let ordinal = u64::try_from(self.checkpoints.len())
+            .map_err(|_| crate::error::Error::checkpoint("checkpoint count exceeds u64"))?;
 
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
