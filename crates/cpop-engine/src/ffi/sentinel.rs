@@ -10,10 +10,10 @@ use crate::config::SentinelConfig;
 use crate::ffi::helpers::{get_data_dir, load_hmac_key};
 use crate::ffi::types::FfiResult;
 use crate::sentinel::Sentinel;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 static SENTINEL: Mutex<Option<Arc<Sentinel>>> = Mutex::new(None);
-static FFI_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+static FFI_RUNTIME: Mutex<Option<Arc<tokio::runtime::Runtime>>> = Mutex::new(None);
 
 pub(crate) fn get_sentinel() -> Option<Arc<Sentinel>> {
     SENTINEL
@@ -23,18 +23,20 @@ pub(crate) fn get_sentinel() -> Option<Arc<Sentinel>> {
         .map(Arc::clone)
 }
 
-fn ffi_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
-    FFI_RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .thread_name("cpop-ffi")
-                .build()
-                .map_err(|e| format!("Failed to create FFI tokio runtime: {e}"))
-        })
-        .as_ref()
-        .map_err(|e| e.clone())
+fn ffi_runtime() -> Result<Arc<tokio::runtime::Runtime>, String> {
+    let mut guard = FFI_RUNTIME.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(rt) = guard.as_ref() {
+        return Ok(Arc::clone(rt));
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .thread_name("cpop-ffi")
+        .build()
+        .map_err(|e| format!("Failed to create FFI tokio runtime: {e}"))?;
+    let rt = Arc::new(rt);
+    *guard = Some(Arc::clone(&rt));
+    Ok(rt)
 }
 
 /// Start the sentinel daemon in-process.
@@ -121,6 +123,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
     }
 
     // Reuse existing stopped sentinel or create a new one
+    let is_new_sentinel = existing.is_none();
     let sentinel = if let Some(s) = existing {
         s
     } else {
@@ -244,17 +247,30 @@ pub fn ffi_sentinel_stop() -> FfiResult {
             };
         }
     };
-    if let Err(e) = rt.block_on(sentinel.stop()) {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to stop sentinel: {e}")),
-        };
+    let stop_result = rt.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), sentinel.stop()).await
+    });
+    match stop_result {
+        Err(_) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some("Sentinel stop timed out after 5s".to_string()),
+            };
+        }
+        Ok(Err(e)) => {
+            return FfiResult {
+                success: false,
+                message: None,
+                error_message: Some(format!("Failed to stop sentinel: {e}")),
+            };
+        }
+        Ok(Ok(())) => {}
     }
 
     // Keep the sentinel in the static so it can be restarted without
     // creating a new instance (which leaks CGEventTap threads).
-    // Sessions are cleared by sentinel.stop() via end_all_sessions_sync.
+    // Sessions are preserved (unfocused) by stop(); start() re-focuses them.
 
     FfiResult {
         success: true,
