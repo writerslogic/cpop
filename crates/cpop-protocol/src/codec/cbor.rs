@@ -16,6 +16,197 @@ use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CW
 /// before deserialization to prevent OOM from malicious payloads.
 pub const MAX_CBOR_PAYLOAD: usize = 16 * 1024 * 1024;
 
+/// Maximum nesting depth for CBOR structures. Arrays (major type 4) and
+/// maps (major type 5) each increase depth by one. Payloads exceeding
+/// this limit are rejected before deserialization to prevent stack overflow.
+pub const MAX_CBOR_DEPTH: usize = 32;
+
+/// Scan raw CBOR bytes and reject if array/map nesting exceeds `max_depth`.
+///
+/// Walks CBOR item headers with a stack tracking remaining items in each
+/// open container. Returns `true` if depth is within limits, `false` if
+/// it exceeds `max_depth`. Truncated or malformed input returns `true`
+/// to let ciborium produce the appropriate decode error.
+fn check_cbor_depth(data: &[u8], max_depth: usize) -> bool {
+    // Stack entries: remaining data items in each open definite-length
+    // container. u64::MAX marks indefinite-length containers.
+    let mut stack: Vec<u64> = Vec::with_capacity(max_depth);
+    let mut pos = 0;
+
+    while pos < data.len() {
+        let first = data[pos];
+        let major = first >> 5;
+        let additional = first & 0x1F;
+        pos += 1;
+
+        // Break stop-code (major 7, additional 31) closes the innermost
+        // indefinite container.
+        if major == 7 && additional == 31 {
+            while let Some(r) = stack.pop() {
+                if r == u64::MAX {
+                    break;
+                }
+            }
+            consume_item(&mut stack);
+            continue;
+        }
+
+        // Read the argument value.
+        let arg = match additional {
+            0..=23 => additional as u64,
+            24 => {
+                if pos >= data.len() {
+                    return true;
+                }
+                let v = data[pos] as u64;
+                pos += 1;
+                v
+            }
+            25 => {
+                if pos + 2 > data.len() {
+                    return true;
+                }
+                let v = u16::from_be_bytes([data[pos], data[pos + 1]]) as u64;
+                pos += 2;
+                v
+            }
+            26 => {
+                if pos + 4 > data.len() {
+                    return true;
+                }
+                let bytes: [u8; 4] = data[pos..pos + 4].try_into().unwrap();
+                pos += 4;
+                u32::from_be_bytes(bytes) as u64
+            }
+            27 => {
+                if pos + 8 > data.len() {
+                    return true;
+                }
+                let bytes: [u8; 8] = data[pos..pos + 8].try_into().unwrap();
+                pos += 8;
+                u64::from_be_bytes(bytes)
+            }
+            31 => u64::MAX, // indefinite length marker for types 2-5
+            _ => return true,
+        };
+
+        match major {
+            0 | 1 => {
+                consume_item(&mut stack);
+            }
+            2 | 3 => {
+                if arg == u64::MAX {
+                    // Indefinite byte/text string; skip chunks until break.
+                    loop {
+                        if pos >= data.len() {
+                            return true;
+                        }
+                        if data[pos] == 0xFF {
+                            pos += 1;
+                            break;
+                        }
+                        let ch = data[pos];
+                        let ch_add = ch & 0x1F;
+                        pos += 1;
+                        let ch_len = match ch_add {
+                            0..=23 => ch_add as u64,
+                            24 => {
+                                if pos >= data.len() {
+                                    return true;
+                                }
+                                let v = data[pos] as u64;
+                                pos += 1;
+                                v
+                            }
+                            25 => {
+                                if pos + 2 > data.len() {
+                                    return true;
+                                }
+                                let v = u16::from_be_bytes([data[pos], data[pos + 1]]) as u64;
+                                pos += 2;
+                                v
+                            }
+                            26 => {
+                                if pos + 4 > data.len() {
+                                    return true;
+                                }
+                                let b: [u8; 4] = data[pos..pos + 4].try_into().unwrap();
+                                pos += 4;
+                                u32::from_be_bytes(b) as u64
+                            }
+                            27 => {
+                                if pos + 8 > data.len() {
+                                    return true;
+                                }
+                                let b: [u8; 8] = data[pos..pos + 8].try_into().unwrap();
+                                pos += 8;
+                                u64::from_be_bytes(b)
+                            }
+                            _ => return true,
+                        };
+                        let skip = ch_len.min(data.len() as u64) as usize;
+                        pos = pos.saturating_add(skip).min(data.len());
+                    }
+                } else {
+                    let skip = arg.min(data.len() as u64) as usize;
+                    pos = pos.saturating_add(skip).min(data.len());
+                }
+                consume_item(&mut stack);
+            }
+            4 => {
+                if stack.len() >= max_depth {
+                    return false;
+                }
+                if arg == 0 {
+                    consume_item(&mut stack);
+                } else {
+                    stack.push(arg); // arg items (or u64::MAX for indefinite)
+                }
+            }
+            5 => {
+                if stack.len() >= max_depth {
+                    return false;
+                }
+                if arg == 0 {
+                    consume_item(&mut stack);
+                } else if arg == u64::MAX {
+                    stack.push(u64::MAX);
+                } else {
+                    stack.push(arg.saturating_mul(2)); // key + value per pair
+                }
+            }
+            6 => {
+                // Semantic tag; the tagged value is the next data item.
+                // No depth change, no item consumed yet.
+            }
+            7 => {
+                consume_item(&mut stack);
+            }
+            _ => return true,
+        }
+    }
+    true
+}
+
+/// Decrement the remaining-item count on the innermost container,
+/// popping containers that become fully consumed.
+fn consume_item(stack: &mut Vec<u64>) {
+    loop {
+        match stack.last_mut() {
+            Some(r) if *r == u64::MAX => break, // indefinite; wait for break
+            Some(r) => {
+                *r -= 1;
+                if *r == 0 {
+                    stack.pop();
+                    continue; // this container was one item in its parent
+                }
+                break;
+            }
+            None => break,
+        }
+    }
+}
+
 /// Serialize a value to deterministic CBOR bytes.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
@@ -32,6 +223,12 @@ pub fn decode<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
             MAX_CBOR_PAYLOAD
         )));
     }
+    if !check_cbor_depth(data, MAX_CBOR_DEPTH) {
+        return Err(CodecError::Validation(format!(
+            "CBOR nesting depth exceeds maximum ({})",
+            MAX_CBOR_DEPTH
+        )));
+    }
     ciborium::from_reader(data).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
@@ -42,8 +239,25 @@ pub fn encode_to<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
 
 /// Deserialize a value from a CBOR reader, limited to [`MAX_CBOR_PAYLOAD`] bytes.
 pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R) -> Result<T> {
-    let limited = reader.take(MAX_CBOR_PAYLOAD as u64);
-    ciborium::from_reader(limited).map_err(|e| CodecError::CborDecode(e.to_string()))
+    let mut buf = Vec::new();
+    reader
+        .take(MAX_CBOR_PAYLOAD as u64 + 1)
+        .read_to_end(&mut buf)
+        .map_err(CodecError::Io)?;
+    if buf.len() > MAX_CBOR_PAYLOAD {
+        return Err(CodecError::Validation(format!(
+            "CBOR payload too large: {} bytes (max {})",
+            buf.len(),
+            MAX_CBOR_PAYLOAD
+        )));
+    }
+    if !check_cbor_depth(&buf, MAX_CBOR_DEPTH) {
+        return Err(CodecError::Validation(format!(
+            "CBOR nesting depth exceeds maximum ({})",
+            MAX_CBOR_DEPTH
+        )));
+    }
+    ciborium::from_reader(buf.as_slice()).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
 /// Encode with CPOP semantic tag (evidence packet).
@@ -116,6 +330,13 @@ pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Res
             expected: expected_tag,
             actual: actual_tag,
         });
+    }
+
+    if !check_cbor_depth(&data[inner_offset..], MAX_CBOR_DEPTH) {
+        return Err(CodecError::Validation(format!(
+            "CBOR nesting depth exceeds maximum ({})",
+            MAX_CBOR_DEPTH
+        )));
     }
 
     ciborium::from_reader(&data[inner_offset..]).map_err(|e| CodecError::CborDecode(e.to_string()))
@@ -402,6 +623,45 @@ mod tests {
         let oversized = vec![0u8; MAX_CBOR_PAYLOAD + 1];
         let result: Result<TestPacket> = decode(&oversized);
         assert!(matches!(result, Err(CodecError::Validation(_))));
+    }
+
+    #[test]
+    fn test_deeply_nested_cbor_rejected() {
+        // Build a CBOR payload with 33 nested arrays (each 0x81 = 1-element array)
+        // followed by an integer 0x00.
+        let depth = MAX_CBOR_DEPTH + 1;
+        let mut payload = vec![0x81u8; depth]; // 33 nested 1-element arrays
+        payload.push(0x00); // innermost value
+        let result: Result<ciborium::Value> = decode(&payload);
+        assert!(
+            matches!(result, Err(CodecError::Validation(ref msg)) if msg.contains("nesting depth")),
+            "expected depth rejection, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_moderately_nested_cbor_accepted() {
+        // 5 levels of nesting should be fine
+        let mut payload = vec![0x81u8; 5];
+        payload.push(0x00);
+        let result: Result<ciborium::Value> = decode(&payload);
+        assert!(result.is_ok(), "expected success, got: {result:?}");
+    }
+
+    #[test]
+    fn test_deeply_nested_tagged_cbor_rejected() {
+        let depth = MAX_CBOR_DEPTH + 1;
+        let mut inner = vec![0x81u8; depth];
+        inner.push(0x00);
+        // Build a directly nested tagged payload with arrays exceeding depth.
+        let mut nested_payload = Vec::new();
+        write_cbor_tag_header(&mut nested_payload, CBOR_TAG_CPOP);
+        nested_payload.extend_from_slice(&inner);
+        let result: Result<ciborium::Value> = decode_tagged(&nested_payload, CBOR_TAG_CPOP);
+        assert!(
+            matches!(result, Err(CodecError::Validation(ref msg)) if msg.contains("nesting depth")),
+            "expected depth rejection for tagged decode, got: {result:?}"
+        );
     }
 
     #[test]
