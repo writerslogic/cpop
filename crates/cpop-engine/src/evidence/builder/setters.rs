@@ -308,7 +308,10 @@ impl Builder {
     }
 
     /// Attach key hierarchy evidence (master key, ratchet chain, checkpoint sigs).
-    pub fn with_key_hierarchy(mut self, evidence: &keyhierarchy::KeyHierarchyEvidence) -> Self {
+    pub fn with_key_hierarchy(
+        mut self,
+        evidence: &keyhierarchy::KeyHierarchyEvidence,
+    ) -> crate::error::Result<Self> {
         let packet = KeyHierarchyEvidencePacket {
             version: evidence.version,
             master_fingerprint: evidence.master_fingerprint.clone(),
@@ -329,18 +332,21 @@ impl Builder {
                 .checkpoint_signatures
                 .iter()
                 .enumerate()
-                .map(|(idx, sig)| CheckpointSignature {
-                    ordinal: sig.ordinal,
-                    checkpoint_hash: hex::encode(sig.checkpoint_hash),
-                    // Source keyhierarchy::CheckpointSignature has no ratchet_index field;
-                    // enumerate position matches ratchet chain order by construction.
-                    ratchet_index: i32::try_from(idx).unwrap_or_else(|_| {
-                        log::warn!("Ratchet index {idx} exceeds i32::MAX, clamping");
-                        i32::MAX
-                    }),
-                    signature: general_purpose::STANDARD.encode(sig.signature),
+                .map(|(idx, sig)| {
+                    Ok(CheckpointSignature {
+                        ordinal: sig.ordinal,
+                        checkpoint_hash: hex::encode(sig.checkpoint_hash),
+                        // Source keyhierarchy::CheckpointSignature has no ratchet_index field;
+                        // enumerate position matches ratchet chain order by construction.
+                        ratchet_index: i32::try_from(idx).map_err(|_| {
+                            crate::error::Error::evidence(format!(
+                                "ratchet index {idx} exceeds i32::MAX"
+                            ))
+                        })?,
+                        signature: general_purpose::STANDARD.encode(sig.signature),
+                    })
                 })
-                .collect(),
+                .collect::<crate::error::Result<Vec<_>>>()?,
             session_document_hash: evidence
                 .session_certificate
                 .as_ref()
@@ -351,7 +357,7 @@ impl Builder {
         if self.packet.strength < Strength::Enhanced {
             self.packet.strength = Strength::Enhanced;
         }
-        self
+        Ok(self)
     }
 
     /// Attach provenance parent links for derivative works.

@@ -96,7 +96,7 @@ pub fn median_interval(events: &[EventData]) -> f64 {
 
     let intervals: Vec<f64> = sorted
         .windows(2)
-        .map(|w| (w[1].timestamp_ns - w[0].timestamp_ns) as f64 / 1e9)
+        .map(|w| w[1].timestamp_ns.saturating_sub(w[0].timestamp_ns).max(0) as f64 / 1e9)
         .filter(|&iv| iv > 0.0)
         .collect();
 

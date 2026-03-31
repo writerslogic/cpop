@@ -76,20 +76,28 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
     // Noise power: mean of the window variances (high-frequency component)
     let noise_power = window_variances.iter().sum::<f64>() / window_variances.len() as f64;
 
-    let snr_db = if noise_power > 0.0 {
-        (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
+    let snr_db = if signal_power <= 0.0 || noise_power <= 0.0 {
+        if noise_power <= 0.0 {
+            MAX_SNR_DB
+        } else {
+            -MAX_SNR_DB
+        }
     } else {
-        MAX_SNR_DB
+        (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
     };
 
     // Per-window SNR
     let windowed_snr: Vec<f64> = window_variances
         .iter()
         .map(|&var| {
-            if var > 0.0 {
-                (10.0 * (signal_power / var).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
+            if signal_power <= 0.0 || var <= 0.0 {
+                if var <= 0.0 {
+                    MAX_SNR_DB
+                } else {
+                    -MAX_SNR_DB
+                }
             } else {
-                MAX_SNR_DB
+                (10.0 * (signal_power / var).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
             }
         })
         .collect();

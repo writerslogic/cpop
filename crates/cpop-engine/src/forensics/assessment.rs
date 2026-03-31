@@ -289,7 +289,7 @@ pub fn compute_assessment_score(
     } else {
         ENTROPY_NORMALIZATION
     };
-    let normalized_entropy = edit_entropy / ENTROPY_NORMALIZATION;
+    let normalized_entropy = (edit_entropy / ENTROPY_NORMALIZATION).min(1.0);
     if normalized_entropy < LOW_ENTROPY_SCORE_THRESHOLD {
         score -= LOW_ENTROPY_PENALTY;
     }

@@ -221,14 +221,17 @@ fn checkpoint_to_wire(
         };
 
         let jitter_seal = if has_merkle_root {
-            let intervals_cbor =
-                cpop_protocol::codec::cbor::encode(&intervals).unwrap_or_else(|e| {
+            match cpop_protocol::codec::cbor::encode(&intervals) {
+                Ok(intervals_cbor) => {
+                    crate::crypto::compute_jitter_seal(merkle_root, swf_input, &intervals_cbor)
+                }
+                Err(e) => {
                     log::error!(
-                        "CBOR encode intervals for jitter seal failed: {e} — seal will be invalid"
+                        "CBOR encode intervals for jitter seal failed: {e} — skipping seal"
                     );
-                    vec![]
-                });
-            crate::crypto::compute_jitter_seal(merkle_root, swf_input, &intervals_cbor)
+                    vec![0u8; 32]
+                }
+            }
         } else {
             vec![0u8; 32]
         };
@@ -254,30 +257,34 @@ fn checkpoint_to_wire(
     };
 
     let entangled_mac = if let (true, Some(jb)) = (has_merkle_root, jitter_binding_wire.as_ref()) {
-        let jb_cbor = cpop_protocol::codec::cbor::encode(jb).unwrap_or_else(|e| {
-            log::error!(
-                "CBOR encode jitter-binding for entangled MAC failed: {e} — MAC will be invalid"
-            );
-            vec![]
-        });
-        let ps_cbor = physical_state_wire
-            .as_ref()
-            .and_then(|ps| {
-                cpop_protocol::codec::cbor::encode(ps)
-                    .map_err(|e| {
-                        log::error!("CBOR encode physical-state for entangled MAC failed: {e} — MAC will be invalid")
+        match cpop_protocol::codec::cbor::encode(jb) {
+            Ok(jb_cbor) => {
+                let ps_cbor = physical_state_wire
+                    .as_ref()
+                    .and_then(|ps| {
+                        cpop_protocol::codec::cbor::encode(ps)
+                            .map_err(|e| {
+                                log::error!("CBOR encode physical-state for entangled MAC failed: {e} — skipping MAC")
+                            })
+                            .ok()
                     })
-                    .ok()
-            })
-            .unwrap_or_default();
-        Some(crate::crypto::compute_entangled_mac(
-            merkle_root,
-            swf_input,
-            &cp.previous_hash,
-            &cp.content_hash,
-            &jb_cbor,
-            &ps_cbor,
-        ))
+                    .unwrap_or_default();
+                Some(crate::crypto::compute_entangled_mac(
+                    merkle_root,
+                    swf_input,
+                    &cp.previous_hash,
+                    &cp.content_hash,
+                    &jb_cbor,
+                    &ps_cbor,
+                ))
+            }
+            Err(e) => {
+                log::error!(
+                    "CBOR encode jitter-binding for entangled MAC failed: {e} — skipping MAC"
+                );
+                None
+            }
+        }
     } else {
         None
     };
