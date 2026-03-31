@@ -14,7 +14,7 @@ pub use self::types::{
     AccessControlInfo, AnchorProof, BehavioralEvidence, CheckpointProof, CheckpointSignature,
     Claim, ClaimType, ContextPeriod, DictationEvent, DocumentInfo, EditRegion, ExternalAnchors,
     ForensicMetrics, HardwareEvidence, InputDeviceInfo, KeyHierarchyEvidencePacket,
-    KeystrokeEvidence, OtsProof, Packet, RecordProvenance, Rfc3161Proof, Strength, TrustTier,
+    KeystrokeEvidence, OtsProof, Packet, RecordProvenance, Rfc3161Proof, TrustTier,
     WpBeaconAttestation,
 };
 

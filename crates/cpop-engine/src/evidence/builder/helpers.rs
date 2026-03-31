@@ -197,7 +197,6 @@ pub fn build_ephemeral_packet(
     let packet = Packet {
         version: 1,
         exported_at: Utc::now(),
-        strength: Strength::Basic,
         provenance: None,
         document: DocumentInfo {
             title: context_label.to_string(),

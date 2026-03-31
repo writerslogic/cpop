@@ -9,7 +9,7 @@
 use cpop_protocol::rfc;
 use cpop_protocol::rfc::packet::{ErrorTopology as PacketErrorTopology, JitterSealStructure};
 
-use super::types::{Packet, Strength};
+use super::types::{Packet, TrustTier};
 
 impl From<&Packet> for rfc::PacketRfc {
     fn from(packet: &Packet) -> Self {
@@ -126,11 +126,10 @@ impl From<&Packet> for rfc::PacketRfc {
             })
         });
 
-        let profile = Some(match packet.strength {
-            Strength::Basic => rfc::ProfileDeclaration::core(),
-            Strength::Standard => rfc::ProfileDeclaration::core(),
-            Strength::Enhanced => rfc::ProfileDeclaration::enhanced(),
-            Strength::Maximum => rfc::ProfileDeclaration::maximum(),
+        let profile = Some(match packet.trust_tier.unwrap_or(TrustTier::Local) {
+            TrustTier::Local | TrustTier::Signed => rfc::ProfileDeclaration::core(),
+            TrustTier::NonceBound => rfc::ProfileDeclaration::enhanced(),
+            TrustTier::Attested => rfc::ProfileDeclaration::maximum(),
         });
 
         rfc::PacketRfc {

@@ -29,7 +29,7 @@ pub(super) const MAX_INTERVAL_US: f64 = 5_000_000.0;
 pub(super) const MIN_SAMPLES_FOR_HURST: usize = 20;
 
 /// Minimum hardware entropy ratio (phys_ratio) to qualify as genuine human input.
-/// Above this threshold, keystroke evidence is boosted to `Enhanced` strength.
+/// Above this threshold, a high-confidence claim is added for hardware entropy.
 #[cfg(feature = "cpop_jitter")]
 pub(super) const HARDWARE_ENTROPY_RATIO_THRESHOLD: f64 = 0.8;
 
@@ -45,7 +45,6 @@ impl Builder {
         let mut packet = Packet {
             version: 1,
             exported_at: Utc::now(),
-            strength: Strength::Basic,
             provenance: None,
             document: DocumentInfo {
                 title: title.to_string(),

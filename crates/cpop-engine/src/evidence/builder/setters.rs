@@ -42,20 +42,17 @@ impl Builder {
         self
     }
 
-    /// Attach presence verification evidence. Boosts strength to `Standard`.
+    /// Attach presence verification evidence.
     pub fn with_presence(mut self, sessions: &[presence::Session]) -> Self {
         if sessions.is_empty() {
             return self;
         }
         let evidence = presence::compile_evidence(sessions);
         self.packet.presence = Some(evidence);
-        if self.packet.strength < Strength::Standard {
-            self.packet.strength = Strength::Standard;
-        }
         self
     }
 
-    /// Attach TPM hardware attestation evidence. Boosts strength to `Enhanced`.
+    /// Attach TPM hardware attestation evidence.
     pub fn with_hardware(
         mut self,
         bindings: Vec<tpm::Binding>,
@@ -70,13 +67,10 @@ impl Builder {
             device_id,
             attestation_nonce,
         });
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
-    /// Attach keystroke timing evidence. Boosts strength to `Standard`.
+    /// Attach keystroke timing evidence.
     pub fn with_keystroke(mut self, evidence: &jitter::Evidence) -> Self {
         if evidence.statistics.total_keystrokes == 0 {
             return self;
@@ -102,9 +96,6 @@ impl Builder {
         };
 
         self.packet.keystroke = Some(keystroke);
-        if self.packet.strength < Strength::Standard {
-            self.packet.strength = Strength::Standard;
-        }
         self
     }
 
@@ -156,15 +147,8 @@ impl Builder {
 
         self.packet.keystroke = Some(keystroke);
 
-        if self.packet.strength < Strength::Standard {
-            self.packet.strength = Strength::Standard;
-        }
-
         let phys_ratio = evidence.entropy_quality.phys_ratio;
         if phys_ratio.is_finite() && phys_ratio > HARDWARE_ENTROPY_RATIO_THRESHOLD {
-            if self.packet.strength < Strength::Enhanced {
-                self.packet.strength = Strength::Enhanced;
-            }
             self.add_claim(
                 ClaimType::KeystrokesVerified,
                 format!(
@@ -178,7 +162,7 @@ impl Builder {
         self
     }
 
-    /// Attach behavioral edit topology and forensic metrics. Boosts strength to `Maximum`.
+    /// Attach behavioral edit topology and forensic metrics.
     pub fn with_behavioral(
         mut self,
         regions: Vec<EditRegion>,
@@ -193,9 +177,6 @@ impl Builder {
             fingerprint: None,
             forgery_analysis: None,
         });
-        if self.packet.strength < Strength::Maximum {
-            self.packet.strength = Strength::Maximum;
-        }
         self
     }
 
@@ -228,9 +209,6 @@ impl Builder {
             forgery_analysis,
         });
 
-        if self.packet.strength < Strength::Maximum {
-            self.packet.strength = Strength::Maximum;
-        }
         self
     }
 
@@ -272,13 +250,10 @@ impl Builder {
             rfc3161: rfc,
             proofs: Vec::new(),
         });
-        if self.packet.strength < Strength::Maximum {
-            self.packet.strength = Strength::Maximum;
-        }
         self
     }
 
-    /// Attach anchor proofs (TSA, notary, etc.). Boosts strength to `Maximum`.
+    /// Attach anchor proofs (TSA, notary, etc.).
     pub fn with_anchors(mut self, proofs: &[anchors::Proof]) -> Self {
         if proofs.is_empty() {
             return self;
@@ -301,9 +276,6 @@ impl Builder {
             ext.proofs.push(convert_anchor_proof(proof));
         }
 
-        if self.packet.strength < Strength::Maximum {
-            self.packet.strength = Strength::Maximum;
-        }
         self
     }
 
@@ -354,9 +326,6 @@ impl Builder {
         };
 
         self.packet.key_hierarchy = Some(packet);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         Ok(self)
     }
 
@@ -390,21 +359,15 @@ impl Builder {
         self
     }
 
-    /// Attach a pre-built jitter binding. Boosts strength to `Enhanced`.
+    /// Attach a pre-built jitter binding.
     pub fn with_jitter_binding(mut self, binding: JitterBinding) -> Self {
         self.packet.jitter_binding = Some(binding);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
-    /// Attach RFC-compliant time evidence (TSA, Roughtime). Boosts to `Enhanced`.
+    /// Attach RFC-compliant time evidence (TSA, Roughtime).
     pub fn with_time_evidence(mut self, evidence: TimeEvidence) -> Self {
         self.packet.time_evidence = Some(evidence);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
@@ -413,9 +376,6 @@ impl Builder {
     /// Millibits scoring from Hurst exponent, pink noise (1/f), and error topology.
     pub fn with_biology_claim(mut self, claim: BiologyInvariantClaim) -> Self {
         self.packet.biology_claim = Some(claim);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
@@ -437,9 +397,6 @@ impl Builder {
                  unreliable"
                     .to_string(),
             );
-        }
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
         }
         self
     }
@@ -569,9 +526,6 @@ impl Builder {
         };
 
         self.packet.jitter_binding = Some(binding);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
@@ -618,9 +572,6 @@ impl Builder {
         let claim =
             BiologyInvariantClaim::from_analysis(measurements, hurst, pink_noise, error_topology);
         self.packet.biology_claim = Some(claim);
-        if self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
-        }
         self
     }
 
@@ -666,13 +617,6 @@ impl Builder {
                 event.plausibility_score =
                     crate::forensics::dictation::score_dictation_plausibility(event);
             }
-        }
-        let max_score = scored
-            .iter()
-            .map(|e| e.plausibility_score)
-            .fold(0.0f64, f64::max);
-        if max_score > 0.7 && self.packet.strength < Strength::Enhanced {
-            self.packet.strength = Strength::Enhanced;
         }
         self.packet.dictation_events = scored;
         self

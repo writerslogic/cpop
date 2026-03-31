@@ -72,13 +72,16 @@ impl Block {
             Some(format!("ai:{}:{}", t.tool, extent))
         };
 
-        // Evidence strength tier
+        // Evidence trust tier
         let tier = Some(
-            match packet.strength {
-                crate::evidence::Strength::Basic => "T1",
-                crate::evidence::Strength::Standard => "T2",
-                crate::evidence::Strength::Enhanced => "T3",
-                crate::evidence::Strength::Maximum => "T4",
+            match packet
+                .trust_tier
+                .unwrap_or(crate::evidence::TrustTier::Local)
+            {
+                crate::evidence::TrustTier::Local => "T1",
+                crate::evidence::TrustTier::Signed => "T2",
+                crate::evidence::TrustTier::NonceBound => "T3",
+                crate::evidence::TrustTier::Attested => "T4",
             }
             .to_string(),
         );

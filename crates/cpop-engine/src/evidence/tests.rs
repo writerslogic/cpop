@@ -93,18 +93,6 @@ fn test_builder_requires_declaration() {
 }
 
 #[test]
-fn test_strength_levels() {
-    assert!(Strength::Basic < Strength::Standard);
-    assert!(Strength::Standard < Strength::Enhanced);
-    assert!(Strength::Enhanced < Strength::Maximum);
-
-    assert_eq!(Strength::Basic.as_str(), "basic");
-    assert_eq!(Strength::Standard.as_str(), "standard");
-    assert_eq!(Strength::Enhanced.as_str(), "enhanced");
-    assert_eq!(Strength::Maximum.as_str(), "maximum");
-}
-
-#[test]
 fn test_packet_with_multiple_checkpoints() {
     let dir = TempDir::new().expect("temp dir");
     let path = dir.path().join("doc.txt");
@@ -301,7 +289,6 @@ fn test_builder_with_presence() {
         .expect("build");
 
     assert!(packet.presence.is_some());
-    assert!(packet.strength >= Strength::Standard);
 }
 
 #[test]
@@ -371,7 +358,6 @@ fn test_builder_with_behavioral() {
         .expect("build");
 
     assert!(packet.behavioral.is_some());
-    assert_eq!(packet.strength, Strength::Maximum);
 }
 
 #[test]
@@ -677,7 +663,7 @@ fn test_hardware_evidence_with_attestation_nonce() {
     assert!(hw.attestation_nonce.is_some());
     assert_eq!(hw.attestation_nonce.unwrap(), nonce);
 
-    assert!(packet.strength >= Strength::Enhanced);
+    assert!(packet.hardware.is_some());
 }
 
 #[test]

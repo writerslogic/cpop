@@ -24,20 +24,6 @@ use crate::serde_utils::{
     serialize_optional_nonce, serialize_optional_pubkey, serialize_optional_signature,
 };
 
-/// Evidence strength level (based on evidence types present).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(i32)]
-pub enum Strength {
-    /// Minimal evidence: chain integrity only.
-    Basic = 1,
-    /// Keystrokes and timing data included.
-    Standard = 2,
-    /// Behavioral analysis and hardware binding included.
-    Enhanced = 3,
-    /// Full evidence with external anchors and attestation.
-    Maximum = 4,
-}
-
 /// Trust tier for evidence hardening level.
 ///
 /// Indicates how well the evidence resists adversarial manipulation,
@@ -55,24 +41,11 @@ pub enum TrustTier {
     Attested = 4,
 }
 
-impl Strength {
-    /// Return the strength level as a lowercase string.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Strength::Basic => "basic",
-            Strength::Standard => "standard",
-            Strength::Enhanced => "enhanced",
-            Strength::Maximum => "maximum",
-        }
-    }
-}
-
 /// Complete evidence packet containing all attestation data for a document session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Packet {
     pub version: i32,
     pub exported_at: DateTime<Utc>,
-    pub strength: Strength,
     pub provenance: Option<RecordProvenance>,
     pub document: DocumentInfo,
     pub checkpoints: Vec<CheckpointProof>,

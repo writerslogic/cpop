@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::evidence::{CheckpointProof, DocumentInfo, Packet, Strength};
+use crate::evidence::{CheckpointProof, DocumentInfo, Packet};
 use crate::ffi::helpers::detect_attestation_tier_info;
 use crate::vdf;
 use crate::verify::{full_verify, VerifyOptions};
@@ -230,7 +230,6 @@ fn wire_to_packet(wire: &EvidencePacketWire) -> Packet {
         version: wire.version as i32,
         exported_at: chrono::DateTime::from_timestamp_millis(wire.created as i64)
             .unwrap_or_default(),
-        strength: Strength::Basic,
         provenance: None,
         document: DocumentInfo {
             title: filename.clone(),

@@ -7,7 +7,6 @@ fn make_test_packet() -> Packet {
     Packet {
         version: 1,
         exported_at: Utc::now(),
-        strength: crate::evidence::Strength::Basic,
         provenance: None,
         document: crate::evidence::DocumentInfo {
             title: "test".to_string(),
