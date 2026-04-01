@@ -164,13 +164,22 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
 
     let capture_active = sentinel.is_keystroke_capture_active();
 
-    // Prefer the currently focused document; fall back to any session.
+    // Show the most relevant session:
+    // 1. The currently focused document (if it has a session)
+    // 2. A manually-tracked document (started via UI, has app_bundle_id = "cli")
+    // 3. Any active session as fallback
     let current_path = sentinel.current_focus();
     let sessions = sentinel.sessions();
     let session = current_path
         .as_ref()
         .and_then(|p| sessions.iter().find(|s| &s.path == p))
-        .or_else(|| sessions.first());
+        .or_else(|| {
+            // Prefer manually-tracked sessions over auto-witnessed ones
+            sessions
+                .iter()
+                .find(|s| s.app_bundle_id == "cli")
+                .or_else(|| sessions.first())
+        });
     let session = match session {
         Some(s) => s,
         None => {
