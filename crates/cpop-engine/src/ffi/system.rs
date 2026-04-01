@@ -9,6 +9,7 @@ use crate::DateTimeNanosExt;
 /// Initialize the engine: create data directory, signing key, and event database.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_init() -> FfiResult {
+    eprintln!("CPOP_TRACE: ffi_init called");
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => {
@@ -177,12 +178,20 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
         let regions = std::collections::HashMap::new();
         let metrics = crate::forensics::analyze_forensics(&event_data, &regions, None, None, None);
 
-        // Enrich with keystroke count from sentinel session
+        // Enrich with keystroke count: prefer live session total, fall back
+        // to persisted cumulative stats from the store.
         let session_keystrokes = sentinel_sessions
             .iter()
             .find(|s| s.path == path)
             .map(|s| s.total_keystrokes())
-            .unwrap_or(0);
+            .unwrap_or_else(|| {
+                store
+                    .load_document_stats(&path)
+                    .ok()
+                    .flatten()
+                    .map(|stats| u64::try_from(stats.total_keystrokes).unwrap_or(0))
+                    .unwrap_or(0)
+            });
 
         // Apply keystroke-to-content penalty: if the document grew significantly
         // but has very few keystrokes, the content was likely injected/pasted.

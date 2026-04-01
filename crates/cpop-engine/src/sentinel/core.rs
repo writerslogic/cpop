@@ -537,6 +537,8 @@ impl Sentinel {
             let mut last_keystroke_ts_ns: i64 = 0;
             let mut last_mouse_ts_ns: i64 = 0;
 
+            super::trace!("[EVENT_LOOP] started");
+
             loop {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
@@ -568,12 +570,23 @@ impl Sentinel {
                         }
 
                         // Only count keystrokes when a tracked document is focused.
-                        // If current_focus is None or no session exists, ignore.
                         let focused_path = current_focus.read_recover().clone();
+                        {
+                            let session_keys: Vec<String> =
+                                sessions.read_recover().keys().cloned().collect();
+                            super::trace!(
+                                "[KEYSTROKE] focus={:?} sessions={:?} kc={}",
+                                focused_path, session_keys, event.keycode
+                            );
+                        }
                         if let Some(ref path) = focused_path {
                             let mut map = sessions.write_recover();
                             if let Some(session) = map.get_mut(path) {
                                 session.keystroke_count += 1;
+                                super::trace!(
+                                    "[KEYSTROKE] COUNTED {:?} total={}",
+                                    path, session.keystroke_count
+                                );
                                 if session.jitter_samples.len() < MAX_DOCUMENT_JITTER_SAMPLES {
                                     session.jitter_samples.push(sample.clone());
                                 }
@@ -590,7 +603,14 @@ impl Sentinel {
                                 if validation.confidence < 0.1 {
                                     session.keystroke_count -= 1;
                                     session.jitter_samples.pop();
+                                    super::trace!(
+                                        "[KEYSTROKE] REJECTED conf={:.2}", validation.confidence
+                                    );
                                 }
+                            } else {
+                                super::trace!(
+                                    "[KEYSTROKE] NO SESSION for path={:?}", path
+                                );
                             }
                         }
 
@@ -721,6 +741,49 @@ impl Sentinel {
                                 if let Some(session) = map.get_mut(path.as_str()) {
                                     session.last_checkpoint_keystrokes =
                                         session.keystroke_count;
+                                    // Persist cumulative keystroke count so the
+                                    // history page shows accurate typing events
+                                    // even after app restart.
+                                    let guard = signing_key_for_cp.read_recover();
+                                    if let Some(ref sk) = *guard {
+                                        let db = writersproof_dir.join("events.db");
+                                        if let Ok(store) =
+                                            crate::store::open_store_with_signing_key(sk, &db)
+                                        {
+                                            let stats = crate::store::DocumentStats {
+                                                file_path: path.clone(),
+                                                total_keystrokes: i64::try_from(
+                                                    session.total_keystrokes(),
+                                                )
+                                                .unwrap_or(i64::MAX),
+                                                total_focus_ms: session
+                                                    .total_focus_ms_cumulative(),
+                                                session_count: i64::from(
+                                                    session.session_number + 1,
+                                                ),
+                                                total_duration_secs: session
+                                                    .start_time
+                                                    .elapsed()
+                                                    .map(|d| d.as_secs() as i64)
+                                                    .unwrap_or(0),
+                                                first_tracked_at: session
+                                                    .first_tracked_at
+                                                    .and_then(|t| {
+                                                        t.duration_since(
+                                                            std::time::UNIX_EPOCH,
+                                                        )
+                                                        .ok()
+                                                    })
+                                                    .map(|d| d.as_secs() as i64)
+                                                    .unwrap_or(0),
+                                                last_tracked_at: SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .map(|d| d.as_secs() as i64)
+                                                    .unwrap_or(0),
+                                            };
+                                            let _ = store.save_document_stats(&stats);
+                                        }
+                                    }
                                 }
                             }
                         }
