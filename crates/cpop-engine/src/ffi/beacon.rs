@@ -184,8 +184,9 @@ pub fn ffi_check_beacon_status(document_path: String) -> FfiBeaconResult {
         Ok(d) => d,
         Err(e) => return err_beacon(format!("Failed to read file: {e}")),
     };
+    let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
 
-    let packet = match crate::evidence::Packet::decode(&data) {
+    let packet = match crate::evidence::Packet::decode(&cbor_payload) {
         Ok(p) => p,
         Err(_) => {
             return check_beacon_from_store(&canonical);
@@ -273,7 +274,8 @@ pub fn ffi_list_beacons(document_path: String) -> FfiBeaconListResult {
         }
     };
 
-    let packet = match crate::evidence::Packet::decode(&data) {
+    let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
+    let packet = match crate::evidence::Packet::decode(&cbor_payload) {
         Ok(p) => p,
         Err(_) => {
             return FfiBeaconListResult {

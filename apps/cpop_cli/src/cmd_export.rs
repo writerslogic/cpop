@@ -821,6 +821,7 @@ fn build_wire_packet_from_events(
             2 => ContentTier::Enhanced,
             _ => ContentTier::Core,
         }),
+        signing_public_key: None,
         previous_packet_ref: None,
         packet_sequence: None,
         physical_liveness: None,

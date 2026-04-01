@@ -575,8 +575,13 @@ impl Sentinel {
             let mut last_mouse_ts_ns: i64 = 0;
             let mut pre_witness_buffers: HashMap<String, PreWitnessBuffer> = HashMap::new();
             // Keystrokes that arrive when current_focus is None (during focus
-            // transitions). Drained into the next focused session.
+            // transitions). Only drained if the same document regains focus;
+            // discarded if a different document gains focus (the keystrokes
+            // were likely stale input from the previous app).
             let mut unfocused_keystrokes: Vec<crate::jitter::SimpleJitterSample> = Vec::new();
+            // The document path that was focused when the unfocused keystrokes
+            // were captured. Used to verify attribution on refocus.
+            let mut unfocused_source: Option<String> = None;
             // Process the first focus event immediately (no debounce) so that
             // current_focus is set before any keystrokes arrive.  This is
             // essential after a restart where the document is already focused.
@@ -745,8 +750,26 @@ impl Sentinel {
                             }
                         } else {
                             // No focused document (between FocusLost and FocusGained).
-                            // Buffer the sample so it can be attributed when focus
-                            // is next gained, instead of silently dropping it.
+                            // Buffer the sample so it can be attributed when the
+                            // same document regains focus.
+                            if unfocused_keystrokes.is_empty() {
+                                // Record which document was last focused so we can
+                                // verify the keystrokes belong to the right session.
+                                unfocused_source = pending_focus
+                                    .as_ref()
+                                    .map(|f| f.path.clone())
+                                    .or_else(|| {
+                                        // No pending focus; the source is whatever
+                                        // was last focused before FocusLost cleared it.
+                                        // We don't have it directly, so check sessions
+                                        // for the most recently focused one.
+                                        let map = sessions.read_recover();
+                                        map.iter()
+                                            .filter(|(_, s)| !s.has_focus)
+                                            .max_by_key(|(_, s)| s.last_focused_at)
+                                            .map(|(p, _)| p.clone())
+                                    });
+                            }
                             if unfocused_keystrokes.len() < 200 {
                                 unfocused_keystrokes.push(sample);
                             }
@@ -926,28 +949,43 @@ impl Sentinel {
                         debounce_timer = None;
 
                         // Drain keystrokes that arrived while focus was
-                        // transitioning into the now-focused session.
+                        // transitioning. Only attribute if the same document
+                        // regains focus; discard if a different document gained
+                        // focus (keystrokes were stale input from the old app).
                         if !unfocused_keystrokes.is_empty() {
                             let focused = current_focus.read_recover().clone();
-                            if let Some(ref path) = focused {
-                                let mut map = sessions.write_recover();
-                                if let Some(session) = map.get_mut(path.as_str()) {
-                                    let count = unfocused_keystrokes.len() as u64;
-                                    session.keystroke_count += count;
-                                    for s in &unfocused_keystrokes {
-                                        if session.jitter_samples.len()
-                                            < MAX_DOCUMENT_JITTER_SAMPLES
-                                        {
-                                            session.jitter_samples.push(s.clone());
+                            let should_drain = match (&focused, &unfocused_source) {
+                                (Some(new_path), Some(old_path)) => new_path == old_path,
+                                (Some(_), None) => true, // no source recorded; best effort
+                                _ => false,
+                            };
+                            if should_drain {
+                                if let Some(ref path) = focused {
+                                    let mut map = sessions.write_recover();
+                                    if let Some(session) = map.get_mut(path.as_str()) {
+                                        let count = unfocused_keystrokes.len() as u64;
+                                        session.keystroke_count += count;
+                                        for s in &unfocused_keystrokes {
+                                            if session.jitter_samples.len()
+                                                < MAX_DOCUMENT_JITTER_SAMPLES
+                                            {
+                                                session.jitter_samples.push(s.clone());
+                                            }
                                         }
+                                        log::debug!(
+                                            "Attributed {} buffered keystrokes to {:?}",
+                                            count, path
+                                        );
                                     }
-                                    log::debug!(
-                                        "Attributed {} buffered keystrokes to {:?}",
-                                        count, path
-                                    );
                                 }
+                            } else if !unfocused_keystrokes.is_empty() {
+                                log::debug!(
+                                    "Discarded {} buffered keystrokes (source {:?} != focus {:?})",
+                                    unfocused_keystrokes.len(), unfocused_source, focused
+                                );
                             }
                             unfocused_keystrokes.clear();
+                            unfocused_source = None;
                         }
                     }
                 }

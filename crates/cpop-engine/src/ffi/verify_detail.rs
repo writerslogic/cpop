@@ -6,6 +6,8 @@ use crate::vdf;
 use crate::verify::{full_verify, VerifyOptions};
 use cpop_protocol::rfc::wire_types::EvidencePacketWire;
 
+use crate::ffi::helpers::unwrap_cose_or_raw;
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct FfiOrdinalGap {
@@ -69,11 +71,15 @@ pub fn ffi_verify_evidence_detailed(path: String) -> FfiVerifyDetail {
         Err(e) => return err(format!("Failed to read file: {e}")),
     };
 
+    // Evidence files may be wrapped in a COSE_Sign1 envelope (signed exports)
+    // or raw CBOR (legacy/unsigned). Try to unwrap COSE first, then decode.
+    let cbor_payload = unwrap_cose_or_raw(&data);
+
     // Try wire format (EvidencePacketWire) first since ffi_export_evidence produces it,
     // then fall back to the legacy engine Packet format.
-    let packet = match EvidencePacketWire::decode_cbor(&data) {
+    let packet = match EvidencePacketWire::decode_cbor(&cbor_payload) {
         Ok(wire) => wire_to_packet(&wire),
-        Err(_) => match Packet::decode(&data) {
+        Err(_) => match Packet::decode(&cbor_payload) {
             Ok(p) => p,
             Err(e) => return err(format!("Failed to decode evidence: {e}")),
         },

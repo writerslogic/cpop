@@ -403,8 +403,10 @@ fn write_war_appraisal(packet: &evidence::Packet, war_path: &PathBuf) -> Result<
 
 fn verify_cpop(file_path: &PathBuf, out: &OutputMode) -> Result<()> {
     let data = fs::read(file_path).context("read CPOP file")?;
+    // Evidence files may be COSE_Sign1 envelopes (signed) or raw CBOR (unsigned).
+    let cbor_payload = cpop_engine::ffi::helpers::unwrap_cose_or_raw(&data);
     match cpop_engine::cpop_protocol::rfc::wire_types::packet::EvidencePacketWire::decode_cbor(
-        &data,
+        &cbor_payload,
     ) {
         Ok(packet) => {
             let validation_result = packet.validate();

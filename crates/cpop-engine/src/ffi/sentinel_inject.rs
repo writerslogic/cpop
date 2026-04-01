@@ -16,11 +16,11 @@ use crate::RwLockRecover;
 /// - `source_pid`: CGEvent field 41. Hardware = 0 (kernel); injected = injector PID.
 ///
 /// Synthetic events are rejected, matching the CGEventTap `verify_event_source` behavior.
-#[cfg_attr(feature = "ffi", uniffi::export)]
 /// Maximum sustained keystroke injection rate (keystrokes per second).
 /// Human peak burst is ~15 KPS; anything above 50 is clearly synthetic.
 const MAX_INJECT_RATE_PER_SEC: u64 = 50;
 
+#[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_inject_keystroke(
     timestamp_ns: i64,
     keycode: u16,
