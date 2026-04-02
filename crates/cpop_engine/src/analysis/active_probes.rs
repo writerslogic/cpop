@@ -5,6 +5,35 @@
 
 use serde::{Deserialize, Serialize};
 
+// ── Galton invariant thresholds ──────────────────────────────────────────────
+
+/// Fraction of baseline interval that defines a perturbation.
+const PERTURBATION_THRESHOLD_FRACTION: f64 = 0.3;
+/// Minimum samples required for statistically meaningful Galton analysis.
+const MIN_GALTON_SAMPLES: usize = 20;
+/// Minimum detected perturbation events for absorption estimation.
+const MIN_PERTURBATION_COUNT: usize = 3;
+/// Number of samples after a perturbation to track recovery.
+const RECOVERY_WINDOW_SIZE: usize = 10;
+/// Minimum recovery samples needed to estimate a decay rate.
+const MIN_RECOVERY_SAMPLES: usize = 3;
+
+// ── Decay rate estimation ────────────────────────────────────────────────────
+
+/// Default decay rate when insufficient data is available.
+const DEFAULT_DECAY_RATE: f64 = 0.5;
+/// Floor value for deviations to avoid division-by-zero in log fits.
+const MIN_DEVIATION_FLOOR: f64 = 0.001;
+/// Upper clamp for estimated decay rates.
+const MAX_DECAY_RATE: f64 = 2.0;
+
+// ── Reflex gate thresholds ───────────────────────────────────────────────────
+
+/// Minimum stimulus-response samples for reflex gate analysis.
+const MIN_STIMULUS_RESPONSES: usize = 5;
+/// Minimum data points for lag-1 autocorrelation to be meaningful.
+const MIN_AUTOCORRELATION_SAMPLES: usize = 3;
+
 /// The Galton Board analogy: human timing naturally absorbs perturbations
 /// back to a mean rhythm, like balls falling through pegs produce a bell curve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,11 +131,11 @@ pub fn analyze_galton_invariant(
     samples: &[ProbeSample],
     baseline_interval_ms: f64,
 ) -> Result<GaltonInvariantResult, String> {
-    if samples.len() < 20 {
+    if samples.len() < MIN_GALTON_SAMPLES {
         return Err("Insufficient samples for Galton analysis (minimum 20)".to_string());
     }
 
-    let threshold = baseline_interval_ms * 0.3;
+    let threshold = baseline_interval_ms * PERTURBATION_THRESHOLD_FRACTION;
     let mut perturbations: Vec<(usize, f64)> = Vec::new();
 
     for (i, sample) in samples.iter().enumerate() {
@@ -116,7 +145,7 @@ pub fn analyze_galton_invariant(
         }
     }
 
-    if perturbations.len() < 3 {
+    if perturbations.len() < MIN_PERTURBATION_COUNT {
         return Err("Insufficient perturbations detected (minimum 3)".to_string());
     }
 
@@ -127,13 +156,13 @@ pub fn analyze_galton_invariant(
     for &(pert_idx, deviation) in &perturbations {
         let mut recovery_samples = Vec::new();
 
-        let end_idx = samples.len().min(pert_idx + 10);
+        let end_idx = samples.len().min(pert_idx + RECOVERY_WINDOW_SIZE);
         for sample in samples.iter().take(end_idx).skip(pert_idx + 1) {
             let subsequent_dev = sample.interval_ms - baseline_interval_ms;
             recovery_samples.push(subsequent_dev);
         }
 
-        if recovery_samples.len() >= 3 {
+        if recovery_samples.len() >= MIN_RECOVERY_SAMPLES {
             let decay_rate = estimate_decay_rate(&recovery_samples);
             absorption_rates.push(decay_rate);
 
@@ -199,16 +228,16 @@ pub fn analyze_galton_invariant(
 
 fn estimate_decay_rate(deviations: &[f64]) -> f64 {
     if deviations.len() < 2 {
-        return 0.5;
+        return DEFAULT_DECAY_RATE;
     }
 
     // Exponential decay fit: ln(y/y0) = -α * t
-    let y0 = deviations[0].abs().max(0.001);
+    let y0 = deviations[0].abs().max(MIN_DEVIATION_FLOOR);
     let mut sum_rate = 0.0;
     let mut count = 0;
 
     for (i, &dev) in deviations.iter().enumerate().skip(1) {
-        let y = dev.abs().max(0.001);
+        let y = dev.abs().max(MIN_DEVIATION_FLOOR);
         let t = i as f64;
         let rate = -(y / y0).ln() / t;
 
@@ -219,9 +248,9 @@ fn estimate_decay_rate(deviations: &[f64]) -> f64 {
     }
 
     if count > 0 {
-        (sum_rate / count as f64).clamp(0.0, 2.0)
+        (sum_rate / count as f64).clamp(0.0, MAX_DECAY_RATE)
     } else {
-        0.5
+        DEFAULT_DECAY_RATE
     }
 }
 
@@ -233,7 +262,7 @@ pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, 
         .map(|s| s.interval_ms)
         .collect();
 
-    if responses.len() < 5 {
+    if responses.len() < MIN_STIMULUS_RESPONSES {
         return Err("Insufficient stimulus responses (minimum 5)".to_string());
     }
 
@@ -255,7 +284,7 @@ pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, 
         0.0
     };
 
-    let sequential_dependency = if responses.len() >= 3 {
+    let sequential_dependency = if responses.len() >= MIN_AUTOCORRELATION_SAMPLES {
         compute_lag1_autocorrelation(&responses)
     } else {
         0.0
@@ -278,7 +307,7 @@ pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, 
 
 fn compute_lag1_autocorrelation(data: &[f64]) -> f64 {
     let n = data.len();
-    if n < 3 {
+    if n < MIN_AUTOCORRELATION_SAMPLES {
         return 0.0;
     }
 
