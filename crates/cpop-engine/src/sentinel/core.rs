@@ -960,14 +960,9 @@ impl Sentinel {
             let _ = tx.send(()).await;
         }
 
-        // Join bridge threads first (they check `running` flag)
-        let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
-        for handle in handles {
-            // Intentionally ignored: thread panic during shutdown is non-recoverable
-            let _ = handle.join();
-        }
-
-        // Stop CGEventTap threads (keystroke + mouse captures)
+        // Stop CGEventTap threads (keystroke + mouse captures) FIRST so
+        // the std::sync::mpsc senders are dropped, causing bridge threads
+        // to receive Disconnected and exit their recv_timeout loops.
         if let Some(mut cap) = self.keystroke_capture.lock_recover().take() {
             let _ = cap.stop();
         }
@@ -976,6 +971,13 @@ impl Sentinel {
             let _ = cap.stop();
         }
         super::stop_hid_capture();
+
+        // Now join bridge threads (senders dropped, so they will exit)
+        let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
+        for handle in handles {
+            // Intentionally ignored: thread panic during shutdown is non-recoverable
+            let _ = handle.join();
+        }
 
         // Persist cumulative stats and unfocus all sessions so keystroke
         // counts survive across stop/start cycles.
