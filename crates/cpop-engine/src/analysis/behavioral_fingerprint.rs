@@ -501,8 +501,8 @@ mod tests {
         // Trigger as many flags as possible -> confidence should max at 1.0
         let mut intervals = vec![200; 50]; // uniform -> TooRegular, WrongSkewness, NoFatiguePattern, MissingMicroPauses
                                            // Add superhuman speeds
-        for i in 0..10 {
-            intervals[i] = 5;
+        for interval in &mut intervals[..10] {
+            *interval = 5;
         }
         let samples = mock_samples(&intervals);
         let analysis = BehavioralFingerprint::detect_forgery(&samples);

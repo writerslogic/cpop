@@ -613,8 +613,8 @@ fn test_velocity_normal_typing() {
 fn test_session_stats_multi_session() {
     let mut events = make_events(20, 1_000_000_000, 1_000_000_000);
     // Insert a 2-hour gap at event 10
-    for i in 10..20 {
-        events[i].timestamp_ns += 7_200_000_000_000;
+    for event in &mut events[10..20] {
+        event.timestamp_ns += 7_200_000_000_000;
     }
     let stats = compute_session_stats(&events);
     assert_eq!(stats.session_count, 2);

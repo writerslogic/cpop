@@ -225,7 +225,7 @@ async fn test_shadow_manager() {
 
 // --- handle_focus_event_sync tests ---
 
-fn make_focus_test_harness() -> (
+type FocusTestHarness = (
     Arc<RwLock<HashMap<String, DocumentSession>>>,
     SentinelConfig,
     Arc<ShadowManager>,
@@ -233,7 +233,9 @@ fn make_focus_test_harness() -> (
     Arc<RwLock<Option<String>>>,
     tempfile::TempDir,
     broadcast::Sender<SessionEvent>,
-) {
+);
+
+fn make_focus_test_harness() -> FocusTestHarness {
     let sessions = Arc::new(RwLock::new(HashMap::new()));
     let config = SentinelConfig::default();
     let temp_dir = tempfile::tempdir().expect("tempdir");

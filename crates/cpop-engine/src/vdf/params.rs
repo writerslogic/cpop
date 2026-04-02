@@ -429,8 +429,9 @@ mod tests {
 
     #[test]
     fn test_calibration_bounds_constants_sane() {
-        assert!(CALIBRATION_MIN_ITERS_PER_SEC < CALIBRATION_MAX_ITERS_PER_SEC);
-        assert!(CALIBRATION_MIN_ITERS_PER_SEC >= 1_000);
-        assert!(CALIBRATION_MAX_ITERS_PER_SEC <= 1_000_000_000);
+        // Use const assertions to validate compile-time invariants.
+        const _: () = assert!(CALIBRATION_MIN_ITERS_PER_SEC < CALIBRATION_MAX_ITERS_PER_SEC);
+        const _: () = assert!(CALIBRATION_MIN_ITERS_PER_SEC >= 1_000);
+        const _: () = assert!(CALIBRATION_MAX_ITERS_PER_SEC <= 1_000_000_000);
     }
 }
