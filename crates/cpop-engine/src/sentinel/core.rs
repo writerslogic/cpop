@@ -308,22 +308,16 @@ impl Sentinel {
         }
     }
 
-    /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
-    ///
-    /// The `running` flag is set **after** all subsystems have initialized successfully
-    /// so that `is_running()` only returns `true` when the sentinel is fully operational.
-    // TODO(L-031): Refactor start() into smaller helpers (setup_focus, setup_keystroke,
-    // setup_mouse, spawn_event_loop) to reduce complexity and improve testability.
-    pub async fn start(&self) -> Result<()> {
-        if self.running.load(Ordering::SeqCst) {
-            return Err(SentinelError::AlreadyRunning);
-        }
-
-        *self.start_time.lock_recover() = Some(SystemTime::now());
-
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
-        *self.shutdown_tx.lock_recover() = Some(shutdown_tx);
-
+    /// Create the platform focus monitor, verify availability, start it,
+    /// and return the monitor along with its event receivers.
+    #[allow(clippy::type_complexity)]
+    fn setup_focus(
+        &self,
+    ) -> Result<(
+        Box<dyn SentinelFocusTracker>,
+        mpsc::Receiver<super::types::FocusEvent>,
+        mpsc::Receiver<super::types::ChangeEvent>,
+    )> {
         #[cfg(target_os = "macos")]
         let focus_monitor: Box<dyn SentinelFocusTracker> =
             super::macos_focus::MacOSFocusMonitor::new_monitor(self.config.clone());
@@ -344,46 +338,40 @@ impl Sentinel {
 
         focus_monitor.start()?;
 
-        // Set running=true before spawning bridge threads so they see the flag immediately.
-        self.running.store(true, Ordering::SeqCst);
+        let focus_rx = focus_monitor.focus_events()?;
+        let change_rx = focus_monitor.change_events()?;
 
-        let sessions = Arc::clone(&self.sessions);
-        let current_focus = Arc::clone(&self.current_focus);
-        let config = self.config.clone();
-        let shadow = Arc::clone(&self.shadow);
-        let signing_key = Arc::clone(&self.signing_key);
-        let session_events_tx = self.session_events_tx.clone();
-        let running = Arc::clone(&self.running);
-        let idle_timeout = Duration::from_secs(config.idle_timeout_secs);
-        let wal_dir = config.wal_dir.clone();
+        Ok((focus_monitor, focus_rx, change_rx))
+    }
 
-        let mut focus_rx = focus_monitor.focus_events()?;
-        let mut change_rx = focus_monitor.change_events()?;
-
-        let (keystroke_tx, mut keystroke_rx) =
+    /// Initialize keystroke capture, spawn a bridge thread forwarding
+    /// events into the returned async receiver, and start HID capture
+    /// for dual-layer validation.
+    fn setup_keystroke_bridge(
+        &self,
+        running: &Arc<AtomicBool>,
+    ) -> mpsc::Receiver<crate::platform::KeystrokeEvent> {
+        let (keystroke_tx, keystroke_rx) =
             tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(1000);
-        let keystroke_running = Arc::clone(&running);
+        let keystroke_running = Arc::clone(running);
 
         #[cfg(target_os = "macos")]
-        let keystroke_capture_result = crate::platform::macos::MacOSKeystrokeCapture::new();
+        let capture_result = crate::platform::macos::MacOSKeystrokeCapture::new();
         #[cfg(target_os = "windows")]
-        let keystroke_capture_result = crate::platform::windows::WindowsKeystrokeCapture::new();
+        let capture_result = crate::platform::windows::WindowsKeystrokeCapture::new();
         #[cfg(target_os = "linux")]
-        let keystroke_capture_result = crate::platform::linux::LinuxKeystrokeCapture::new();
+        let capture_result = crate::platform::linux::LinuxKeystrokeCapture::new();
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let keystroke_capture_result: anyhow::Result<
-            Box<dyn crate::platform::KeystrokeCapture>,
-        > = Err(anyhow::anyhow!(
-            "Keystroke capture not supported on this platform"
-        ));
+        let capture_result: anyhow::Result<Box<dyn crate::platform::KeystrokeCapture>> = Err(
+            anyhow::anyhow!("Keystroke capture not supported on this platform"),
+        );
 
         let keystroke_active = Arc::clone(&self.keystroke_capture_active);
         let keystroke_capture_store = Arc::clone(&self.keystroke_capture);
-        match keystroke_capture_result {
+        match capture_result {
             Ok(mut keystroke_capture) => match keystroke_capture.start() {
                 Ok(sync_rx) => {
                     keystroke_active.store(true, Ordering::SeqCst);
-                    // Store capture so stop() can clean up the CGEventTap thread
                     *keystroke_capture_store.lock_recover() =
                         Some(Box::new(keystroke_capture) as Box<dyn KeystrokeCapture>);
                     let sync_rx: std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent> =
@@ -426,7 +414,8 @@ impl Sentinel {
                                                     || dropped_count.is_power_of_two()
                                                 {
                                                     log::warn!(
-                                                        "keystroke channel full, {} events dropped",
+                                                        "keystroke channel full, \
+                                                         {} events dropped",
                                                         dropped_count
                                                     );
                                                 }
@@ -451,7 +440,8 @@ impl Sentinel {
             },
             Err(e) => {
                 log::warn!(
-                    "Keystroke capture unavailable: {e}; running in degraded mode (focus-only)"
+                    "Keystroke capture unavailable: {e}; \
+                     running in degraded mode (focus-only)"
                 );
             }
         }
@@ -460,26 +450,33 @@ impl Sentinel {
         // This runs alongside CGEventTap; HID provides hardware ground truth.
         super::start_hid_capture();
 
-        let (mouse_tx, mut mouse_rx) =
-            tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(1000);
-        let mouse_running = Arc::clone(&running);
+        keystroke_rx
+    }
+
+    /// Initialize mouse capture and spawn a bridge thread forwarding
+    /// events into the returned async receiver.
+    fn setup_mouse_bridge(
+        &self,
+        running: &Arc<AtomicBool>,
+    ) -> mpsc::Receiver<crate::platform::MouseEvent> {
+        let (mouse_tx, mouse_rx) = tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(1000);
+        let mouse_running = Arc::clone(running);
 
         #[cfg(target_os = "macos")]
-        let mouse_capture_result = crate::platform::macos::MacOSMouseCapture::new();
+        let capture_result = crate::platform::macos::MacOSMouseCapture::new();
         #[cfg(target_os = "linux")]
-        let mouse_capture_result = crate::platform::linux::LinuxMouseCapture::new();
+        let capture_result = crate::platform::linux::LinuxMouseCapture::new();
         #[cfg(target_os = "windows")]
-        let mouse_capture_result = crate::platform::windows::WindowsMouseCapture::new();
+        let capture_result = crate::platform::windows::WindowsMouseCapture::new();
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let mouse_capture_result: anyhow::Result<Box<dyn crate::platform::MouseCapture>> = Err(
+        let capture_result: anyhow::Result<Box<dyn crate::platform::MouseCapture>> = Err(
             anyhow::anyhow!("Mouse capture not supported on this platform"),
         );
 
         let mouse_capture_store = Arc::clone(&self.mouse_capture);
-        match mouse_capture_result {
+        match capture_result {
             Ok(mut mouse_capture) => match mouse_capture.start() {
                 Ok(sync_rx) => {
-                    // Store capture so stop() can clean up the CGEventTap thread
                     *mouse_capture_store.lock_recover() =
                         Some(Box::new(mouse_capture) as Box<dyn MouseCapture>);
                     let sync_rx: std::sync::mpsc::Receiver<crate::platform::MouseEvent> = sync_rx;
@@ -511,9 +508,47 @@ impl Sentinel {
                 }
             },
             Err(e) => {
-                log::warn!("Mouse capture unavailable: {e}; running in degraded mode (focus-only)");
+                log::warn!(
+                    "Mouse capture unavailable: {e}; \
+                     running in degraded mode (focus-only)"
+                );
             }
         }
+
+        mouse_rx
+    }
+
+    /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
+    ///
+    /// The `running` flag is set **after** all subsystems have initialized successfully
+    /// so that `is_running()` only returns `true` when the sentinel is fully operational.
+    pub async fn start(&self) -> Result<()> {
+        if self.running.load(Ordering::SeqCst) {
+            return Err(SentinelError::AlreadyRunning);
+        }
+
+        *self.start_time.lock_recover() = Some(SystemTime::now());
+
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+        *self.shutdown_tx.lock_recover() = Some(shutdown_tx);
+
+        let (focus_monitor, mut focus_rx, mut change_rx) = self.setup_focus()?;
+
+        // Set running=true before spawning bridge threads so they see the flag immediately.
+        self.running.store(true, Ordering::SeqCst);
+
+        let sessions = Arc::clone(&self.sessions);
+        let current_focus = Arc::clone(&self.current_focus);
+        let config = self.config.clone();
+        let shadow = Arc::clone(&self.shadow);
+        let signing_key = Arc::clone(&self.signing_key);
+        let session_events_tx = self.session_events_tx.clone();
+        let running = Arc::clone(&self.running);
+        let idle_timeout = Duration::from_secs(config.idle_timeout_secs);
+        let wal_dir = config.wal_dir.clone();
+
+        let mut keystroke_rx = self.setup_keystroke_bridge(&running);
+        let mut mouse_rx = self.setup_mouse_bridge(&running);
 
         let activity_accumulator = Arc::clone(&self.activity_accumulator);
         let voice_collector = Arc::clone(&self.voice_collector);
