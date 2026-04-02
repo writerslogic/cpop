@@ -224,7 +224,7 @@ impl AccessLog {
             // prevent CSV row injection via malformed field values.
             let escape_csv = |s: String| -> String {
                 let escaped = s.replace('"', "\"\"").replace(['\n', '\r'], " ");
-                if escaped.starts_with(['=', '+', '-', '@', '\t']) {
+                if escaped.starts_with(['=', '+', '-', '@', '\t', '\r']) {
                     format!("'{escaped}")
                 } else {
                     escaped
