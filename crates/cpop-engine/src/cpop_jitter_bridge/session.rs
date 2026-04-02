@@ -203,9 +203,13 @@ impl HybridJitterSession {
         self.samples.len()
     }
 
+    fn effective_end(&self) -> DateTime<Utc> {
+        self.ended_at.unwrap_or_else(Utc::now)
+    }
+
     /// Return the elapsed session duration.
     pub fn duration(&self) -> Duration {
-        let end = self.ended_at.unwrap_or_else(Utc::now);
+        let end = self.effective_end();
         end.signed_duration_since(self.started_at)
             .to_std()
             .unwrap_or(Duration::from_secs(0))
@@ -220,13 +224,18 @@ impl HybridJitterSession {
     pub fn entropy_quality(&self) -> EntropyQuality {
         if self.loaded_readonly {
             if let Some(ref json) = self.loaded_cpop_jitter_evidence {
-                if let Ok(chain) = serde_json::from_str::<PhysEvidenceChain>(json) {
-                    return EntropyQuality {
-                        phys_ratio: chain.phys_ratio(),
-                        total_samples: chain.records.len(),
-                        phys_samples: chain.phys_count(),
-                        pure_samples: chain.pure_count(),
-                    };
+                match serde_json::from_str::<PhysEvidenceChain>(json) {
+                    Ok(chain) => {
+                        return EntropyQuality {
+                            phys_ratio: chain.phys_ratio(),
+                            total_samples: chain.records.len(),
+                            phys_samples: chain.phys_count(),
+                            pure_samples: chain.pure_count(),
+                        };
+                    }
+                    Err(e) => {
+                        log::warn!("failed to parse loaded cpop_jitter evidence: {e}");
+                    }
                 }
             }
         }
@@ -261,7 +270,7 @@ impl HybridJitterSession {
 
     /// Export the session as a `HybridEvidence` record.
     pub fn export(&self) -> HybridEvidence {
-        let end = self.ended_at.unwrap_or_else(Utc::now);
+        let end = self.effective_end();
         let statistics = self.compute_stats();
         let entropy_quality = self.entropy_quality();
 
@@ -291,7 +300,7 @@ impl HybridJitterSession {
 
     /// Export the session as a standard `Evidence` record (without hybrid fields).
     pub fn export_standard(&self) -> Evidence {
-        let end = self.ended_at.unwrap_or_else(Utc::now);
+        let end = self.effective_end();
 
         let samples: Vec<crate::jitter::Sample> = self
             .samples
@@ -318,7 +327,7 @@ impl HybridJitterSession {
     }
 
     fn compute_stats(&self) -> Statistics {
-        let end = self.ended_at.unwrap_or_else(Utc::now);
+        let end = self.effective_end();
         let duration = end
             .signed_duration_since(self.started_at)
             .to_std()
@@ -362,30 +371,38 @@ impl HybridJitterSession {
             keystroke_count: self.keystroke_count,
             last_jitter: self.last_jitter,
             zone_engine: self.zone_engine.clone(),
-            cpop_jitter_evidence: match self.cpop_jitter_session.export_json() {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    log::warn!("failed to export cpop_jitter evidence for session save: {e}");
-                    None
+            cpop_jitter_evidence: if self.loaded_readonly {
+                self.loaded_cpop_jitter_evidence.clone()
+            } else {
+                match self.cpop_jitter_session.export_json() {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        log::warn!("failed to export cpop_jitter evidence for session save: {e}");
+                        None
+                    }
                 }
             },
         };
 
         let bytes = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
-        if let Some(parent) = path.as_ref().parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let tmp_path = path.as_ref().with_extension("tmp");
-        fs::write(&tmp_path, &bytes).map_err(|e| e.to_string())?;
-        if let Err(e) = fs::rename(&tmp_path, path.as_ref()) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(e.to_string());
-        }
+
+        use std::io::Write as _;
+        let parent = path.as_ref().parent().unwrap_or(Path::new("."));
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .map_err(|e| format!("failed to create temp file: {e}"))?;
+        tmp.write_all(&bytes).map_err(|e| e.to_string())?;
+        tmp.persist(path.as_ref())
+            .map_err(|e| format!("failed to persist session file: {e}"))?;
         Ok(())
     }
 
     /// Load a previously saved session from a JSON file.
     pub fn load(path: impl AsRef<Path>, key_material: Option<[u8; 32]>) -> Result<Self, String> {
+        let meta = fs::metadata(path.as_ref()).map_err(|e| e.to_string())?;
+        if meta.len() > 100 * 1024 * 1024 {
+            return Err("session file exceeds 100 MB size limit".into());
+        }
         let bytes = fs::read(path).map_err(|e| e.to_string())?;
         let data: HybridSessionData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
 
@@ -396,6 +413,8 @@ impl HybridJitterSession {
         // Verify hash chain integrity of loaded samples
         verify_sample_chain(&data.samples).map_err(|e| format!("{e} in loaded data"))?;
 
+        // A PhysSession requires a secret even though this loaded session is read-only
+        // and will never record new samples. The key material is not security-critical here.
         let mut material = Zeroizing::new(if let Some(k) = key_material {
             k
         } else {
@@ -485,16 +504,31 @@ impl HybridEvidence {
         }
     }
 
+    /// Minimum plausible typing rate (KPM) when enough keystrokes have been recorded.
+    const MIN_PLAUSIBLE_RATE_KPM: f64 = 10.0;
+    /// Maximum plausible human typing rate (KPM).
+    const MAX_PLAUSIBLE_RATE_KPM: f64 = 1000.0;
+    /// Keystroke threshold below which low typing rate is not suspicious.
+    const LOW_RATE_KEYSTROKE_THRESHOLD: u64 = 100;
+    /// Minimum unique document hashes expected for long sessions.
+    const MIN_UNIQUE_DOC_HASHES: i32 = 2;
+    /// Keystroke threshold above which document hash diversity is checked.
+    const DOC_HASH_KEYSTROKE_THRESHOLD: u64 = 500;
+
     /// Check whether the typing rate and document hash diversity are plausibly human.
     pub fn is_plausible_human_typing(&self) -> bool {
         let rate = self.typing_rate();
-        if rate < 10.0 && self.statistics.total_keystrokes > 100 {
+        if rate < Self::MIN_PLAUSIBLE_RATE_KPM
+            && self.statistics.total_keystrokes > Self::LOW_RATE_KEYSTROKE_THRESHOLD
+        {
             return false;
         }
-        if rate > 1000.0 {
+        if rate > Self::MAX_PLAUSIBLE_RATE_KPM {
             return false;
         }
-        if self.statistics.unique_doc_hashes < 2 && self.statistics.total_keystrokes > 500 {
+        if self.statistics.unique_doc_hashes < Self::MIN_UNIQUE_DOC_HASHES
+            && self.statistics.total_keystrokes > Self::DOC_HASH_KEYSTROKE_THRESHOLD
+        {
             return false;
         }
         true

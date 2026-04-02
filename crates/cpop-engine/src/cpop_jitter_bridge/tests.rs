@@ -327,6 +327,73 @@ fn test_interval_to_bucket_boundaries() {
 }
 
 #[test]
+fn test_save_load_roundtrip() {
+    let doc = create_temp_doc();
+    let mut session = HybridJitterSession::new(
+        doc.path(),
+        Some(Parameters {
+            sample_interval: 1,
+            ..crate::jitter::default_parameters()
+        }),
+        None,
+    )
+    .unwrap();
+
+    for keycode in [0x0C, 0x0D, 0x0E] {
+        session.record_keystroke(keycode).unwrap();
+    }
+    session.end();
+
+    let orig_id = session.id.clone();
+    let orig_doc_path = session.document_path.clone();
+    let orig_keystroke_count = session.keystroke_count();
+    let orig_sample_count = session.sample_count();
+    let orig_started_at = session.started_at;
+    let orig_params = session.params;
+
+    // Save to a temp file
+    let dir = tempfile::TempDir::new().unwrap();
+    let save_path = dir.path().join("session1.json");
+    session.save(&save_path).unwrap();
+
+    // Load from saved file
+    let loaded = HybridJitterSession::load(&save_path, None).unwrap();
+
+    // Verify core fields survived the round-trip
+    assert_eq!(loaded.id, orig_id);
+    assert_eq!(loaded.document_path, orig_doc_path);
+    assert_eq!(loaded.keystroke_count(), orig_keystroke_count);
+    assert_eq!(loaded.sample_count(), orig_sample_count);
+    assert_eq!(loaded.started_at, orig_started_at);
+    assert_eq!(loaded.params.sample_interval, orig_params.sample_interval);
+    assert!(loaded.ended_at.is_some());
+
+    // Hash chain must still be valid
+    assert!(loaded.verify_chain().is_ok());
+
+    // Export from loaded session and verify sample count
+    let evidence = loaded.export();
+    assert_eq!(evidence.samples.len(), orig_sample_count);
+    assert!(evidence.verify().is_ok());
+
+    // Loaded session should be ended; recording should fail
+    // (loaded sessions get a fresh PhysSession so the document tracker path
+    // may not exist, but even if it does the session is logically complete)
+    // We verify the session is read-only by confirming it was ended.
+    assert!(loaded.ended_at.is_some());
+
+    // Re-save to another path and re-load to verify double round-trip
+    let save_path2 = dir.path().join("session2.json");
+    loaded.save(&save_path2).unwrap();
+
+    let reloaded = HybridJitterSession::load(&save_path2, None).unwrap();
+    assert_eq!(reloaded.id, orig_id);
+    assert_eq!(reloaded.keystroke_count(), orig_keystroke_count);
+    assert_eq!(reloaded.sample_count(), orig_sample_count);
+    assert!(reloaded.verify_chain().is_ok());
+}
+
+#[test]
 fn test_evidence_entropy_source_labels() {
     let doc = create_temp_doc();
     let mut session = HybridJitterSession::new(
