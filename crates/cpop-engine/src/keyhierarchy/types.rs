@@ -71,6 +71,11 @@ pub struct CheckpointSignature {
     /// Lamport public key fingerprint (8 bytes) for compact identification.
     #[serde(default)]
     pub lamport_pubkey_fingerprint: Option<Vec<u8>>,
+    /// Full Lamport public key (16384 bytes) for signature verification.
+    /// When present, verifiers can cryptographically validate the Lamport
+    /// signature rather than only checking structural well-formedness.
+    #[serde(default)]
+    pub lamport_public_key: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]

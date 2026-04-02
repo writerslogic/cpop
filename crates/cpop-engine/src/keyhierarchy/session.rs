@@ -153,6 +153,7 @@ impl Session {
             counter_delta: None,
             lamport_signature: Some(lamport_sig.to_bytes().to_vec()),
             lamport_pubkey_fingerprint: Some(lamport_pubkey.fingerprint().to_vec()),
+            lamport_public_key: Some(lamport_pubkey.to_bytes().to_vec()),
         };
         self.signatures.push(sig.clone());
         Ok(sig)
@@ -230,6 +231,7 @@ impl Session {
             counter_delta,
             lamport_signature: Some(lamport_sig.to_bytes().to_vec()),
             lamport_pubkey_fingerprint: Some(lamport_pubkey.fingerprint().to_vec()),
+            lamport_public_key: Some(lamport_pubkey.to_bytes().to_vec()),
         };
         self.signatures.push(sig.clone());
         Ok(sig)

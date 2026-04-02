@@ -397,6 +397,7 @@ mod tests {
                 counter_delta: None,
                 lamport_signature: Some(lamport_sig.clone()),
                 lamport_pubkey_fingerprint: Some(lamport_fp.clone()),
+                lamport_public_key: None,
             },
             CheckpointSignature {
                 ordinal: 2,
@@ -407,6 +408,7 @@ mod tests {
                 counter_delta: None,
                 lamport_signature: Some(lamport_sig.clone()),
                 lamport_pubkey_fingerprint: Some(lamport_fp.clone()),
+                lamport_public_key: None,
             },
         ];
 

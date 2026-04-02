@@ -85,14 +85,37 @@ pub fn verify_checkpoint_signatures(
                     sig.ordinal
                 ))
             })?;
-            // Re-derive the Lamport public key from the same ratchet state
-            // that produced the Ed25519 key. Since we don't have the ratchet
-            // state during verification, we verify structurally: hash each
-            // revealed value and check it produces a valid SHA-256 preimage.
-            // Full public key verification requires the pubkey to be stored
-            // or transmitted. For now, verify the signature is well-formed
-            // (all revealed values hash to valid 32-byte outputs).
-            if lamport_sig.to_bytes().len() != 256 * 32 {
+
+            if let Some(ref pubkey_bytes) = sig.lamport_public_key {
+                // Full cryptographic verification against the included public key.
+                let lamport_pubkey = crate::crypto::lamport::LamportPublicKey::from_bytes(
+                    pubkey_bytes,
+                )
+                .ok_or_else(|| {
+                    KeyHierarchyError::Crypto(format!(
+                        "invalid Lamport public key length at ordinal {}",
+                        sig.ordinal
+                    ))
+                })?;
+
+                // If a fingerprint is also present, verify it matches the public key.
+                if let Some(ref fp) = sig.lamport_pubkey_fingerprint {
+                    if fp.as_slice() != lamport_pubkey.fingerprint() {
+                        return Err(KeyHierarchyError::Crypto(format!(
+                            "Lamport public key fingerprint mismatch at ordinal {}",
+                            sig.ordinal
+                        )));
+                    }
+                }
+
+                if !lamport_pubkey.verify(&sig.checkpoint_hash, &lamport_sig) {
+                    return Err(KeyHierarchyError::Crypto(format!(
+                        "Lamport signature verification failed at ordinal {}",
+                        sig.ordinal
+                    )));
+                }
+            } else if lamport_sig.to_bytes().len() != 256 * 32 {
+                // No public key available; fall back to structural validation.
                 return Err(KeyHierarchyError::Crypto(format!(
                     "Lamport signature wrong size at ordinal {}",
                     sig.ordinal
