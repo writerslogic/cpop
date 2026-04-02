@@ -158,12 +158,24 @@ impl Builder {
     }
 
     fn generate_claims(&mut self) {
+        self.add_chain_integrity_claims();
+        self.add_temporal_claims();
+        self.add_declaration_claims();
+        self.add_behavioral_claims();
+        self.add_hardware_claims();
+        self.add_context_claims();
+        self.add_identity_claims();
+    }
+
+    fn add_chain_integrity_claims(&mut self) {
         self.add_claim(
             ClaimType::ChainIntegrity,
             "Content states form an unbroken cryptographic chain",
             "cryptographic",
         );
+    }
 
+    fn add_temporal_claims(&mut self) {
         let mut total_time = Duration::from_secs(0);
         for cp in &self.packet.checkpoints {
             if let Some(elapsed) = cp.elapsed_time {
@@ -180,7 +192,9 @@ impl Builder {
                 "cryptographic",
             );
         }
+    }
 
+    fn add_declaration_claims(&mut self) {
         if let Some(decl) = &self.packet.declaration {
             let ai_desc = if decl.has_ai_usage() {
                 format!(
@@ -196,7 +210,9 @@ impl Builder {
                 "attestation",
             );
         }
+    }
 
+    fn add_behavioral_claims(&mut self) {
         if let Some(presence) = &self.packet.presence {
             self.add_claim(
                 ClaimType::PresenceVerified,
@@ -219,6 +235,46 @@ impl Builder {
             self.add_claim(ClaimType::KeystrokesVerified, desc, "cryptographic");
         }
 
+        if self.packet.behavioral.is_some() {
+            self.add_claim(
+                ClaimType::BehaviorAnalyzed,
+                "Edit patterns captured for forensic analysis",
+                "statistical",
+            );
+        }
+
+        if !self.packet.dictation_events.is_empty() {
+            let total_words: u32 = self
+                .packet
+                .dictation_events
+                .iter()
+                .map(|d| d.word_count)
+                .sum();
+            let avg_plausibility = self
+                .packet
+                .dictation_events
+                .iter()
+                .map(|d| d.plausibility_score)
+                .sum::<f64>()
+                / self.packet.dictation_events.len() as f64;
+            self.add_claim(
+                ClaimType::DictationVerified,
+                format!(
+                    "{} dictation segment(s), {} words, avg plausibility {:.0}%",
+                    self.packet.dictation_events.len(),
+                    total_words,
+                    avg_plausibility * 100.0
+                ),
+                if avg_plausibility > 0.7 {
+                    "high"
+                } else {
+                    "medium"
+                },
+            );
+        }
+    }
+
+    fn add_hardware_claims(&mut self) {
         if self.packet.hardware.is_some() {
             self.add_claim(
                 ClaimType::HardwareAttested,
@@ -234,15 +290,9 @@ impl Builder {
                 "high",
             );
         }
+    }
 
-        if self.packet.behavioral.is_some() {
-            self.add_claim(
-                ClaimType::BehaviorAnalyzed,
-                "Edit patterns captured for forensic analysis",
-                "statistical",
-            );
-        }
-
+    fn add_context_claims(&mut self) {
         if !self.packet.contexts.is_empty() {
             // TODO(M-005): Replace period_type String with a PeriodType enum
             // (e.g. Focused, Assisted, External, ...) in evidence/types.rs.
@@ -276,37 +326,9 @@ impl Builder {
                 "cryptographic",
             );
         }
+    }
 
-        if !self.packet.dictation_events.is_empty() {
-            let total_words: u32 = self
-                .packet
-                .dictation_events
-                .iter()
-                .map(|d| d.word_count)
-                .sum();
-            let avg_plausibility = self
-                .packet
-                .dictation_events
-                .iter()
-                .map(|d| d.plausibility_score)
-                .sum::<f64>()
-                / self.packet.dictation_events.len() as f64;
-            self.add_claim(
-                ClaimType::DictationVerified,
-                format!(
-                    "{} dictation segment(s), {} words, avg plausibility {:.0}%",
-                    self.packet.dictation_events.len(),
-                    total_words,
-                    avg_plausibility * 100.0
-                ),
-                if avg_plausibility > 0.7 {
-                    "high"
-                } else {
-                    "medium"
-                },
-            );
-        }
-
+    fn add_identity_claims(&mut self) {
         if let Some(kh) = &self.packet.key_hierarchy {
             let mut desc = format!(
                 "Identity {} with {} ratchet generations",
