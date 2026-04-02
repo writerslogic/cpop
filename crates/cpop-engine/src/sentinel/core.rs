@@ -29,13 +29,10 @@ fn commit_checkpoint_for_path(
     writersproof_dir: &std::path::Path,
 ) -> bool {
     let file_path = std::path::Path::new(path);
-    if !file_path.exists() {
-        return false;
-    }
     let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
         Ok(pair) => pair,
         Err(e) => {
-            log::warn!("Auto-checkpoint hash failed for {path}: {e}");
+            log::debug!("Auto-checkpoint hash failed for {path}: {e}");
             return false;
         }
     };
@@ -873,31 +870,27 @@ impl Sentinel {
                                         && !path.starts_with("shadow://")
                                     {
                                         let src = std::path::Path::new(path);
-                                        if src.exists() && src.is_file() {
-                                            let path_hash = {
-                                                use sha2::Digest;
-                                                let h = sha2::Sha256::digest(path.as_bytes());
-                                                hex::encode(&h[..8])
-                                            };
-                                            let ext = src
-                                                .extension()
-                                                .and_then(|e| e.to_str())
-                                                .unwrap_or("txt");
-                                            let snap_dir =
-                                                writersproof_dir.join("snapshots").join(&path_hash);
-                                            let _ = std::fs::create_dir_all(&snap_dir);
-                                            let ordinal = session
-                                                .last_checkpoint_keystrokes;
-                                            let snap_name = format!(
-                                                "{:06}.{}",
-                                                ordinal, ext
+                                        let path_hash = {
+                                            use sha2::Digest;
+                                            let h = sha2::Sha256::digest(path.as_bytes());
+                                            hex::encode(&h[..8])
+                                        };
+                                        let ext = src
+                                            .extension()
+                                            .and_then(|e| e.to_str())
+                                            .unwrap_or("txt");
+                                        let snap_dir =
+                                            writersproof_dir.join("snapshots").join(&path_hash);
+                                        let _ = std::fs::create_dir_all(&snap_dir);
+                                        let ordinal = session.last_checkpoint_keystrokes;
+                                        let snap_name =
+                                            format!("{:06}.{}", ordinal, ext);
+                                        let snap_path = snap_dir.join(&snap_name);
+                                        if let Err(e) = std::fs::copy(src, &snap_path) {
+                                            log::debug!(
+                                                "Snapshot save failed for {}: {e}",
+                                                path
                                             );
-                                            let snap_path = snap_dir.join(&snap_name);
-                                            if let Err(e) = std::fs::copy(src, &snap_path) {
-                                                log::warn!(
-                                                    "Snapshot save failed for {}: {e}", path
-                                                );
-                                            }
                                         }
                                     }
                                 }
