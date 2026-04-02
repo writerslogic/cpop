@@ -19,7 +19,29 @@ use super::types::Packet;
 
 impl Packet {
     /// Verify packet integrity: chain hashes, VDF proofs, declaration, hardware, and key hierarchy.
+    ///
+    /// Baseline verification uses the packet's own `signing_public_key`, so it only proves
+    /// internal consistency (self-signed), not authenticity. Use [`verify_with_trusted_key`]
+    /// to supply an externally trusted public key for stronger assurance.
     pub fn verify(&self, _vdf_params: vdf::Parameters) -> crate::error::Result<()> {
+        self.verify_inner(_vdf_params, None)
+    }
+
+    /// Like [`verify`], but uses `trusted_public_key` for baseline verification instead of
+    /// the packet's embedded key, proving authenticity against an external trust anchor.
+    pub fn verify_with_trusted_key(
+        &self,
+        _vdf_params: vdf::Parameters,
+        trusted_public_key: [u8; 32],
+    ) -> crate::error::Result<()> {
+        self.verify_inner(_vdf_params, Some(trusted_public_key))
+    }
+
+    fn verify_inner(
+        &self,
+        _vdf_params: vdf::Parameters,
+        trusted_public_key: Option<[u8; 32]>,
+    ) -> crate::error::Result<()> {
         if let Some(last) = self.checkpoints.last() {
             let expected_chain_hash = last.hash.clone();
             if self
@@ -186,9 +208,18 @@ impl Packet {
         if let Some(bv) = &self.baseline_verification {
             if let Some(digest) = &bv.digest {
                 if let Some(sig) = &bv.digest_signature {
-                    let public_key_bytes = self.signing_public_key.ok_or_else(|| {
-                        Error::signature("missing signing public key for baseline")
-                    })?;
+                    // H-012: Prefer trusted external key; fall back to self-signed with warning.
+                    let public_key_bytes = if let Some(tk) = trusted_public_key {
+                        tk
+                    } else {
+                        log::warn!(
+                            "Baseline verification uses self-signed key from the packet; \
+                             this proves internal consistency only, not authenticity"
+                        );
+                        self.signing_public_key.ok_or_else(|| {
+                            Error::signature("missing signing public key for baseline")
+                        })?
+                    };
                     let public_key = VerifyingKey::from_bytes(&public_key_bytes)
                         .map_err(|e| Error::signature(format!("invalid public key: {e}")))?;
 
@@ -206,8 +237,8 @@ impl Packet {
                     })?;
                 }
 
-                let public_key_bytes = self
-                    .signing_public_key
+                let public_key_bytes = trusted_public_key
+                    .or(self.signing_public_key)
                     .ok_or_else(|| Error::signature("missing signing public key"))?;
                 let mut hasher = Sha256::new();
                 hasher.update(public_key_bytes);

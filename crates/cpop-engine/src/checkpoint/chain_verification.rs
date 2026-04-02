@@ -29,14 +29,19 @@ impl Chain {
     /// Genesis checkpoint: accepts both legacy all-zeros `previous_hash` and
     /// spec-correct `H(document-ref)` for backward compatibility with chains
     /// created before the genesis hash computation was standardized.
-    pub fn verify_hash_chain(&self) -> bool {
+    pub fn verify_hash_chain(&self) -> Result<()> {
         for (i, cp) in self.checkpoints.iter().enumerate() {
             if cp.compute_hash() != cp.hash {
-                return false;
+                return Err(Error::checkpoint(format!(
+                    "checkpoint {i}: computed hash does not match stored hash"
+                )));
             }
             if i > 0 {
                 if cp.previous_hash != self.checkpoints[i - 1].hash {
-                    return false;
+                    return Err(Error::checkpoint(format!(
+                        "checkpoint {i}: previous_hash does not match checkpoint {}'s hash",
+                        i - 1
+                    )));
                 }
             } else {
                 // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
@@ -48,11 +53,15 @@ impl Chain {
                 if is_legacy_zeros {
                     log::warn!("Legacy all-zeros genesis hash accepted; consider re-chaining");
                 } else if !is_spec_genesis {
-                    return false;
+                    return Err(Error::checkpoint(
+                        "checkpoint 0: invalid genesis previous_hash \
+                         (neither all-zeros nor spec-correct H(document-ref))"
+                            .to_string(),
+                    ));
                 }
             }
         }
-        true
+        Ok(())
     }
 
     /// Verify the chain and return a detailed report with warnings and failures.
