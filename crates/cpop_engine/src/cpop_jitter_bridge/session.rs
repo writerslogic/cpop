@@ -221,7 +221,13 @@ impl HybridJitterSession {
             statistics,
             entropy_quality,
             typing_profile: *self.profile(),
-            cpop_jitter_evidence: self.cpop_jitter_session.export_json().ok(),
+            cpop_jitter_evidence: match self.cpop_jitter_session.export_json() {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    log::warn!("failed to export cpop_jitter evidence JSON: {e}");
+                    None
+                }
+            },
         }
     }
 
@@ -298,7 +304,13 @@ impl HybridJitterSession {
             keystroke_count: self.keystroke_count,
             last_jitter: self.last_jitter,
             zone_engine: self.zone_engine.clone(),
-            cpop_jitter_evidence: self.cpop_jitter_session.export_json().ok(),
+            cpop_jitter_evidence: match self.cpop_jitter_session.export_json() {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    log::warn!("failed to export cpop_jitter evidence for session save: {e}");
+                    None
+                }
+            },
         };
 
         let bytes = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
