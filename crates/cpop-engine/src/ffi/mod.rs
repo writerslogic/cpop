@@ -17,6 +17,7 @@ pub mod helpers;
 pub mod report;
 pub mod report_types;
 pub mod sentinel;
+pub mod sentinel_es;
 pub mod sentinel_inject;
 pub mod sentinel_witnessing;
 pub mod system;
