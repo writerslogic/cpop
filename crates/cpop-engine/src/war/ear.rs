@@ -57,7 +57,10 @@ impl Ar4siStatus {
             2 => Self::Affirming,
             32 => Self::Warning,
             96 => Self::Contraindicated,
-            _ => Self::None,
+            other => {
+                log::warn!("Unknown AR4SI status value {other}, mapping to None");
+                Self::None
+            }
         }
     }
 

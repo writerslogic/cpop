@@ -265,7 +265,10 @@ impl AnchorProvider for OpenTimestampsProvider {
             }
         }
 
-        Err(last_error.unwrap_or(AnchorError::Unavailable("All calendars failed".into())))
+        Err(last_error.unwrap_or_else(|| {
+            log::warn!("OTS submit failed: no calendar URLs configured");
+            AnchorError::Unavailable("All calendars failed".into())
+        }))
     }
 
     async fn check_status(&self, proof: &Proof) -> Result<Proof, AnchorError> {

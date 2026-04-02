@@ -419,7 +419,12 @@ impl SentinelIpcHandler {
         let sequence = (metrics.primary.edit_entropy.min(3.0) / 3.0 * 0.5)
             + (metrics.primary.monotonic_append_ratio * 0.5);
         let behavioral = metrics.assessment_score;
-        let composite = 0.3 * residency + 0.3 * sequence + 0.4 * behavioral;
+        const PROCESS_SCORE_WEIGHT_RESIDENCY: f64 = 0.3;
+        const PROCESS_SCORE_WEIGHT_SEQUENCE: f64 = 0.3;
+        const PROCESS_SCORE_WEIGHT_BEHAVIORAL: f64 = 0.4;
+        let composite = PROCESS_SCORE_WEIGHT_RESIDENCY * residency
+            + PROCESS_SCORE_WEIGHT_SEQUENCE * sequence
+            + PROCESS_SCORE_WEIGHT_BEHAVIORAL * behavioral;
 
         Ok(IpcMessage::ProcessScoreResponse {
             residency,
