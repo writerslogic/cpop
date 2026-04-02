@@ -80,7 +80,7 @@ pub fn draw_score_bar(
 
     // Track background
     let track_x = x_mm + 30.0;
-    let track_h = 4.0_f32;
+    let track_h = 5.0_f32;
     let bg = Color::Rgb(Rgb::new(0.93, 0.93, 0.93, None));
     let track = Rect::new(
         Mm(track_x),

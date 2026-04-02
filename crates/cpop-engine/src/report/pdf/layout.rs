@@ -82,6 +82,33 @@ pub(super) fn fill_rect(
     layer.add_rect(Rect::new(Mm(x), Mm(y), Mm(x + w), Mm(y + h)));
 }
 
+/// Draw a rectangle outline (stroke only, no fill).
+pub(super) fn stroke_rect(
+    layer: &PdfLayerReference,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    thickness: f32,
+    color: (f32, f32, f32),
+) {
+    layer.set_outline_color(Color::Rgb(Rgb::new(color.0, color.1, color.2, None)));
+    layer.set_outline_thickness(thickness);
+    // White fill so the rect primitive doesn't paint over content.
+    layer.set_fill_color(Color::Rgb(Rgb::new(1.0, 1.0, 1.0, None)));
+    layer.add_rect(Rect::new(Mm(x), Mm(y), Mm(x + w), Mm(y + h)));
+}
+
+/// Draw a white card with border and subtle drop shadow.
+pub(super) fn draw_card(layer: &PdfLayerReference, x: f32, y: f32, w: f32, h: f32) {
+    // Shadow: thin gray rectangle offset 0.5mm down and right
+    fill_rect(layer, x + 0.5, y - 0.5, w, h, (0.93, 0.93, 0.93));
+    // White fill
+    fill_rect(layer, x, y, w, h, WHITE);
+    // Border
+    stroke_rect(layer, x, y, w, h, 0.3, (0.88, 0.88, 0.88));
+}
+
 /// Draw text at position.
 pub(super) fn text(
     layer: &PdfLayerReference,
@@ -129,7 +156,7 @@ pub fn draw_page1(
         r.algorithm_version,
         r.generated_at.format("%B %-d, %Y"),
     );
-    text(layer, &subtitle, 7.0, MARGIN_LEFT, y, &fonts.regular, GRAY);
+    text(layer, &subtitle, 7.5, MARGIN_LEFT, y, &fonts.regular, GRAY);
     y -= 4.0;
 
     if r.is_sample {
@@ -192,51 +219,73 @@ pub fn draw_page1(
     );
     y -= 16.0;
 
-    // ── Verdict Banner ──
+    // ── Verdict Banner (white card with colored left border) ──
     let vc = verdict_color(&r.verdict);
-    fill_rect(layer, MARGIN_LEFT, y - 4.0, CONTENT_WIDTH, 22.0, vc);
+    // Shadow
+    fill_rect(
+        layer,
+        MARGIN_LEFT + 0.5,
+        y - 4.5,
+        CONTENT_WIDTH,
+        22.0,
+        (0.93, 0.93, 0.93),
+    );
+    // White card background
+    fill_rect(layer, MARGIN_LEFT, y - 4.0, CONTENT_WIDTH, 22.0, WHITE);
+    // Thin gray border around card
+    stroke_rect(
+        layer,
+        MARGIN_LEFT,
+        y - 4.0,
+        CONTENT_WIDTH,
+        22.0,
+        0.3,
+        (0.85, 0.85, 0.85),
+    );
+    // Colored left border (4mm wide)
+    fill_rect(layer, MARGIN_LEFT, y - 4.0, 4.0, 22.0, vc);
 
-    // Score
+    // Score (dark text)
     text(
         layer,
         &format!("{}", r.score),
         28.0,
-        MARGIN_LEFT + 4.0,
+        MARGIN_LEFT + 8.0,
         y + 4.0,
         &fonts.bold,
-        WHITE,
+        BLACK,
     );
     text(
         layer,
         "/ 100",
         9.0,
-        MARGIN_LEFT + 22.0,
+        MARGIN_LEFT + 26.0,
         y + 4.0,
         &fonts.regular,
-        WHITE,
+        GRAY,
     );
 
-    // Verdict label
+    // Verdict label (dark text)
     text(
         layer,
         r.verdict.label(),
         12.0,
-        MARGIN_LEFT + 42.0,
+        MARGIN_LEFT + 46.0,
         y + 8.0,
         &fonts.bold,
-        WHITE,
+        BLACK,
     );
     text(
         layer,
         r.verdict.subtitle(),
-        7.0,
-        MARGIN_LEFT + 42.0,
+        7.5,
+        MARGIN_LEFT + 46.0,
         y + 2.0,
         &fonts.regular,
-        WHITE,
+        GRAY,
     );
 
-    // Likelihood ratio
+    // Likelihood ratio (dark text)
     let lr_str = if r.likelihood_ratio >= 100.0 {
         format!("{:.0}", r.likelihood_ratio)
     } else {
@@ -249,7 +298,7 @@ pub fn draw_page1(
         MARGIN_LEFT + 140.0,
         y + 8.0,
         &fonts.bold,
-        WHITE,
+        BLACK,
     );
     text(
         layer,
@@ -258,7 +307,7 @@ pub fn draw_page1(
         MARGIN_LEFT + 140.0,
         y + 2.0,
         &fonts.regular,
-        WHITE,
+        GRAY,
     );
     text(
         layer,
@@ -267,7 +316,7 @@ pub fn draw_page1(
         MARGIN_LEFT + 150.0,
         y + 2.0,
         &fonts.regular,
-        WHITE,
+        GRAY,
     );
     y -= 28.0;
 
@@ -293,14 +342,31 @@ pub fn draw_page1(
     let seg_w = CONTENT_WIDTH / 6.0;
     for (i, (label, color, tier)) in tiers.iter().enumerate() {
         let sx = MARGIN_LEFT + i as f32 * seg_w;
-        fill_rect(layer, sx, y - 1.0, seg_w - 0.5, 5.0, *color);
-        text(layer, label, 5.0, sx + 1.0, y, &fonts.regular, WHITE);
-        if *tier == r.enfsi_tier {
-            // Active indicator: outline
-            layer.set_outline_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
-            layer.set_outline_thickness(0.5);
-            let outline = Rect::new(Mm(sx), Mm(y - 1.0), Mm(sx + seg_w - 0.5), Mm(y + 4.0));
-            layer.add_rect(outline);
+        let is_active = *tier == r.enfsi_tier;
+        // Inactive segments: blend color with white at 60% opacity
+        let seg_color = if is_active {
+            *color
+        } else {
+            (
+                color.0 * 0.4 + 1.0 * 0.6,
+                color.1 * 0.4 + 1.0 * 0.6,
+                color.2 * 0.4 + 1.0 * 0.6,
+            )
+        };
+        fill_rect(layer, sx, y - 1.0, seg_w - 0.5, 3.5, seg_color);
+        let text_color = if is_active { WHITE } else { GRAY };
+        text(
+            layer,
+            label,
+            5.0,
+            sx + 1.0,
+            y - 0.5,
+            &fonts.regular,
+            text_color,
+        );
+        if is_active {
+            // Active indicator: thick colored underline (1mm)
+            fill_rect(layer, sx, y - 2.0, seg_w - 0.5, 1.0, *color);
         }
     }
     y -= 10.0;
@@ -309,51 +375,44 @@ pub fn draw_page1(
     text(
         layer,
         "Author Declaration",
-        10.0,
+        11.0,
         MARGIN_LEFT,
         y,
         &fonts.bold,
         BLACK,
     );
-    y -= 6.0;
+    y -= 7.0;
 
-    // Declaration box
-    fill_rect(
-        layer,
-        MARGIN_LEFT,
-        y - 22.0,
-        CONTENT_WIDTH,
-        24.0,
-        (0.96, 0.96, 0.96),
-    );
+    // Declaration card (white with border and shadow)
+    draw_card(layer, MARGIN_LEFT, y - 24.0, CONTENT_WIDTH, 26.0);
     // We don't have the declaration text in WarReport, so use verdict_description
     let decl_text = &r.verdict_description;
-    let mut dy = y - 2.0;
+    let mut dy = y - 4.0;
     for line in wrap_text_lines(decl_text, 90) {
         text(
             layer,
             &line,
-            7.0,
-            MARGIN_LEFT + 3.0,
+            7.5,
+            MARGIN_LEFT + 4.0,
             dy,
             &fonts.regular,
             BLACK,
         );
         dy -= 4.0;
     }
-    y -= 28.0;
+    y -= 33.0;
 
     // ── Chain of Custody ──
     text(
         layer,
         "Document Identity",
-        10.0,
+        11.0,
         MARGIN_LEFT,
         y,
         &fonts.bold,
         BLACK,
     );
-    y -= 6.0;
+    y -= 7.0;
 
     let rows = [
         ("Document Hash:", &r.document_hash),
@@ -362,7 +421,7 @@ pub fn draw_page1(
         ("Device Attestation:", &r.device_attestation),
     ];
     for (label, value) in &rows {
-        text(layer, label, 7.0, MARGIN_LEFT + 2.0, y, &fonts.bold, BLACK);
+        text(layer, label, 7.5, MARGIN_LEFT + 2.0, y, &fonts.bold, BLACK);
         let display = if value.len() > 64 {
             format!(
                 "{}...{}",
@@ -375,7 +434,7 @@ pub fn draw_page1(
         text(
             layer,
             &display,
-            6.5,
+            7.0,
             MARGIN_LEFT + 42.0,
             y,
             &fonts.mono,
@@ -388,7 +447,7 @@ pub fn draw_page1(
         text(
             layer,
             "Document Length:",
-            7.0,
+            7.5,
             MARGIN_LEFT + 2.0,
             y,
             &fonts.bold,
@@ -401,7 +460,7 @@ pub fn draw_page1(
         text(
             layer,
             &len_str,
-            6.5,
+            7.0,
             MARGIN_LEFT + 42.0,
             y,
             &fonts.mono,
@@ -409,20 +468,20 @@ pub fn draw_page1(
         );
         y -= 5.0;
     }
-    y -= 4.0;
+    y -= 7.0;
 
     // ── Category Scores ──
     if !r.dimensions.is_empty() {
         text(
             layer,
             "Category Scores",
-            10.0,
+            11.0,
             MARGIN_LEFT,
             y,
             &fonts.bold,
             BLACK,
         );
-        y -= 7.0;
+        y -= 8.0;
 
         for d in &r.dimensions {
             let dc = dimension_color(&d.name);
@@ -440,14 +499,14 @@ pub fn draw_page1(
             y -= 7.0;
         }
     }
-    y -= 4.0;
+    y -= 7.0;
 
     // ── Writing Flow ──
     if !r.writing_flow.is_empty() {
         text(
             layer,
             "Writing Flow",
-            10.0,
+            11.0,
             MARGIN_LEFT,
             y,
             &fonts.bold,
