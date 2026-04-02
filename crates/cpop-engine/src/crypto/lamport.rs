@@ -11,6 +11,7 @@
 //! prevents checkpoint chain forgery.
 
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Number of bit-pairs in the key (one per bit of the message hash).
@@ -95,6 +96,8 @@ impl LamportPublicKey {
             return false;
         }
 
+        let mut valid = subtle::Choice::from(1u8);
+
         for i in 0..N {
             let byte_idx = i / 8;
             let bit_idx = 7 - (i % 8);
@@ -110,12 +113,10 @@ impl LamportPublicKey {
             let pub_offset = (i * 2 + bit as usize) * HASH_SIZE;
             let expected = &self.hashes[pub_offset..pub_offset + HASH_SIZE];
 
-            if hashed.as_slice() != expected {
-                return false;
-            }
+            valid &= hashed.as_slice().ct_eq(expected);
         }
 
-        true
+        valid.into()
     }
 
     /// Serialize the public key to bytes.
