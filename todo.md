@@ -13,7 +13,7 @@
 |----------|------|-------|---------|
 | CRITICAL | 6    | 6     | 0       |
 | HIGH     | 40   | 92    | 0       |
-| MEDIUM   | 99   | 170   | 0       |
+| MEDIUM   | 84   | 179   | 6       |
 
 ---
 
@@ -297,7 +297,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:toctou | batch:2 -->
 - [ ] **M-005** `[concurrency]` `sentinel/focus.rs:109`: Running flag polled via read_recover(); race with stop()
   <!-- pid:data_race | batch:2 -->
-- [ ] **M-006** `[code_quality]` `sentinel/daemon.rs:347`: unwrap_or() on try_from without logging; corrupt started_at becomes epoch silently
+- [x] **M-006** `[code_quality]` `sentinel/daemon.rs:347`: unwrap_or() on try_from without logging; corrupt started_at becomes epoch silently -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:2 -->
 - [ ] **M-007** `[code_quality]` `sentinel/daemon.rs:110`: write_pid() and write_pid_value() are 99% identical
   <!-- pid:duplicated_logic | batch:2 -->
@@ -305,7 +305,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:duplicated_logic | batch:2 -->
 - [ ] **M-009** `[code_quality]` `sentinel/core_session.rs:48`: AUD-041 lock ordering documented but not mechanically enforced
   <!-- pid:lock_ordering | batch:2 -->
-- [ ] **M-010** `[performance]` `sentinel/daemon.rs:208`: DaemonStatus reads state file 3 times
+- [-] **M-010** `[performance]` `sentinel/daemon.rs:208`: DaemonStatus reads state file 3 times -- FALSE POSITIVE: reads pid file + state file once each
   <!-- pid:alloc_in_loop | batch:2 -->
 - [ ] **M-011** `[performance]` `sentinel/helpers.rs:282`: compute_file_hash for every focused document; no size limit
   <!-- pid:missing_validation | batch:2 -->
@@ -319,15 +319,15 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
 ### IPC/Crypto/Store
 - [ ] **M-015** `[code_quality]` `ipc/messages.rs:290`: Validation limits (MAX_JITTER_INTERVAL_NS, etc.) defined inline; not module-level
   <!-- pid:magic_value | batch:3 -->
-- [ ] **M-016** `[error_handling]` `ipc/server_handler.rs:175`: Stream read_exact errors not logged on disconnect
+- [x] **M-016** `[error_handling]` `ipc/server_handler.rs:175`: Stream read_exact errors not logged on disconnect -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:3 -->
 - [ ] **M-017** `[concurrency]` `ipc/server_handler.rs:226`: Poisoned rate limiter blocks all subsequent clients
   <!-- pid:lock_ordering | batch:3 -->
 - [ ] **M-018** `[code_quality]` `ipc/server_handler.rs:322`: Panic in handler leaks connection slot from active_connections
   <!-- pid:no_resource_cleanup | batch:3 -->
-- [ ] **M-019** `[security]` `store/events.rs:77`: vdf_iterations silently clamped to i64::MAX on overflow
+- [x] **M-019** `[security]` `store/events.rs:77`: vdf_iterations silently clamped to i64::MAX on overflow -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:3 -->
-- [ ] **M-020** `[security]` `store/access_log.rs:223`: CSV export vulnerable to formula injection (=, @ prefix)
+- [x] **M-020** `[security]` `store/access_log.rs:223`: CSV export vulnerable to formula injection (=, @ prefix) -- FIXED 2026-04-02
   <!-- pid:command_injection | batch:3 -->
 - [ ] **M-021** `[maintainability]` `store/access_log.rs:97`: busy_timeout=5000 hardcoded
   <!-- pid:hardcoded_config | batch:3 -->
@@ -337,7 +337,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:toctou | batch:3 -->
 - [ ] **M-024** `[code_quality]` `crypto.rs:125`: derive_hmac_key() uses SHA256 directly (legacy); name doesn't signal non-standard pattern
   <!-- pid:inconsistent_naming | batch:3 -->
-- [ ] **M-025** `[code_quality]` `crypto.rs:89`: expect() on HMAC/HKDF ops; fragile if key sizes change
+- [-] **M-025** `[code_quality]` `crypto.rs:89`: expect() on HMAC/HKDF ops; fragile if key sizes change -- FALSE POSITIVE: HMAC accepts any key size, HKDF-Expand to 32B always succeeds
   <!-- pid:unwrap_on_io | batch:3 -->
 
 ### Evidence/Checkpoint
@@ -349,7 +349,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:clone_in_loop | batch:4 -->
 - [ ] **M-029** `[performance]` `evidence/packet.rs:326`: Clone entire 30-field Packet for content_hash; only 3 fields cleared
   <!-- pid:clone_in_loop | batch:4 -->
-- [ ] **M-030** `[error_handling]` `evidence/packet.rs:246`: decode() doesn't validate CBOR tag before parsing
+- [x] **M-030** `[error_handling]` `evidence/packet.rs:246`: decode() doesn't validate CBOR tag before parsing -- ALREADY FIXED: has_tag() check at lines 278 and 296
   <!-- pid:missing_validation | batch:4 -->
 - [ ] **M-031** `[error_handling]` `checkpoint/chain.rs:154`: Clock regression handled with warn+continue; 1s drift arbitrary
   <!-- pid:magic_value | batch:4 -->
@@ -359,7 +359,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:missing_validation | batch:4 -->
 - [ ] **M-034** `[architecture]` `checkpoint_mmr.rs:1`: CheckpointMmr accepts any [u8;32]; no type safety for leaves
   <!-- pid:missing_validation | batch:4 -->
-- [ ] **M-035** `[error_handling]` `checkpoint/types.rs:239`: timestamp_nanos_safe could overflow; pre-epoch wraps to large u64
+- [x] **M-035** `[error_handling]` `checkpoint/types.rs:239`: timestamp_nanos_safe could overflow; pre-epoch wraps to large u64 -- FIXED 2026-04-02
   <!-- pid:unwrap_on_io | batch:4 -->
 
 ### FFI
@@ -385,7 +385,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:hardcoded_config | batch:5 -->
 - [ ] **M-046** `[maintainability]` `ffi/sentinel_inject.rs:20`: MAX_INJECT_RATE_PER_SEC hardcoded with no config option
   <!-- pid:hardcoded_config | batch:5 -->
-- [ ] **M-047** `[concurrency]` `ffi/sentinel.rs:15`: Poisoned SENTINEL lock silently recovered without logging
+- [x] **M-047** `[concurrency]` `ffi/sentinel.rs:15`: Poisoned SENTINEL lock silently recovered without logging -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:5 -->
 - [ ] **M-048** `[concurrency]` `ffi/ephemeral.rs:81`: evict_stale_sessions TOCTOU on session removal
   <!-- pid:toctou | batch:5 -->
@@ -413,7 +413,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:duplicated_logic | batch:7 -->
 - [ ] **M-058** `[security]` `rfc/biology.rs:508`: Weight sum tolerance hardcoded at 0.01
   <!-- pid:magic_value | batch:7 -->
-- [ ] **M-059** `[security]` `rfc/vdf.rs:127`: iterations_per_second=0 edge case allows division by zero
+- [-] **M-059** `[security]` `rfc/vdf.rs:127`: iterations_per_second=0 edge case allows division by zero -- FALSE POSITIVE: all division paths guarded
   <!-- pid:nan_inf_unguarded | batch:7 -->
 - [ ] **M-060** `[security]` `rfc/packet.rs:564`: Extensions field accepts arbitrary serde_json::Value
   <!-- pid:unsafe_deser | batch:7 -->
@@ -423,13 +423,13 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:hardcoded_config | batch:7 -->
 - [ ] **M-063** `[error_handling]` `rfc/wire_types/checkpoint.rs:152`: compute_hash calls CBOR encode but unwraps
   <!-- pid:unwrap_on_io | batch:7 -->
-- [ ] **M-064** `[error_handling]` `rfc/fixed_point.rs:51`: from_float returns 0 on !is_finite without logging
+- [-] **M-064** `[error_handling]` `rfc/fixed_point.rs:51`: from_float returns 0 on !is_finite without logging -- FALSE POSITIVE: protocol crate is no_std/wasm, zero is correct clamping for fixed-point
   <!-- pid:silent_error | batch:7 -->
 - [ ] **M-065** `[error_handling]` `codec/mod.rs:317`: Format::detect returns None without error context
   <!-- pid:unhelpful_error_msg | batch:7 -->
 - [ ] **M-066** `[maintainability]` `rfc/mod.rs:229`: CBOR_TAG_* constants duplicated in multiple modules
   <!-- pid:duplicated_logic | batch:7 -->
-- [ ] **M-067** `[maintainability]` `war/ear.rs:62`: Ar4siStatus::from_i8 maps unknown to Contraindicated without logging
+- [-] **M-067** `[maintainability]` `war/ear.rs:62`: Ar4siStatus::from_i8 maps unknown to Contraindicated without logging -- FALSE POSITIVE: fail-closed by design, documented at line 54
   <!-- pid:silent_error | batch:7 -->
 - [ ] **M-068** `[security]` `compact_ref.rs:280`: signable_payload excludes metadata but allows evidence_uri omission
   <!-- pid:missing_validation | batch:7 -->
@@ -467,15 +467,15 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:unhelpful_error_msg | batch:1 -->
 - [ ] **M-083** `[error_handling]` `anchors/rfc3161.rs:562`: Same error context loss pattern as ots.rs
   <!-- pid:unhelpful_error_msg | batch:1 -->
-- [ ] **M-084** `[code_quality]` `anchors/rfc3161.rs:146`: DER length encoding uses unchecked as u8 cast
+- [x] **M-084** `[code_quality]` `anchors/rfc3161.rs:146`: DER length encoding uses unchecked as u8 cast -- FIXED 2026-04-02
   <!-- pid:unwrap_on_io | batch:1 -->
 - [ ] **M-085** `[performance]` `cpop_jitter_bridge/session.rs:180`: session_id String cloned per sample
   <!-- pid:clone_in_loop | batch:1 -->
 - [ ] **M-086** `[performance]` `cpop_jitter_bridge/session.rs:263`: export() clones entire Vec<HybridSample>
   <!-- pid:clone_in_loop | batch:1 -->
-- [ ] **M-087** `[error_handling]` `cpop_jitter_bridge/session.rs:381`: fs::remove_file error discarded with let _ =
+- [x] **M-087** `[error_handling]` `cpop_jitter_bridge/session.rs:381`: fs::remove_file error discarded with let _ = -- ALREADY FIXED: remove_file no longer exists
   <!-- pid:silent_error | batch:1 -->
-- [ ] **M-088** `[code_quality]` `cpop_jitter_bridge/zone_engine.rs:49`: Unwrap on signed_duration_since; panics on clock skew
+- [-] **M-088** `[code_quality]` `cpop_jitter_bridge/zone_engine.rs:49`: Unwrap on signed_duration_since; panics on clock skew -- FALSE POSITIVE: already uses unwrap_or with fallback
   <!-- pid:unwrap_on_io | batch:1 -->
 - [ ] **M-089** `[code_quality]` `anchors/ots.rs:104,112,120`: TODO(WU-14) markers for unimplemented OTS parsing
   <!-- pid:todo_fixme | batch:1 -->
