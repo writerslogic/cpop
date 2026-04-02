@@ -39,6 +39,16 @@ pub struct FfiBeaconListResult {
     pub error_message: Option<String>,
 }
 
+/// Parse an RFC 3339 timestamp to epoch milliseconds, logging on failure.
+fn parse_beacon_timestamp(rfc3339: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .map(|dt| dt.timestamp_millis())
+        .map_err(|e| {
+            log::warn!("Failed to parse beacon timestamp: {e}");
+        })
+        .ok()
+}
+
 fn err_beacon(msg: String) -> FfiBeaconResult {
     FfiBeaconResult {
         success: false,
@@ -87,7 +97,10 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
         hex::encode(signing_key.sign(latest.event_hash.as_slice()).to_bytes())
     };
 
-    let did = load_did().unwrap_or_else(|_| "unknown".into());
+    let did = load_did().unwrap_or_else(|e| {
+        log::warn!("Failed to load DID, using fallback: {e}");
+        "unknown".into()
+    });
     let api_key = match load_api_key() {
         Ok(k) => k,
         Err(e) => return err_beacon(format!("WritersProof API key not configured. {e}")),
@@ -146,14 +159,15 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
             "Beacon request timed out after {effective_timeout}s"
         )),
         Ok((beacon_res, anchor_res)) => {
-            let anchor_id = anchor_res.ok().map(|r| r.anchor_id);
+            let anchor_id = anchor_res
+                .map_err(|e| log::warn!("Anchor submission failed: {e}"))
+                .ok()
+                .map(|r| r.anchor_id);
 
             match beacon_res {
                 Err(e) => err_beacon(format!("Beacon fetch failed: {e}")),
                 Ok(beacon) => {
-                    let ts_ms = chrono::DateTime::parse_from_rfc3339(&beacon.fetched_at)
-                        .map(|dt| dt.timestamp_millis())
-                        .ok();
+                    let ts_ms = parse_beacon_timestamp(&beacon.fetched_at);
 
                     FfiBeaconResult {
                         success: true,
@@ -195,9 +209,7 @@ pub fn ffi_check_beacon_status(document_path: String) -> FfiBeaconResult {
 
     match packet.beacon_attestation {
         Some(beacon) => {
-            let ts_ms = chrono::DateTime::parse_from_rfc3339(&beacon.fetched_at)
-                .map(|dt| dt.timestamp_millis())
-                .ok();
+            let ts_ms = parse_beacon_timestamp(&beacon.fetched_at);
 
             FfiBeaconResult {
                 success: true,
@@ -265,7 +277,9 @@ pub fn ffi_list_beacons(document_path: String) -> FfiBeaconListResult {
 
     let data = match std::fs::read(&canonical) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
+            // File may not exist yet; not an error for listing.
+            log::debug!("Could not read file for beacon listing: {e}");
             return FfiBeaconListResult {
                 success: true,
                 beacons: vec![],
@@ -277,7 +291,9 @@ pub fn ffi_list_beacons(document_path: String) -> FfiBeaconListResult {
     let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
     let packet = match crate::evidence::Packet::decode(&cbor_payload) {
         Ok(p) => p,
-        Err(_) => {
+        Err(e) => {
+            // File may not be a CPOP evidence packet; not an error for listing.
+            log::debug!("Could not decode evidence for beacon listing: {e}");
             return FfiBeaconListResult {
                 success: true,
                 beacons: vec![],
@@ -288,9 +304,7 @@ pub fn ffi_list_beacons(document_path: String) -> FfiBeaconListResult {
 
     let mut beacons = Vec::new();
     if let Some(beacon) = packet.beacon_attestation {
-        let ts_ms = chrono::DateTime::parse_from_rfc3339(&beacon.fetched_at)
-            .map(|dt| dt.timestamp_millis())
-            .ok();
+        let ts_ms = parse_beacon_timestamp(&beacon.fetched_at);
 
         beacons.push(FfiBeaconResult {
             success: true,
