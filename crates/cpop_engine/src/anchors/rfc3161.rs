@@ -173,9 +173,10 @@ fn read_tlv(data: &[u8], offset: usize) -> Option<Tlv> {
         return None;
     }
     let tag = data[offset];
-    let (length, header_len) = read_der_length(data, offset + 1)?;
-    let content_start = offset + 1 + header_len;
-    let content_end = content_start + length;
+    let length_offset = offset.checked_add(1)?;
+    let (length, header_len) = read_der_length(data, length_offset)?;
+    let content_start = length_offset.checked_add(header_len)?;
+    let content_end = content_start.checked_add(length)?;
     if content_end > data.len() {
         return None;
     }
@@ -203,7 +204,9 @@ fn read_der_length(data: &[u8], offset: usize) -> Option<(usize, usize)> {
         }
         let mut length: usize = 0;
         for i in 0..num_bytes {
-            length = (length << 8) | data[offset + 1 + i] as usize;
+            length = length
+                .checked_shl(8)
+                .and_then(|l| l.checked_add(data[offset + 1 + i] as usize))?;
         }
         Some((length, 1 + num_bytes))
     }
@@ -513,6 +516,21 @@ mod tests {
         assert_eq!(read_der_length(&[0x05], 0), Some((5, 1)));
         assert_eq!(read_der_length(&[0x82, 0x01, 0x00], 0), Some((256, 3)));
         assert_eq!(read_der_length(&[0x81, 0x80], 0), Some((128, 2)));
+    }
+
+    #[test]
+    fn test_der_length_overflow() {
+        // 4-byte length 0xFF_FF_FF_FF overflows on 32-bit targets
+        let data = [0x84, 0xFF, 0xFF, 0xFF, 0xFF];
+        let result = read_der_length(&data, 0);
+        if usize::BITS == 32 {
+            assert_eq!(result, None, "should reject overflow on 32-bit");
+        } else {
+            // 64-bit: length parses but read_tlv rejects (exceeds buffer)
+            assert!(result.is_some());
+            let tlv = read_tlv(&[0x30, 0x84, 0xFF, 0xFF, 0xFF, 0xFF], 0);
+            assert!(tlv.is_none(), "content_end exceeds data length");
+        }
     }
 
     #[test]
