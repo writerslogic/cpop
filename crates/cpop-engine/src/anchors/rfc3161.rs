@@ -155,10 +155,14 @@ impl Rfc3161Provider {
         final_request.push(0x30);
         if request.len() < 128 {
             final_request.push(request.len() as u8);
-        } else {
+        } else if request.len() <= 0xFFFF {
             final_request.push(0x82);
             final_request.push((request.len() >> 8) as u8);
             final_request.push((request.len() & 0xFF) as u8);
+        } else {
+            return Err(AnchorError::Submission(
+                "DER request length exceeds 2-byte encoding limit".into(),
+            ));
         }
         final_request.extend_from_slice(&request);
 

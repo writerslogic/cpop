@@ -92,7 +92,8 @@ pub fn compute_event_hmac(
     size_delta: i32,
     previous_hash: &[u8; 32],
 ) -> [u8; 32] {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(key)
+        .expect("HMAC-SHA256 accepts any key size; this is infallible");
     mac.update(b"witnessd-event-v2");
     mac.update(device_id);
     mac.update(&timestamp_ns.to_be_bytes());
@@ -115,7 +116,8 @@ pub fn compute_integrity_hmac(
     event_count: i64,
     last_verified_sequence: i64,
 ) -> [u8; 32] {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(key)
+        .expect("HMAC-SHA256 accepts any key size; this is infallible");
     mac.update(b"witnessd-integrity-v2");
     mac.update(chain_hash);
     mac.update(&event_count.to_be_bytes());
