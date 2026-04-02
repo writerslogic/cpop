@@ -65,9 +65,13 @@ impl SealedIdentityStore {
         let seed = zeroize::Zeroizing::new(signing_key.to_bytes());
 
         let caps = self.provider.capabilities();
+        // Domain separation salt for PUF-derived seed sealing, so the
+        // sealed blob is context-bound even on the unseal-failure
+        // re-derivation path.
+        const PUF_SEAL_CONTEXT: &[u8] = b"cpop-puf-fallback-v1";
         let sealed_seed = if caps.supports_sealing {
             self.provider
-                .seal(&*seed, &[])
+                .seal(&*seed, PUF_SEAL_CONTEXT)
                 .map_err(|e| SealedIdentityError::SealFailed(e.to_string()))?
         } else {
             self.software_wrap(&*seed)?
@@ -123,8 +127,11 @@ impl SealedIdentityStore {
         let mut blob = self.load_blob()?;
 
         // Anti-rollback: validate hardware counter against both seal-time and
-        // last-known values, closing the gap where an older blob could be
-        // replayed if only last_known_counter was checked.
+        // last-known values. When both counters are stored in the blob, both
+        // must pass verification and the hardware counter must be available.
+        // Single-counter mode is tolerated as an offline fallback when only
+        // one counter was recorded at seal time.
+        let both_counters = blob.counter_at_seal.is_some() && blob.last_known_counter.is_some();
         if blob.counter_at_seal.is_some() || blob.last_known_counter.is_some() {
             match self.provider.bind(b"identity-counter-check") {
                 Ok(binding) => {
@@ -147,10 +154,36 @@ impl SealedIdentityStore {
                         }
                         blob.last_known_counter = Some(current);
                         self.persist_blob(&blob)?;
+                    } else if both_counters {
+                        // Hardware counter unavailable but blob has both
+                        // counters set; possible downgrade attack.
+                        log::warn!(
+                            "anti-rollback: hardware counter unavailable \
+                             but blob records both counters; refusing unseal"
+                        );
+                        return Err(SealedIdentityError::RollbackDetected {
+                            current: 0,
+                            last_known: blob.last_known_counter.unwrap_or(0),
+                        });
+                    } else {
+                        log::warn!(
+                            "anti-rollback: hardware counter unavailable; \
+                             single-counter offline fallback"
+                        );
                     }
                 }
                 Err(e) => {
-                    log::warn!("anti-rollback check skipped: bind failed: {e}");
+                    if both_counters {
+                        log::warn!(
+                            "anti-rollback: bind failed with both counters \
+                             present; refusing unseal: {e}"
+                        );
+                        return Err(SealedIdentityError::RollbackDetected {
+                            current: 0,
+                            last_known: blob.last_known_counter.unwrap_or(0),
+                        });
+                    }
+                    log::warn!("anti-rollback check degraded: bind failed: {e}");
                 }
             }
         } else if blob.last_known_counter.is_none() {
