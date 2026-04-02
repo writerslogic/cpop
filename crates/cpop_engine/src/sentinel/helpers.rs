@@ -137,6 +137,7 @@ pub fn focus_document_sync(
             payload,
         );
 
+        // Intentionally ignored: broadcast send fails only when no receivers are subscribed
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Started,
             session_id: session.session_id.clone(),
@@ -150,6 +151,7 @@ pub fn focus_document_sync(
     session.focus_gained();
     session.window_title = event.window_title.clone();
 
+    // Intentionally ignored: broadcast send fails only when no receivers are subscribed
     let _ = session_events_tx.send(SessionEvent {
         event_type: SessionEventType::Focused,
         session_id: session.session_id.clone(),
@@ -168,6 +170,7 @@ pub fn unfocus_document_sync(
     if let Some(session) = sessions_map.get_mut(path) {
         session.focus_lost();
 
+        // Intentionally ignored: broadcast send fails only when no receivers are subscribed
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Unfocused,
             session_id: session.session_id.clone(),
@@ -210,6 +213,7 @@ pub fn handle_change_event_sync(
                     );
                 }
 
+                // Intentionally ignored: broadcast send fails only when no receivers are subscribed
                 let _ = session_events_tx.send(SessionEvent {
                     event_type: SessionEventType::Saved,
                     session_id: session.session_id.clone(),
@@ -228,6 +232,7 @@ pub fn handle_change_event_sync(
                 let removed = sessions_map.remove(&event.path);
                 drop(sessions_map);
                 if let Some(session) = removed {
+                    // Intentionally ignored: broadcast send fails only when no receivers are subscribed
                     let _ = session_events_tx.send(SessionEvent {
                         event_type: SessionEventType::Ended,
                         session_id: session.session_id,
@@ -277,6 +282,7 @@ pub fn end_session_sync(
     let session = sessions.write_recover().remove(path);
 
     if let Some(session) = session {
+        // Intentionally ignored: broadcast send fails only when no receivers are subscribed
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Ended,
             session_id: session.session_id,
@@ -294,6 +300,7 @@ pub fn end_all_sessions_sync(
     let all_sessions: Vec<_> = sessions.write_recover().drain().collect();
 
     for (path, session) in all_sessions {
+        // Intentionally ignored: broadcast send fails only when no receivers are subscribed
         let _ = session_events_tx.send(SessionEvent {
             event_type: SessionEventType::Ended,
             session_id: session.session_id,

@@ -357,6 +357,7 @@ impl AsyncIpcClient {
     #[cfg(unix)]
     pub async fn disconnect(&mut self) {
         if let Some(stream) = self.stream.take() {
+            // Intentionally ignored: into_std() for graceful drop; failure is benign on disconnect
             let _ = stream.into_std();
         }
     }

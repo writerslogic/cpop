@@ -71,6 +71,7 @@ pub struct SecureUnixSocket {
 impl SecureUnixSocket {
     pub fn bind(path: &Path) -> Result<Self, IpcError> {
         if path.exists() {
+            // Intentionally ignored: stale socket removal; bind() will fail if removal fails
             let _ = std::fs::remove_file(path);
         }
 
@@ -158,12 +159,12 @@ impl VerifiedConnection {
                 "macOS peer verification: PID {} accepted (basic validation, no path check)",
                 self.peer_pid
             );
-            let _ = allowed_names;
+            let _ = allowed_names; // suppress unused on macOS
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
-            let _ = allowed_names;
+            let _ = allowed_names; // suppress unused on other platforms
         }
 
         Ok(())

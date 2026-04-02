@@ -138,6 +138,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         message: e,
                     };
                     if let Ok(response_bytes) = encode_message_json(&error_response) {
+                        // Best-effort error response; client may have disconnected
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, &response_bytes).await;
                         } else {
@@ -163,6 +164,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                         message: format!("Rate limit exceeded for operation: {}", key),
                     };
                     if let Ok(response_bytes) = encode_message_json(&error_response) {
+                        // Best-effort error response; client may have disconnected
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, &response_bytes).await;
                         } else {
@@ -216,7 +218,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                             transport_label,
                             e
                         );
-                        // Try to send a plaintext error so client isn't left hanging
+                        // Best-effort fallback error so client isn't left hanging
                         let fallback = br#"{"type":"Error","code":"InternalError","message":"Internal serialization error"}"#;
                         if let Some(ref session) = secure_session {
                             let _ = send_encrypted(stream, session, fallback).await;
@@ -240,6 +242,7 @@ async fn handle_connection_inner<S: tokio::io::AsyncRead + tokio::io::AsyncWrite
                     message: format!("Failed to deserialize message: {}", e),
                 };
                 if let Ok(response_bytes) = encode_for_protocol(&error_response, decode_protocol) {
+                    // Best-effort error response; client may have disconnected
                     if let Some(ref session) = secure_session {
                         let _ = send_encrypted(stream, session, &response_bytes).await;
                     } else {
@@ -381,6 +384,7 @@ impl IpcServer {
                         }
                     }
                     _ = shutdown_rx.recv() => {
+                        // Intentionally ignored: socket may already be removed
                         let _ = std::fs::remove_file(&self.socket_path);
                         break;
                     }
@@ -449,6 +453,7 @@ fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Result<()> {
         fn drop(&mut self) {
             if !self.0.is_invalid() {
                 unsafe {
+                    // Intentionally ignored: CloseHandle in Drop; nothing to do on failure
                     let _ = CloseHandle(self.0);
                 }
             }
@@ -497,6 +502,7 @@ unsafe fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Resul
     use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
     let mut size: u32 = 0;
+    // Intentionally ignored: first call with null buffer retrieves required size
     let _ = GetTokenInformation(token, TokenUser, None, 0, &mut size);
 
     let mut buffer = vec![0u8; size as usize];

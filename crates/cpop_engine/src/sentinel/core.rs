@@ -410,11 +410,13 @@ impl Sentinel {
         // take() under lock, then await outside to avoid holding lock across .await
         let tx = self.shutdown_tx.lock_recover().take();
         if let Some(tx) = tx {
+            // Intentionally ignored: receiver may already be dropped during shutdown
             let _ = tx.send(()).await;
         }
 
         let handles: Vec<_> = self.bridge_threads.lock_recover().drain(..).collect();
         for handle in handles {
+            // Intentionally ignored: thread panic during shutdown is non-recoverable
             let _ = handle.join();
         }
 
