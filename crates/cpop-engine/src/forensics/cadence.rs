@@ -104,6 +104,26 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     metrics.burst_speed_cv = compute_burst_speed_cv(&bursts, &ikis);
     metrics.zero_variance_windows = count_zero_variance_windows(&ikis);
 
+    // Sanitize non-finite values from ratio/CV computations
+    if !metrics.coefficient_of_variation.is_finite() {
+        metrics.coefficient_of_variation = 0.0;
+    }
+    if !metrics.cross_hand_timing_ratio.is_finite() {
+        metrics.cross_hand_timing_ratio = 0.0;
+    }
+    if !metrics.post_pause_cv.is_finite() {
+        metrics.post_pause_cv = 0.0;
+    }
+    if !metrics.iki_autocorrelation.is_finite() {
+        metrics.iki_autocorrelation = 0.0;
+    }
+    if !metrics.correction_ratio.is_finite() {
+        metrics.correction_ratio = 0.0;
+    }
+    if !metrics.burst_speed_cv.is_finite() {
+        metrics.burst_speed_cv = 0.0;
+    }
+
     // Dwell time (key hold duration) analysis
     let dwell_times: Vec<f64> = samples
         .iter()
@@ -116,6 +136,9 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
             let var = dwell_times.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
                 / dwell_times.len() as f64;
             metrics.dwell_cv = var.sqrt() / mean;
+            if !metrics.dwell_cv.is_finite() {
+                metrics.dwell_cv = 0.0;
+            }
         }
     }
 
@@ -131,6 +154,9 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
             let var = flight_times.iter().map(|f| (f - mean).powi(2)).sum::<f64>()
                 / flight_times.len() as f64;
             metrics.flight_cv = var.sqrt() / mean;
+            if !metrics.flight_cv.is_finite() {
+                metrics.flight_cv = 0.0;
+            }
         }
     }
 

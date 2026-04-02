@@ -57,6 +57,14 @@ pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
     metrics.high_velocity_bursts = high_velocity_bursts;
     metrics.autocomplete_chars = autocomplete_chars;
 
+    // Sanitize non-finite values
+    if !metrics.mean_bps.is_finite() {
+        metrics.mean_bps = 0.0;
+    }
+    if !metrics.max_bps.is_finite() {
+        metrics.max_bps = 0.0;
+    }
+
     metrics
 }
 

@@ -24,13 +24,32 @@ pub fn compute_primary_metrics(
         return Err(ForensicsError::InsufficientData);
     }
 
-    Ok(PrimaryMetrics {
+    let mut pm = PrimaryMetrics {
         monotonic_append_ratio: monotonic_append_ratio(&all_regions, DEFAULT_APPEND_THRESHOLD),
         edit_entropy: edit_entropy(&all_regions, DEFAULT_HISTOGRAM_BINS),
         median_interval: median_interval(events),
         positive_negative_ratio: positive_negative_ratio(&all_regions),
         deletion_clustering: deletion_clustering_coef(&all_regions),
-    })
+    };
+
+    // Sanitize non-finite values
+    if !pm.monotonic_append_ratio.is_finite() {
+        pm.monotonic_append_ratio = 0.0;
+    }
+    if !pm.edit_entropy.is_finite() {
+        pm.edit_entropy = 0.0;
+    }
+    if !pm.median_interval.is_finite() {
+        pm.median_interval = 0.0;
+    }
+    if !pm.positive_negative_ratio.is_finite() {
+        pm.positive_negative_ratio = 0.5;
+    }
+    if !pm.deletion_clustering.is_finite() {
+        pm.deletion_clustering = 0.0;
+    }
+
+    Ok(pm)
 }
 
 /// Fraction of edits at document end: `|{r : r.start_pct >= threshold}| / |R|`

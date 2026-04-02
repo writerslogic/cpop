@@ -158,6 +158,9 @@ impl ContentKeystrokeCorrelator {
 
         result.discrepancy = input.document_length - result.expected_content;
         result.discrepancy_ratio = result.discrepancy as f64 / result.expected_content as f64;
+        if !result.discrepancy_ratio.is_finite() {
+            result.discrepancy_ratio = 0.0;
+        }
 
         self.assess_discrepancy(&mut result, input);
 
