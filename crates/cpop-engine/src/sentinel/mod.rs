@@ -9,18 +9,11 @@
 //! - Multi-document session management with shadow buffers
 //! - Platform-specific focus detection (macOS, Linux, Windows)
 
-/// Write a trace line for runtime diagnostics.
+/// Sentinel-specific trace logging (delegates to `log::trace!`).
 macro_rules! trace {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/var/tmp/cpop_trace.txt")
-        {
-            let _ = writeln!(f, "{}", format!($($arg)*));
-        }
-    }};
+    ($($arg:tt)*) => {
+        log::trace!($($arg)*)
+    };
 }
 pub(crate) use trace;
 
