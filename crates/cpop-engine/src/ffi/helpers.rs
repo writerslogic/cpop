@@ -172,7 +172,9 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                 if let Ok(store) = SecureStore::open(db_path, std::mem::take(&mut *key)) {
                     log::info!("Opened database with signing-key-derived HMAC");
                     if let Some(k) = derive_hmac_from_signing_key() {
-                        let _ = crate::identity::SecureStorage::save_hmac_key(&k);
+                        if let Err(e) = crate::identity::SecureStorage::save_hmac_key(&k) {
+                            log::warn!("Failed to persist migrated HMAC key: {e}");
+                        }
                     }
                     return Ok(store);
                 }
@@ -197,8 +199,14 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                         log::error!("Failed to rename stale database: {e}");
                         return Err(format!("HMAC mismatch; database backup failed: {e}"));
                     }
-                    return SecureStore::open(db_path, std::mem::take(&mut *k))
-                        .map_err(|e| format!("Failed to recreate database: {}", e));
+                    match SecureStore::open(db_path, std::mem::take(&mut *k)) {
+                        Ok(store) => return Ok(store),
+                        Err(e) => {
+                            log::error!("Recreate failed; restoring backup: {e}");
+                            let _ = std::fs::rename(&backup_path, db_path);
+                            return Err(format!("Failed to recreate database: {e}"));
+                        }
+                    }
                 }
                 // Key unavailable; do NOT touch the DB (preserve data)
                 log::error!("HMAC key unavailable; cannot recover database");

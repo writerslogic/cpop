@@ -235,6 +235,7 @@ pub struct SentinelConfig {
     pub recursive_watch: bool,
 
     pub idle_timeout_secs: u64,
+    pub idle_check_interval_secs: u64,
     pub allowed_apps: Vec<String>,
     pub blocked_apps: Vec<String>,
     pub track_unknown_apps: bool,
@@ -277,6 +278,7 @@ impl Default for SentinelConfig {
             watch_paths: Vec::new(),
             recursive_watch: true,
             idle_timeout_secs: 1800,
+            idle_check_interval_secs: 60,
             allowed_apps: vec![
                 // macOS native
                 "com.apple.TextEdit".to_string(),

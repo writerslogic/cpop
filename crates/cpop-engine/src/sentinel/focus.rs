@@ -4,8 +4,9 @@ use super::error::{Result, SentinelError};
 use super::types::*;
 use crate::config::SentinelConfig;
 use crate::crypto::ObfuscatedString;
-use crate::{MutexRecover, RwLockRecover};
-use std::sync::{Arc, Mutex, RwLock};
+use crate::MutexRecover;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::time::interval;
@@ -29,7 +30,7 @@ pub trait WindowProvider: Send + Sync + 'static {
 pub struct PollingSentinelFocusTracker<P: WindowProvider + ?Sized> {
     provider: Arc<P>,
     config: Arc<SentinelConfig>,
-    running: Arc<RwLock<bool>>,
+    running: Arc<AtomicBool>,
     focus_tx: mpsc::Sender<FocusEvent>,
     focus_rx: Arc<Mutex<Option<mpsc::Receiver<FocusEvent>>>>,
     _change_tx: mpsc::Sender<ChangeEvent>,
@@ -45,7 +46,7 @@ impl<P: WindowProvider + ?Sized> PollingSentinelFocusTracker<P> {
         Self {
             provider,
             config,
-            running: Arc::new(RwLock::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
             focus_tx,
             focus_rx: Arc::new(Mutex::new(Some(focus_rx))),
             _change_tx: change_tx,
@@ -57,12 +58,9 @@ impl<P: WindowProvider + ?Sized> PollingSentinelFocusTracker<P> {
 
 impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTracker<P> {
     fn start(&self) -> Result<()> {
-        let mut running = self.running.write_recover();
-        if *running {
+        if self.running.swap(true, Ordering::AcqRel) {
             return Err(SentinelError::AlreadyRunning);
         }
-        *running = true;
-        drop(running);
 
         let running_clone = Arc::clone(&self.running);
         let focus_tx = self.focus_tx.clone();
@@ -106,7 +104,7 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
             loop {
                 interval_timer.tick().await;
 
-                if !*running_clone.read_recover() {
+                if !running_clone.load(Ordering::Acquire) {
                     break;
                 }
 
@@ -194,12 +192,9 @@ impl<P: WindowProvider + ?Sized> SentinelFocusTracker for PollingSentinelFocusTr
     }
 
     fn stop(&self) -> Result<()> {
-        let mut running = self.running.write_recover();
-        if !*running {
+        if !self.running.swap(false, Ordering::AcqRel) {
             return Ok(());
         }
-        *running = false;
-        drop(running);
 
         if let Some(handle) = self.poll_handle.lock_recover().take() {
             handle.abort();

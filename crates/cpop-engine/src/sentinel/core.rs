@@ -564,6 +564,7 @@ impl Sentinel {
         let mouse_stego_engine = Arc::clone(&self.mouse_stego_engine);
 
         let checkpoint_interval_secs = config.checkpoint_interval_secs;
+        let idle_check_interval_secs = config.idle_check_interval_secs;
         let writersproof_dir = config.writersproof_dir.clone();
         let signing_key_for_cp = Arc::clone(&self.signing_key);
 
@@ -589,7 +590,7 @@ impl Sentinel {
 
         let event_loop_handle_ref = Arc::clone(&self.event_loop_handle);
         let handle = tokio::spawn(async move {
-            let mut idle_check_interval = interval(Duration::from_secs(60));
+            let mut idle_check_interval = interval(Duration::from_secs(idle_check_interval_secs));
             let mut checkpoint_interval = interval(Duration::from_secs(checkpoint_interval_secs));
             let mut last_keystroke_time = std::time::Instant::now();
             let mut last_keydown_ts_ns: i64 = 0;
