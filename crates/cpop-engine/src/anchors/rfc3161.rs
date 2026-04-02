@@ -573,7 +573,10 @@ impl AnchorProvider for Rfc3161Provider {
             }
         }
 
-        Err(last_error.unwrap_or(AnchorError::Unavailable("All TSAs failed".into())))
+        Err(last_error.unwrap_or_else(|| {
+            log::warn!("RFC 3161 submit failed: no TSA URLs configured");
+            AnchorError::Unavailable("All TSAs failed".into())
+        }))
     }
 
     async fn check_status(&self, proof: &Proof) -> Result<Proof, AnchorError> {

@@ -235,34 +235,15 @@ pub(super) async fn handle_connection_inner<
                 }
 
                 let key = rate_limit_key(&msg);
-                let rate_check = {
-                    match shared_rate_limiter.lock() {
-                        Ok(mut rl) => Ok(rl.check(key)),
-                        Err(e) => Err(format!("{e}")),
-                    }
-                };
-                let allowed = match rate_check {
-                    Ok(v) => v,
-                    Err(e) => {
+                let allowed = {
+                    let mut guard = shared_rate_limiter.lock().unwrap_or_else(|p| {
                         log::warn!(
-                            "IPC: rate limiter mutex poisoned on {}; rejecting request: {}",
-                            transport_label,
-                            e
+                            "IPC: rate limiter mutex poisoned on {}, recovering",
+                            transport_label
                         );
-                        let error_response = IpcMessage::Error {
-                            code: IpcErrorCode::InternalError,
-                            message: "Rate limiter unavailable".to_string(),
-                        };
-                        if let Ok(response_bytes) = encode_message_json(&error_response) {
-                            if let Some(ref session) = secure_session {
-                                let _ = send_encrypted(stream, session, &response_bytes).await;
-                            } else if let Ok(len_bytes) = len_to_u32(response_bytes.len()) {
-                                let _ = stream.write_all(&len_bytes).await;
-                                let _ = stream.write_all(&response_bytes).await;
-                            }
-                        }
-                        continue;
-                    }
+                        p.into_inner()
+                    });
+                    guard.check(key)
                 };
                 if !allowed {
                     log::warn!(
