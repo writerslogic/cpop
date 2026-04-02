@@ -85,14 +85,18 @@ impl Block {
                 signature: s.signature,
                 public_key: s.public_key,
             })
-            .unwrap_or(crate::war::types::Seal {
-                h1: [0u8; 32],
-                h2: [0u8; 32],
-                h3: [0u8; 32],
-                signature: [0u8; 64],
-                public_key: [0u8; 32],
+            .unwrap_or_else(|| {
+                log::debug!("from_ear: EAR token has no pop_seal; using zero-initialized fallback");
+                crate::war::types::Seal {
+                    h1: [0u8; 32],
+                    h2: [0u8; 32],
+                    h3: [0u8; 32],
+                    signature: [0u8; 64],
+                    public_key: [0u8; 32],
+                }
             });
 
+        // signed == false distinguishes "seal absent" from "seal present".
         let signed = seal.signature != [0u8; 64];
 
         let author = if seal.public_key != [0u8; 32] {

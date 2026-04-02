@@ -157,14 +157,20 @@ impl TrustworthinessVector {
 
     /// Parse from header string format.
     ///
-    /// Returns `None` if any value is not a known AR4SI status code
-    /// (0 = None, 2 = Affirming, 32 = Warning, 96 = Contraindicated).
+    /// Labels are matched by prefix (`II=`, `CO=`, etc.), not by position,
+    /// so components may appear in any order. All 8 must be present.
+    ///
+    /// Returns `None` if any label is missing or any value is not a known
+    /// AR4SI status code (0 = None, 2 = Affirming, 32 = Warning,
+    /// 96 = Contraindicated).
     pub fn parse_header(s: &str) -> Option<Self> {
         const VALID_AR4SI: &[i8] = &[0, 2, 32, 96];
         let mut vals = [0i8; 8];
         let labels = ["II=", "CO=", "EX=", "FS=", "HW=", "RO=", "SO=", "SD="];
+        // Collect parts once; find() on the slice is order-independent.
+        let parts: Vec<&str> = s.split_whitespace().collect();
         for (i, label) in labels.iter().enumerate() {
-            let part = s.split_whitespace().find(|p| p.starts_with(label))?;
+            let part = parts.iter().find(|p| p.starts_with(label))?;
             let v: i8 = part[label.len()..].parse().ok()?;
             if !VALID_AR4SI.contains(&v) {
                 return None;

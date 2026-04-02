@@ -124,6 +124,8 @@ impl SealedIdentityStore {
     /// Callers must protect the returned `SigningKey`. The key implements
     /// `ZeroizeOnDrop`, so it will be cleared when dropped.
     pub fn unseal_master_key(&self) -> Result<SigningKey, SealedIdentityError> {
+        // load_blob() verifies the integrity HMAC before returning, so
+        // tampering is detected before any unsealing or key comparison.
         let mut blob = self.load_blob()?;
 
         // Anti-rollback: validate hardware counter against both seal-time and
