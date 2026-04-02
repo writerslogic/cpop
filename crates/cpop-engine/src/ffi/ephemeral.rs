@@ -273,6 +273,7 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
         }
     }
 
+    entry.last_activity = Instant::now();
     flush_session_state(&session_id, &entry);
 
     FfiResult {
@@ -314,6 +315,7 @@ pub fn ffi_ephemeral_inject_jitter(session_id: String, intervals: Vec<u64>) -> F
         .extend_from_slice(&valid[..accepted.min(remaining_cap)]);
 
     entry.keystroke_count += accepted as u64;
+    entry.last_activity = Instant::now();
 
     FfiResult {
         success: true,

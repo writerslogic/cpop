@@ -218,7 +218,18 @@ impl MouseCapture for MacOSMouseCapture {
             }
         }
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            loop {
+                if thread.is_finished() {
+                    let _ = thread.join();
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    log::warn!("Mouse capture thread did not finish within 3s; detaching");
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
         }
         // Release all CF objects after the thread has exited
         if let Some(res) = self.tap_resources.lock().ok().and_then(|mut r| r.take()) {
