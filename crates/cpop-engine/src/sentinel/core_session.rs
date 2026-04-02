@@ -191,17 +191,14 @@ impl Sentinel {
             return false;
         }
 
-        let content_hash = match crate::crypto::hash_file(file_path) {
-            Ok(h) => h,
+        let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
+            Ok(pair) => pair,
             Err(e) => {
                 log::warn!("Auto-checkpoint hash failed for {path}: {e}");
                 return false;
             }
         };
-
-        let file_size = std::fs::metadata(file_path)
-            .map(|m| i64::try_from(m.len()).unwrap_or(i64::MAX))
-            .unwrap_or(0);
+        let file_size = i64::try_from(raw_size).unwrap_or(i64::MAX);
 
         let mut store = match self.open_event_store() {
             Ok(s) => s,
