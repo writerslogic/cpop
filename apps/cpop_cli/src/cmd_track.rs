@@ -427,12 +427,11 @@ fn finalize_session(
     Ok(())
 }
 
-#[allow(unused_variables)]
 async fn cmd_track_start(
     path: &Path,
     tracking_dir: &Path,
     current_file: &Path,
-    use_cpop_jitter: bool,
+    _use_cpop_jitter: bool,
     patterns: Option<Vec<String>>,
 ) -> Result<()> {
     let target = classify_target(path)?;
@@ -762,8 +761,7 @@ pub(crate) async fn cmd_track_smart(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Invalid session info"))?;
             validate_session_id(session_id)?;
-            #[allow(unused_variables)]
-            let is_hybrid = session_info
+            let _is_hybrid = session_info
                 .get("hybrid")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
@@ -775,7 +773,7 @@ pub(crate) async fn cmd_track_smart(
             fs::remove_file(&current_file)?;
 
             #[cfg(feature = "cpop_jitter")]
-            if is_hybrid {
+            if _is_hybrid {
                 let session_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
                 if let Ok(session) = cpop_engine::HybridJitterSession::load(&session_path, None) {
                     let duration = session.duration();
@@ -859,8 +857,7 @@ pub(crate) async fn cmd_track_smart(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Invalid session info"))?;
             validate_session_id(session_id)?;
-            #[allow(unused_variables)]
-            let is_hybrid = session_info
+            let _is_hybrid = session_info
                 .get("hybrid")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
@@ -875,7 +872,7 @@ pub(crate) async fn cmd_track_smart(
                 .unwrap_or("");
 
             #[cfg(feature = "cpop_jitter")]
-            if is_hybrid {
+            if _is_hybrid {
                 let session_path = tracking_dir.join(format!("{}.hybrid.json", session_id));
                 let session = cpop_engine::HybridJitterSession::load(&session_path, None)
                     .map_err(|e| anyhow!("Error loading hybrid session: {}", e))?;
