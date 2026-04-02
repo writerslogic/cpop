@@ -126,6 +126,14 @@ impl Chain {
         self.commit_internal(message, Some(vdf_duration))
     }
 
+    /// Validate, hash, and append a fully-built checkpoint to the chain.
+    fn commit_finish(&mut self, mut checkpoint: Checkpoint) -> Result<Checkpoint> {
+        checkpoint.validate_timestamp()?;
+        checkpoint.hash = checkpoint.compute_hash();
+        self.checkpoints.push(checkpoint);
+        Ok(self.checkpoints.last().expect("just pushed").clone())
+    }
+
     /// If `vdf_duration` is None, elapsed time since the last checkpoint is used.
     fn commit_internal(
         &mut self,
@@ -158,10 +166,7 @@ impl Chain {
             checkpoint.vdf = Some(proof);
         }
 
-        checkpoint.validate_timestamp()?;
-        checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint);
-        Ok(self.checkpoints.last().expect("just pushed").clone())
+        self.commit_finish(checkpoint)
     }
 
     /// Commit with entangled VDF (WAR/1.1): VDF input = f(prev_vdf_output, jitter, content).
@@ -217,10 +222,7 @@ impl Chain {
         let proof = vdf::compute(vdf_input, vdf_duration, self.vdf_params)?;
         checkpoint.vdf = Some(proof);
 
-        checkpoint.validate_timestamp()?;
-        checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint);
-        Ok(self.checkpoints.last().expect("just pushed").clone())
+        self.commit_finish(checkpoint)
     }
 
     /// Commit with full RFC-compliant structures (draft-condrey-rats-pop-01).
@@ -357,10 +359,7 @@ impl Chain {
         checkpoint.time_evidence = time_evidence;
         checkpoint.argon2_swf = argon2_swf;
 
-        checkpoint.validate_timestamp()?;
-        checkpoint.hash = checkpoint.compute_hash();
-        self.checkpoints.push(checkpoint);
-        Ok(self.checkpoints.last().expect("just pushed").clone())
+        self.commit_finish(checkpoint)
     }
 
     /// Verify the chain, returning `Err` on failure.
