@@ -193,9 +193,16 @@ impl KeystrokeMonitor {
                 let mut msg = MSG::default();
                 while GetMessageW(&mut msg, None, 0, 0).into() {}
             });
-            // Spin briefly until the pump thread publishes its thread ID.
+            // Wait briefly until the pump thread publishes its thread ID.
+            let mut wait_iters = 0u32;
             while tid.load(Ordering::Acquire) == 0 {
-                std::thread::yield_now();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                wait_iters += 1;
+                if wait_iters >= 5000 {
+                    *GLOBAL_SESSION.lock_recover() = None;
+                    MONITOR_ACTIVE.store(false, Ordering::SeqCst);
+                    return Err(anyhow!("Pump thread failed to start within 5s").into());
+                }
             }
             Ok(Self {
                 session,
@@ -234,14 +241,15 @@ unsafe extern "system" fn low_level_keyboard_proc(
         }
         let kbd = *ptr;
         let now = chrono::Utc::now().timestamp_nanos_safe();
-        // Lock ordering: GLOBAL_SESSION is released (via clone + drop) before
-        // session_arc.lock() to prevent deadlock.
-        let session = match GLOBAL_SESSION.lock() {
+        // try_lock avoids reentrancy deadlock in hook callbacks.
+        // GLOBAL_SESSION is released (via clone + drop) before session_arc.lock().
+        let session = match GLOBAL_SESSION.try_lock() {
             Ok(g) => g.clone(),
-            Err(poisoned) => {
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
                 log::error!("GLOBAL_SESSION mutex poisoned: {}", poisoned);
                 None
             }
+            Err(std::sync::TryLockError::WouldBlock) => None,
         };
         if let Some(session_arc) = session {
             if let Ok(mut s) = session_arc.lock() {
@@ -401,12 +409,13 @@ unsafe extern "system" fn keystroke_capture_hook(
         // synthetic sources (e.g., DirectInput or driver-level injection may bypass it).
         let is_injected = (kbd.flags.0 & LLKHF_INJECTED.0) != 0;
 
-        let stats_arc = match GLOBAL_STATS.lock() {
+        let stats_arc = match GLOBAL_STATS.try_lock() {
             Ok(g) => g.clone(),
-            Err(poisoned) => {
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
                 log::warn!("GLOBAL_STATS mutex poisoned in hook callback: {}", poisoned);
                 poisoned.into_inner().clone()
             }
+            Err(std::sync::TryLockError::WouldBlock) => None,
         };
         if let Some(stats) = stats_arc {
             if let Ok(mut s) = stats.write() {
@@ -424,15 +433,16 @@ unsafe extern "system" fn keystroke_capture_hook(
             return CallNextHookEx(None, code, wparam, lparam);
         }
 
-        let sender = match GLOBAL_SENDER.lock() {
+        let sender = match GLOBAL_SENDER.try_lock() {
             Ok(g) => g.clone(),
-            Err(poisoned) => {
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
                 log::warn!(
                     "GLOBAL_SENDER mutex poisoned in hook callback: {}",
                     poisoned
                 );
                 poisoned.into_inner().clone()
             }
+            Err(std::sync::TryLockError::WouldBlock) => None,
         };
         if let Some(sender) = sender {
             let now = chrono::Utc::now().timestamp_nanos_safe();

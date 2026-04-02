@@ -677,7 +677,12 @@ impl Wal {
         let file_len = state.file.metadata().map(|m| m.len()).unwrap_or(offset);
         let truncated = if file_len > offset {
             // Bytes after last valid entry indicate truncated/corrupt trailing data
-            let lost = file_len - offset;
+            let lost = file_len.saturating_sub(offset);
+            log::warn!(
+                "WAL corruption recovery: truncating at offset {}, discarding {} trailing bytes",
+                offset,
+                lost,
+            );
             state.file.set_len(offset)?;
             // Estimate lost entry count (4-byte length prefix + minimum 1 byte payload)
             lost / 5

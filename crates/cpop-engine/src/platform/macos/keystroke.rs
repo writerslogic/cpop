@@ -153,7 +153,19 @@ impl EventTapRunner {
             }
         }
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            // Poll with timeout instead of blocking indefinitely on join.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            loop {
+                if thread.is_finished() {
+                    let _ = thread.join();
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    log::warn!("EventTapRunner thread did not finish within 3s; detaching");
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
         }
         if let Some(res) = self.tap_resources.lock_recover().take() {
             unsafe {
