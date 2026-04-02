@@ -94,18 +94,28 @@ impl OpenTimestampsProvider {
         Ok(None)
     }
 
+    /// Parse OTS proof data to find calendar URLs whose attestations are still pending.
+    // TODO(WU-14): parse OTS v1 proof tree to identify calendars without Bitcoin attestation
     fn find_pending_calendars(&self, _proof_data: &[u8]) -> Result<Vec<String>, AnchorError> {
-        Ok(self.calendar_urls.clone())
+        Err(AnchorError::Unavailable(
+            "OTS proof parsing not yet implemented: cannot identify pending calendars".into(),
+        ))
     }
 
-    fn extract_commitment(&self, proof_data: &[u8], _url: &str) -> Result<Vec<u8>, AnchorError> {
-        Ok(Sha256::digest(proof_data).to_vec())
+    /// Extract the calendar-specific commitment hash from an OTS proof.
+    // TODO(WU-14): walk OTS op-tree to extract the commitment submitted to a specific calendar
+    fn extract_commitment(&self, _proof_data: &[u8], _url: &str) -> Result<Vec<u8>, AnchorError> {
+        Err(AnchorError::Unavailable(
+            "OTS commitment extraction not yet implemented".into(),
+        ))
     }
 
-    fn merge_proofs(&self, original: &[u8], upgrade: &[u8]) -> Result<Vec<u8>, AnchorError> {
-        let mut merged = original.to_vec();
-        merged.extend_from_slice(upgrade);
-        Ok(merged)
+    /// Merge an upgraded calendar response into the original OTS proof.
+    // TODO(WU-14): implement OTS proof tree merging per OpenTimestamps v1 format spec
+    fn merge_proofs(&self, _original: &[u8], _upgrade: &[u8]) -> Result<Vec<u8>, AnchorError> {
+        Err(AnchorError::Unavailable(
+            "OTS proof merging not yet implemented".into(),
+        ))
     }
 
     fn parse_attestation_path(
