@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::ffi::helpers::{detect_attestation_tier, open_store};
+use crate::ffi::sentinel::get_sentinel;
 use crate::ffi::types::FfiResult;
+use crate::RwLockRecover;
 use cpop_protocol::rfc::wire_types::{
     CheckpointWire, DocumentRef, EditDelta, EvidencePacketWire, HashValue, ProcessProof,
     ProofAlgorithm, ProofParams,
@@ -283,7 +285,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         },
         checkpoints,
         attestation_tier: Some(detect_attestation_tier()),
-        limitations: None,
+        limitations: collect_ai_tool_limitations(&path),
         profile: None,
         presence_challenges: None,
         channel_binding: None,
@@ -346,6 +348,24 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             error_message: Some(format!("Failed to encode CBOR packet: {}", e)),
         },
     }
+}
+
+/// Collect AI tool limitations from the sentinel session matching `path`.
+///
+/// Returns `Some(vec)` when at least one AI tool was detected, `None` otherwise.
+pub(crate) fn collect_ai_tool_limitations(path: &str) -> Option<Vec<String>> {
+    let sentinel = get_sentinel()?;
+    let sessions = sentinel.sessions.read_recover();
+    let session = sessions.get(path)?;
+    if session.ai_tools_detected.is_empty() {
+        return None;
+    }
+    let limitations: Vec<String> = session
+        .ai_tools_detected
+        .iter()
+        .map(|id| format!("AI tool detected during session: {}", id))
+        .collect();
+    Some(limitations)
 }
 
 /// Return a compact reference string for the latest event on a tracked file.

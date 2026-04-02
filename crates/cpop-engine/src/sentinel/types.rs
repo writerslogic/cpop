@@ -128,6 +128,8 @@ pub struct DocumentSession {
     pub jitter_samples: Vec<crate::jitter::SimpleJitterSample>,
     /// Focus loss events during this session (timestamps when user switched away).
     pub focus_switches: Vec<FocusSwitchRecord>,
+    /// AI tool signing IDs detected by Endpoint Security during this session.
+    pub ai_tools_detected: Vec<String>,
     pub(crate) has_focus: bool,
     pub(crate) focus_started: Option<Instant>,
     pub event_validation: crate::forensics::event_validation::EventValidationState,
@@ -173,6 +175,7 @@ impl DocumentSession {
             window_title,
             jitter_samples: Vec::new(),
             focus_switches: Vec::new(),
+            ai_tools_detected: Vec::new(),
             has_focus: false,
             focus_started: None,
             event_validation: Default::default(),
