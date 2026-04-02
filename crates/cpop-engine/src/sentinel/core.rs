@@ -122,6 +122,8 @@ pub struct Sentinel {
     last_paste_chars: Arc<std::sync::atomic::AtomicI64>,
     /// Timestamp when the sentinel was started via start().
     pub(crate) start_time: Arc<Mutex<Option<SystemTime>>>,
+    /// False when any bridge thread has died; checked before processing events.
+    bridge_healthy: Arc<AtomicBool>,
 }
 
 impl Sentinel {
@@ -164,6 +166,7 @@ impl Sentinel {
             keystroke_capture_active: Arc::new(AtomicBool::new(false)),
             last_paste_chars: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             start_time: Arc::new(Mutex::new(None)),
+            bridge_healthy: Arc::new(AtomicBool::new(true)),
         };
         mouse_stego_seed.zeroize();
         Ok(sentinel)
@@ -531,6 +534,9 @@ impl Sentinel {
 
         let (focus_monitor, mut focus_rx, mut change_rx) = self.setup_focus()?;
 
+        // Reset bridge health on (re-)start.
+        self.bridge_healthy.store(true, Ordering::SeqCst);
+
         // Set running=true before spawning bridge threads so they see the flag immediately.
         self.running.store(true, Ordering::SeqCst);
 
@@ -573,6 +579,7 @@ impl Sentinel {
         let tap_check_capture = Arc::clone(&self.keystroke_capture);
         let tap_check_active = Arc::clone(&self.keystroke_capture_active);
         let bridge_health_threads = Arc::clone(&self.bridge_threads);
+        let bridge_healthy_flag = Arc::clone(&self.bridge_healthy);
         let snapshots_flag = Arc::clone(&self.snapshots_enabled);
 
         let event_loop_handle_ref = Arc::clone(&self.event_loop_handle);
@@ -596,6 +603,15 @@ impl Sentinel {
                     }
 
                     Some(event) = keystroke_rx.recv() => {
+                        // Skip event processing when bridge is unhealthy to avoid
+                        // silently operating in a degraded state.
+                        if !bridge_healthy_flag.load(Ordering::SeqCst) {
+                            log::warn!(
+                                "Dropping keystroke event: bridge unhealthy"
+                            );
+                            continue;
+                        }
+
                         // Handle keyUp: compute dwell time and update last_keyup_ts
                         if event.event_type == crate::platform::KeyEventType::Up {
                             if let Some(down_ts) = pending_downs.remove(&event.keycode) {
@@ -655,16 +671,16 @@ impl Sentinel {
 
                         // Only count keystrokes when a tracked document is focused.
                         let focused_path = current_focus.read_recover().clone();
-                        {
-                            let session_keys: Vec<String> =
-                                sessions.read_recover().keys().cloned().collect();
+                        if let Some(ref path) = focused_path {
+                            // Single write lock for both tracing and mutation
+                            // to avoid read-then-write lock thrashing.
+                            let mut map = sessions.write_recover();
                             super::trace!(
                                 "[KEYSTROKE] focus={:?} sessions={:?} kc={}",
-                                focused_path, session_keys, event.keycode
+                                focused_path,
+                                map.keys().collect::<Vec<_>>(),
+                                event.keycode
                             );
-                        }
-                        if let Some(ref path) = focused_path {
-                            let mut map = sessions.write_recover();
                             if let Some(session) = map.get_mut(path) {
                                 session.keystroke_count += 1;
                                 super::trace!(
@@ -796,8 +812,11 @@ impl Sentinel {
                             for (i, handle) in threads.iter().enumerate() {
                                 if handle.is_finished() {
                                     log::error!(
-                                        "Bridge thread {i} exited unexpectedly"
+                                        "Bridge thread {i} exited unexpectedly; \
+                                         marking bridge unhealthy"
                                     );
+                                    bridge_healthy_flag
+                                        .store(false, Ordering::SeqCst);
                                 }
                             }
                         }
@@ -993,7 +1012,8 @@ impl Sentinel {
             drop(guard);
             drop(sessions_map);
 
-            let paths: Vec<String> = self.sessions.read_recover().keys().cloned().collect();
+            let mut paths: Vec<String> = self.sessions.read_recover().keys().cloned().collect();
+            paths.sort();
             for path in paths {
                 unfocus_document_sync(&path, &self.sessions, &self.session_events_tx);
             }
@@ -1039,6 +1059,12 @@ impl Sentinel {
     /// Whether keystroke capture is active (false = degraded/focus-only mode).
     pub fn is_keystroke_capture_active(&self) -> bool {
         self.keystroke_capture_active.load(Ordering::SeqCst)
+    }
+
+    /// Whether all bridge threads are alive. Returns false after any bridge
+    /// thread exits unexpectedly; the sentinel drops events in this state.
+    pub fn is_bridge_healthy(&self) -> bool {
+        self.bridge_healthy.load(Ordering::SeqCst)
     }
 
     /// Restart keystroke capture after a tap failure (e.g. after macOS sleep/wake).

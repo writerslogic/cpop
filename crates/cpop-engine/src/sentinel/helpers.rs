@@ -566,10 +566,7 @@ pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
             log::debug!("No initial hash available for session, using zero hash");
             vec![0u8; 32]
         });
-    let hash_fixed: [u8; 32] = match hash_bytes.as_slice().try_into() {
-        Ok(arr) => arr,
-        Err(_) => [0u8; 32],
-    };
+    let hash_fixed: [u8; 32] = hash_bytes.as_slice().try_into().unwrap_or_default();
     payload.extend_from_slice(&hash_fixed);
 
     let timestamp = session
