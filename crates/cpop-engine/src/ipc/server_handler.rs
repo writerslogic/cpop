@@ -149,7 +149,10 @@ pub(super) async fn handle_connection_inner<
             match tokio::time::timeout(IDLE_TIMEOUT, stream.read_exact(&mut len_buf)).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Ok(Err(_)) => break,
+                Ok(Err(e)) => {
+                    log::debug!("IPC: header read failed on {}: {e}", transport_label);
+                    break;
+                }
                 Err(_) => {
                     log::info!(
                         "IPC: idle timeout ({}s) on {}, closing connection",

@@ -222,8 +222,14 @@ impl AccessLog {
             let (id, ts, actor, action, resource, result, source) = row?;
             // Escape double-quotes per RFC 4180 and strip embedded newlines to
             // prevent CSV row injection via malformed field values.
-            let escape_csv =
-                |s: String| -> String { s.replace('"', "\"\"").replace(['\n', '\r'], " ") };
+            let escape_csv = |s: String| -> String {
+                let escaped = s.replace('"', "\"\"").replace(['\n', '\r'], " ");
+                if escaped.starts_with(['=', '+', '-', '@', '\t']) {
+                    format!("'{escaped}")
+                } else {
+                    escaped
+                }
+            };
             csv.push_str(&format!(
                 "{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
                 id,

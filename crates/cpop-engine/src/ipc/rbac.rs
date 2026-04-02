@@ -142,8 +142,8 @@ mod tests {
     }
 
     #[test]
-    fn test_default_role_is_user() {
-        assert_eq!(IpcRole::default(), IpcRole::User);
+    fn test_default_role_is_readonly() {
+        assert_eq!(IpcRole::default(), IpcRole::ReadOnly);
     }
 
     #[test]

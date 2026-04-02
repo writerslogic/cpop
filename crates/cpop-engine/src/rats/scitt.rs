@@ -135,6 +135,7 @@ mod tests {
             nist_timestamp: "2026-03-24T00:00:00Z".to_string(),
             fetched_at: "2026-03-24T00:00:01Z".to_string(),
             wp_signature: "cc".repeat(64),
+            wp_key_id: None,
         };
 
         let receipt = beacon_to_receipt_format(&beacon).unwrap();
@@ -191,6 +192,7 @@ mod tests {
             nist_timestamp: "2026-03-25T12:00:00Z".to_string(),
             fetched_at: "2026-03-25T12:00:05Z".to_string(),
             wp_signature: "ff".repeat(64),
+            wp_key_id: None,
         };
 
         let receipt = beacon_to_receipt_format(&beacon).unwrap();

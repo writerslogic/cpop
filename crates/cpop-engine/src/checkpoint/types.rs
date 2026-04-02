@@ -236,7 +236,7 @@ impl Checkpoint {
         hasher.update(self.content_hash);
         hasher.update(self.content_size.to_be_bytes());
 
-        let timestamp_nanos = self.timestamp.timestamp_nanos_safe() as u64;
+        let timestamp_nanos = self.timestamp.timestamp_nanos_safe().max(0) as u64;
         hasher.update(timestamp_nanos.to_be_bytes());
 
         if let Some(vdf) = &self.vdf {

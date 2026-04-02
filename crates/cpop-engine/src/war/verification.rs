@@ -486,15 +486,85 @@ pub fn verify_declaration(evidence: &Packet) -> CheckResult {
     }
 }
 
-/// WritersProof Root CA public key (Ed25519, 32 bytes hex).
-/// kid: e58a2aacaad69b37 | Valid: 2026-03-19 to 2036-03-18
-const WRITERSPROOF_CA_PUBKEY_HEX: &str =
-    "b48f36054b9160dff06ac4329898523f441914442958a01e84b719ac539ca053";
+/// A CA key entry in the WritersProof key ring. Each entry has a validity window;
+/// attestations whose `fetched_at` falls outside the window are rejected.
+#[derive(Debug)]
+struct CaKeyEntry {
+    /// Key ID (hex fingerprint, 8 bytes / 16 hex chars).
+    kid: &'static str,
+    /// Ed25519 public key (hex-encoded, 32 bytes / 64 hex chars).
+    pubkey_hex: &'static str,
+    /// Validity start (RFC 3339, inclusive).
+    not_before: &'static str,
+    /// Validity end (RFC 3339, inclusive).
+    not_after: &'static str,
+}
+
+/// WritersProof CA key ring. Keys are ordered newest-first. When rotating,
+/// add the new key at index 0 and leave old keys in place so that existing
+/// evidence continues to verify. Remove a key only after its `not_after` has
+/// passed AND all evidence signed by it has been re-anchored or expired.
+const CA_KEY_RING: &[CaKeyEntry] = &[CaKeyEntry {
+    kid: "e58a2aacaad69b37",
+    pubkey_hex: "b48f36054b9160dff06ac4329898523f441914442958a01e84b719ac539ca053",
+    not_before: "2026-03-19T00:00:00Z",
+    not_after: "2036-03-18T23:59:59Z",
+}];
+
+/// Find the CA key for a given attestation, using `wp_key_id` if present,
+/// otherwise falling back to timestamp-based selection on `fetched_at`.
+fn find_ca_key<'a>(kid: Option<&str>, fetched_at: &str) -> Result<&'a CaKeyEntry, String> {
+    use chrono::DateTime;
+
+    let ts = DateTime::parse_from_rfc3339(fetched_at)
+        .map_err(|e| format!("Invalid fetched_at timestamp: {e}"))?;
+
+    // If a kid is provided, look it up directly.
+    if let Some(kid_value) = kid {
+        let entry = CA_KEY_RING
+            .iter()
+            .find(|k| k.kid == kid_value)
+            .ok_or_else(|| format!("Unknown CA key ID: {kid_value}"))?;
+
+        let nb = DateTime::parse_from_rfc3339(entry.not_before)
+            .map_err(|e| format!("Internal error: bad not_before in key ring: {e}"))?;
+        let na = DateTime::parse_from_rfc3339(entry.not_after)
+            .map_err(|e| format!("Internal error: bad not_after in key ring: {e}"))?;
+
+        if ts < nb || ts > na {
+            return Err(format!(
+                "CA key {} expired or not yet valid for timestamp {}",
+                kid_value, fetched_at
+            ));
+        }
+        return Ok(entry);
+    }
+
+    // No kid: find the first key whose validity window covers the timestamp.
+    for entry in CA_KEY_RING {
+        let nb = DateTime::parse_from_rfc3339(entry.not_before)
+            .map_err(|e| format!("Internal error: bad not_before in key ring: {e}"))?;
+        let na = DateTime::parse_from_rfc3339(entry.not_after)
+            .map_err(|e| format!("Internal error: bad not_after in key ring: {e}"))?;
+
+        if ts >= nb && ts <= na {
+            return Ok(entry);
+        }
+    }
+
+    Err(format!(
+        "No valid CA key found for timestamp {fetched_at}; \
+         evidence may predate the oldest key or postdate all key expiry dates"
+    ))
+}
 
 /// Verify the WritersProof beacon counter-signature if present.
 ///
 /// When `beacon_attestation` is present, the `wp_signature` must be a valid
 /// Ed25519 signature by the WritersProof CA over the beacon bundle.
+/// The CA key is selected from the key ring using `wp_key_id` (if present)
+/// or `fetched_at` timestamp. Attestations outside any key's validity window
+/// are rejected.
 /// If no beacon attestation is present, this check passes (beacons are optional).
 pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
     let attestation = match &evidence.beacon_attestation {
@@ -508,18 +578,32 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
         }
     };
 
-    // Decode the WritersProof CA public key
-    let ca_pubkey_bytes = match hex::decode(WRITERSPROOF_CA_PUBKEY_HEX) {
+    // Select the CA key from the key ring.
+    let ca_entry = match find_ca_key(attestation.wp_key_id.as_deref(), &attestation.fetched_at) {
+        Ok(entry) => entry,
+        Err(msg) => {
+            return CheckResult {
+                name: "beacon_attestation".to_string(),
+                passed: false,
+                message: msg,
+            };
+        }
+    };
+
+    // Decode the CA public key.
+    let ca_pubkey_bytes = match hex::decode(ca_entry.pubkey_hex) {
         Ok(b) if b.len() == 32 => b,
         _ => {
             return CheckResult {
                 name: "beacon_attestation".to_string(),
                 passed: false,
-                message: "Internal error: invalid CA public key".to_string(),
+                message: format!(
+                    "Internal error: invalid CA public key for kid {}",
+                    ca_entry.kid
+                ),
             };
         }
     };
-    // Safety: ca_pubkey_bytes is exactly 32 bytes (validated above)
     let ca_key_array: &[u8; 32] = ca_pubkey_bytes.as_slice().try_into().unwrap();
     let ca_verifying_key = match VerifyingKey::from_bytes(ca_key_array) {
         Ok(key) => key,
@@ -527,12 +611,12 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
             return CheckResult {
                 name: "beacon_attestation".to_string(),
                 passed: false,
-                message: format!("Invalid CA public key: {e}"),
+                message: format!("Invalid CA public key for kid {}: {e}", ca_entry.kid),
             };
         }
     };
 
-    // Decode the counter-signature
+    // Decode the counter-signature.
     let sig_bytes = match hex::decode(&attestation.wp_signature) {
         Ok(b) if b.len() == 64 => b,
         Ok(b) => {
@@ -553,7 +637,6 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
             };
         }
     };
-    // Safety: sig_bytes is exactly 64 bytes (validated above)
     let signature = Signature::from_bytes(sig_bytes.as_slice().try_into().unwrap());
 
     // Reconstruct the signed message: checkpoint_hash || drand fields || nist fields || fetched_at.
@@ -562,7 +645,6 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
     // encoded via `.as_bytes()` which returns their UTF-8 representation. Both
     // client and server MUST use identical UTF-8 encoding for signature agreement.
     let mut signed_msg = Vec::new();
-    // Use the document hash as the checkpoint binding (the field sent in BeaconRequest)
     signed_msg.extend_from_slice(evidence.document.final_hash.as_bytes());
     signed_msg.extend_from_slice(&attestation.drand_round.to_be_bytes());
     signed_msg.extend_from_slice(attestation.drand_randomness.as_bytes());
@@ -575,8 +657,8 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
             name: "beacon_attestation".to_string(),
             passed: true,
             message: format!(
-                "Beacon attestation valid: drand round {}, NIST pulse {}",
-                attestation.drand_round, attestation.nist_pulse_index
+                "Beacon attestation valid (kid {}): drand round {}, NIST pulse {}",
+                ca_entry.kid, attestation.drand_round, attestation.nist_pulse_index
             ),
         },
         Err(e) => CheckResult {
@@ -584,5 +666,81 @@ pub fn verify_beacon_attestation(evidence: &Packet) -> CheckResult {
             passed: false,
             message: format!("Beacon counter-signature verification failed: {e}"),
         },
+    }
+}
+
+#[cfg(test)]
+mod ca_key_ring_tests {
+    use super::*;
+
+    #[test]
+    fn test_find_ca_key_by_kid() {
+        let entry = find_ca_key(Some("e58a2aacaad69b37"), "2026-06-01T12:00:00Z");
+        assert!(entry.is_ok());
+        assert_eq!(entry.unwrap().kid, "e58a2aacaad69b37");
+    }
+
+    #[test]
+    fn test_find_ca_key_by_timestamp() {
+        let entry = find_ca_key(None, "2030-01-01T00:00:00Z");
+        assert!(entry.is_ok());
+        assert_eq!(entry.unwrap().kid, "e58a2aacaad69b37");
+    }
+
+    #[test]
+    fn test_find_ca_key_before_validity() {
+        let entry = find_ca_key(None, "2025-01-01T00:00:00Z");
+        assert!(entry.is_err());
+        assert!(entry.unwrap_err().contains("No valid CA key found"));
+    }
+
+    #[test]
+    fn test_find_ca_key_after_expiry() {
+        let entry = find_ca_key(None, "2037-01-01T00:00:00Z");
+        assert!(entry.is_err());
+        assert!(entry.unwrap_err().contains("No valid CA key found"));
+    }
+
+    #[test]
+    fn test_find_ca_key_unknown_kid() {
+        let entry = find_ca_key(Some("0000000000000000"), "2030-01-01T00:00:00Z");
+        assert!(entry.is_err());
+        assert!(entry.unwrap_err().contains("Unknown CA key ID"));
+    }
+
+    #[test]
+    fn test_find_ca_key_kid_expired() {
+        let entry = find_ca_key(Some("e58a2aacaad69b37"), "2037-01-01T00:00:00Z");
+        assert!(entry.is_err());
+        assert!(entry.unwrap_err().contains("expired or not yet valid"));
+    }
+
+    #[test]
+    fn test_find_ca_key_at_boundary_start() {
+        let entry = find_ca_key(None, "2026-03-19T00:00:00Z");
+        assert!(entry.is_ok());
+    }
+
+    #[test]
+    fn test_find_ca_key_at_boundary_end() {
+        let entry = find_ca_key(None, "2036-03-18T23:59:59Z");
+        assert!(entry.is_ok());
+    }
+
+    #[test]
+    fn test_find_ca_key_invalid_timestamp() {
+        let entry = find_ca_key(None, "not-a-timestamp");
+        assert!(entry.is_err());
+        assert!(entry.unwrap_err().contains("Invalid fetched_at"));
+    }
+
+    #[test]
+    fn test_key_ring_entries_valid() {
+        for entry in CA_KEY_RING {
+            assert_eq!(hex::decode(entry.pubkey_hex).unwrap().len(), 32);
+            assert!(chrono::DateTime::parse_from_rfc3339(entry.not_before).is_ok());
+            assert!(chrono::DateTime::parse_from_rfc3339(entry.not_after).is_ok());
+            assert!(!entry.kid.is_empty());
+        }
     }
 }

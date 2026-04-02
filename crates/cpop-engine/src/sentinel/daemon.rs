@@ -342,9 +342,14 @@ impl DaemonManager {
         }
 
         if let Ok(state) = self.read_state() {
-            // Negative started_at (corrupt state) falls back to epoch.
-            let started_at =
-                UNIX_EPOCH + Duration::from_secs(u64::try_from(state.started_at).unwrap_or(0));
+            let started_at = UNIX_EPOCH
+                + Duration::from_secs(u64::try_from(state.started_at).unwrap_or_else(|_| {
+                    log::warn!(
+                        "corrupt started_at {} in daemon state, using epoch",
+                        state.started_at
+                    );
+                    0
+                }));
             status.started_at = Some(started_at);
             status.version = Some(state.version);
             status.identity = state.identity;

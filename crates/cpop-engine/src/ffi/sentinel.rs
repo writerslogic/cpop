@@ -18,13 +18,19 @@ static FFI_RUNTIME: Mutex<Option<Arc<tokio::runtime::Runtime>>> = Mutex::new(Non
 pub(crate) fn get_sentinel() -> Option<Arc<Sentinel>> {
     SENTINEL
         .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .unwrap_or_else(|p| {
+            log::warn!("SENTINEL mutex was poisoned, recovering");
+            p.into_inner()
+        })
         .as_ref()
         .map(Arc::clone)
 }
 
 fn ffi_runtime() -> Result<Arc<tokio::runtime::Runtime>, String> {
-    let mut guard = FFI_RUNTIME.lock().unwrap_or_else(|p| p.into_inner());
+    let mut guard = FFI_RUNTIME.lock().unwrap_or_else(|p| {
+        log::warn!("FFI_RUNTIME mutex was poisoned, recovering");
+        p.into_inner()
+    });
     if let Some(rt) = guard.as_ref() {
         return Ok(Arc::clone(rt));
     }

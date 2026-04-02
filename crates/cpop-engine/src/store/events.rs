@@ -74,11 +74,21 @@ impl SecureStore {
                 e.context_note,
                 e.vdf_input.as_ref().map(|h| &h[..]),
                 e.vdf_output.as_ref().map(|h| &h[..]),
-                i64::try_from(e.vdf_iterations).unwrap_or(i64::MAX),
+                i64::try_from(e.vdf_iterations).unwrap_or_else(|_| {
+                    log::warn!(
+                        "vdf_iterations {} exceeds i64::MAX, clamped",
+                        e.vdf_iterations
+                    );
+                    i64::MAX
+                }),
                 e.forensic_score,
                 e.is_paste as i32,
-                e.hardware_counter
-                    .map(|c| i64::try_from(c).unwrap_or(i64::MAX)),
+                e.hardware_counter.map(|c| {
+                    i64::try_from(c).unwrap_or_else(|_| {
+                        log::warn!("hardware_counter {} exceeds i64::MAX, clamped", c);
+                        i64::MAX
+                    })
+                }),
                 e.input_method,
                 e.lamport_signature.as_deref(),
                 e.lamport_pubkey_fingerprint.as_deref()

@@ -183,6 +183,11 @@ pub struct WpBeaconAttestation {
     pub fetched_at: String,
     /// WritersProof Ed25519 counter-signature over the bundle (hex-encoded, 64 bytes).
     pub wp_signature: String,
+    /// Key ID of the CA key used to produce `wp_signature` (hex fingerprint).
+    /// Absent in attestations created before key rotation support was added;
+    /// the verifier falls back to timestamp-based key selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wp_key_id: Option<String>,
 }
 
 /// Time-bounded context annotation (e.g. break, research, revision).

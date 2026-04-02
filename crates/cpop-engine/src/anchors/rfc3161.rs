@@ -117,9 +117,16 @@ impl Rfc3161Provider {
 
         // MessageImprint SEQUENCE wraps AlgorithmIdentifier (OID + NULL) + OCTET STRING (hash)
         let mi_content_len = sha256_oid.len() + 2 + 2 + 32; // OID + NULL tag/len + OCTET STRING tag/len + hash
+        debug_assert!(
+            mi_content_len <= 127,
+            "DER short form requires length <= 127"
+        );
         let mut message_imprint = Vec::new();
         message_imprint.push(0x30);
-        message_imprint.push(mi_content_len as u8);
+        message_imprint.push(
+            u8::try_from(mi_content_len)
+                .map_err(|_| AnchorError::Submission("DER length overflow".into()))?,
+        );
         message_imprint.extend_from_slice(sha256_oid);
         message_imprint.push(0x05);
         message_imprint.push(0x00);
@@ -132,7 +139,10 @@ impl Rfc3161Provider {
         request.push(0x01);
         request.push(0x01);
         request.push(0x30);
-        request.push(message_imprint.len() as u8);
+        request.push(
+            u8::try_from(message_imprint.len())
+                .map_err(|_| AnchorError::Submission("DER length overflow".into()))?,
+        );
         request.extend_from_slice(&message_imprint);
         request.push(0x02);
         request.push(0x08);
