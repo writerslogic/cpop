@@ -14,7 +14,7 @@ use core_foundation_sys::number::{kCFNumberSInt32Type, CFNumberCreate};
 use core_foundation_sys::string::CFStringCreateWithCString;
 use std::ffi::CString;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Shared state between the HID callback and the owning thread.
 struct HidCaptureContext {
@@ -28,6 +28,17 @@ struct HidCaptureContext {
     timebase_denom: u32,
 }
 
+/// Handles for CFRunLoop and IOHIDManager that the worker thread sends back
+/// so that stop() can perform proper cleanup from the owning thread.
+struct HidThreadHandles {
+    run_loop: *mut std::ffi::c_void,
+    manager: *mut std::ffi::c_void,
+}
+
+// The raw pointers are CF objects retained by the worker thread; they are
+// safe to send because stop() synchronizes via thread join after CFRunLoopStop.
+unsafe impl Send for HidThreadHandles {}
+
 /// IOKit HID Manager keystroke capture for dual-layer validation.
 ///
 /// Runs on a dedicated thread with its own CFRunLoop, following the same
@@ -36,6 +47,7 @@ pub struct HidInputCapture {
     context: Arc<HidCaptureContext>,
     running: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
+    handles: Arc<Mutex<Option<HidThreadHandles>>>,
 }
 
 impl HidInputCapture {
@@ -59,40 +71,54 @@ impl HidInputCapture {
             timebase_denom: info.denom,
         });
         let running = Arc::new(AtomicBool::new(false));
+        let handles: Arc<Mutex<Option<HidThreadHandles>>> = Arc::new(Mutex::new(None));
 
-        let ctx_clone = Arc::clone(&context);
+        // Increment the Arc strong count for the C callback. The matching
+        // decrement happens in stop() after the run loop has exited.
+        // Cast to usize to cross the thread boundary (raw pointers are !Send).
+        let ctx_addr = Arc::into_raw(Arc::clone(&context)) as usize;
+
         let running_clone = Arc::clone(&running);
+        let handles_clone = Arc::clone(&handles);
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
 
         let thread = std::thread::Builder::new()
             .name("cpop-hid-capture".into())
             .spawn(move || {
-                let ok = unsafe { run_hid_loop(&ctx_clone, &running_clone) };
-                if ok {
-                    running_clone.store(true, Ordering::SeqCst);
-                    let _ = ready_tx.send(true);
-                    unsafe { CFRunLoopRun() };
-                } else {
-                    let _ = ready_tx.send(false);
+                let ctx_ptr = ctx_addr as *const HidCaptureContext;
+                let result = unsafe { run_hid_loop(ctx_ptr) };
+                match result {
+                    Some((manager, run_loop)) => {
+                        *handles_clone.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(HidThreadHandles { run_loop, manager });
+                        running_clone.store(true, Ordering::SeqCst);
+                        let _ = ready_tx.send(true);
+                        // Block until CFRunLoopStop is called from stop().
+                        unsafe { CFRunLoopRun() };
+                    }
+                    None => {
+                        let _ = ready_tx.send(false);
+                    }
                 }
                 running_clone.store(false, Ordering::SeqCst);
             })
             .ok()?;
 
-        // Wait for the thread to signal readiness (or failure).
         let ok = ready_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .unwrap_or(false);
         if !ok {
             log::warn!("HID capture thread failed to start");
+            // Reclaim the Arc ref we leaked for the callback via into_raw.
+            unsafe { Arc::decrement_strong_count(Arc::as_ptr(&context)) };
             return None;
         }
 
-        log::info!("IOKit HID capture started for dual-layer validation");
         Some(Self {
             context,
             running,
             thread: Some(thread),
+            handles,
         })
     }
 
@@ -111,15 +137,55 @@ impl HidInputCapture {
         self.running.load(Ordering::SeqCst)
     }
 
-    /// Stop HID capture and join the thread.
+    /// Stop HID capture, clean up resources, and join the thread.
     pub fn stop(&mut self) {
-        self.running.store(false, Ordering::SeqCst);
-        // The thread will exit when CFRunLoopRun returns after CFRunLoopStop.
-        // We can't easily stop the CFRunLoop from another thread without storing
-        // the run loop reference, so we rely on Drop of the IOHIDManager to
-        // unschedule and stop it. For now, just join if the thread exited.
+        if !self.running.swap(false, Ordering::SeqCst) {
+            // Already stopped or never started.
+            if let Some(handle) = self.thread.take() {
+                let _ = handle.join();
+            }
+            return;
+        }
+
+        // Take the handles and perform cleanup from this thread.
+        let thread_handles = self
+            .handles
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+
+        if let Some(h) = thread_handles {
+            unsafe {
+                // Unschedule and close the HID manager before stopping the run loop.
+                IOHIDManagerRegisterInputValueCallback(
+                    h.manager,
+                    hid_input_callback_noop,
+                    std::ptr::null_mut(),
+                );
+                IOHIDManagerUnscheduleFromRunLoop(h.manager, h.run_loop, kCFRunLoopCommonModes);
+                IOHIDManagerClose(h.manager, K_IO_HID_OPTIONS_TYPE_NONE);
+                CFRelease(h.manager);
+
+                // Stop the run loop so CFRunLoopRun returns and the thread exits.
+                CFRunLoopStop(h.run_loop);
+            }
+        }
+
+        // Join the worker thread (should return promptly after CFRunLoopStop).
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
+        }
+
+        // Reclaim the Arc ref we leaked for the C callback. The callback is now
+        // unregistered and the thread has exited, so no more accesses are possible.
+        // We reconstruct the Arc from context's raw pointer. Since we incremented
+        // the count in start() via Arc::into_raw(Arc::clone(&context)), we need to
+        // decrement it by reconstructing and dropping.
+        //
+        // SAFETY: The callback has been replaced with a no-op and the run loop
+        // has stopped, so the raw pointer is no longer accessed by C code.
+        unsafe {
+            Arc::decrement_strong_count(Arc::as_ptr(&self.context));
         }
     }
 }
@@ -130,18 +196,31 @@ impl Drop for HidInputCapture {
     }
 }
 
+/// No-op callback used to replace the real callback during shutdown,
+/// ensuring no events fire against freed context.
+extern "C" fn hid_input_callback_noop(
+    _context: *mut std::ffi::c_void,
+    _result: i32,
+    _sender: *mut std::ffi::c_void,
+    _value: *mut std::ffi::c_void,
+) {
+}
+
 /// Set up IOHIDManager, register callback, and schedule on current thread's run loop.
 ///
-/// Returns `true` if setup succeeded and `CFRunLoopRun()` should be called.
+/// Returns `Some((manager, run_loop))` on success so stop() can clean up.
 ///
 /// # Safety
 ///
-/// Must be called on the dedicated HID thread. `context` must outlive the run loop.
-unsafe fn run_hid_loop(context: &Arc<HidCaptureContext>, _running: &Arc<AtomicBool>) -> bool {
+/// Must be called on the dedicated HID thread. `ctx_raw` must be a pointer
+/// obtained from `Arc::into_raw` that will be reclaimed by the caller.
+unsafe fn run_hid_loop(
+    ctx_raw: *const HidCaptureContext,
+) -> Option<(*mut std::ffi::c_void, *mut std::ffi::c_void)> {
     let manager = IOHIDManagerCreate(kCFAllocatorDefault, K_IO_HID_OPTIONS_TYPE_NONE);
     if manager.is_null() {
         log::error!("IOHIDManagerCreate returned null");
-        return false;
+        return None;
     }
 
     // Build matching dictionary for keyboard devices (usage page 0x01, usage 0x06).
@@ -153,7 +232,7 @@ unsafe fn run_hid_loop(context: &Arc<HidCaptureContext>, _running: &Arc<AtomicBo
     );
     if matching.is_null() {
         CFRelease(manager);
-        return false;
+        return None;
     }
 
     let page_key = cfstr(K_IO_HID_DEVICE_USAGE_PAGE_KEY);
@@ -164,7 +243,7 @@ unsafe fn run_hid_loop(context: &Arc<HidCaptureContext>, _running: &Arc<AtomicBo
     if page_key.is_null() || usage_key.is_null() || page_val.is_null() || usage_val.is_null() {
         CFRelease(manager);
         CFRelease(matching as *mut _);
-        return false;
+        return None;
     }
 
     core_foundation_sys::dictionary::CFDictionarySetValue(
@@ -185,32 +264,34 @@ unsafe fn run_hid_loop(context: &Arc<HidCaptureContext>, _running: &Arc<AtomicBo
     CFRelease(page_val as *mut _);
     CFRelease(usage_val as *mut _);
 
-    // Open the manager to begin device matching.
     let result = IOHIDManagerOpen(manager, K_IO_HID_OPTIONS_TYPE_NONE);
     if result != 0 {
         log::error!("IOHIDManagerOpen failed: {result}");
         CFRelease(manager);
-        return false;
+        return None;
     }
 
-    // Register the input value callback. The context pointer is an Arc that
-    // lives as long as HidInputCapture, which outlives this thread.
-    let ctx_ptr = Arc::as_ptr(context) as *mut std::ffi::c_void;
-    IOHIDManagerRegisterInputValueCallback(manager, hid_input_callback, ctx_ptr);
+    // Register callback with the Arc raw pointer. The Arc ref count was
+    // incremented by the caller via Arc::into_raw; it will be decremented
+    // in stop() after the callback is unregistered.
+    IOHIDManagerRegisterInputValueCallback(
+        manager,
+        hid_input_callback,
+        ctx_raw as *mut std::ffi::c_void,
+    );
 
-    // Schedule on the current thread's run loop.
     let run_loop = CFRunLoopGetCurrent();
     IOHIDManagerScheduleWithRunLoop(manager, run_loop, kCFRunLoopCommonModes);
 
-    true
+    Some((manager, run_loop))
 }
 
 /// C callback invoked by IOKit for each HID input value.
 ///
 /// # Safety
 ///
-/// `context` must be a valid `*const HidCaptureContext`. `value` must be
-/// a valid `IOHIDValueRef`.
+/// `context` must be a valid `*const HidCaptureContext` with a live Arc ref.
+/// `value` must be a valid `IOHIDValueRef`.
 extern "C" fn hid_input_callback(
     context: *mut std::ffi::c_void,
     _result: i32,

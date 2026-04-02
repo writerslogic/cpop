@@ -223,20 +223,26 @@ impl CheckpointWire {
             ps.validate()?;
         }
 
-        if let Some(ref sig) = self.lamport_signature {
-            if sig.len() != 8192 {
-                return Err(format!(
-                    "lamport_signature length {} invalid (must be 8192 bytes)",
-                    sig.len()
-                ));
+        match (&self.lamport_signature, &self.lamport_pubkey_fingerprint) {
+            (Some(sig), Some(fp)) => {
+                if sig.len() != 8192 {
+                    return Err(format!(
+                        "lamport_signature length {} invalid (must be 8192 bytes)",
+                        sig.len()
+                    ));
+                }
+                if fp.len() != 8 {
+                    return Err(format!(
+                        "lamport_pubkey_fingerprint length {} invalid (must be 8 bytes)",
+                        fp.len()
+                    ));
+                }
             }
-        }
-        if let Some(ref fp) = self.lamport_pubkey_fingerprint {
-            if fp.len() != 8 {
-                return Err(format!(
-                    "lamport_pubkey_fingerprint length {} invalid (must be 8 bytes)",
-                    fp.len()
-                ));
+            (None, None) => {}
+            _ => {
+                return Err(
+                    "lamport_signature and lamport_pubkey_fingerprint must both be present or both absent".to_string()
+                );
             }
         }
 

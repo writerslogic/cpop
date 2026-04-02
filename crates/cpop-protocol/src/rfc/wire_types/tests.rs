@@ -628,6 +628,7 @@ fn test_checkpoint_with_lamport_signature_roundtrip() {
 fn test_checkpoint_rejects_invalid_lamport_signature_length() {
     let result = encode_mutate_decode(|p| {
         p.checkpoints[0].lamport_signature = Some(vec![0x00; 100]);
+        p.checkpoints[0].lamport_pubkey_fingerprint = Some(vec![0x00; 8]);
     });
     assert!(
         result.is_err(),
@@ -638,11 +639,33 @@ fn test_checkpoint_rejects_invalid_lamport_signature_length() {
 #[test]
 fn test_checkpoint_rejects_invalid_lamport_fingerprint_length() {
     let result = encode_mutate_decode(|p| {
+        p.checkpoints[0].lamport_signature = Some(vec![0x00; 8192]);
         p.checkpoints[0].lamport_pubkey_fingerprint = Some(vec![0x00; 4]);
     });
     assert!(
         result.is_err(),
         "wrong-length lamport_pubkey_fingerprint should be rejected"
+    );
+}
+
+#[test]
+fn test_checkpoint_rejects_unpaired_lamport_fields() {
+    let result = encode_mutate_decode(|p| {
+        p.checkpoints[0].lamport_signature = Some(vec![0x00; 8192]);
+        p.checkpoints[0].lamport_pubkey_fingerprint = None;
+    });
+    assert!(
+        result.is_err(),
+        "lamport_signature without fingerprint should be rejected"
+    );
+
+    let result = encode_mutate_decode(|p| {
+        p.checkpoints[0].lamport_signature = None;
+        p.checkpoints[0].lamport_pubkey_fingerprint = Some(vec![0x00; 8]);
+    });
+    assert!(
+        result.is_err(),
+        "lamport_pubkey_fingerprint without signature should be rejected"
     );
 }
 
