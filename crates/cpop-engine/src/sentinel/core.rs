@@ -32,16 +32,14 @@ fn commit_checkpoint_for_path(
     if !file_path.exists() {
         return false;
     }
-    let content_hash = match crate::crypto::hash_file(file_path) {
-        Ok(h) => h,
+    let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
+        Ok(pair) => pair,
         Err(e) => {
             log::warn!("Auto-checkpoint hash failed for {path}: {e}");
             return false;
         }
     };
-    let file_size = std::fs::metadata(file_path)
-        .map(|m| i64::try_from(m.len()).unwrap_or(i64::MAX))
-        .unwrap_or(0);
+    let file_size = i64::try_from(raw_size).unwrap_or(i64::MAX);
 
     let mut store = {
         let guard = signing_key.read_recover();
@@ -923,8 +921,8 @@ impl Sentinel {
         // Persist cumulative stats and unfocus all sessions so keystroke
         // counts survive across stop/start cycles.
         {
-            let sessions_map = self.sessions.read_recover();
             let guard = self.signing_key.read_recover();
+            let sessions_map = self.sessions.read_recover();
             if let Some(ref sk) = *guard {
                 let db = self.config.writersproof_dir.join("events.db");
                 if let Ok(store) = crate::store::open_store_with_signing_key(sk, &db) {
