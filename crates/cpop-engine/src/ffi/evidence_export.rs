@@ -312,10 +312,14 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             // Sign the CBOR payload with COSE_Sign1 using the device signing key.
             // This prevents tampering, replay, and evidence reuse; any modification
             // to the packet content invalidates the signature.
+            let mut is_signed = false;
             let signed_bytes = match crate::ffi::helpers::load_signing_key() {
                 Ok(signing_key) => {
                     match cpop_protocol::crypto::sign_evidence_cose(&encoded, &signing_key) {
-                        Ok(cose) => cose,
+                        Ok(cose) => {
+                            is_signed = true;
+                            cose
+                        }
                         Err(e) => {
                             log::warn!("COSE signing failed, exporting unsigned: {e}");
                             encoded
@@ -337,11 +341,18 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 Ok(())
             })();
             match write_result {
-                Ok(()) => FfiResult {
-                    success: true,
-                    message: Some(format!("Exported signed CBOR to {}", output_path.display())),
-                    error_message: None,
-                },
+                Ok(()) => {
+                    let label = if is_signed {
+                        "signed CBOR"
+                    } else {
+                        "unsigned CBOR (signing unavailable)"
+                    };
+                    FfiResult {
+                        success: true,
+                        message: Some(format!("Exported {} to {}", label, output_path.display())),
+                        error_message: None,
+                    }
+                }
                 Err(e) => {
                     let _ = std::fs::remove_file(&tmp_path);
                     FfiResult {
