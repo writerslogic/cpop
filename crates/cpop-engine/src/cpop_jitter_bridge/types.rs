@@ -17,14 +17,19 @@ pub struct HybridSample {
     pub hash: [u8; 32],
     pub previous_hash: [u8; 32],
     pub is_phys: bool,
+    /// Session ID bound into the hash preimage to prevent cross-session transplant.
+    #[serde(default)]
+    pub session_id: String,
 }
 
 impl HybridSample {
     /// Compute the SHA-256 hash of this sample's fields for chain integrity.
+    /// Includes the session_id in the preimage to prevent cross-session transplant.
     pub fn compute_hash(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-hybrid-sample-v1");
+        hasher.update(b"witnessd-hybrid-sample-v2");
+        hasher.update(self.session_id.as_bytes());
         hasher.update(self.timestamp.timestamp_nanos_safe().to_be_bytes());
         hasher.update(self.keystroke_count.to_be_bytes());
         hasher.update(self.document_hash);

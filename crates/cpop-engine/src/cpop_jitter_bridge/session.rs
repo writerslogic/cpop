@@ -16,6 +16,30 @@ use std::path::Path;
 use std::time::Duration;
 use zeroize::{Zeroize, Zeroizing};
 
+/// Verify hash chain integrity, timestamp monotonicity, and keystroke count monotonicity.
+fn verify_sample_chain(samples: &[HybridSample]) -> Result<(), String> {
+    for (i, sample) in samples.iter().enumerate() {
+        if sample.compute_hash() != sample.hash {
+            return Err(format!("sample {i}: hash mismatch"));
+        }
+        if i > 0 {
+            let prev = &samples[i - 1];
+            if sample.previous_hash != prev.hash {
+                return Err(format!("sample {i}: broken chain link"));
+            }
+            if sample.timestamp <= prev.timestamp {
+                return Err(format!("sample {i}: timestamp not monotonic"));
+            }
+            if sample.keystroke_count <= prev.keystroke_count {
+                return Err(format!("sample {i}: keystroke count not monotonic"));
+            }
+        } else if sample.previous_hash != [0u8; 32] {
+            return Err("sample 0: non-zero previous hash".to_string());
+        }
+    }
+    Ok(())
+}
+
 /// Combined jitter + zone-tracking session for a single document.
 #[derive(Debug)]
 pub struct HybridJitterSession {
@@ -34,6 +58,12 @@ pub struct HybridJitterSession {
     /// new keystrokes because the cpop_jitter crate does not support restoring
     /// PhysSession state from serialized evidence.
     loaded_readonly: bool,
+    /// Preserved cpop_jitter evidence from a loaded session, since the fresh
+    /// PhysSession created on load has no recorded samples.
+    loaded_cpop_jitter_evidence: Option<String>,
+    /// Cached result of chain validation to avoid redundant O(n) SHA-256
+    /// recomputation on every export. Set after record_keystroke and load.
+    chain_valid_cache: Option<bool>,
 }
 
 impl HybridJitterSession {
@@ -80,6 +110,8 @@ impl HybridJitterSession {
             keystroke_count: 0,
             last_jitter: 0,
             loaded_readonly: false,
+            loaded_cpop_jitter_evidence: None,
+            chain_valid_cache: None,
         })
     }
 
@@ -145,11 +177,13 @@ impl HybridJitterSession {
             hash: [0u8; 32],
             previous_hash,
             is_phys,
+            session_id: self.id.clone(),
         };
         sample.hash = sample.compute_hash();
 
         self.samples.push(sample);
         self.last_jitter = jitter;
+        self.chain_valid_cache = None;
 
         Ok((jitter, true))
     }
@@ -184,6 +218,19 @@ impl HybridJitterSession {
 
     /// Compute entropy quality metrics for this session.
     pub fn entropy_quality(&self) -> EntropyQuality {
+        if self.loaded_readonly {
+            if let Some(ref json) = self.loaded_cpop_jitter_evidence {
+                if let Ok(chain) = serde_json::from_str::<PhysEvidenceChain>(json) {
+                    return EntropyQuality {
+                        phys_ratio: chain.phys_ratio(),
+                        total_samples: chain.records.len(),
+                        phys_samples: chain.phys_count(),
+                        pure_samples: chain.pure_count(),
+                    };
+                }
+            }
+        }
+
         let evidence = self.cpop_jitter_session.evidence();
         let phys_samples = evidence.phys_count();
         let pure_samples = evidence.pure_count();
@@ -209,26 +256,7 @@ impl HybridJitterSession {
     /// Verify the hash chain integrity, timestamp monotonicity, and keystroke
     /// count monotonicity of all samples.
     pub fn verify_chain(&self) -> Result<(), String> {
-        for (i, sample) in self.samples.iter().enumerate() {
-            if sample.compute_hash() != sample.hash {
-                return Err(format!("sample {i}: hash mismatch"));
-            }
-            if i > 0 {
-                let prev = &self.samples[i - 1];
-                if sample.previous_hash != prev.hash {
-                    return Err(format!("sample {i}: broken chain link"));
-                }
-                if sample.timestamp <= prev.timestamp {
-                    return Err(format!("sample {i}: timestamp not monotonic"));
-                }
-                if sample.keystroke_count <= prev.keystroke_count {
-                    return Err(format!("sample {i}: keystroke count not monotonic"));
-                }
-            } else if sample.previous_hash != [0u8; 32] {
-                return Err("sample 0: non-zero previous hash".to_string());
-            }
-        }
-        Ok(())
+        verify_sample_chain(&self.samples)
     }
 
     /// Export the session as a `HybridEvidence` record.
@@ -247,11 +275,15 @@ impl HybridJitterSession {
             statistics,
             entropy_quality,
             typing_profile: *self.profile(),
-            cpop_jitter_evidence: match self.cpop_jitter_session.export_json() {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    log::warn!("failed to export cpop_jitter evidence JSON: {e}");
-                    None
+            cpop_jitter_evidence: if self.loaded_readonly {
+                self.loaded_cpop_jitter_evidence.clone()
+            } else {
+                match self.cpop_jitter_session.export_json() {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        log::warn!("failed to export cpop_jitter evidence JSON: {e}");
+                        None
+                    }
                 }
             },
         }
@@ -292,15 +324,13 @@ impl HybridJitterSession {
             .to_std()
             .unwrap_or(Duration::from_secs(0));
 
-        let keystrokes_per_min = if duration.as_secs_f64() > 0.0 {
-            let minutes = duration.as_secs_f64() / 60.0;
-            if minutes > 0.0 {
-                self.keystroke_count as f64 / minutes
+        let keystrokes_per_min = {
+            let secs = duration.as_secs_f64();
+            if secs > 0.0 {
+                self.keystroke_count as f64 / (secs / 60.0)
             } else {
                 0.0
             }
-        } else {
-            0.0
         };
 
         let mut seen = std::collections::HashSet::new();
@@ -314,7 +344,9 @@ impl HybridJitterSession {
             duration,
             keystrokes_per_min,
             unique_doc_hashes: i32::try_from(seen.len()).unwrap_or(i32::MAX),
-            chain_valid: self.verify_chain().is_ok(),
+            chain_valid: self
+                .chain_valid_cache
+                .unwrap_or_else(|| self.verify_chain().is_ok()),
         }
     }
 
@@ -345,7 +377,10 @@ impl HybridJitterSession {
         }
         let tmp_path = path.as_ref().with_extension("tmp");
         fs::write(&tmp_path, &bytes).map_err(|e| e.to_string())?;
-        fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+        if let Err(e) = fs::rename(&tmp_path, path.as_ref()) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e.to_string());
+        }
         Ok(())
     }
 
@@ -359,18 +394,7 @@ impl HybridJitterSession {
         }
 
         // Verify hash chain integrity of loaded samples
-        for (i, sample) in data.samples.iter().enumerate() {
-            if sample.compute_hash() != sample.hash {
-                return Err(format!("sample {i}: hash mismatch in loaded data"));
-            }
-            if i > 0 {
-                if sample.previous_hash != data.samples[i - 1].hash {
-                    return Err(format!("sample {i}: broken chain link in loaded data"));
-                }
-            } else if sample.previous_hash != [0u8; 32] {
-                return Err("sample 0: non-zero previous hash in loaded data".into());
-            }
-        }
+        verify_sample_chain(&data.samples).map_err(|e| format!("{e} in loaded data"))?;
 
         let mut material = Zeroizing::new(if let Some(k) = key_material {
             k
@@ -408,6 +432,8 @@ impl HybridJitterSession {
             keystroke_count: data.keystroke_count,
             last_jitter: data.last_jitter,
             loaded_readonly: true,
+            loaded_cpop_jitter_evidence: data.cpop_jitter_evidence,
+            chain_valid_cache: Some(true),
         })
     }
 }
@@ -415,24 +441,7 @@ impl HybridJitterSession {
 impl HybridEvidence {
     /// Verify hash chain, timestamp monotonicity, and optional cpop_jitter evidence.
     pub fn verify(&self) -> Result<(), String> {
-        for (i, sample) in self.samples.iter().enumerate() {
-            if sample.compute_hash() != sample.hash {
-                return Err(format!("sample {i}: hash mismatch"));
-            }
-            if i > 0 {
-                if sample.previous_hash != self.samples[i - 1].hash {
-                    return Err(format!("sample {i}: broken chain link"));
-                }
-            } else if sample.previous_hash != [0u8; 32] {
-                return Err("sample 0: non-zero previous hash".to_string());
-            }
-            if i > 0 && sample.timestamp <= self.samples[i - 1].timestamp {
-                return Err(format!("sample {i}: timestamp not monotonic"));
-            }
-            if i > 0 && sample.keystroke_count <= self.samples[i - 1].keystroke_count {
-                return Err(format!("sample {i}: keystroke count not monotonic"));
-            }
-        }
+        verify_sample_chain(&self.samples)?;
 
         if let Some(ref cpop_jitter_json) = self.cpop_jitter_evidence {
             self.verify_cpop_jitter_evidence(cpop_jitter_json)?;
