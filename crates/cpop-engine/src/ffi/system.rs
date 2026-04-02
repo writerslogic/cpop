@@ -187,12 +187,15 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
         .map(|s| s.sessions())
         .unwrap_or_default();
 
+    // Batch-fetch all events in one query to avoid O(n) DB round-trips per file.
+    let mut all_events = store.get_all_events_grouped().unwrap_or_else(|e| {
+        log::warn!("store get_all_events_grouped failed: {e}");
+        Default::default()
+    });
+
     for (path, last_ts, count) in files {
         seen_paths.insert(path.clone());
-        let events = store.get_events_for_file(&path).unwrap_or_else(|e| {
-            log::warn!("store get_events_for_file failed for {path}: {e}");
-            Default::default()
-        });
+        let events = all_events.remove(&path).unwrap_or_default();
 
         let event_data = crate::ffi::helpers::events_to_forensic_data(&events);
         let regions = std::collections::HashMap::new();

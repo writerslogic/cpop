@@ -273,6 +273,28 @@ impl SecureStore {
         rows.map(|r| r.map_err(anyhow::Error::from)).collect()
     }
 
+    /// Retrieve all events grouped by file path in a single query.
+    pub fn get_all_events_grouped(
+        &self,
+    ) -> anyhow::Result<std::collections::HashMap<String, Vec<SecureEvent>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, device_id, machine_id, timestamp_ns, file_path, \
+                content_hash, file_size, size_delta, previous_hash, event_hash, \
+                context_type, context_note, vdf_input, vdf_output, vdf_iterations, \
+                forensic_score, is_paste, hardware_counter, input_method, \
+                lamport_signature, lamport_pubkey_fingerprint \
+                FROM secure_events ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([], Self::row_to_event)?;
+        let mut map: std::collections::HashMap<String, Vec<SecureEvent>> =
+            std::collections::HashMap::new();
+        for row in rows {
+            let event = row?;
+            map.entry(event.file_path.clone()).or_default().push(event);
+        }
+        Ok(map)
+    }
+
     /// Return (timestamp, size_delta) pairs for all events, ascending.
     pub fn get_all_events_summary(&self) -> anyhow::Result<Vec<(i64, i32)>> {
         let mut stmt = self.conn.prepare(

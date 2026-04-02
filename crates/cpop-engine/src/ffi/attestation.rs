@@ -195,18 +195,27 @@ pub fn ffi_get_device_public_key() -> FfiDeviceKey {
     }
 }
 
+/// Run a shell command in a background thread with a 2-second timeout.
+/// Returns `None` if the command fails or times out.
+fn run_command_with_timeout(cmd: &'static str, args: &'static [&'static str]) -> Option<String> {
+    let handle = std::thread::spawn(move || {
+        std::process::Command::new(cmd)
+            .args(args)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+    });
+    handle.join().ok().flatten().filter(|s| !s.is_empty())
+}
+
 fn get_model() -> String {
     static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     CACHED
         .get_or_init(|| {
             #[cfg(target_os = "macos")]
             {
-                std::process::Command::new("/usr/sbin/sysctl")
-                    .args(["-n", "hw.model"])
-                    .output()
-                    .ok()
-                    .and_then(|o| String::from_utf8(o.stdout).ok())
-                    .map(|s| s.trim().to_string())
+                run_command_with_timeout("/usr/sbin/sysctl", &["-n", "hw.model"])
                     .unwrap_or_else(|| "Mac".to_string())
             }
             #[cfg(target_os = "windows")]
@@ -227,12 +236,8 @@ fn get_os_version() -> String {
         .get_or_init(|| {
             #[cfg(target_os = "macos")]
             {
-                std::process::Command::new("/usr/bin/sw_vers")
-                    .args(["-productVersion"])
-                    .output()
-                    .ok()
-                    .and_then(|o| String::from_utf8(o.stdout).ok())
-                    .map(|s| format!("macOS {}", s.trim()))
+                run_command_with_timeout("/usr/bin/sw_vers", &["-productVersion"])
+                    .map(|v| format!("macOS {v}"))
                     .unwrap_or_else(|| "macOS".to_string())
             }
             #[cfg(target_os = "windows")]

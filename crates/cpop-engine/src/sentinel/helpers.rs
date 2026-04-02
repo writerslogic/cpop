@@ -528,6 +528,17 @@ fn wal_append_session_event(
 }
 
 pub fn compute_file_hash(path: &str) -> std::io::Result<String> {
+    let meta = std::fs::metadata(path)?;
+    if meta.len() > MAX_HASH_FILE_SIZE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "file too large to hash ({} bytes, limit {})",
+                meta.len(),
+                MAX_HASH_FILE_SIZE
+            ),
+        ));
+    }
     let hash = crate::crypto::hash_file(Path::new(path))?;
     Ok(hex::encode(hash))
 }
