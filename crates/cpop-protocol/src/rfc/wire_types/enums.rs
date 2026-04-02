@@ -160,6 +160,22 @@ pub enum ConfidenceTier {
     Mature = 4,
 }
 
+impl TryFrom<u8> for ConfidenceTier {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::PopulationReference),
+            2 => Ok(Self::Emerging),
+            3 => Ok(Self::Established),
+            4 => Ok(Self::Mature),
+            other => Err(format!(
+                "confidence_tier out of range: {} (must be 1..=4)",
+                other
+            )),
+        }
+    }
+}
+
 // --- Display implementations ---
 
 impl fmt::Display for HashAlgorithm {

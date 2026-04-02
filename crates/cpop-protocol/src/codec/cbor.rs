@@ -86,8 +86,8 @@ fn check_cbor_depth(data: &[u8], max_depth: usize) -> bool {
                 pos += 8;
                 u64::from_be_bytes(bytes)
             }
-            31 => u64::MAX, // indefinite length marker for types 2-5
-            _ => return true,
+            31 => u64::MAX,    // indefinite length marker for types 2-5
+            _ => return false, // reserved additional-info values (28-30) are malformed
         };
 
         match major {
@@ -142,14 +142,20 @@ fn check_cbor_depth(data: &[u8], max_depth: usize) -> bool {
                                 pos += 8;
                                 u64::from_be_bytes(b)
                             }
-                            _ => return true,
+                            _ => return false, // reserved chunk-length values are malformed
                         };
                         let skip = ch_len.min(data.len() as u64) as usize;
-                        pos = pos.saturating_add(skip).min(data.len());
+                        pos = pos.saturating_add(skip);
+                        if pos > data.len() {
+                            return false; // chunk extends past input
+                        }
                     }
                 } else {
                     let skip = arg.min(data.len() as u64) as usize;
-                    pos = pos.saturating_add(skip).min(data.len());
+                    pos = pos.saturating_add(skip);
+                    if pos > data.len() {
+                        return false; // byte/text string extends past input
+                    }
                 }
                 consume_item(&mut stack);
             }
@@ -182,10 +188,11 @@ fn check_cbor_depth(data: &[u8], max_depth: usize) -> bool {
             7 => {
                 consume_item(&mut stack);
             }
-            _ => return true,
+            _ => return false, // unknown major type is malformed
         }
     }
-    true
+    // If the stack still has pending container items, the input was truncated
+    stack.is_empty()
 }
 
 /// Decrement the remaining-item count on the innermost container,
@@ -573,7 +580,7 @@ mod tests {
     fn test_decode_invalid_cbor_returns_error() {
         let garbage = &[0xFF, 0xFE, 0xFD, 0xFC];
         let result: Result<TestPacket> = decode(garbage);
-        assert!(matches!(result, Err(CodecError::CborDecode(_))));
+        assert!(result.is_err(), "garbage input must be rejected");
     }
 
     #[test]

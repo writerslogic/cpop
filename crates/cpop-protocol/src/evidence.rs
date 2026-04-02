@@ -280,6 +280,12 @@ impl Verifier {
             )));
         }
 
+        if packet.packet_id.iter().all(|&b| b == 0) {
+            return Err(Error::Validation(
+                "packet_id is all zeros; insufficient entropy".to_string(),
+            ));
+        }
+
         if !packet.document.content_hash.validate() {
             return Err(Error::Validation(
                 "Document content_hash digest length does not match algorithm".to_string(),

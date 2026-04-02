@@ -563,6 +563,17 @@ impl PresenceChallenge {
         use coset::{CborSerializable, CoseSign1Builder, HeaderBuilder};
         use ed25519_dalek::Signer;
 
+        const MAX_PLATFORM_ATTESTATION: usize = 64 * 1024; // 64 KiB
+        if let Some(att) = platform_attestation {
+            if att.len() > MAX_PLATFORM_ATTESTATION {
+                return Err(format!(
+                    "platform_attestation too large: {} bytes (max {})",
+                    att.len(),
+                    MAX_PLATFORM_ATTESTATION
+                ));
+            }
+        }
+
         let protected = HeaderBuilder::new()
             .algorithm(coset::iana::Algorithm::EdDSA)
             .build();
