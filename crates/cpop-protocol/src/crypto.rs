@@ -144,6 +144,46 @@ pub(crate) fn cose_sign1(
         .map_err(|e| Error::Crypto(format!("COSE encoding error: {}", e)))
 }
 
+/// C2PA 2.4 COSE_Sign1: x5chain in protected header per spec requirement.
+pub(crate) fn cose_sign1_c2pa(payload: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec<u8>> {
+    let pk = signer.public_key();
+    let mut protected = HeaderBuilder::new().algorithm(signer.algorithm()).build();
+    protected.rest.push((
+        coset::Label::Int(33), // x5chain, RFC 9360
+        ciborium::Value::Bytes(pk),
+    ));
+
+    let mut builder = CoseSign1Builder::new()
+        .protected(protected)
+        .unprotected(coset::Header::default())
+        .payload(payload.to_vec());
+
+    let mut sign_error: Option<Error> = None;
+    builder = builder.create_signature(&[], |sig_data| match signer.sign(sig_data) {
+        Ok(sig) => sig,
+        Err(e) => {
+            sign_error = Some(e);
+            Vec::new()
+        }
+    });
+
+    if let Some(e) = sign_error {
+        return Err(e);
+    }
+
+    let sign1 = builder.build();
+
+    if sign1.signature.is_empty() {
+        return Err(Error::Crypto(
+            "COSE signing produced empty signature".to_string(),
+        ));
+    }
+
+    sign1
+        .to_vec()
+        .map_err(|e| Error::Crypto(format!("COSE encoding error: {}", e)))
+}
+
 pub fn verify_evidence_cose(cose_data: &[u8], verifying_key: &VerifyingKey) -> Result<Vec<u8>> {
     let sign1 = coset::CoseSign1::from_slice(cose_data)
         .map_err(|e| Error::Crypto(format!("COSE decoding error: {}", e)))?;

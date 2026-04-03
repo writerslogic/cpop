@@ -114,13 +114,69 @@ pub struct ExclusionRange {
     pub length: u64,
 }
 
+/// C2PA metadata assertion for dc:title and dc:format (replaces claim-level fields in v2.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataAssertion {
+    #[serde(rename = "dc:title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "dc:format", skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+}
+
+/// Hashed external reference assertion (C2PA 2.4, hashed-external-reference-map).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalReferenceAssertion {
+    pub location: HashedExtUri,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AssertionMetadata>,
+}
+
+/// Hashed external URI map (C2PA 2.4, hashed-ext-uri-map).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HashedExtUri {
+    pub url: String,
+    pub alg: String,
+    #[serde(with = "serde_bytes")]
+    pub hash: Vec<u8>,
+    #[serde(rename = "dc:format", skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_types: Option<Vec<AssetType>>,
+}
+
+/// Asset type descriptor for external references.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetType {
+    #[serde(rename = "type")]
+    pub type_id: String,
+}
+
+/// Assertion metadata with process timing and data source (C2PA 2.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssertionMetadata {
+    #[serde(rename = "processStart", skip_serializing_if = "Option::is_none")]
+    pub process_start: Option<String>,
+    #[serde(rename = "processEnd", skip_serializing_if = "Option::is_none")]
+    pub process_end: Option<String>,
+    #[serde(rename = "dataSource", skip_serializing_if = "Option::is_none")]
+    pub data_source: Option<DataSource>,
+}
+
+/// Data source descriptor for assertion metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+}
+
 /// C2PA claim v2 per §10 and §15.6. All field names match the CDDL schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct C2paClaim {
-    /// §10.5
-    pub claim_generator: String,
-
-    /// §10.5, required in v2.
+    /// §10.5, required in claim-map-v2.
     pub claim_generator_info: Vec<ClaimGeneratorInfo>,
 
     /// §10.3, required.
@@ -132,12 +188,6 @@ pub struct C2paClaim {
 
     /// §10.6
     pub created_assertions: Vec<HashedUri>,
-
-    #[serde(rename = "dc:title", skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-
-    #[serde(rename = "dc:format", skip_serializing_if = "Option::is_none")]
-    pub format: Option<String>,
 }
 
 /// §10.5
@@ -146,6 +196,8 @@ pub struct ClaimGeneratorInfo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(rename = "specVersion", skip_serializing_if = "Option::is_none")]
+    pub spec_version: Option<String>,
 }
 
 /// Hashed URI reference per §8.4.2 and §15.10.3.
@@ -216,19 +268,14 @@ const JUMBF_JSON_UUID: [u8; 16] = [
 ];
 
 pub const ASSERTION_LABEL_CPOP: &str = "org.cpop.evidence";
-pub const ASSERTION_LABEL_ACTIONS: &str = "c2pa.actions";
+pub const ASSERTION_LABEL_ACTIONS: &str = "c2pa.actions.v2";
 pub const ASSERTION_LABEL_HASH_DATA: &str = "c2pa.hash.data";
 
-const CLAIM_GENERATOR: &str = concat!(
-    "CPOP/",
-    env!("CARGO_PKG_VERSION"),
-    " cpop_protocol/",
-    env!("CARGO_PKG_VERSION")
-);
+/// C2PA 2.4 spec version for claim_generator_info.
+const C2PA_SPEC_VERSION: &str = "2.4.0";
 
-/// x5chain header label per C2PA spec and RFC 9360 (COSE Header Parameters for X.509).
-/// Label 33 carries the certificate chain; label -1 is reserved for algorithm parameters (RFC 9052).
-const COSE_HEADER_LABEL_X5CHAIN: i64 = 33;
+pub const ASSERTION_LABEL_METADATA: &str = "c2pa.metadata";
+pub const ASSERTION_LABEL_EXTERNAL_REF: &str = "c2pa.external-reference";
 
 /// Minimal JUMBF box writer (ISO 19566-5).
 struct JumbfWriter {
@@ -329,6 +376,7 @@ pub struct C2paManifestBuilder {
     evidence_packet: EvidencePacket,
     title: Option<String>,
     format: Option<String>,
+    evidence_url: Option<String>,
     manifest_label: String,
 }
 
@@ -346,6 +394,7 @@ impl C2paManifestBuilder {
             evidence_packet,
             title: None,
             format: None,
+            evidence_url: None,
             manifest_label,
         }
     }
@@ -362,9 +411,15 @@ impl C2paManifestBuilder {
         self
     }
 
-    /// Set the dc:format (MIME type) metadata field in the claim.
+    /// Set the dc:format (MIME type) metadata field.
     pub fn format(mut self, mime: &str) -> Self {
         self.format = Some(mime.to_string());
+        self
+    }
+
+    /// Set the URL where the .cpop evidence packet is hosted for external reference.
+    pub fn evidence_url(mut self, url: impl Into<String>) -> Self {
+        self.evidence_url = Some(url.into());
         self
     }
 
@@ -386,6 +441,7 @@ impl C2paManifestBuilder {
                 software_agent: Some(SoftwareAgent::Info(ClaimGeneratorInfo {
                     name: "CPOP".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
+                    spec_version: None,
                 })),
                 parameters: Some(ActionParameters {
                     description: Some(
@@ -410,59 +466,120 @@ impl C2paManifestBuilder {
         let actions_box = build_assertion_jumbf_cbor(ASSERTION_LABEL_ACTIONS, &actions_assertion)?;
         let cpop_box = build_assertion_jumbf_json(ASSERTION_LABEL_CPOP, &cpop_assertion)?;
 
-        // §8.4.2.3: hash superbox contents, skipping 8-byte jumb header
-        let hash_data_hash = Sha256::digest(&hash_data_box[8..]);
-        let actions_hash = Sha256::digest(&actions_box[8..]);
-        let cpop_hash = Sha256::digest(&cpop_box[8..]);
-
         let manifest_label = &self.manifest_label;
+
+        let mut assertion_boxes = vec![hash_data_box, actions_box, cpop_box];
+        let mut created_assertions = Vec::new();
+
+        // §8.4.2.3: hash superbox contents, skipping 8-byte jumb header
+        for (box_bytes, label) in assertion_boxes.iter().zip(&[
+            ASSERTION_LABEL_HASH_DATA,
+            ASSERTION_LABEL_ACTIONS,
+            ASSERTION_LABEL_CPOP,
+        ]) {
+            let hash = Sha256::digest(&box_bytes[8..]);
+            created_assertions.push(HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{label}"
+                ),
+                hash: hash.to_vec(),
+                alg: Some("sha256".to_string()),
+            });
+        }
+
+        // c2pa.metadata assertion (replaces deprecated dc:title/dc:format in claim)
+        if self.title.is_some() || self.format.is_some() {
+            let metadata = MetadataAssertion {
+                title: self.title,
+                format: self.format,
+            };
+            let meta_box = build_assertion_jumbf_cbor(ASSERTION_LABEL_METADATA, &metadata)?;
+            let meta_hash = Sha256::digest(&meta_box[8..]);
+            created_assertions.push(HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_METADATA}"
+                ),
+                hash: meta_hash.to_vec(),
+                alg: Some("sha256".to_string()),
+            });
+            assertion_boxes.push(meta_box);
+        }
+
+        // c2pa.external-reference assertion (hashed link to .cpop evidence packet)
+        if let Some(ref url) = self.evidence_url {
+            let evidence_hash = Sha256::digest(&self.evidence_bytes);
+            let process_start = self
+                .evidence_packet
+                .checkpoints
+                .first()
+                .and_then(|cp| {
+                    chrono::DateTime::from_timestamp(cp.timestamp as i64, 0)
+                        .map(|dt| dt.to_rfc3339())
+                });
+            let process_end = self
+                .evidence_packet
+                .checkpoints
+                .last()
+                .and_then(|cp| {
+                    chrono::DateTime::from_timestamp(cp.timestamp as i64, 0)
+                        .map(|dt| dt.to_rfc3339())
+                });
+            let ext_ref = ExternalReferenceAssertion {
+                location: HashedExtUri {
+                    url: url.clone(),
+                    alg: "sha256".to_string(),
+                    hash: evidence_hash.to_vec(),
+                    format: Some("application/vnd.writersproof.cpop+cbor".to_string()),
+                    data_types: Some(vec![AssetType {
+                        type_id: "c2pa.types.audit-log".to_string(),
+                    }]),
+                },
+                description: Some(
+                    "CPOP proof-of-process evidence packet".to_string(),
+                ),
+                metadata: Some(AssertionMetadata {
+                    process_start,
+                    process_end,
+                    data_source: Some(DataSource {
+                        source_type: "localProvider.REE".to_string(),
+                        details: None,
+                    }),
+                }),
+            };
+            let ext_box =
+                build_assertion_jumbf_cbor(ASSERTION_LABEL_EXTERNAL_REF, &ext_ref)?;
+            let ext_hash = Sha256::digest(&ext_box[8..]);
+            created_assertions.push(HashedUri {
+                url: format!(
+                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_EXTERNAL_REF}"
+                ),
+                hash: ext_hash.to_vec(),
+                alg: Some("sha256".to_string()),
+            });
+            assertion_boxes.push(ext_box);
+        }
 
         let sig_url = format!("self#jumbf=/c2pa/{manifest_label}/c2pa.signature");
 
-        let created_assertions = vec![
-            HashedUri {
-                url: format!(
-                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_HASH_DATA}"
-                ),
-                hash: hash_data_hash.to_vec(),
-                alg: Some("sha256".to_string()),
-            },
-            HashedUri {
-                url: format!(
-                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_ACTIONS}"
-                ),
-                hash: actions_hash.to_vec(),
-                alg: Some("sha256".to_string()),
-            },
-            HashedUri {
-                url: format!(
-                    "self#jumbf=/c2pa/{manifest_label}/c2pa.assertions/{ASSERTION_LABEL_CPOP}"
-                ),
-                hash: cpop_hash.to_vec(),
-                alg: Some("sha256".to_string()),
-            },
-        ];
-
         let claim = C2paClaim {
-            claim_generator: CLAIM_GENERATOR.to_string(),
             claim_generator_info: vec![
                 ClaimGeneratorInfo {
                     name: "CPOP".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
+                    spec_version: Some(C2PA_SPEC_VERSION.to_string()),
                 },
                 ClaimGeneratorInfo {
                     name: "cpop_protocol".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
+                    spec_version: None,
                 },
             ],
             instance_id: format!("xmp:iid:{}", hex::encode(&self.evidence_packet.packet_id)),
             signature: sig_url,
             created_assertions,
-            title: self.title,
-            format: self.format,
         };
 
-        // §13.2: COSE_Sign1 with public key in unprotected header
+        // §13.2: COSE_Sign1 with x5chain in protected header (C2PA 2.4)
         let claim_cbor = ciborium_to_vec(&claim)?;
         let signature = sign_c2pa_claim(&claim_cbor, signer)?;
 
@@ -470,13 +587,13 @@ impl C2paManifestBuilder {
             claim,
             claim_cbor,
             manifest_label: self.manifest_label.clone(),
-            assertion_boxes: vec![hash_data_box, actions_box, cpop_box],
+            assertion_boxes,
             signature,
         })
     }
 }
 
-/// §13.2: COSE_Sign1 with public key in unprotected header.
+/// §13.2: COSE_Sign1 with x5chain in protected header (C2PA 2.4).
 fn sign_c2pa_claim(claim_cbor: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec<u8>> {
     let pk = signer.public_key();
     let algo = signer.algorithm();
@@ -497,12 +614,7 @@ fn sign_c2pa_claim(claim_cbor: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec
             pk.len()
         )));
     }
-    let mut unprotected = coset::Header::default();
-    unprotected.rest.push((
-        coset::Label::Int(COSE_HEADER_LABEL_X5CHAIN),
-        ciborium::Value::Bytes(pk),
-    ));
-    crate::crypto::cose_sign1(claim_cbor, signer, unprotected)
+    crate::crypto::cose_sign1_c2pa(claim_cbor, signer)
 }
 
 fn build_assertion_jumbf_json<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>> {
@@ -916,7 +1028,8 @@ mod tests {
             !manifest.claim.claim_generator_info[0].name.is_empty(),
             "first entry must have name"
         );
-        assert_eq!(manifest.claim.created_assertions.len(), 3);
+        // 3 core assertions + 1 metadata assertion (title was set in build_test_manifest)
+        assert_eq!(manifest.claim.created_assertions.len(), 4);
     }
 
     #[test]
@@ -971,18 +1084,18 @@ mod tests {
     }
 
     #[test]
-    fn signature_contains_public_key() {
+    fn signature_contains_public_key_in_protected_header() {
         let manifest = build_test_manifest();
 
         let sign1 = coset::CoseSign1::from_slice(&manifest.signature).expect("valid COSE_Sign1");
-        let pk_entry = sign1
-            .unprotected
+        let protected = sign1.protected.header;
+        let pk_entry = protected
             .rest
             .iter()
-            .find(|(label, _)| *label == coset::Label::Int(COSE_HEADER_LABEL_X5CHAIN));
+            .find(|(label, _)| *label == coset::Label::Int(33)); // x5chain
         assert!(
             pk_entry.is_some(),
-            "Public key must be in unprotected header"
+            "Public key must be in protected header (C2PA 2.4)"
         );
 
         if let Some((_, ciborium::Value::Bytes(pk_bytes))) = pk_entry {
@@ -1177,7 +1290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_manifest_with_jpeg_format() {
+    fn test_manifest_with_format_produces_metadata_assertion() {
         let packet = test_evidence_packet();
         let key = test_signing_key();
 
@@ -1186,43 +1299,19 @@ mod tests {
             .build_manifest(&key)
             .unwrap();
 
-        assert_eq!(manifest.claim.format.as_deref(), Some("image/jpeg"));
+        // Format is now in a c2pa.metadata assertion, not the claim.
+        let has_metadata = manifest
+            .claim
+            .created_assertions
+            .iter()
+            .any(|a| a.url.contains(ASSERTION_LABEL_METADATA));
+        assert!(has_metadata, "Metadata assertion should be present when format is set");
         let validation = validate_manifest(&manifest);
         assert!(validation.is_valid(), "Errors: {:?}", validation.errors);
     }
 
     #[test]
-    fn test_manifest_with_mp4_format() {
-        let packet = test_evidence_packet();
-        let key = test_signing_key();
-
-        let manifest = C2paManifestBuilder::new(packet, b"ev".to_vec(), [0xAB; 32])
-            .format("video/mp4")
-            .build_manifest(&key)
-            .unwrap();
-
-        assert_eq!(manifest.claim.format.as_deref(), Some("video/mp4"));
-        let validation = validate_manifest(&manifest);
-        assert!(validation.is_valid(), "Errors: {:?}", validation.errors);
-    }
-
-    #[test]
-    fn test_manifest_with_pdf_format() {
-        let packet = test_evidence_packet();
-        let key = test_signing_key();
-
-        let manifest = C2paManifestBuilder::new(packet, b"ev".to_vec(), [0xAB; 32])
-            .format("application/pdf")
-            .build_manifest(&key)
-            .unwrap();
-
-        assert_eq!(manifest.claim.format.as_deref(), Some("application/pdf"));
-        let validation = validate_manifest(&manifest);
-        assert!(validation.is_valid(), "Errors: {:?}", validation.errors);
-    }
-
-    #[test]
-    fn test_manifest_without_format() {
+    fn test_manifest_without_format_has_no_metadata_assertion() {
         let packet = test_evidence_packet();
         let key = test_signing_key();
 
@@ -1230,10 +1319,12 @@ mod tests {
             .build_manifest(&key)
             .unwrap();
 
-        assert!(
-            manifest.claim.format.is_none(),
-            "No format set should produce None for backward compatibility"
-        );
+        let has_metadata = manifest
+            .claim
+            .created_assertions
+            .iter()
+            .any(|a| a.url.contains(ASSERTION_LABEL_METADATA));
+        assert!(!has_metadata, "No metadata assertion when format is not set");
         let validation = validate_manifest(&manifest);
         assert!(validation.is_valid(), "Errors: {:?}", validation.errors);
     }

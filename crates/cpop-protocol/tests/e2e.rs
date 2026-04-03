@@ -174,7 +174,13 @@ fn test_c2pa_manifest_with_all_formats() {
             .build_manifest(&key)
             .unwrap();
 
-        assert_eq!(manifest.claim.format.as_deref(), Some(*mime));
+        // Format is in c2pa.metadata assertion, not the claim (C2PA 2.4).
+        let has_metadata = manifest
+            .claim
+            .created_assertions
+            .iter()
+            .any(|a| a.url.contains("c2pa.metadata"));
+        assert!(has_metadata, "Metadata assertion should be present for {mime}");
         let validation = validate_manifest(&manifest);
         assert!(
             validation.is_valid(),
