@@ -2,18 +2,18 @@
 
 <!-- suggest | Updated: 2026-04-02 | Domain: code | Languages: rust | Files: 374 | Issues: 148 -->
 
-**Updated**: 2026-04-02
+**Updated**: 2026-04-03
 **Scope**: Full workspace scan -- CLI (21 files), Engine (290+ files), Protocol (22 files), Jitter (4 files)
 **Previous audit**: 2026-03-30 -- 265 findings, all resolved
 **macOS app**: 381 findings fixed, 0 open (see apps/cpop_macos/audit-todo.md)
-**Baseline**: 1029 pass, 0 fail, 1 ignored (cpop-engine --lib)
+**Baseline**: 1050 pass, 0 fail, 1 ignored (cpop-engine --lib)
 
 ## Summary
 | Severity | Open | Fixed | Skipped |
 |----------|------|-------|---------|
-| CRITICAL | 6    | 6     | 0       |
-| HIGH     | 40   | 92    | 0       |
-| MEDIUM   | 69   | 186   | 14      |
+| CRITICAL | 0    | 12    | 0       |
+| HIGH     | 5    | 130   | 0       |
+| MEDIUM   | 27   | 228   | 14      |
 
 ---
 
@@ -438,9 +438,9 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:missing_validation | batch:9 -->
 - [x] **M-072** `[error_handling]` `identity/secure_storage.rs:405`: Mutex poison on SEED_CACHE logged but continues -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:9 -->
-- [ ] **M-073** `[security]` `identity/secure_storage.rs:356`: Partial migration rollback on keychain save failure
+- [x] **M-073** `[security]` `identity/secure_storage.rs:356`: Partial migration rollback on keychain save failure -- FIXED 2026-04-03
   <!-- pid:toctou | batch:9 -->
-- [ ] **M-074** `[security]` `sealed_identity/store.rs:183`: Public key mismatch detection after unseal success; HMAC not verified first
+- [x] **M-074** `[security]` `sealed_identity/store.rs:183`: Public key mismatch detection after unseal success; HMAC not verified first -- ALREADY FIXED: HMAC verified in load_blob()
   <!-- pid:missing_validation | batch:9 -->
 - [ ] **M-075** `[security]` `sealed_chain.rs:161`: document_id read unverified before decryption; header tamperable
   <!-- pid:toctou | batch:9 -->
