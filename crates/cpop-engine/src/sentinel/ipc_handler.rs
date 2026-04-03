@@ -356,6 +356,22 @@ impl SentinelIpcHandler {
         let physics = crate::physics::PhysicalContext::capture(&jitter_samples);
         builder = builder.with_physical_context(&physics);
 
+        // Attach per-document typing samples for forensic verification.
+        // Prefer session-specific samples; fall back to global accumulator.
+        let path_str = path.to_string_lossy().to_string();
+        let typing_samples = {
+            let sessions = self.sentinel.sessions.read_recover();
+            sessions
+                .get(&path_str)
+                .filter(|s| !s.jitter_samples.is_empty())
+                .map(|s| s.jitter_samples.clone())
+                .unwrap_or(jitter_samples)
+        };
+        if !typing_samples.is_empty() {
+            builder = builder.with_behavioral_full(Vec::new(), None, &typing_samples);
+            builder = builder.with_typing_samples(typing_samples);
+        }
+
         let packet = builder
             .build()
             .map_err(|e| format!("Failed to build packet: {e}"))?;
