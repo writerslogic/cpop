@@ -46,6 +46,19 @@ impl SoftwareProvider {
         }
     }
 
+    /// Create a provider from an existing signing key.
+    pub fn from_signing_key(key: ed25519_dalek::SigningKey) -> Self {
+        let pk_hash = Sha256::digest(key.verifying_key().as_bytes());
+        let device_id = format!("sw-{}", hex::encode(&pk_hash[..8]));
+        Self {
+            signing_key: key,
+            state: Mutex::new(SoftwareState {
+                device_id,
+                counter: 0,
+            }),
+        }
+    }
+
     fn sign_payload(&self, data: &[u8]) -> Vec<u8> {
         self.signing_key.sign(data).to_bytes().to_vec()
     }

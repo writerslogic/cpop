@@ -1173,16 +1173,154 @@ pub(super) fn write_verifiable_credential(html: &mut String, r: &WarReport) -> f
         Some(ref j) => j,
         None => return Ok(()),
     };
+
+    // Parse the VC to extract structured fields for display.
+    let vc: serde_json::Value = match serde_json::from_str(vc_json) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+
     html.push_str(r#"<div class="info-box" style="margin-top:16px">"#);
     html.push_str(r#"<h3 style="margin:0 0 8px">W3C Verifiable Credential 2.0</h3>"#);
     html.push_str(
         "<p style=\"font-size:var(--size-detail);margin:0 0 8px\">\
          This report includes a signed W3C Verifiable Credential that can be \
-         independently verified using any VC 2.0 compliant verifier. The credential \
-         is secured with an Ed25519 Data Integrity proof.</p>",
+         independently verified using any VC 2.0 compliant verifier.</p>",
     );
+
+    // Credential identity table
+    html.push_str(r#"<table class="data-table" style="margin:8px 0">"#);
+    if let Some(issuer) = vc["issuer"].as_str() {
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600;width:180px\">Issuer</td>\
+             <td><code>{}</code></td></tr>",
+            html_escape(issuer)
+        )?;
+    }
+    if let Some(subject_id) = vc["credentialSubject"]["id"].as_str() {
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Subject (Author DID)</td>\
+             <td><code>{}</code></td></tr>",
+            html_escape(subject_id)
+        )?;
+    }
+    if let Some(valid_from) = vc["validFrom"].as_str() {
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Valid From</td>\
+             <td>{}</td></tr>",
+            html_escape(valid_from)
+        )?;
+    }
+    if let Some(status) = vc["credentialSubject"]["processAttestation"]["status"].as_str() {
+        let badge_color = match status {
+            "affirming" => "#3d7a4a",
+            "warning" => "#b45309",
+            "contraindicated" => "#b71c1c",
+            _ => "#666",
+        };
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Attestation Status</td>\
+             <td><span style=\"background:{};color:#fff;padding:2px 8px;\
+             border-radius:2px;font-size:10px;font-weight:700;\
+             text-transform:uppercase\">{}</span></td></tr>",
+            badge_color,
+            html_escape(status)
+        )?;
+    }
+    if let Some(tier) = vc["credentialSubject"]["processAttestation"]["attestationTier"].as_str() {
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Attestation Tier</td>\
+             <td>{}</td></tr>",
+            html_escape(tier)
+        )?;
+    }
+    if let Some(dur) = vc["credentialSubject"]["processAttestation"]["chainDuration"].as_str() {
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Chain Duration</td>\
+             <td>{}</td></tr>",
+            html_escape(dur)
+        )?;
+    }
+    if let Some(doc_ref) = vc["credentialSubject"]["processAttestation"]["documentRef"].as_str() {
+        let short = if doc_ref.len() > 16 {
+            format!("{}...{}", &doc_ref[..8], &doc_ref[doc_ref.len() - 8..])
+        } else {
+            doc_ref.to_string()
+        };
+        write!(
+            html,
+            "<tr><td style=\"font-weight:600\">Document Reference</td>\
+             <td><code>{}</code></td></tr>",
+            html_escape(&short)
+        )?;
+    }
+
+    // Proof info
+    if let Some(proof) = vc.get("proof") {
+        if let Some(suite) = proof["cryptosuite"].as_str() {
+            write!(
+                html,
+                "<tr><td style=\"font-weight:600\">Proof Type</td>\
+                 <td>DataIntegrityProof ({}) \
+                 <span style=\"color:#3d7a4a;font-weight:700\">&#x2713; Signed</span></td></tr>",
+                html_escape(suite)
+            )?;
+        }
+        if let Some(vm) = proof["verificationMethod"].as_str() {
+            write!(
+                html,
+                "<tr><td style=\"font-weight:600\">Verification Method</td>\
+                 <td><code style=\"font-size:10px\">{}</code></td></tr>",
+                html_escape(vm)
+            )?;
+        }
+    }
+    html.push_str("</table>");
+
+    // Trust vector visualization if present
+    if let Some(tv) = vc["credentialSubject"]["processAttestation"]["trustVector"].as_object() {
+        html.push_str(r#"<h4 style="margin:12px 0 6px;font-size:12px">AR4SI Trust Vector</h4>"#);
+        html.push_str(r#"<div class="metric-grid">"#);
+        for (key, val) in tv {
+            let v = val.as_i64().unwrap_or(0);
+            let (label, color) = match v as i8 {
+                2 => ("Affirming", "#3d7a4a"),
+                32 => ("Warning", "#b45309"),
+                96 => ("Contraindicated", "#b71c1c"),
+                _ => ("None", "#999"),
+            };
+            let display_key = key
+                .replace("_", " ")
+                .split(' ')
+                .map(|w| {
+                    let mut c = w.chars();
+                    match c.next() {
+                        Some(f) => f.to_uppercase().to_string() + c.as_str(),
+                        None => String::new(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            write!(
+                html,
+                r#"<div class="metric-card"><div class="metric-label">{}</div><div class="metric-value" style="color:{}">{}</div></div>"#,
+                html_escape(&display_key),
+                color,
+                label,
+            )?;
+        }
+        html.push_str("</div>");
+    }
+
+    // Collapsible raw JSON
     html.push_str(
-        r#"<details><summary style="cursor:pointer;font-weight:600">Credential JSON-LD</summary>"#,
+        r#"<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;font-size:12px">Raw Credential JSON-LD</summary>"#,
     );
     write!(
         html,

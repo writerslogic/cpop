@@ -421,13 +421,19 @@ impl SentinelIpcHandler {
                 if let Some(session) = sessions.get(&path_str) {
                     (
                         session.session_id.clone(),
-                        session.keystroke_count,
+                        session.total_keystrokes(),
                         session.save_count,
                     )
                 } else {
+                    // Session inactive; get accumulated stats from store.
+                    let stored_keystrokes = store_opt
+                        .as_ref()
+                        .and_then(|s| s.load_document_stats(&path_str).ok().flatten())
+                        .map(|ds| ds.total_keystrokes as u64)
+                        .unwrap_or(0);
                     (
                         hex::encode(&latest.hash[..8]),
-                        store_events.len() as u64,
+                        stored_keystrokes,
                         store_events.iter().filter(|e| e.size_delta != 0).count() as u32,
                     )
                 }

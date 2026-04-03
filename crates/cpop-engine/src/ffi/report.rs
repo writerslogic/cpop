@@ -245,7 +245,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             } else {
                 None
             },
-            assessment_score: metrics.assessment_score(),
+            assessment_score: metrics.assessment_score,
             risk_level: profile.risk_level().to_string(),
             mean_iki_ms: if mean_iki.is_finite() { mean_iki } else { 0.0 },
             coefficient_of_variation: if cv.is_finite() { cv } else { 0.0 },
@@ -304,7 +304,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         Verdict::LikelySynthetic => "Strong indicators of synthetic or automated content generation.".into(),
     };
 
-    let war_report = WarReport {
+    let mut war_report = WarReport {
         report_id: WarReport::generate_id(),
         algorithm_version: format!("v{}", env!("CARGO_PKG_VERSION")),
         generated_at: chrono::Utc::now(),
@@ -575,7 +575,7 @@ fn make_report_session(
 /// Returns `None` if the signing key is unavailable or VC construction fails.
 fn build_vc_json(report: &WarReport) -> Option<String> {
     use crate::war::ear::*;
-    use crate::war::profiles::vc;
+
     use std::collections::BTreeMap;
 
     let signing_key = crate::ffi::helpers::load_signing_key().ok()?;
@@ -653,11 +653,56 @@ fn build_vc_json(report: &WarReport) -> Option<String> {
         .map(|a| format!("{}: {}", a.anomaly_type, a.description))
         .collect();
 
+    // Compute seal from checkpoint chain and document hash.
+    let seal = {
+        use sha2::{Digest, Sha256};
+        let doc_bytes = hex::decode(&report.document_hash).unwrap_or_default();
+        let chain_hash: [u8; 32] = report
+            .checkpoints
+            .iter()
+            .fold(Sha256::new(), |mut h, cp| {
+                h.update(cp.content_hash.as_bytes());
+                h
+            })
+            .finalize()
+            .into();
+
+        let h1: [u8; 32] = {
+            let mut h = Sha256::new();
+            h.update(b"witnessd-seal-h1-v1");
+            h.update(&doc_bytes);
+            h.update(chain_hash);
+            h.finalize().into()
+        };
+        let h2: [u8; 32] = {
+            let mut h = Sha256::new();
+            h.update(b"witnessd-seal-h2-v1");
+            h.update(h1);
+            h.update(pub_key.as_bytes());
+            h.finalize().into()
+        };
+        let h3: [u8; 32] = {
+            let mut h = Sha256::new();
+            h.update(b"witnessd-seal-h3-v1");
+            h.update(h2);
+            h.update(&doc_bytes);
+            h.finalize().into()
+        };
+        let sig = ed25519_dalek::Signer::sign(&signing_key, &h3);
+        SealClaims {
+            h1,
+            h2,
+            h3,
+            signature: sig.to_bytes(),
+            public_key: pub_key.to_bytes(),
+        }
+    };
+
     let appraisal = EarAppraisal {
         ear_status: status,
         ear_trustworthiness_vector: Some(tv),
         ear_appraisal_policy_id: Some("urn:writerslogic:policy:pop-standard:1.0".to_string()),
-        pop_seal: None,
+        pop_seal: Some(seal),
         pop_evidence_ref: Some(hex::decode(&report.document_hash).unwrap_or_default()),
         pop_entropy_report: None,
         pop_forgery_cost: None,
@@ -684,8 +729,8 @@ fn build_vc_json(report: &WarReport) -> Option<String> {
         submods,
     };
 
-    let provider = tpm::SigningProvider::Software(signing_key);
-    match vc::to_signed_verifiable_credential(&ear, &author_did, &provider) {
+    let provider = crate::tpm::SoftwareProvider::from_signing_key(signing_key);
+    match crate::war::profiles::vc::to_signed_verifiable_credential(&ear, &author_did, &provider) {
         Ok(credential) => serde_json::to_string_pretty(&credential).ok(),
         Err(e) => {
             log::debug!("VC generation failed: {e}");
