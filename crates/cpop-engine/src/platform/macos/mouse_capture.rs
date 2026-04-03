@@ -59,9 +59,7 @@ impl MacOSMouseCapture {
     /// This is used to detect idle periods for mouse jitter capture.
     pub fn notify_keystroke(&self) {
         self.keyboard_active.store(true, Ordering::SeqCst);
-        if let Ok(mut time) = self.last_keystroke_time.write() {
-            *time = std::time::Instant::now();
-        }
+        *self.last_keystroke_time.write_recover() = std::time::Instant::now();
     }
 }
 
@@ -250,9 +248,7 @@ impl MouseCapture for MacOSMouseCapture {
     }
 
     fn reset_idle_stats(&mut self) {
-        if let Ok(mut stats) = self.idle_stats.write() {
-            *stats = MouseIdleStats::new();
-        }
+        *self.idle_stats.write_recover() = MouseIdleStats::new();
     }
 
     fn set_stego_params(&mut self, params: MouseStegoParams) {
