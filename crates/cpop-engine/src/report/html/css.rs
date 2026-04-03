@@ -8,9 +8,8 @@ const CSS_BASE: &str = include_str!("templates/base.css");
 const CSS_COMPONENTS: &str = include_str!("templates/components.css");
 const CSS_LAYOUT: &str = include_str!("templates/layout.css");
 
-/// Write the `<!DOCTYPE>` through opening `<div class="pop-report">`, including
-/// `<style>`, `<meta>` anchor tags, JSON-LD structured data, embedded proof
-/// references, and print running header.
+/// Write the `<!DOCTYPE>` through opening `<div class="report">`, including
+/// `<style>`, cryptographic `<meta>` anchors, PROV-O/CPOP JSON-LD, and CSS.
 pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
     let report_id = html_escape(&r.report_id);
     let doc_hash = html_escape(&r.document_hash);
@@ -19,10 +18,15 @@ pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
     let key_fp = html_escape(&r.signing_key_fingerprint);
     let ts_iso = r.generated_at.to_rfc3339();
     let score = r.score;
-    let lr_log10 = if r.likelihood_ratio > 0.0 {
-        r.likelihood_ratio.log10()
+    let lr = r.likelihood_ratio;
+    let lr_log10 = if lr > 0.0 { lr.log10() } else { 0.0 };
+    let enfsi = r.enfsi_tier.label();
+    let cp_count = r.checkpoints.len();
+    let session_count = r.session_count;
+    let lr_display = if lr.is_finite() {
+        format!("{lr:.6}")
     } else {
-        0.0
+        "null".to_string()
     };
 
     write!(
@@ -48,31 +52,75 @@ pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
 <meta name="report-version" content="1.0">
 <meta name="protocol-version" content="pop-v1">
 
-<!-- Structured data for search engines and academic indexers -->
+<!-- W3C PROV-O + CPOP domain ontology (canonical machine-readable provenance) -->
 <script type="application/ld+json">
 {{
-  "@context": "https://schema.org",
-  "@type": "DigitalDocument",
-  "name": "Forensic Authorship Examination Report",
-  "identifier": "{report_id}",
-  "dateCreated": "{ts_iso}",
-  "encodingFormat": "text/html",
-  "creator": {{
-    "@type": "SoftwareApplication",
-    "name": "CPOP Forensic Engine",
-    "version": "{alg}",
-    "url": "https://writerslogic.com"
+  "@context": {{
+    "prov": "http://www.w3.org/ns/prov#",
+    "cpop": "https://writerslogic.com/ns/cpop#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
   }},
-  "about": {{
-    "@type": "CreativeWork",
-    "identifier": "{doc_hash}",
-    "additionalType": "ForensicExamination"
-  }},
-  "isPartOf": {{
-    "@type": "DefinedTermSet",
-    "name": "ENFSI Verbal Equivalence Scale",
-    "url": "https://enfsi.eu/documents/external-publications/"
-  }}
+  "@graph": [
+    {{
+      "@id": "urn:cpop:report:{report_id}",
+      "@type": ["cpop:AuthorshipReport", "prov:Entity"],
+      "cpop:reportId": "{report_id}",
+      "cpop:schemaVersion": "{schema}",
+      "cpop:algorithmVersion": "{alg}",
+      "cpop:assessmentScore": {score},
+      "cpop:likelihoodRatio": {lr_display},
+      "cpop:logLikelihoodRatio": {lr_log10:.6},
+      "cpop:enfsiTier": "{enfsi}",
+      "cpop:checkpointCount": {cp_count},
+      "cpop:sessionCount": {session_count},
+      "prov:generatedAtTime": {{
+        "@type": "xsd:dateTime",
+        "@value": "{ts_iso}"
+      }},
+      "prov:wasGeneratedBy": {{
+        "@id": "urn:cpop:examination:{report_id}"
+      }},
+      "prov:wasDerivedFrom": {{
+        "@id": "urn:cpop:evidence:{doc_hash}"
+      }}
+    }},
+    {{
+      "@id": "urn:cpop:examination:{report_id}",
+      "@type": ["cpop:ForensicExamination", "prov:Activity"],
+      "prov:wasAssociatedWith": {{
+        "@id": "urn:cpop:engine:{alg}"
+      }},
+      "prov:used": {{
+        "@id": "urn:cpop:evidence:{doc_hash}"
+      }},
+      "prov:generated": {{
+        "@id": "urn:cpop:report:{report_id}"
+      }}
+    }},
+    {{
+      "@id": "urn:cpop:engine:{alg}",
+      "@type": ["cpop:ForensicEngine", "prov:SoftwareAgent"],
+      "cpop:engineName": "CPOP Forensic Engine",
+      "cpop:engineVersion": "{alg}",
+      "cpop:protocolSpec": "draft-condrey-rats-pop"
+    }},
+    {{
+      "@id": "urn:cpop:evidence:{doc_hash}",
+      "@type": ["cpop:EvidencePacket", "prov:Entity"],
+      "cpop:documentHash": "{doc_hash}",
+      "cpop:signingKeyFingerprint": "{key_fp}",
+      "cpop:checkpointCount": {cp_count},
+      "cpop:sessionCount": {session_count}
+    }},
+    {{
+      "@id": "urn:cpop:document:{doc_hash}",
+      "@type": ["cpop:DocumentArtifact", "prov:Entity"],
+      "cpop:sha256": "{doc_hash}",
+      "prov:wasAttributedTo": {{
+        "@type": "prov:Agent"
+      }}
+    }}
+  ]
 }}
 </script>
 
@@ -88,7 +136,5 @@ pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
         css_base = CSS_BASE,
         css_components = CSS_COMPONENTS,
         css_layout = CSS_LAYOUT,
-        enfsi = r.enfsi_tier.label(),
-        cp_count = r.checkpoints.len(),
     )
 }
