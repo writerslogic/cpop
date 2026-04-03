@@ -129,6 +129,12 @@ pub struct Checkpoint {
     /// Argon2id-based SWF proof (draft-condrey-rats-pop, algorithm=20)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub argon2_swf: Option<Argon2SwfProof>,
+
+    /// Timeline challenge nonce from WritersProof CA (30s TTL).
+    /// When present, this nonce was bound into the checkpoint hash preimage,
+    /// proving the checkpoint was built within the challenge window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub challenge_nonce: Option<String>,
 }
 
 /// TPM/Secure Enclave attestation binding for a checkpoint.
@@ -182,6 +188,7 @@ impl Checkpoint {
             time_evidence: None,
             mmr_inclusion_proof: None,
             argon2_swf: None,
+            challenge_nonce: None,
         }
     }
 
@@ -284,6 +291,11 @@ impl Checkpoint {
             hasher.update(swf.params.memory_cost.to_be_bytes());
             hasher.update(swf.params.parallelism.to_be_bytes());
             hasher.update(swf.challenge);
+        }
+
+        if let Some(nonce) = &self.challenge_nonce {
+            hasher.update(b"cpop-challenge-v1");
+            hasher.update(nonce.as_bytes());
         }
 
         hasher.finalize().into()

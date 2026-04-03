@@ -7,8 +7,8 @@ use reqwest::Client;
 use zeroize::Zeroizing;
 
 use super::types::{
-    AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse, EnrollRequest,
-    EnrollResponse, NonceResponse, VerifyResponse,
+    AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse,
+    ChallengeResponse, EnrollRequest, EnrollResponse, NonceResponse, VerifyResponse,
 };
 use crate::error::{Error, Result};
 
@@ -327,6 +327,36 @@ impl WritersProofClient {
         resp.json::<BeaconResponse>()
             .await
             .map_err(|e| Error::crypto(format!("beacon response parse failed: {e}")))
+    }
+
+    /// Request a timeline challenge nonce for a session.
+    ///
+    /// `POST /v1/sessions/:id/challenge`
+    ///
+    /// Returns a 30-second TTL nonce that must be bound into the next
+    /// checkpoint hash to prove the checkpoint was built in real time.
+    pub async fn request_challenge(&self, session_id: &str) -> Result<ChallengeResponse> {
+        let url = format!("{}/v1/sessions/{}/challenge", self.base_url, session_id);
+        let mut req = self.client.post(&url);
+        if let Some(ref jwt) = self.jwt {
+            req = req.bearer_auth(jwt.as_str());
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("challenge request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "challenge request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json::<ChallengeResponse>()
+            .await
+            .map_err(|e| Error::crypto(format!("challenge response parse failed: {e}")))
     }
 
     /// Verify an evidence packet.

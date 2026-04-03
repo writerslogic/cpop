@@ -168,6 +168,18 @@ pub struct BeaconResponse {
     pub wp_signature: String,
 }
 
+/// Response from `POST /v1/sessions/:id/challenge` -- 30-second timeline challenge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChallengeResponse {
+    /// 32-byte hex-encoded random challenge nonce.
+    pub challenge: String,
+    pub challenge_id: String,
+    pub issued_at: String,
+    pub expires_at: String,
+    pub ttl_seconds: u32,
+}
+
 /// Queued attestation for offline submission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
