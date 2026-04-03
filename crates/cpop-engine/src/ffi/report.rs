@@ -725,14 +725,12 @@ fn build_vc_json(report: &WarReport) -> Option<String> {
     let mut submods = BTreeMap::new();
     submods.insert("pop".to_string(), appraisal);
 
-    let _ = (ear, author_did, signing_key);
-    None
-
-
-
-
-
-
+    let ear = EarToken {
+        eat_profile: "urn:ietf:params:rats:eat:profile:pop:1.0".to_string(),
+        iat: chrono::Utc::now().timestamp(),
+        ear_verifier_id: VerifierId::default(),
+        submods,
+    };
 
     let provider = crate::tpm::SoftwareProvider::from_signing_key(signing_key);
     match crate::war::profiles::vc::to_signed_verifiable_credential(&ear, &author_did, &provider) {

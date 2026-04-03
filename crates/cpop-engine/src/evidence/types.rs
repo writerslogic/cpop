@@ -50,17 +50,23 @@ fn default_version() -> i32 {
 pub struct Packet {
     #[serde(default = "default_version")]
     pub version: i32,
+    #[serde(default = "chrono::Utc::now")]
     pub exported_at: DateTime<Utc>,
     pub provenance: Option<RecordProvenance>,
+    #[serde(default)]
     pub document: DocumentInfo,
+    #[serde(default)]
     pub checkpoints: Vec<CheckpointProof>,
+    #[serde(default = "crate::vdf::default_parameters")]
     pub vdf_params: vdf::Parameters,
+    #[serde(default)]
     pub chain_hash: String,
     pub declaration: Option<declaration::Declaration>,
     pub presence: Option<presence::Evidence>,
     pub hardware: Option<HardwareEvidence>,
     pub keystroke: Option<KeystrokeEvidence>,
     pub behavioral: Option<BehavioralEvidence>,
+    #[serde(default)]
     pub contexts: Vec<ContextPeriod>,
     pub external: Option<ExternalAnchors>,
     pub key_hierarchy: Option<KeyHierarchyEvidencePacket>,
@@ -125,7 +131,9 @@ pub struct Packet {
     /// Dictation input events captured during the session.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dictation_events: Vec<DictationEvent>,
+    #[serde(default)]
     pub claims: Vec<Claim>,
+    #[serde(default)]
     pub limitations: Vec<String>,
     /// WritersProof temporal beacon attestation.
     /// Contains drand + NIST beacon values fetched and counter-signed by WritersProof.
@@ -259,6 +267,7 @@ pub struct ContextPeriod {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DocumentInfo {
     pub title: String,
     pub path: String,
