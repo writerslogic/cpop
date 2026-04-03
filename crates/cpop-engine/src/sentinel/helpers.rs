@@ -441,15 +441,34 @@ pub fn handle_change_event_sync(
                 };
                 let old_path = session.path.clone();
                 session.path = new_path.clone();
+                let session_id = session.session_id.clone();
                 sessions_map.insert(new_path.clone(), session);
-
-                let session_id = sessions_map
-                    .get(&new_path)
-                    .map(|s| s.session_id.clone())
-                    .unwrap_or_default();
                 drop(sessions_map);
 
-                // Update current_focus if it pointed to the old path.
+                // Record the path change in the WAL.
+                let old_bytes = old_path.as_bytes();
+                let new_bytes = new_path.as_bytes();
+                let mut payload = Vec::with_capacity(4 + old_bytes.len() + 4 + new_bytes.len());
+                payload.extend_from_slice(
+                    &u32::try_from(old_bytes.len())
+                        .unwrap_or(u32::MAX)
+                        .to_be_bytes(),
+                );
+                payload.extend_from_slice(old_bytes);
+                payload.extend_from_slice(
+                    &u32::try_from(new_bytes.len())
+                        .unwrap_or(u32::MAX)
+                        .to_be_bytes(),
+                );
+                payload.extend_from_slice(new_bytes);
+                wal_append_session_event(
+                    &session_id,
+                    wal_dir,
+                    key.clone(),
+                    EntryType::PathChange,
+                    payload,
+                );
+
                 if let Some(current_focus) = current_focus_opt {
                     let mut focus = current_focus.write_recover();
                     if focus.as_deref() == Some(old_path.as_str()) {
@@ -458,7 +477,7 @@ pub fn handle_change_event_sync(
                 }
 
                 let _ = session_events_tx.send(SessionEvent {
-                    event_type: SessionEventType::Saved,
+                    event_type: SessionEventType::Renamed,
                     session_id,
                     document_path: new_path,
                     timestamp: SystemTime::now(),

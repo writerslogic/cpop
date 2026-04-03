@@ -53,6 +53,7 @@ pub enum SessionEventType {
     Unfocused,
     Saved,
     Ended,
+    Renamed,
 }
 
 #[derive(Debug, Clone)]

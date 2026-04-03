@@ -33,6 +33,8 @@ pub enum EntryType {
     SessionEnd = 6,
     /// Checkpoint with VDF proof
     Checkpoint = 7,
+    /// Document path changed (rename/move)
+    PathChange = 8,
 }
 
 impl TryFrom<u8> for EntryType {
@@ -47,6 +49,7 @@ impl TryFrom<u8> for EntryType {
             5 => Ok(EntryType::SessionStart),
             6 => Ok(EntryType::SessionEnd),
             7 => Ok(EntryType::Checkpoint),
+            8 => Ok(EntryType::PathChange),
             _ => Err(WalError::InvalidEntryType(value)),
         }
     }
