@@ -1067,6 +1067,15 @@ impl Sentinel {
 
         self.shadow.cleanup_all();
 
+        // Zeroize key material. SigningKey has ZeroizeOnDrop; take() drops
+        // it now rather than waiting for Arc refcount to reach zero.
+        let _ = self.signing_key.write_recover().take();
+        // session_nonce is [u8; 32]; zeroize before dropping.
+        if let Some(nonce) = self.session_nonce.write_recover().as_mut() {
+            nonce.zeroize();
+        }
+        *self.session_nonce.write_recover() = None;
+
         Ok(())
     }
 
@@ -1222,5 +1231,12 @@ impl Drop for Sentinel {
         if let Some(handle) = self.event_loop_handle.lock_recover().take() {
             handle.abort();
         }
+
+        // Zeroize key material (safety net if stop() was never called).
+        let _ = self.signing_key.write_recover().take();
+        if let Some(nonce) = self.session_nonce.write_recover().as_mut() {
+            nonce.zeroize();
+        }
+        *self.session_nonce.write_recover() = None;
     }
 }
