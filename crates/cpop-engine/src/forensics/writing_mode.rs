@@ -421,8 +421,6 @@ mod tests {
             median_interval: 2.0,
             positive_negative_ratio: 0.70,
             deletion_clustering: 0.5,
-            hurst_exponent: 0.5,
-            mean_iki_ms: 200.0,
         };
 
         let result = classify_writing_mode(&primary, &cognitive_cadence(), &events, events.len());
@@ -443,8 +441,6 @@ mod tests {
             median_interval: 0.15,
             positive_negative_ratio: 0.99,
             deletion_clustering: 0.0,
-            hurst_exponent: 0.5,
-            mean_iki_ms: 150.0,
         };
 
         let result =
@@ -470,8 +466,6 @@ mod tests {
             median_interval: 0.5,
             positive_negative_ratio: 0.90,
             deletion_clustering: 0.3,
-            hurst_exponent: 0.5,
-            mean_iki_ms: 300.0,
         };
         // Cadence halfway between cognitive and transcriptive.
         let cadence = CadenceMetrics {

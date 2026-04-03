@@ -281,8 +281,6 @@ fn test_profile_comparison() {
             median_interval: 3.0,
             positive_negative_ratio: 0.7,
             deletion_clustering: 0.4,
-            hurst_exponent: 0.5,
-            mean_iki_ms: 200.0,
         },
         ..Default::default()
     };
@@ -294,8 +292,6 @@ fn test_profile_comparison() {
             median_interval: 3.2,
             positive_negative_ratio: 0.72,
             deletion_clustering: 0.45,
-            hurst_exponent: 0.5,
-            mean_iki_ms: 210.0,
         },
         ..Default::default()
     };
@@ -313,8 +309,6 @@ fn test_assessment_score() {
         median_interval: 5.0,
         positive_negative_ratio: 0.7,
         deletion_clustering: 0.5,
-        hurst_exponent: 0.7,
-        mean_iki_ms: 200.0,
     };
 
     let good_cadence = CadenceMetrics {
@@ -332,8 +326,6 @@ fn test_assessment_score() {
         median_interval: 5.0,
         positive_negative_ratio: 0.98,
         deletion_clustering: 1.0,
-        hurst_exponent: 0.5,
-        mean_iki_ms: 50.0,
     };
 
     let bad_cadence = CadenceMetrics {

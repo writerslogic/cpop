@@ -240,11 +240,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             cognitive_score: profile.cognitive_score(),
             writing_mode_confidence: profile.writing_mode_confidence(),
             revision_cycle_count: profile.revision_cycle_count(),
-            hurst_exponent: if metrics.primary.hurst_exponent.is_finite() {
-                Some(metrics.primary.hurst_exponent)
-            } else {
-                None
-            },
+            hurst_exponent: metrics.hurst_exponent.filter(|h| h.is_finite()),
             assessment_score: metrics.assessment_score,
             risk_level: profile.risk_level().to_string(),
             mean_iki_ms: if mean_iki.is_finite() { mean_iki } else { 0.0 },
@@ -281,7 +277,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         .map(|r| EditRegion {
             start_pct: r.start_pct as f64,
             end_pct: r.end_pct as f64,
-            delta_sign: r.delta_sign,
+            delta_sign: r.delta_sign as i32,
             byte_count: r.byte_count,
         })
         .collect();
