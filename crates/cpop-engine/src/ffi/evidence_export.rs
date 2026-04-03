@@ -31,32 +31,40 @@ pub fn ffi_export_evidence_json(path: String, tier: String, output: String) -> F
         }
     };
     let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
-    match EvidencePacketWire::decode_cbor(&cbor_payload) {
-        Ok(wire) => match serde_json::to_string_pretty(&wire) {
-            Ok(json) => {
-                if let Err(e) = std::fs::write(output_path, json.as_bytes()) {
-                    return FfiResult {
-                        success: false,
-                        message: None,
-                        error_message: Some(format!("Failed to write JSON: {e}")),
-                    };
-                }
-                FfiResult {
-                    success: true,
-                    message: Some(format!("Exported JSON to {}", output_path.display())),
-                    error_message: None,
-                }
+    let wire = match EvidencePacketWire::decode_cbor(&cbor_payload) {
+        Ok(w) => w,
+        Err(_) => match EvidencePacketWire::decode_cbor_untagged(&cbor_payload) {
+            Ok(w) => w,
+            Err(e) => {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!(
+                        "Evidence packet could not be decoded: {e}"
+                    )),
+                };
             }
-            Err(e) => FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("JSON serialization failed: {e}")),
-            },
         },
+    };
+    match serde_json::to_string_pretty(&wire) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(output_path, json.as_bytes()) {
+                return FfiResult {
+                    success: false,
+                    message: None,
+                    error_message: Some(format!("Failed to write JSON: {e}")),
+                };
+            }
+            FfiResult {
+                success: true,
+                message: Some(format!("Exported JSON to {}", output_path.display())),
+                error_message: None,
+            }
+        }
         Err(e) => FfiResult {
             success: false,
             message: None,
-            error_message: Some(format!("Failed to decode CBOR for JSON conversion: {e}")),
+            error_message: Some(format!("JSON serialization failed: {e}")),
         },
     }
 }
