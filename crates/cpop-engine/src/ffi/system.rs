@@ -170,7 +170,10 @@ pub fn ffi_get_status() -> FfiStatus {
 pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     let store = match open_store() {
         Ok(s) => s,
-        Err(_) => return vec![],
+        Err(e) => {
+            log::warn!("ffi_list_tracked_files: failed to open store: {e}");
+            return vec![];
+        }
     };
 
     let files = store.list_files().unwrap_or_else(|e| {
@@ -286,7 +289,12 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
             if session.path.starts_with("shadow://") {
                 continue; // Skip browser shadow sessions
             }
-            if seen_paths.contains(&session.path) {
+            // Canonicalize sentinel paths before comparing with store paths
+            // to avoid duplicates when the sentinel stores non-canonical paths.
+            let canonical_path = std::fs::canonicalize(&session.path)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| session.path.clone());
+            if seen_paths.contains(&canonical_path) {
                 continue; // Already in the store results
             }
             let elapsed_ns = session
@@ -329,14 +337,26 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
 /// Return the checkpoint event log for a specific tracked file.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_log(path: String) -> Vec<FfiLogEntry> {
-    let path = match crate::sentinel::helpers::validate_path(&path) {
-        Ok(p) => p.to_string_lossy().to_string(),
-        Err(_) => return vec![],
+    // Virtual paths (ephemeral://, title://, shadow://) are internal identifiers,
+    // not filesystem paths; skip canonicalize-based validation for them.
+    let path = if path.starts_with("ephemeral://")
+        || path.starts_with("title://")
+        || path.starts_with("shadow://")
+    {
+        path
+    } else {
+        match crate::sentinel::helpers::validate_path(&path) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => return vec![],
+        }
     };
 
     let store = match open_store() {
         Ok(s) => s,
-        Err(_) => return vec![],
+        Err(e) => {
+            log::warn!("ffi_get_log: failed to open store: {e}");
+            return vec![];
+        }
     };
 
     store
@@ -364,6 +384,7 @@ pub fn ffi_get_dashboard_metrics() -> FfiDashboardMetrics {
     let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
+            log::warn!("ffi_get_dashboard_metrics: failed to open store: {e}");
             return FfiDashboardMetrics {
                 success: false,
                 total_files: 0,
@@ -422,7 +443,10 @@ pub fn ffi_get_dashboard_metrics() -> FfiDashboardMetrics {
 pub fn ffi_get_activity_data(days: u32) -> Vec<FfiActivityPoint> {
     let store = match open_store() {
         Ok(s) => s,
-        Err(_) => return vec![],
+        Err(e) => {
+            log::warn!("ffi_get_activity_data: failed to open store: {e}");
+            return vec![];
+        }
     };
 
     let start_ns =
