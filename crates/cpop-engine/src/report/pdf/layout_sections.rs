@@ -21,14 +21,14 @@ const ALT_ROW: (f32, f32, f32) = (0.98, 0.98, 0.98);
 
 // ── Page 2 ────────────────────────────────────────────────────────────
 
-pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
+pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts, footer: &str) {
     let mut y = PAGE_TOP;
 
-    // ── Session Timeline ──
+    // ── 5. Session Timeline ──
     if !r.sessions.is_empty() {
         text(
             layer,
-            "Session Timeline",
+            "5. Session Timeline",
             10.0,
             MARGIN_LEFT,
             y,
@@ -75,10 +75,10 @@ pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
     }
     y -= 7.0;
 
-    // ── Process Evidence ──
+    // ── 6. Process Evidence ──
     text(
         layer,
-        "Writing Process Evidence",
+        "6. Process Evidence",
         10.0,
         MARGIN_LEFT,
         y,
@@ -174,7 +174,7 @@ pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
     }
     y -= (evidence_items.len() as f32 / 2.0).ceil() * 16.0 + 7.0;
 
-    // ── Analysis Flags ──
+    // ── 7. Analysis Flags ──
     if !r.flags.is_empty() {
         let pos = r
             .flags
@@ -188,7 +188,7 @@ pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
             .count();
         text(
             layer,
-            &format!("Analysis Flags ({} positive, {} negative)", pos, neg),
+            &format!("7. Analysis Flags ({} positive, {} negative)", pos, neg),
             10.0,
             MARGIN_LEFT,
             y,
@@ -280,26 +280,18 @@ pub fn draw_page2(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
     }
 
     // Footer
-    text(
-        layer,
-        &format!("CPOP Authorship Report | {} | Page 2", r.report_id),
-        5.0,
-        MARGIN_LEFT,
-        10.0,
-        &fonts.regular,
-        GRAY,
-    );
+    text(layer, footer, 5.0, MARGIN_LEFT, 10.0, &fonts.regular, GRAY);
 }
 
 // ── Page 3 ────────────────────────────────────────────────────────────
 
-pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
+pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts, footer: &str) {
     let mut y = PAGE_TOP;
 
-    // ── Scope & Limitations ──
+    // ── 8. Scope & Limitations ──
     text(
         layer,
-        "Scope and Limitations",
+        "8. Scope and Limitations",
         10.0,
         MARGIN_LEFT,
         y,
@@ -368,10 +360,10 @@ pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
     }
     y -= 7.0;
 
-    // ── Verification Instructions ──
+    // ── 9. Verification Instructions ──
     text(
         layer,
-        "How to Verify This Evidence",
+        "9. Independent Verification",
         10.0,
         MARGIN_LEFT,
         y,
@@ -508,11 +500,11 @@ pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
     }
     y -= 7.0;
 
-    // ── Analyzed Text (if available) ──
+    // ── 10. Analyzed Text (if available) ──
     if let Some(ref analyzed) = r.analyzed_text {
         text(
             layer,
-            "Analyzed Text",
+            "10. Analyzed Text",
             10.0,
             MARGIN_LEFT,
             y,
@@ -571,6 +563,89 @@ pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
         }
     }
 
+    // ── VERIFICATION BLOCK ──
+    // Visually distinct bordered block as the human-readable trust anchor.
+    let vb_h = 42.0;
+    let vb_y = 22.0;
+    // Dark border
+    stroke_rect(
+        layer,
+        MARGIN_LEFT,
+        vb_y,
+        CONTENT_WIDTH,
+        vb_h,
+        0.8,
+        (0.13, 0.13, 0.13),
+    );
+    // Light inner background
+    fill_rect(
+        layer,
+        MARGIN_LEFT + 0.4,
+        vb_y + 0.4,
+        CONTENT_WIDTH - 0.8,
+        vb_h - 0.8,
+        (0.97, 0.97, 0.99),
+    );
+
+    let mut vy = vb_y + vb_h - 4.0;
+    text(
+        layer,
+        "VERIFICATION",
+        9.0,
+        MARGIN_LEFT + 4.0,
+        vy,
+        &fonts.bold,
+        BLACK,
+    );
+    vy -= 5.5;
+
+    let lr_str = if r.likelihood_ratio >= 100.0 {
+        format!("{:.0}", r.likelihood_ratio)
+    } else {
+        format!("{:.1}", r.likelihood_ratio)
+    };
+    let vb_rows: Vec<(&str, String)> = vec![
+        ("Report ID:", r.report_id.clone()),
+        ("Document Hash (SHA-256):", r.document_hash.clone()),
+        (
+            "Evidence Hash:",
+            r.evidence_hash.clone().unwrap_or_else(|| "N/A".to_string()),
+        ),
+        ("Signing Key:", r.signing_key_fingerprint.clone()),
+        (
+            "Assessment:",
+            format!("{}/100 | LR {} | {}", r.score, lr_str, r.enfsi_tier.label()),
+        ),
+        (
+            "Generated:",
+            r.generated_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        ),
+        ("Verify:", "https://writerslogic.com/verify".to_string()),
+    ];
+    for (label, value) in &vb_rows {
+        text(layer, label, 5.5, MARGIN_LEFT + 4.0, vy, &fonts.bold, BLACK);
+        // Truncate long hashes for display
+        let display = if value.len() > 72 {
+            format!(
+                "{}...{}",
+                value.get(..32).unwrap_or(value),
+                value.get(value.len().saturating_sub(8)..).unwrap_or(value),
+            )
+        } else {
+            value.clone()
+        };
+        text(
+            layer,
+            &display,
+            5.0,
+            MARGIN_LEFT + 40.0,
+            vy,
+            &fonts.mono,
+            (0.20, 0.20, 0.20),
+        );
+        vy -= 4.5;
+    }
+
     // ── Disclaimer / Footer ──
     text(
         layer,
@@ -581,18 +656,5 @@ pub fn draw_page3(layer: &PdfLayerReference, r: &WarReport, fonts: &PdfFonts) {
         &fonts.regular,
         GRAY,
     );
-    text(
-        layer,
-        &format!(
-            "CPOP Authorship Report | {} | {} | Page 3 | © {} WritersLogic",
-            r.report_id,
-            r.schema_version,
-            r.generated_at.format("%Y"),
-        ),
-        5.0,
-        MARGIN_LEFT,
-        10.0,
-        &fonts.regular,
-        GRAY,
-    );
+    text(layer, footer, 5.0, MARGIN_LEFT, 10.0, &fonts.regular, GRAY);
 }

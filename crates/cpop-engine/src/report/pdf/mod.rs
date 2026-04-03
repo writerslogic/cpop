@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-//! PDF report generation for Written Authorship Reports.
+//! PDF report generation for Forensic Authorship Examination Reports.
 //!
-//! Produces self-contained, signed PDF documents with anti-forgery security
-//! features (guilloché, microtext, void pantograph) derived from the
-//! cryptographic seal. The PDF embeds the WAR block for independent verification.
+//! Produces self-contained forensic artifact PDFs with anti-forgery security
+//! features (guilloche, microtext, void pantograph) derived from the
+//! cryptographic seal. The PDF embeds document metadata, a human-readable
+//! verification block, and optionally the full CBOR evidence payload.
 
 mod charts;
 mod embed;
@@ -32,12 +33,40 @@ use std::io::BufWriter;
 /// Returns an error if font loading or PDF serialization fails (should not happen
 /// with built-in fonts under normal conditions).
 pub fn render_pdf(report: &WarReport, security_seed: Option<&[u8; 64]>) -> Result<Vec<u8>, String> {
+    let version = env!("CARGO_PKG_VERSION");
+    let doc_hash_short = report
+        .document_hash
+        .get(..16)
+        .unwrap_or(&report.document_hash);
+
     let (doc, page1, layer1) = PdfDocument::new(
-        format!("Written Authorship Report — {}", report.report_id),
+        format!(
+            "Forensic Authorship Examination Report - {}",
+            report.report_id
+        ),
         Mm(210.0), // A4 width
         Mm(297.0), // A4 height
         "Layer 1",
     );
+
+    // Set PDF document info metadata
+    let doc = doc
+        .with_author(format!("CPOP Forensic Engine {}", version))
+        .with_subject(format!(
+            "Authorship examination report for document {}",
+            doc_hash_short
+        ))
+        .with_creator("WritersLogic CPOP Engine")
+        .with_producer(format!("cpop-engine/{}", version))
+        .with_keywords(vec![
+            report.report_id.clone(),
+            report.document_hash.clone(),
+            report.signing_key_fingerprint.clone(),
+            report.verdict.label().to_string(),
+            report.enfsi_tier.label().to_string(),
+            report.algorithm_version.clone(),
+            report.schema_version.clone(),
+        ]);
 
     let font = doc
         .add_builtin_font(BuiltinFont::Helvetica)
@@ -55,12 +84,17 @@ pub fn render_pdf(report: &WarReport, security_seed: Option<&[u8; 64]>) -> Resul
         mono: font_mono,
     };
 
+    let footer = format!(
+        "Forensic Authorship Examination Report | {} | {} | {}",
+        report.report_id, report.algorithm_version, report.schema_version,
+    );
+
     // Page 1: Header, verdict, declaration, QR
     let current_layer = doc.get_page(page1).get_layer(layer1);
     if let Some(seed) = security_seed {
         security::draw_guilloche_border(&current_layer, seed);
     }
-    layout::draw_page1(&current_layer, report, &fonts, security_seed);
+    layout::draw_page1(&current_layer, report, &fonts, security_seed, &footer);
 
     // Page 2: Evidence analysis, temporal witnesses, flags
     let (page2, layer2) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
@@ -68,12 +102,19 @@ pub fn render_pdf(report: &WarReport, security_seed: Option<&[u8; 64]>) -> Resul
     if let Some(seed) = security_seed {
         security::draw_guilloche_border(&current_layer, seed);
     }
-    layout_sections::draw_page2(&current_layer, report, &fonts);
+    layout_sections::draw_page2(&current_layer, report, &fonts, &footer);
 
-    // Page 3: Scope, verification instructions, technical details
+    // Page 3: Scope, verification instructions, verification block
     let (page3, layer3) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
     let current_layer = doc.get_page(page3).get_layer(layer3);
-    layout_sections::draw_page3(&current_layer, report, &fonts);
+    layout_sections::draw_page3(&current_layer, report, &fonts, &footer);
+
+    // Page 4 (optional): Machine-readable evidence payload
+    if report.evidence_cbor_b64.is_some() {
+        let (page4, layer4) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
+        let current_layer = doc.get_page(page4).get_layer(layer4);
+        embed::draw_evidence_page(&current_layer, report, &fonts, &footer);
+    }
 
     // Serialize to bytes
     let mut buf = BufWriter::new(Vec::new());

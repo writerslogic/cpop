@@ -134,14 +134,15 @@ pub fn draw_page1(
     r: &WarReport,
     fonts: &PdfFonts,
     security_seed: Option<&[u8; 64]>,
+    footer: &str,
 ) {
     let mut y = PAGE_TOP;
 
     // Title
     text(
         layer,
-        "Written Authorship Report",
-        18.0,
+        "Forensic Authorship Examination Report",
+        16.0,
         MARGIN_LEFT,
         y,
         &fonts.bold,
@@ -371,10 +372,10 @@ pub fn draw_page1(
     }
     y -= 10.0;
 
-    // ── Author Declaration ──
+    // ── 1. Declaration of Findings ──
     text(
         layer,
-        "Author Declaration",
+        "1. Declaration of Findings",
         11.0,
         MARGIN_LEFT,
         y,
@@ -402,10 +403,10 @@ pub fn draw_page1(
     }
     y -= 33.0;
 
-    // ── Chain of Custody ──
+    // ── 2. Document Identity ──
     text(
         layer,
-        "Document Identity",
+        "2. Document Identity",
         11.0,
         MARGIN_LEFT,
         y,
@@ -470,11 +471,11 @@ pub fn draw_page1(
     }
     y -= 7.0;
 
-    // ── Category Scores ──
+    // ── 3. Category Scores ──
     if !r.dimensions.is_empty() {
         text(
             layer,
-            "Category Scores",
+            "3. Category Scores",
             11.0,
             MARGIN_LEFT,
             y,
@@ -501,11 +502,11 @@ pub fn draw_page1(
     }
     y -= 7.0;
 
-    // ── Writing Flow ──
+    // ── 4. Writing Flow ──
     if !r.writing_flow.is_empty() {
         text(
             layer,
-            "Writing Flow",
+            "4. Writing Flow",
             11.0,
             MARGIN_LEFT,
             y,
@@ -534,18 +535,7 @@ pub fn draw_page1(
     }
 
     // ── Footer ──
-    text(
-        layer,
-        &format!(
-            "CPOP Authorship Report | {} | {} | {}",
-            r.report_id, r.algorithm_version, r.schema_version,
-        ),
-        5.0,
-        MARGIN_LEFT,
-        10.0,
-        &fonts.regular,
-        GRAY,
-    );
+    text(layer, footer, 5.0, MARGIN_LEFT, 10.0, &fonts.regular, GRAY);
 }
 
 // Pages 2 and 3 are in layout_sections.rs
