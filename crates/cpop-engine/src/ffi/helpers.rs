@@ -52,48 +52,12 @@ pub(crate) fn get_db_path() -> Option<PathBuf> {
     get_data_dir().map(|d| d.join("events.db"))
 }
 
-/// Read the signing key seed from disk with TOCTOU-safe file handling.
-///
-/// Opens the file, stats the handle (not the path), bounds the size, and
-/// derives an HMAC key from the first 32 bytes.
-fn derive_hmac_from_signing_key_file() -> Option<Zeroizing<Vec<u8>>> {
-    use std::io::Read;
-    let data_dir = get_data_dir()?;
-    let key_path = data_dir.join("signing_key");
-    let key_file = match std::fs::File::open(&key_path) {
-        Ok(f) => f,
-        Err(e) => {
-            log::warn!("failed to open signing key file: {e}");
-            return None;
-        }
-    };
-    if let Ok(meta) = key_file.metadata() {
-        if meta.len() > 1024 {
-            log::error!("Signing key file too large: {} bytes", meta.len());
-            return None;
-        }
-    }
-    let mut raw = Zeroizing::new(Vec::new());
-    {
-        let mut f = key_file;
-        if let Err(e) = f.read_to_end(&mut raw) {
-            log::warn!("failed to read signing key file: {e}");
-            return None;
-        }
-    }
-    if raw.len() >= 32 {
-        Some(crate::crypto::derive_hmac_key(&raw[..32]))
-    } else {
-        None
-    }
-}
-
 pub(crate) fn load_hmac_key() -> Option<Zeroizing<Vec<u8>>> {
     if let Ok(Some(key)) = crate::identity::SecureStorage::load_hmac_key() {
         return Some(key);
     }
 
-    let key = derive_hmac_from_signing_key_file()?;
+    let key = derive_hmac_from_signing_key()?;
 
     if let Err(e) = crate::identity::SecureStorage::save_hmac_key(&key) {
         log::warn!("Failed to migrate signing key to secure storage: {}", e);
@@ -242,8 +206,39 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
 }
 
 /// Derive HMAC key directly from the signing_key file, bypassing keychain.
+///
+/// Opens the file, stats the handle (not the path), bounds the size, and
+/// derives an HMAC key from the first 32 bytes.
 pub(crate) fn derive_hmac_from_signing_key() -> Option<Zeroizing<Vec<u8>>> {
-    derive_hmac_from_signing_key_file()
+    use std::io::Read;
+    let data_dir = get_data_dir()?;
+    let key_path = data_dir.join("signing_key");
+    let key_file = match std::fs::File::open(&key_path) {
+        Ok(f) => f,
+        Err(e) => {
+            log::warn!("failed to open signing key file: {e}");
+            return None;
+        }
+    };
+    if let Ok(meta) = key_file.metadata() {
+        if meta.len() > 1024 {
+            log::error!("Signing key file too large: {} bytes", meta.len());
+            return None;
+        }
+    }
+    let mut raw = Zeroizing::new(Vec::new());
+    {
+        let mut f = key_file;
+        if let Err(e) = f.read_to_end(&mut raw) {
+            log::warn!("failed to read signing key file: {e}");
+            return None;
+        }
+    }
+    if raw.len() >= 32 {
+        Some(crate::crypto::derive_hmac_key(&raw[..32]))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn detect_attestation_tier() -> AttestationTier {
@@ -344,15 +339,5 @@ pub(crate) fn compute_streak_stats(
 }
 
 pub(crate) fn events_to_forensic_data(events: &[crate::store::SecureEvent]) -> Vec<EventData> {
-    events
-        .iter()
-        .enumerate()
-        .map(|(i, e)| EventData {
-            id: e.id.unwrap_or(i as i64),
-            timestamp_ns: e.timestamp_ns,
-            file_size: e.file_size,
-            size_delta: e.size_delta,
-            file_path: e.file_path.clone(),
-        })
-        .collect()
+    EventData::from_secure_events(events)
 }

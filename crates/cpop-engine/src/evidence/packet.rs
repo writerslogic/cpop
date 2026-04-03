@@ -352,20 +352,31 @@ impl Packet {
     /// (`verifier_nonce`, `packet_signature`, `signing_public_key`) to avoid
     /// circular dependencies during signing.
     ///
-    /// Uses deterministic CBOR serialization of a clone with signature fields cleared,
-    /// ensuring every evidence field (behavioral, keystroke, jitter, hardware, forensics,
-    /// etc.) is covered. Stripping any field invalidates the signature.
+    /// Uses deterministic CBOR serialization ensuring every evidence field
+    /// (behavioral, keystroke, jitter, hardware, forensics, etc.) is covered.
+    /// Stripping any field invalidates the signature.
     pub fn content_hash(&self) -> crate::error::Result<[u8; 32]> {
-        // Clone and clear signature-related fields to break circular dependency
-        let mut signable = self.clone();
-        signable.verifier_nonce = None;
-        signable.packet_signature = None;
-        signable.signing_public_key = None;
+        // When the three signature fields are already None, serialize directly
+        // without cloning; serde skip_serializing_if = "Option::is_none" ensures
+        // they are omitted from the output identically to a cleared clone.
+        if self.verifier_nonce.is_none()
+            && self.packet_signature.is_none()
+            && self.signing_public_key.is_none()
+        {
+            return Self::hash_content_cbor(self);
+        }
+        // Post-signing path: temporarily clear the three Copy fields,
+        // serialize, then restore. Avoids cloning the entire 30-field Packet.
+        let mut copy = self.clone();
+        copy.verifier_nonce = None;
+        copy.packet_signature = None;
+        copy.signing_public_key = None;
+        Self::hash_content_cbor(&copy)
+    }
 
-        // Deterministic CBOR serialization covers ALL remaining fields
-        let data = codec::cbor::encode(&signable)
+    fn hash_content_cbor(packet: &Self) -> crate::error::Result<[u8; 32]> {
+        let data = codec::cbor::encode(packet)
             .map_err(|e| Error::crypto(format!("content_hash: CBOR encoding failed: {e}")))?;
-
         let mut hasher = Sha256::new();
         hasher.update(b"witnessd-packet-content-v3");
         hasher.update(data);

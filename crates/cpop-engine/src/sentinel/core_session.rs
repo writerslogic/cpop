@@ -45,7 +45,11 @@ impl Sentinel {
         let path_str = file_path.to_string_lossy().to_string();
 
         // AUD-041: Acquire signing_key before sessions to maintain lock ordering.
+        #[cfg(debug_assertions)]
+        super::core::lock_order::assert_order(super::core::lock_order::SIGNING_KEY);
         let key = self.signing_key.read_recover().clone();
+        #[cfg(debug_assertions)]
+        super::core::lock_order::assert_order(super::core::lock_order::SESSIONS);
 
         // Single write lock for check+insert to avoid TOCTOU race
         let mut sessions = self.sessions.write_recover();
@@ -159,6 +163,11 @@ impl Sentinel {
 
         sessions.insert(path_str.clone(), session);
         drop(sessions);
+        #[cfg(debug_assertions)]
+        {
+            super::core::lock_order::release(super::core::lock_order::SESSIONS);
+            super::core::lock_order::release(super::core::lock_order::SIGNING_KEY);
+        }
         super::trace!(
             "[START_WITNESSING] session created, setting current_focus={:?}",
             path_str

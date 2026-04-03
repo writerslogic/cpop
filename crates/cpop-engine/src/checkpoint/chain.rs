@@ -121,6 +121,11 @@ impl Chain {
     /// Validate, hash, and append a fully-built checkpoint to the chain.
     fn commit_finish(&mut self, mut checkpoint: Checkpoint) -> Result<Checkpoint> {
         checkpoint.validate_timestamp()?;
+        // Stamp the explicit hash domain version so verification does not
+        // need to re-infer it from optional field presence.
+        if checkpoint.explicit_hash_version.is_none() {
+            checkpoint.explicit_hash_version = Some(checkpoint.hash_domain_version());
+        }
         checkpoint.hash = checkpoint.compute_hash();
         let result = checkpoint.clone();
         self.checkpoints.push(checkpoint);

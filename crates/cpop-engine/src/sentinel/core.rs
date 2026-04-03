@@ -83,6 +83,50 @@ fn commit_checkpoint_for_path(
 /// negative PIDs.
 const CGEVENTTAP_VERIFIED_PID: i64 = -1;
 
+/// Async channel buffer size for keystroke and mouse bridge threads.
+const EVENT_CHANNEL_BUFFER: usize = 1000;
+
+/// Duration after last keystroke within which mouse micro-movements are recorded.
+const TYPING_PROXIMITY_SECS: u64 = 2;
+
+/// Lock ordering levels for AUD-041 enforcement.
+/// Lower values must be acquired before higher values.
+#[cfg(debug_assertions)]
+pub(super) mod lock_order {
+    use std::cell::Cell;
+
+    /// Ordering: signing_key(1) < sessions(2) < current_focus(3).
+    pub const SIGNING_KEY: u8 = 1;
+    pub const SESSIONS: u8 = 2;
+
+    thread_local! {
+        static MAX_HELD: Cell<u8> = const { Cell::new(0) };
+    }
+
+    /// Assert that acquiring a lock at `level` does not violate ordering.
+    /// Panics in debug builds if a higher-ordered lock is already held.
+    pub fn assert_order(level: u8) {
+        MAX_HELD.with(|cell| {
+            let held = cell.get();
+            debug_assert!(
+                held < level,
+                "Lock ordering violation (AUD-041): attempted to acquire level {level} \
+                 while level {held} is held. Order: signing_key(1) < sessions(2) < focus(3)."
+            );
+            cell.set(level);
+        });
+    }
+
+    /// Release: reset the max held level to below this lock's level.
+    pub fn release(level: u8) {
+        MAX_HELD.with(|cell| {
+            if cell.get() == level {
+                cell.set(level - 1);
+            }
+        });
+    }
+}
+
 /// Core sentinel daemon for document focus tracking and session management.
 ///
 /// # Lock ordering convention (AUD-041)
@@ -94,6 +138,7 @@ const CGEVENTTAP_VERIFIED_PID: i64 = -1;
 ///   4. All other Mutex-protected fields (no ordering between them)
 ///
 /// Never acquire `sessions` before `signing_key`.
+/// In debug builds, `lock_order::assert_order` enforces this at runtime.
 pub struct Sentinel {
     pub(crate) config: Arc<SentinelConfig>,
     /// Runtime toggle for document snapshots (can be changed without restart).
@@ -362,7 +407,7 @@ impl Sentinel {
         running: &Arc<AtomicBool>,
     ) -> mpsc::Receiver<crate::platform::KeystrokeEvent> {
         let (keystroke_tx, keystroke_rx) =
-            tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(1000);
+            tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(EVENT_CHANNEL_BUFFER);
         let keystroke_running = Arc::clone(running);
 
         #[cfg(target_os = "macos")]
@@ -469,7 +514,8 @@ impl Sentinel {
         &self,
         running: &Arc<AtomicBool>,
     ) -> mpsc::Receiver<crate::platform::MouseEvent> {
-        let (mouse_tx, mouse_rx) = tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(1000);
+        let (mouse_tx, mouse_rx) =
+            tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(EVENT_CHANNEL_BUFFER);
         let mouse_running = Arc::clone(running);
 
         #[cfg(target_os = "macos")]
@@ -737,7 +783,7 @@ impl Sentinel {
                         };
                         last_mouse_ts_ns = event.timestamp_ns;
 
-                        let is_during_typing = last_keystroke_time.elapsed() < Duration::from_secs(2);
+                        let is_during_typing = last_keystroke_time.elapsed() < Duration::from_secs(TYPING_PROXIMITY_SECS);
                         if is_during_typing && event.is_micro_movement() {
                             mouse_idle_stats.write_recover().record(&event);
                         }
@@ -1012,7 +1058,12 @@ impl Sentinel {
         // Persist cumulative stats and unfocus all sessions so keystroke
         // counts survive across stop/start cycles.
         {
+            // AUD-041: signing_key before sessions.
+            #[cfg(debug_assertions)]
+            lock_order::assert_order(lock_order::SIGNING_KEY);
             let guard = self.signing_key.read_recover();
+            #[cfg(debug_assertions)]
+            lock_order::assert_order(lock_order::SESSIONS);
             let sessions_map = self.sessions.read_recover();
             if let Some(ref sk) = *guard {
                 let db = self.config.writersproof_dir.join("events.db");
@@ -1049,6 +1100,11 @@ impl Sentinel {
             }
             drop(guard);
             drop(sessions_map);
+            #[cfg(debug_assertions)]
+            {
+                lock_order::release(lock_order::SESSIONS);
+                lock_order::release(lock_order::SIGNING_KEY);
+            }
 
             let mut paths: Vec<String> = self.sessions.read_recover().keys().cloned().collect();
             paths.sort();

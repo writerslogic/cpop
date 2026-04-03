@@ -44,6 +44,33 @@ pub enum SignaturePolicy {
     Required,
 }
 
+/// Explicit hash domain version for checkpoint hashing.
+///
+/// Replaces the implicit inference from optional field presence, making the
+/// domain separator deterministic and auditable without inspecting every field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HashDomainVersion {
+    /// Legacy checkpoint (no jitter, no RFC fields, no Argon2)
+    V1,
+    /// Entangled mode (WAR/1.1): `jitter_binding` present
+    V2,
+    /// RFC-compliant fields: `rfc_vdf`, `rfc_jitter`, or `time_evidence`
+    V3,
+    /// Argon2id SWF proof (draft-condrey-rats-pop algorithm=20)
+    V4,
+}
+
+impl HashDomainVersion {
+    pub fn domain_separator(self) -> &'static [u8] {
+        match self {
+            Self::V1 => b"witnessd-checkpoint-v1",
+            Self::V2 => b"witnessd-checkpoint-v2",
+            Self::V3 => b"witnessd-checkpoint-v3",
+            Self::V4 => b"witnessd-checkpoint-v4",
+        }
+    }
+}
+
 /// Granular verification results for a checkpoint chain (beyond pass/fail).
 #[derive(Debug, Clone)]
 pub struct VerificationReport {
@@ -135,6 +162,11 @@ pub struct Checkpoint {
     /// proving the checkpoint was built within the challenge window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub challenge_nonce: Option<String>,
+
+    /// Explicit hash domain version. When `Some`, this value is authoritative;
+    /// when `None` (legacy checkpoints), the version is inferred from field presence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explicit_hash_version: Option<HashDomainVersion>,
 }
 
 /// TPM/Secure Enclave attestation binding for a checkpoint.
@@ -189,6 +221,27 @@ impl Checkpoint {
             mmr_inclusion_proof: None,
             argon2_swf: None,
             challenge_nonce: None,
+            explicit_hash_version: None,
+        }
+    }
+
+    /// Determine the hash domain version. Prefers the explicit field when set;
+    /// falls back to inference from optional field presence for legacy checkpoints.
+    pub fn hash_domain_version(&self) -> HashDomainVersion {
+        if let Some(v) = self.explicit_hash_version {
+            return v;
+        }
+        if self.argon2_swf.is_some() {
+            HashDomainVersion::V4
+        } else if self.rfc_vdf.is_some()
+            || self.rfc_jitter.is_some()
+            || self.time_evidence.is_some()
+        {
+            HashDomainVersion::V3
+        } else if self.jitter_binding.is_some() {
+            HashDomainVersion::V2
+        } else {
+            HashDomainVersion::V1
         }
     }
 
@@ -226,18 +279,7 @@ impl Checkpoint {
     /// - **v1**: none of the above (legacy checkpoint)
     pub(super) fn compute_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        if self.argon2_swf.is_some() {
-            hasher.update(b"witnessd-checkpoint-v4");
-        } else if self.rfc_vdf.is_some()
-            || self.rfc_jitter.is_some()
-            || self.time_evidence.is_some()
-        {
-            hasher.update(b"witnessd-checkpoint-v3");
-        } else if self.jitter_binding.is_some() {
-            hasher.update(b"witnessd-checkpoint-v2");
-        } else {
-            hasher.update(b"witnessd-checkpoint-v1");
-        }
+        hasher.update(self.hash_domain_version().domain_separator());
         hasher.update(self.ordinal.to_be_bytes());
         hasher.update(self.previous_hash);
         hasher.update(self.content_hash);

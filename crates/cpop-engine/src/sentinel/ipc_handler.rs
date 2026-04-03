@@ -45,20 +45,6 @@ impl SentinelIpcHandler {
             .map_err(|e| format!("Failed to load events: {e}"))
     }
 
-    fn to_forensic_data(events: &[crate::store::SecureEvent]) -> Vec<crate::forensics::EventData> {
-        events
-            .iter()
-            .enumerate()
-            .map(|(i, e)| crate::forensics::EventData {
-                id: e.id.unwrap_or(i64::try_from(i).unwrap_or(i64::MAX)),
-                timestamp_ns: e.timestamp_ns,
-                file_size: e.file_size,
-                size_delta: e.size_delta,
-                file_path: e.file_path.clone(),
-            })
-            .collect()
-    }
-
     fn analyze_file(
         &self,
         path: &PathBuf,
@@ -74,7 +60,7 @@ impl SentinelIpcHandler {
         if events.is_empty() {
             return Err("No events found for file".to_string());
         }
-        let event_data = Self::to_forensic_data(&events);
+        let event_data = crate::forensics::EventData::from_secure_events(&events);
         let regions = std::collections::HashMap::new();
 
         let accumulator = self.sentinel.activity_accumulator.read_recover();
