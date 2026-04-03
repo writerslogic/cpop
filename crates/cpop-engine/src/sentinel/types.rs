@@ -146,15 +146,46 @@ impl AiToolCategory {
     /// Returns `None` for unrecognized signing IDs.
     pub fn from_signing_id(signing_id: &str) -> Option<(Self, ObservationBasis)> {
         match signing_id {
-            "com.openai.chat" | "com.anthropic.claude" => {
-                Some((Self::DirectGenerative, ObservationBasis::Observed))
+            // Tier 1: Direct AI tools (strong signal)
+            "com.openai.chat"
+            | "com.openai.chatgpt"
+            | "com.anthropic.claude"
+            | "com.ollama.ollama"
+            | "ai.lmstudio.app"
+            | "io.typingmind.app" => Some((Self::DirectGenerative, ObservationBasis::Observed)),
+
+            "com.github.copilot"
+            | "dev.cursor.app"
+            | "com.todesktop.230313mzl4w4u92"
+            | "com.replit.desktop" => Some((Self::AssistantCopilot, ObservationBasis::Observed)),
+
+            // Tier 2: AI-capable environments (weak signal, needs correlation)
+            "com.apple.Safari"
+            | "com.google.Chrome"
+            | "org.mozilla.firefox"
+            | "com.microsoft.edgemac"
+            | "company.thebrowser.Browser" => {
+                Some((Self::BrowserHosted, ObservationBasis::Inferred))
             }
-            "com.github.copilot" | "dev.cursor.app" | "com.todesktop.230313mzl4w4u92" => {
-                Some((Self::AssistantCopilot, ObservationBasis::Observed))
+
+            "com.microsoft.VSCode"
+            | "com.microsoft.VSCodeInsiders"
+            | "com.jetbrains.intellij"
+            | "com.jetbrains.pycharm"
+            | "com.jetbrains.webstorm"
+            | "notion.id"
+            | "com.raycast.macos"
+            | "dev.warp.Warp-Stable" => Some((Self::AssistantCopilot, ObservationBasis::Inferred)),
+
+            "com.apple.Terminal" | "com.googlecode.iterm2" => {
+                Some((Self::Automation, ObservationBasis::Inferred))
             }
+
+            // Tier 3: Automation pathways (strong signal)
             "com.apple.ScriptEditor2" | "com.apple.Automator" | "com.apple.ShortcutsActions" => {
                 Some((Self::Automation, ObservationBasis::Observed))
             }
+
             _ => None,
         }
     }

@@ -286,28 +286,68 @@ mod tests {
 
     #[test]
     fn test_ai_tool_category_mapping() {
-        assert_eq!(
-            AiToolCategory::from_signing_id("com.openai.chat"),
-            Some((AiToolCategory::DirectGenerative, ObservationBasis::Observed))
-        );
-        assert_eq!(
-            AiToolCategory::from_signing_id("com.anthropic.claude"),
-            Some((AiToolCategory::DirectGenerative, ObservationBasis::Observed))
-        );
-        assert_eq!(
-            AiToolCategory::from_signing_id("com.github.copilot"),
-            Some((AiToolCategory::AssistantCopilot, ObservationBasis::Observed))
-        );
-        assert_eq!(
-            AiToolCategory::from_signing_id("dev.cursor.app"),
-            Some((AiToolCategory::AssistantCopilot, ObservationBasis::Observed))
-        );
-        assert!(AiToolCategory::from_signing_id("com.apple.Safari").is_none());
-        assert!(AiToolCategory::from_signing_id("com.google.Chrome").is_none());
-        assert_eq!(
-            AiToolCategory::from_signing_id("com.apple.ScriptEditor2"),
-            Some((AiToolCategory::Automation, ObservationBasis::Observed))
-        );
+        // Tier 1: direct AI tools (Observed)
+        for id in [
+            "com.openai.chat",
+            "com.openai.chatgpt",
+            "com.anthropic.claude",
+            "com.ollama.ollama",
+            "ai.lmstudio.app",
+            "io.typingmind.app",
+        ] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::DirectGenerative, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Observed, "failed for {id}");
+        }
+        for id in [
+            "com.github.copilot",
+            "dev.cursor.app",
+            "com.todesktop.230313mzl4w4u92",
+            "com.replit.desktop",
+        ] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::AssistantCopilot, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Observed, "failed for {id}");
+        }
+
+        // Tier 2: AI-capable environments (Inferred)
+        for id in [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "org.mozilla.firefox",
+        ] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::BrowserHosted, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Inferred, "failed for {id}");
+        }
+        for id in [
+            "com.microsoft.VSCode",
+            "notion.id",
+            "com.raycast.macos",
+            "dev.warp.Warp-Stable",
+        ] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::AssistantCopilot, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Inferred, "failed for {id}");
+        }
+        for id in ["com.apple.Terminal", "com.googlecode.iterm2"] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::Automation, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Inferred, "failed for {id}");
+        }
+
+        // Tier 3: automation (Observed)
+        for id in [
+            "com.apple.ScriptEditor2",
+            "com.apple.Automator",
+            "com.apple.ShortcutsActions",
+        ] {
+            let (cat, basis) = AiToolCategory::from_signing_id(id).unwrap();
+            assert_eq!(cat, AiToolCategory::Automation, "failed for {id}");
+            assert_eq!(basis, ObservationBasis::Observed, "failed for {id}");
+        }
+
+        // Unknown returns None
         assert!(AiToolCategory::from_signing_id("com.unknown.app").is_none());
     }
 
