@@ -152,26 +152,36 @@ impl EventTapRunner {
                 CFRunLoopStop(p);
             }
         }
+        let mut thread_joined = false;
         if let Some(thread) = self.thread.take() {
             // Poll with timeout instead of blocking indefinitely on join.
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
             loop {
                 if thread.is_finished() {
                     let _ = thread.join();
+                    thread_joined = true;
                     break;
                 }
                 if std::time::Instant::now() >= deadline {
                     log::warn!("EventTapRunner thread did not finish within 3s; detaching");
+                    // Intentionally leak tap_resources: the detached thread may
+                    // still be inside CFRunLoopRun, so releasing CF objects now
+                    // would be a use-after-free.
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
+        } else {
+            // No thread was running; safe to release resources.
+            thread_joined = true;
         }
-        if let Some(res) = self.tap_resources.lock_recover().take() {
-            unsafe {
-                CFRelease(res.source);
-                CFRelease(res.tap);
-                CFRelease(res.run_loop);
+        if thread_joined {
+            if let Some(res) = self.tap_resources.lock_recover().take() {
+                unsafe {
+                    CFRelease(res.source);
+                    CFRelease(res.tap);
+                    CFRelease(res.run_loop);
+                }
             }
         }
     }

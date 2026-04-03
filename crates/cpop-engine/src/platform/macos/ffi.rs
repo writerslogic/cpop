@@ -206,8 +206,15 @@ pub unsafe extern "C" fn event_tap_trampoline(
     user_info: *mut std::ffi::c_void,
 ) -> *mut std::ffi::c_void {
     if !user_info.is_null() && !event.is_null() {
-        let callback = &mut *(user_info as *mut TapCallback);
-        callback(event, event_type);
+        // catch_unwind prevents panics from unwinding through the extern "C"
+        // boundary, which is undefined behavior.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let callback = &mut *(user_info as *mut TapCallback);
+            callback(event, event_type);
+        }));
+        if result.is_err() {
+            log::error!("panic caught in CGEventTap callback; returning event unchanged");
+        }
     }
     event
 }
