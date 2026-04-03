@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::types::EventData;
+use crate::analysis::stats::safe_div;
 use crate::jitter::SimpleJitterSample;
 
 const MIN_EVENTS: usize = 10;
@@ -259,7 +260,7 @@ fn check_jitter_edit_coherence(
     let edit_count = events.len();
     let jitter_count = samples.len();
 
-    let ratio = edit_count as f64 / jitter_count as f64;
+    let ratio = safe_div(edit_count as f64, jitter_count as f64, 0.0);
     let passed = ratio >= MIN_EDIT_TO_JITTER_RATIO;
 
     let score = if ratio >= EDIT_JITTER_RATIO_GOOD {
@@ -267,7 +268,7 @@ fn check_jitter_edit_coherence(
     } else if ratio >= MIN_EDIT_TO_JITTER_RATIO {
         COHERENCE_MARGINAL_SCORE
     } else {
-        (ratio / MIN_EDIT_TO_JITTER_RATIO).clamp(0.0, COHERENCE_FAILED_MAX_SCORE)
+        safe_div(ratio, MIN_EDIT_TO_JITTER_RATIO, 0.0).clamp(0.0, COHERENCE_FAILED_MAX_SCORE)
     };
 
     CrossModalCheck {

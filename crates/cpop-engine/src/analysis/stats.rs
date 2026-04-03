@@ -1,5 +1,20 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+/// Divide `a / b`, returning `fallback` when `b` is zero or the result is
+/// not finite (NaN / Infinity).
+#[inline]
+pub fn safe_div(a: f64, b: f64, fallback: f64) -> f64 {
+    if b == 0.0 {
+        return fallback;
+    }
+    let r = a / b;
+    if r.is_finite() {
+        r
+    } else {
+        fallback
+    }
+}
+
 /// Single-pass mean and sample standard deviation.
 ///
 /// Returns `(0.0, 0.0)` for empty input and `(mean, 0.0)` for `data.len() < 2`

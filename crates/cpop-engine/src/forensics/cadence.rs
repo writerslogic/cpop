@@ -62,7 +62,8 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     metrics.std_dev_iki_ns = variance.sqrt();
 
     if metrics.mean_iki_ns > 0.0 {
-        metrics.coefficient_of_variation = metrics.std_dev_iki_ns / metrics.mean_iki_ns;
+        let cv = metrics.std_dev_iki_ns / metrics.mean_iki_ns;
+        metrics.coefficient_of_variation = if cv.is_finite() { cv } else { 0.0 };
     }
 
     metrics.median_iki_ns = compute_median(&ikis);

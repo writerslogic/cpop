@@ -182,8 +182,11 @@ fn compute_rs_for_window(data: &[f64], window_size: usize) -> f64 {
         let std_dev = variance.sqrt();
 
         if std_dev > 0.0 {
-            rs_sum += range / std_dev;
-            valid_windows += 1;
+            let rs = range / std_dev;
+            if rs.is_finite() {
+                rs_sum += rs;
+                valid_windows += 1;
+            }
         }
     }
 

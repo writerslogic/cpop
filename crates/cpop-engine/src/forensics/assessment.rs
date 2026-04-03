@@ -369,7 +369,11 @@ pub fn compute_assessment_score(
         score -= 0.05;
     }
 
-    score.clamp(0.0, 1.0)
+    if score.is_finite() {
+        score.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// Quick cadence-only score for real-time use before full topology is available.
@@ -402,7 +406,11 @@ pub fn compute_cadence_score(cadence: &CadenceMetrics) -> f64 {
         score -= 0.15;
     }
 
-    score.clamp(0.0, 1.0)
+    if score.is_finite() {
+        score.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// Apply focus-switching penalties to an assessment score.
@@ -418,7 +426,11 @@ pub fn apply_focus_penalties(score: &mut f64, focus: &FocusMetrics) {
     if focus.out_of_focus_ratio > FOCUS_OUT_OF_FOCUS_THRESHOLD {
         *score -= FOCUS_OUT_OF_FOCUS_PENALTY;
     }
-    *score = score.clamp(0.0, 1.0);
+    *score = if score.is_finite() {
+        score.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
 }
 
 /// Map assessment score to risk level.

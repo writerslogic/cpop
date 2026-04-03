@@ -130,6 +130,7 @@ pub(crate) fn cmd_commit(
         input_method: None,
         lamport_signature: None,
         lamport_pubkey_fingerprint: None,
+        challenge_nonce: None,
     };
 
     db.add_secure_event(&mut event).context("save checkpoint")?;

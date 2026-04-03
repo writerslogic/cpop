@@ -219,11 +219,16 @@ impl BehavioralFingerprint {
             .collect();
         let burst_speed_variance = if burst_intervals.len() >= 2 {
             let burst_mean_val = burst_intervals.iter().sum::<f64>() / burst_intervals.len() as f64;
-            burst_intervals
+            let v = burst_intervals
                 .iter()
                 .map(|&x| (x - burst_mean_val).powi(2))
                 .sum::<f64>()
-                / (burst_intervals.len() - 1) as f64
+                / (burst_intervals.len() - 1) as f64;
+            if v.is_finite() {
+                v
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
@@ -269,7 +274,7 @@ impl BehavioralFingerprint {
 
         if mean > 0.0 {
             let cv = std / mean;
-            if cv < CV_FORGERY_THRESHOLD {
+            if cv.is_finite() && cv < CV_FORGERY_THRESHOLD {
                 flags.push(ForgeryFlag::TooRegular { cv });
             }
         }

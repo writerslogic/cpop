@@ -348,7 +348,12 @@ pub fn per_checkpoint_flags(
                 if !variance.is_finite() || !mean.is_finite() {
                     0.0
                 } else {
-                    variance.sqrt() / mean
+                    let cv = variance.sqrt() / mean;
+                    if cv.is_finite() {
+                        cv
+                    } else {
+                        0.0
+                    }
                 }
             } else {
                 0.0

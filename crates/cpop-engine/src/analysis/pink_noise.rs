@@ -115,6 +115,9 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
 
     // log(P) = -α * log(f) + c, so spectral slope = -regression slope
     let (slope, _intercept, r_squared, std_error) = linear_regression(&log_freq, &log_power)?;
+    if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
+        return Err("PSD regression produced NaN/Inf".to_string());
+    }
     let spectral_slope = -slope;
 
     let noise_type = classify_noise_type(spectral_slope);

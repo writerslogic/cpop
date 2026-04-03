@@ -325,10 +325,17 @@ fn compute_recurrence_quantification(
     }
 
     let all_coords: Vec<f64> = embedding.iter().flat_map(|p| p.iter().copied()).collect();
+    if all_coords.is_empty() {
+        return (0.0, 0.0);
+    }
     let mean: f64 = all_coords.iter().sum::<f64>() / all_coords.len() as f64;
     let variance: f64 =
         all_coords.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / all_coords.len() as f64;
     let std_dev = variance.sqrt();
+
+    if !std_dev.is_finite() || std_dev == 0.0 {
+        return (0.0, 0.0);
+    }
 
     let eps = threshold * std_dev;
 
@@ -438,11 +445,14 @@ fn estimate_correlation_dimension(embedding: &[Vec<f64>]) -> f64 {
     let num_bins = 10;
     for i in 0..num_bins {
         let r = r_min * ((r_max / r_min).powf(i as f64 / (num_bins - 1) as f64));
+        if !r.is_finite() || r <= 0.0 {
+            continue;
+        }
 
         let count = distances.iter().filter(|&&d| d < r).count();
         let c = count as f64 / distances.len() as f64;
 
-        if c > 0.0 && r > 0.0 {
+        if c > 0.0 {
             log_r.push(r.ln());
             log_c.push(c.ln());
         }
@@ -465,7 +475,12 @@ fn estimate_correlation_dimension(embedding: &[Vec<f64>]) -> f64 {
     }
 
     if denom > 0.0 {
-        (num / denom).max(0.0)
+        let slope = num / denom;
+        if slope.is_finite() {
+            slope.max(0.0)
+        } else {
+            0.0
+        }
     } else {
         0.0
     }
@@ -478,10 +493,17 @@ fn estimate_betti_numbers(embedding: &[Vec<f64>], threshold: f64) -> [usize; 3] 
     }
 
     let all_coords: Vec<f64> = embedding.iter().flat_map(|p| p.iter().copied()).collect();
+    if all_coords.is_empty() {
+        return [1, 0, 0];
+    }
     let mean: f64 = all_coords.iter().sum::<f64>() / all_coords.len() as f64;
     let variance: f64 =
         all_coords.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / all_coords.len() as f64;
-    let eps = threshold * variance.sqrt() * 3.0;
+    let std_dev = variance.sqrt();
+    if !std_dev.is_finite() || std_dev == 0.0 {
+        return [1, 0, 0];
+    }
+    let eps = threshold * std_dev * 3.0;
 
     let sample_n = n.min(100);
     let step = (n / sample_n).max(1);
