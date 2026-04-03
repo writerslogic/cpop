@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::DateTimeNanosExt;
+use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
+
+/// HMAC-SHA256 type alias for access log entry integrity tags.
+type HmacSha256 = Hmac<Sha256>;
+
+/// Domain separation prefix for access log HMAC computation.
+const ACCESS_LOG_HMAC_DST: &[u8] = b"witnessd-access-log-v1";
 
 /// Action recorded in the access log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,13 +91,23 @@ pub struct AccessLogEntry {
 }
 
 /// SQLite-backed administrative access audit log for SOC 2 compliance.
+///
+/// Each entry is protected by an HMAC-SHA256 integrity tag computed over the
+/// entry fields, making the audit trail tamper-detectable.
 pub struct AccessLog {
     conn: Connection,
+    hmac_key: Vec<u8>,
 }
 
 impl AccessLog {
     /// Open or create an access log database at `path`.
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<Self> {
+    ///
+    /// `hmac_key` must be exactly 32 bytes; it is used to compute per-entry
+    /// HMAC-SHA256 integrity tags. Use the same key as [`SecureStore`].
+    pub fn open<P: AsRef<std::path::Path>>(path: P, hmac_key: Vec<u8>) -> anyhow::Result<Self> {
+        if hmac_key.len() != 32 {
+            anyhow::bail!("HMAC key must be exactly 32 bytes, got {}", hmac_key.len());
+        }
         let path = path.as_ref();
         let conn = Connection::open(path)?;
         #[cfg(unix)]
@@ -96,7 +116,7 @@ impl AccessLog {
         }
         let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
         conn.execute_batch("PRAGMA synchronous=FULL;")?;
-        conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+        conn.execute_batch(&format!("PRAGMA busy_timeout={};", super::BUSY_TIMEOUT_MS))?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS access_log (
@@ -106,7 +126,8 @@ impl AccessLog {
                 action        TEXT NOT NULL,
                 resource      TEXT NOT NULL,
                 result        TEXT NOT NULL,
-                ip_or_source  TEXT NOT NULL
+                ip_or_source  TEXT NOT NULL,
+                entry_hmac    TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_access_log_ts
                 ON access_log(timestamp_ns);
@@ -114,20 +135,43 @@ impl AccessLog {
                 ON access_log(actor_id, timestamp_ns);",
         )?;
 
-        Ok(Self { conn })
+        // Migration: add entry_hmac column to pre-existing schemas.
+        let has_hmac: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(access_log)")?;
+            let found = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .any(|name| matches!(name.as_deref(), Ok("entry_hmac")));
+            found
+        };
+        if !has_hmac {
+            conn.execute_batch("ALTER TABLE access_log ADD COLUMN entry_hmac TEXT;")?;
+        }
+
+        Ok(Self { conn, hmac_key })
     }
 
     /// Open an in-memory access log (useful for tests).
     #[cfg(test)]
     pub fn open_in_memory() -> anyhow::Result<Self> {
-        Self::open(":memory:")
+        Self::open(":memory:", vec![0xAA; 32])
     }
 
-    /// Record an access event.
+    /// Record an access event with HMAC integrity protection.
     pub fn log_access(&self, entry: &mut AccessLogEntry) -> anyhow::Result<()> {
+        let hmac_hex = hex::encode(compute_access_entry_hmac(
+            &self.hmac_key,
+            entry.timestamp_ns,
+            &entry.actor_id,
+            entry.action.as_str(),
+            &entry.resource,
+            entry.result.as_str(),
+            &entry.ip_or_source,
+        ));
+
         self.conn.execute(
-            "INSERT INTO access_log (timestamp_ns, actor_id, action, resource, result, ip_or_source)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO access_log \
+             (timestamp_ns, actor_id, action, resource, result, ip_or_source, entry_hmac) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 entry.timestamp_ns,
                 entry.actor_id,
@@ -135,6 +179,7 @@ impl AccessLog {
                 entry.resource,
                 entry.result.as_str(),
                 entry.ip_or_source,
+                hmac_hex,
             ],
         )?;
         entry.id = Some(self.conn.last_insert_rowid());
@@ -251,6 +296,85 @@ impl AccessLog {
             .query_row("SELECT COUNT(*) FROM access_log", [], |row| row.get(0))
             .map_err(anyhow::Error::from)
     }
+
+    /// Verify HMAC integrity of all access log entries.
+    ///
+    /// Returns `Ok(true)` if every entry with an HMAC passes verification.
+    /// Returns `Ok(false)` if any entry has a mismatched HMAC.
+    /// Entries without an HMAC (pre-migration) are skipped.
+    pub fn verify_access_log_integrity(&self) -> anyhow::Result<bool> {
+        let mut stmt = self.conn.prepare(
+            "SELECT timestamp_ns, actor_id, action, resource, result, ip_or_source, entry_hmac \
+             FROM access_log ORDER BY id ASC",
+        )?;
+
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let stored_hmac: Option<String> = row.get(6)?;
+            let stored_hmac = match stored_hmac {
+                Some(h) => h,
+                None => continue,
+            };
+
+            let timestamp_ns: i64 = row.get(0)?;
+            let actor_id: String = row.get(1)?;
+            let action: String = row.get(2)?;
+            let resource: String = row.get(3)?;
+            let result: String = row.get(4)?;
+            let ip_or_source: String = row.get(5)?;
+
+            let expected = compute_access_entry_hmac(
+                &self.hmac_key,
+                timestamp_ns,
+                &actor_id,
+                &action,
+                &resource,
+                &result,
+                &ip_or_source,
+            );
+            let expected_hex = hex::encode(expected);
+
+            if stored_hmac
+                .as_bytes()
+                .ct_eq(expected_hex.as_bytes())
+                .unwrap_u8()
+                == 0
+            {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+}
+
+impl Drop for AccessLog {
+    fn drop(&mut self) {
+        self.hmac_key.zeroize();
+    }
+}
+
+/// Compute HMAC-SHA256 over access log entry fields with domain separation.
+fn compute_access_entry_hmac(
+    key: &[u8],
+    timestamp_ns: i64,
+    actor_id: &str,
+    action: &str,
+    resource: &str,
+    result: &str,
+    ip_or_source: &str,
+) -> [u8; 32] {
+    let mut mac =
+        HmacSha256::new_from_slice(key).expect("HMAC-SHA256 accepts any key size; infallible");
+    mac.update(ACCESS_LOG_HMAC_DST);
+    mac.update(&timestamp_ns.to_be_bytes());
+    // Length-prefix variable-length fields to prevent concatenation ambiguity.
+    for field in [actor_id, action, resource, result, ip_or_source] {
+        let bytes = field.as_bytes();
+        mac.update(&(bytes.len() as u32).to_be_bytes());
+        mac.update(bytes);
+    }
+    mac.finalize().into_bytes().into()
 }
 
 /// Helper to create an `AccessLogEntry` with the current timestamp.
@@ -412,5 +536,77 @@ mod tests {
             assert_eq!(AccessResult::from_str(s), Some(result));
         }
         assert_eq!(AccessResult::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn test_access_log_hmac_integrity_passes() {
+        let log = AccessLog::open_in_memory().expect("open");
+        let mut e1 = make_entry(AccessAction::Read, "/a.txt");
+        log.log_access(&mut e1).expect("insert");
+        let mut e2 = make_entry(AccessAction::Write, "/b.txt");
+        log.log_access(&mut e2).expect("insert");
+
+        assert!(log.verify_access_log_integrity().expect("verify"));
+    }
+
+    #[test]
+    fn test_access_log_hmac_detects_tamper() {
+        let log = AccessLog::open_in_memory().expect("open");
+        let mut entry = make_entry(AccessAction::Export, "/secret.cpop");
+        log.log_access(&mut entry).expect("insert");
+
+        // Tamper with the resource field after insertion.
+        log.conn
+            .execute(
+                "UPDATE access_log SET resource = '/tampered.cpop' WHERE id = 1",
+                [],
+            )
+            .expect("tamper");
+
+        assert!(!log.verify_access_log_integrity().expect("verify"));
+    }
+
+    #[test]
+    fn test_access_log_hmac_different_keys_differ() {
+        let hmac_a = compute_access_entry_hmac(
+            &[0xAA; 32],
+            1_000_000_000,
+            "actor",
+            "read",
+            "/f.txt",
+            "success",
+            "ipc",
+        );
+        let hmac_b = compute_access_entry_hmac(
+            &[0xBB; 32],
+            1_000_000_000,
+            "actor",
+            "read",
+            "/f.txt",
+            "success",
+            "ipc",
+        );
+        assert_ne!(hmac_a, hmac_b);
+    }
+
+    #[test]
+    fn test_access_log_hmac_deterministic() {
+        let key = [0xCC; 32];
+        let h1 = compute_access_entry_hmac(&key, 42, "actor", "write", "/f", "success", "cli");
+        let h2 = compute_access_entry_hmac(&key, 42, "actor", "write", "/f", "success", "cli");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_access_log_rejects_bad_key_length() {
+        let result = AccessLog::open(":memory:", vec![0xAA; 16]);
+        let msg = result.err().expect("should fail").to_string();
+        assert!(msg.contains("32 bytes"));
+    }
+
+    #[test]
+    fn test_access_log_empty_verifies() {
+        let log = AccessLog::open_in_memory().expect("open");
+        assert!(log.verify_access_log_integrity().expect("verify"));
     }
 }

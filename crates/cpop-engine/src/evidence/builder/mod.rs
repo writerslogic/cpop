@@ -301,16 +301,13 @@ impl Builder {
 
     fn add_context_claims(&mut self) {
         if !self.packet.contexts.is_empty() {
-            // TODO(M-005): Replace period_type String with a PeriodType enum
-            // (e.g. Focused, Assisted, External, ...) in evidence/types.rs.
-            // Blocked on deciding serde wire-compat strategy for existing packets.
             let mut assisted = 0;
             let mut external = 0;
             for ctx in &self.packet.contexts {
-                if ctx.period_type == "assisted" {
+                if ctx.period_type == ContextPeriodType::Assisted {
                     assisted += 1;
                 }
-                if ctx.period_type == "external" {
+                if ctx.period_type == ContextPeriodType::External {
                     external += 1;
                 }
             }

@@ -266,21 +266,16 @@ pub fn appraise(packet: &Packet, policy: &AppraisalPolicy) -> Result<EarToken> {
     })
 }
 
-/// SHA-256 of the packet's canonical JSON encoding for the evidence reference.
+/// SHA-256 of the packet's deterministic CBOR encoding for the evidence reference.
 ///
-/// Uses `serde_json::Value` round-trip to produce sorted-key JSON, ensuring
-/// deterministic hashing regardless of struct field declaration order.
-///
-/// Note: `serde_json::Value` uses `BTreeMap` for objects, so top-level keys are
-/// sorted lexicographically. However, arrays preserve insertion order, and
-/// floating-point formatting is platform-dependent, so true canonicalization
-/// would require a specification like JCS (RFC 8785).
+/// Uses ciborium to produce deterministic CBOR (RFC 8949 Section 4.2),
+/// which gives platform-independent byte output unlike JSON (where
+/// floating-point formatting varies across platforms).
 fn packet_hash(packet: &Packet) -> Result<[u8; 32]> {
-    let value: serde_json::Value = serde_json::to_value(packet)
-        .map_err(|e| Error::evidence(format!("packet serialization failed: {e}")))?;
-    let data = serde_json::to_vec(&value)
-        .map_err(|e| Error::evidence(format!("canonical JSON serialization failed: {e}")))?;
-    let digest = Sha256::digest(&data);
+    let mut buf = Vec::new();
+    ciborium::into_writer(packet, &mut buf)
+        .map_err(|e| Error::evidence(format!("packet CBOR serialization failed: {e}")))?;
+    let digest = Sha256::digest(&buf);
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&digest);
     Ok(hash)

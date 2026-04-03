@@ -62,6 +62,7 @@ fn test_seal_encode_decode_roundtrip() {
         h3: [3u8; 32],
         signature: [4u8; 64],
         public_key: [5u8; 32],
+        reconstructed: false,
     };
 
     let hex = seal.encode_hex();

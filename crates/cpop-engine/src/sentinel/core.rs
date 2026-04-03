@@ -441,24 +441,10 @@ impl Sentinel {
                                     #[cfg(debug_assertions)]
                                     {
                                         bridge_count += 1;
-                                    }
-                                    #[cfg(debug_assertions)]
-                                    if bridge_count % 100 == 0 {
-                                        if let Ok(dir) = std::env::var("CPOP_DATA_DIR") {
-                                            let path = std::path::Path::new(&dir)
-                                                .join("keystroke_debug.txt");
-                                            if let Ok(mut f) = std::fs::OpenOptions::new()
-                                                .create(true)
-                                                .append(true)
-                                                .open(&path)
-                                            {
-                                                use std::io::Write;
-                                                let _ = writeln!(
-                                                    f,
-                                                    "[{}] bridge: forwarded #{bridge_count}",
-                                                    chrono::Utc::now()
-                                                );
-                                            }
+                                        if bridge_count % 100 == 0 {
+                                            log::debug!(
+                                                "keystroke bridge: forwarded {bridge_count}"
+                                            );
                                         }
                                     }
                                     if let Err(e) = keystroke_tx.try_send(event) {
@@ -920,7 +906,10 @@ impl Sentinel {
                                 )
                             })
                             .await
-                            .unwrap_or(false);
+                            .unwrap_or_else(|e| {
+                                log::error!("Checkpoint task panicked: {e}");
+                                false
+                            });
                             if committed {
                                 let mut map = sessions.write_recover();
                                 if let Some(session) = map.get_mut(path.as_str()) {
@@ -966,7 +955,9 @@ impl Sentinel {
                                                     .map(|d| d.as_secs() as i64)
                                                     .unwrap_or(0),
                                             };
-                                            let _ = store.save_document_stats(&stats);
+                                            if let Err(e) = store.save_document_stats(&stats) {
+                                                log::warn!("Failed to save document stats for {path}: {e}");
+                                            }
                                         }
                                     }
 

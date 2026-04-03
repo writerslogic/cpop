@@ -130,7 +130,7 @@ fn test_update_baseline() {
     let dir = TempDir::new().expect("create temp dir");
     let db_path = dir.path().join("test.db");
 
-    let store = SecureStore::open(&db_path, test_hmac_key()).expect("open store");
+    let mut store = SecureStore::open(&db_path, test_hmac_key()).expect("open store");
 
     store
         .update_baseline("typing_speed", 100.0)
@@ -155,7 +155,7 @@ fn test_baseline_multiple_signals() {
     let dir = TempDir::new().expect("create temp dir");
     let db_path = dir.path().join("test.db");
 
-    let store = SecureStore::open(&db_path, test_hmac_key()).expect("open store");
+    let mut store = SecureStore::open(&db_path, test_hmac_key()).expect("open store");
 
     store.update_baseline("signal_a", 50.0).expect("update a");
     store.update_baseline("signal_b", 100.0).expect("update b");

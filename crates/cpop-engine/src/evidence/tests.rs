@@ -313,7 +313,7 @@ fn test_builder_with_contexts() {
     let decl = create_test_declaration(&chain);
 
     let contexts = vec![ContextPeriod {
-        period_type: "focused".to_string(),
+        period_type: ContextPeriodType::Focused,
         note: Some("writing session".to_string()),
         start_time: Utc::now(),
         end_time: Utc::now(),

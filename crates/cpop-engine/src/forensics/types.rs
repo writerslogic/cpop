@@ -72,6 +72,23 @@ pub struct EventData {
     pub file_path: String,
 }
 
+impl EventData {
+    /// Convert a slice of `SecureEvent` into forensic `EventData` records.
+    pub fn from_secure_events(events: &[crate::store::SecureEvent]) -> Vec<Self> {
+        events
+            .iter()
+            .enumerate()
+            .map(|(i, e)| Self {
+                id: e.id.unwrap_or(i64::try_from(i).unwrap_or(i64::MAX)),
+                timestamp_ns: e.timestamp_ns,
+                file_size: e.file_size,
+                size_delta: e.size_delta,
+                file_path: e.file_path.clone(),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegionData {
     /// Position in document as fraction `[0.0, 1.0]`.

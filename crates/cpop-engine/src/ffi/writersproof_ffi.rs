@@ -35,7 +35,8 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
             };
         }
     };
-    let events = match store.get_events_for_file(&document_path) {
+    let doc_path_str = doc_path.to_string_lossy();
+    let events = match store.get_events_for_file(&doc_path_str) {
         Ok(e) => e,
         Err(e) => {
             return FfiResult {

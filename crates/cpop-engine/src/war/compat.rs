@@ -84,6 +84,7 @@ impl Block {
                 h3: s.h3,
                 signature: s.signature,
                 public_key: s.public_key,
+                reconstructed: false,
             })
             .unwrap_or_else(|| {
                 log::debug!("from_ear: EAR token has no pop_seal; using zero-initialized fallback");
@@ -93,6 +94,7 @@ impl Block {
                     h3: [0u8; 32],
                     signature: [0u8; 64],
                     public_key: [0u8; 32],
+                    reconstructed: true,
                 }
             });
 

@@ -18,6 +18,9 @@ mod tests;
 pub use document_stats::DocumentStats;
 pub use types::SecureEvent;
 
+/// SQLite busy timeout in milliseconds. Shared with `AccessLog` (see `access_log.rs`).
+pub(crate) const BUSY_TIMEOUT_MS: u32 = 5000;
+
 /// HMAC-integrity-protected SQLite event store with hash chaining.
 pub struct SecureStore {
     pub(crate) conn: Connection,
@@ -28,13 +31,19 @@ pub struct SecureStore {
 impl SecureStore {
     /// Open or create a secure store at `path`, initializing schema and verifying integrity.
     pub fn open<P: AsRef<Path>>(path: P, hmac_key: Vec<u8>) -> anyhow::Result<Self> {
+        if hmac_key.len() != 32 {
+            anyhow::bail!("HMAC key must be exactly 32 bytes, got {}", hmac_key.len());
+        }
         let path = path.as_ref();
         let conn = Connection::open(path)?;
         #[cfg(unix)]
         crate::crypto::restrict_permissions(path, 0o600)?;
 
         let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
-        conn.execute_batch("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;")?;
+        conn.execute_batch(&format!(
+            "PRAGMA busy_timeout={BUSY_TIMEOUT_MS}; PRAGMA foreign_keys=ON; \
+             PRAGMA synchronous=FULL;"
+        ))?;
 
         let mut store = Self {
             conn,

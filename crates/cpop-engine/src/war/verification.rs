@@ -293,6 +293,7 @@ pub fn compute_seal(packet: &Packet, declaration: &Declaration) -> Result<Seal, 
         h3,
         signature: [0u8; 64],
         public_key,
+        reconstructed: false,
     })
 }
 

@@ -482,11 +482,16 @@ pub fn parse_url_parts(url: &str) -> (String, String) {
 }
 
 /// Known document file extensions for heuristic title-based path inference.
+///
+/// Intentionally hardcoded rather than configurable: these are structural
+/// heuristics for window-title parsing, not user preferences. Adding an
+/// extension here is a code change that should be reviewed for correctness.
+/// Sorted lexicographically to enable binary search.
 const DOC_EXTENSIONS: &[&str] = &[
-    ".docx", ".doc", ".txt", ".md", ".org", ".rtf", ".odt", ".tex", ".pdf", ".xlsx", ".xls",
-    ".csv", ".pptx", ".ppt", ".rs", ".py", ".js", ".ts", ".jsx", ".tsx", ".c", ".cpp", ".h",
-    ".java", ".go", ".rb", ".swift", ".kt", ".html", ".css", ".json", ".xml", ".yaml", ".yml",
-    ".toml", ".sh", ".bat", ".ps1", ".r", ".jl", ".lua", ".php", ".pl", ".scala",
+    ".bat", ".c", ".cpp", ".css", ".csv", ".doc", ".docx", ".go", ".h", ".html", ".java", ".jl",
+    ".js", ".json", ".jsx", ".kt", ".lua", ".md", ".odt", ".org", ".pdf", ".php", ".pl", ".ppt",
+    ".pptx", ".ps1", ".py", ".r", ".rb", ".rs", ".rtf", ".scala", ".sh", ".swift", ".tex", ".toml",
+    ".ts", ".tsx", ".txt", ".xls", ".xlsx", ".xml", ".yaml", ".yml",
 ];
 
 /// Electron-based editors that don't expose `AXDocument` and need title parsing.
@@ -601,8 +606,9 @@ fn looks_like_file_path(s: &str) -> bool {
     }
 
     let lower = s.to_lowercase();
-    for ext in DOC_EXTENSIONS {
-        if lower.ends_with(ext) {
+    if let Some(dot_pos) = lower.rfind('.') {
+        let ext = &lower[dot_pos..];
+        if DOC_EXTENSIONS.binary_search(&ext).is_ok() {
             return true;
         }
     }

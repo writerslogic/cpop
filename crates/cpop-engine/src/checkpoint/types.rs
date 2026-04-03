@@ -314,15 +314,19 @@ impl Checkpoint {
             hasher.update(rfc_jitter.entropy_commitment.hash);
             hasher.update(rfc_jitter.summary.sample_count.to_be_bytes());
             if let Some(hurst) = rfc_jitter.summary.hurst_exponent {
-                // Canonicalize NaN to a single bit pattern for hash stability.
-                let canonical = if hurst.is_nan() { f64::NAN } else { hurst };
-                hasher.update(canonical.to_be_bytes());
+                if hurst.is_finite() {
+                    hasher.update(hurst.to_be_bytes());
+                } else {
+                    log::warn!("Non-finite Hurst exponent {hurst} excluded from checkpoint hash");
+                }
             }
+            hasher.update(rfc_jitter.binding_mac.mac);
         }
 
         if let Some(time_ev) = &self.time_evidence {
             hasher.update([time_ev.tier as u8]);
             hasher.update(time_ev.timestamp_ms.to_be_bytes());
+            hasher.update(time_ev.vdf_proof_hash);
         }
 
         if let Some(swf) = &self.argon2_swf {
@@ -333,6 +337,10 @@ impl Checkpoint {
             hasher.update(swf.params.memory_cost.to_be_bytes());
             hasher.update(swf.params.parallelism.to_be_bytes());
             hasher.update(swf.challenge);
+            hasher.update(swf.proof_algorithm.to_be_bytes());
+            hasher.update(
+                (swf.claimed_duration.as_millis().min(u64::MAX as u128) as u64).to_be_bytes(),
+            );
         }
 
         if let Some(nonce) = &self.challenge_nonce {
@@ -380,7 +388,12 @@ impl Checkpoint {
     }
 
     /// Recompute the hash after modifying checkpoint fields.
-    pub fn recompute_hash(&mut self) {
+    #[allow(dead_code)]
+    pub(crate) fn recompute_hash(&mut self) {
+        if let Err(e) = self.validate_timestamp() {
+            log::error!("recompute_hash called with invalid timestamp: {e}");
+            return;
+        }
         self.hash = self.compute_hash();
     }
 }

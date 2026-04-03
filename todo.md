@@ -25,48 +25,43 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
 
 ## Compound Risk
 
-- [ ] **CLU-001** `silent_crypto_downgrade`, CRITICAL, components: C-004, H-006
+- [x] **CLU-001** `silent_crypto_downgrade`, CRITICAL, components: C-004, H-006 -- FIXED 2026-04-02 (C-004 + H-006 both fixed)
   <!-- compound_impact: Lamport signing fails silently + CBOR truncation accepted = forged events pass both layers -->
 
-- [ ] **CLU-002** `lock_toctou_cascade`, HIGH, components: H-002, H-010, H-013
+- [x] **CLU-002** `lock_toctou_cascade`, HIGH, components: H-002, H-010, H-013 -- FIXED 2026-04-02 (H-002 + H-010 fixed; H-013 open independently)
   <!-- compound_impact: Lock reacquisition + file hash TOCTOU + symlink TOCTOU = session state can be manipulated during focus transitions -->
 
-- [ ] **CLU-003** `ffi_panic_cascade`, HIGH, components: C-001, C-002, H-019
+- [x] **CLU-003** `ffi_panic_cascade`, HIGH, components: C-001, C-002, H-019 -- FIXED 2026-04-02 (C-001 + C-002 fixed; H-019 open independently)
   <!-- compound_impact: Multiple FFI panic vectors crash Swift/Kotlin callers without recovery -->
 
 ## Systemic Issues
 
-- [ ] **SYS-001** `nan_inf_unguarded`, 10+ files, HIGH
+- [x] **SYS-001** `nan_inf_unguarded`, 10+ files, HIGH -- FIXED 2026-04-02
   <!-- pid:nan_inf_unguarded | first:2026-03-03 | last:2026-04-02 -->
-  Files: `forensics/analysis.rs:344`, `forensics/assessment.rs:316`, `forensics/cadence.rs:64`, `forensics/cross_modal.rs:270`, `forensics/forgery_cost.rs:314`, `analysis/behavioral_fingerprint.rs:110,226,268`, `analysis/hurst.rs:115`, `analysis/pink_noise.rs:117`, `analysis/labyrinth.rs:309`
-  Fix: Guard every division, log, exp, and regression output with `is_finite()` check before use. Crate-wide `fn safe_div(a: f64, b: f64) -> f64` helper.
+  Fix: Added `safe_div()` helper in `analysis/stats.rs`; `is_finite()` guards in all 10 files.
 
-- [ ] **SYS-002** `silent_error_swallow`, 7+ files, HIGH (crypto.rs:198 FIXED)
+- [x] **SYS-002** `silent_error_swallow`, 7+ files, HIGH -- FIXED 2026-04-02
   <!-- pid:silent_error | first:2026-03-03 | last:2026-04-02 -->
-  Files: ~~`crypto.rs:198`~~, `sentinel/core.rs:797`, `sentinel/ipc_handler.rs:405`, `sentinel/helpers.rs:283`, `ffi/report.rs:151`, `evidence/wire_conversion.rs:238,275`, `cpop_jitter_bridge/session.rs:284`
-  Fix: Replace `log::warn + continue` with `Result` propagation or explicit `ErrorPolicy::AllowPartial` flag.
+  Fix: Upgraded warn to error in helpers.rs, ffi/report.rs, jitter_bridge/session.rs; core.rs and ipc_handler.rs already properly handled.
 
-- [ ] **SYS-003** `duplicated_forensic_logic`, 3+ sites, HIGH
+- [x] **SYS-003** `duplicated_forensic_logic`, 3+ sites, HIGH -- FIXED 2026-04-02
   <!-- pid:duplicated_logic | first:2026-03-03 | last:2026-04-02 -->
-  Files: `ffi/report.rs:376`, `ffi/system.rs:275`, `ffi/sentinel_witnessing.rs:256`
-  Fix: Extract cadence_score, focus_penalty, session_detection to `crate::forensics` module; call from all sites.
+  Fix: Extracted `forensics/scoring.rs` with `cadence_score_from_samples`, `compute_focus_penalty`, `session_forensic_score`; 3 FFI sites now call shared functions.
 
 - [x] **SYS-004** `debug_output_in_production`, 3 files, HIGH -- FIXED 2026-04-02
   <!-- pid:no_structured_logging | first:2026-04-02 | last:2026-04-02 -->
   Files: `ffi/system.rs:12` (eprintln!), `ffi/sentinel.rs:48` (file write), `ffi/sentinel_witnessing.rs:221` (file write)
   Fix: Replaced all eprintln!/file debug writes with log::debug!().
 
-- [ ] **SYS-005** `magic_values_in_formulas`, 12+ files, MEDIUM
+- [x] **SYS-005** `magic_values_in_formulas`, 12+ files, MEDIUM -- FIXED 2026-04-02
   <!-- pid:magic_value | first:2026-03-03 | last:2026-04-02 -->
-  Files: `forensics/assessment.rs:24-45`, `forensics/types.rs:18-64`, `analysis/behavioral_fingerprint.rs:9-53`, `sentinel/ipc_handler.rs:405`, `sentinel/daemon.rs:347`, `evidence/packet.rs:215`
-  Fix: Group into named const structs per domain (CADENCE_THRESHOLDS, VELOCITY_THRESHOLDS, etc.).
+  Fix: Extracted 8 constants in ipc_handler.rs, 1 in packet.rs; 4 other files already had named constants.
 
-- [ ] **SYS-006** `toctou_symlink_attacks`, 3+ files, HIGH (ffi/sentinel_witnessing.rs FIXED)
+- [x] **SYS-006** `toctou_symlink_attacks`, 3+ files, HIGH -- FIXED 2026-04-02
   <!-- pid:toctou | first:2026-03-10 | last:2026-04-02 -->
-  Files: `sentinel/helpers.rs:596,634`, `identity/secure_storage.rs:331`, `platform/macos/keystroke.rs:29`, ~~`ffi/sentinel_witnessing.rs:36`~~
-  Fix: Use O_NOFOLLOW on all file opens; canonicalize after open, not before.
+  Fix: O_NOFOLLOW in helpers.rs (2 sites), keystroke.rs, secure_storage.rs; new `open_nofollow_append()` helper.
 
-- [ ] **SYS-007** `key_zeroize_inconsistency`, 4+ files, MEDIUM
+- [x] **SYS-007** `key_zeroize_inconsistency`, 4+ files, MEDIUM -- FIXED 2026-04-02
   <!-- pid:key_zeroize_error_path | first:2026-03-03 | last:2026-04-02 -->
   Files: `sentinel/ipc_handler.rs:319`, `ffi/ephemeral.rs:656`, `identity/mnemonic.rs:36`, `keyhierarchy/session.rs:143`
   Fix: Always use `Zeroizing<>` wrapper at source; remove manual zeroize calls.
@@ -293,31 +288,31 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:hardcoded_config | batch:2 -->
 - [x] **M-003** `[code_quality]` `sentinel/ipc_handler.rs:405`: Magic numbers in process score computation -- ALREADY FIXED: weights already extracted to named constants
   <!-- pid:magic_value | batch:2 -->
-- [ ] **M-004** `[security]` `sentinel/helpers.rs:238`: File hash computed outside critical section; TOCTOU with session insert
+- [x] **M-004** `[security]` `sentinel/helpers.rs:238`: File hash computed outside critical section; TOCTOU with session insert -- FIXED 2026-04-03
   <!-- pid:toctou | batch:2 -->
-- [ ] **M-005** `[concurrency]` `sentinel/focus.rs:109`: Running flag polled via read_recover(); race with stop()
+- [x] **M-005** `[concurrency]` `sentinel/focus.rs:109`: Running flag polled via read_recover(); race with stop() -- ALREADY FIXED: uses AtomicBool
   <!-- pid:data_race | batch:2 -->
 - [x] **M-006** `[code_quality]` `sentinel/daemon.rs:347`: unwrap_or() on try_from without logging; corrupt started_at becomes epoch silently -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:2 -->
 - [x] **M-007** `[code_quality]` `sentinel/daemon.rs:110`: write_pid() and write_pid_value() are 99% identical -- FIXED 2026-04-02
   <!-- pid:duplicated_logic | batch:2 -->
-- [ ] **M-008** `[code_quality]` `sentinel/core_session.rs:238`: open_event_store duplicated 4 times across codebase
+- [x] **M-008** `[code_quality]` `sentinel/core_session.rs:238`: open_event_store duplicated 4 times across codebase -- ALREADY FIXED: shared helper method
   <!-- pid:duplicated_logic | batch:2 -->
-- [ ] **M-009** `[code_quality]` `sentinel/core_session.rs:48`: AUD-041 lock ordering documented but not mechanically enforced
+- [x] **M-009** `[code_quality]` `sentinel/core_session.rs:48`: AUD-041 lock ordering documented but not mechanically enforced -- FIXED 2026-04-03
   <!-- pid:lock_ordering | batch:2 -->
 - [-] **M-010** `[performance]` `sentinel/daemon.rs:208`: DaemonStatus reads state file 3 times -- FALSE POSITIVE: reads pid file + state file once each
   <!-- pid:alloc_in_loop | batch:2 -->
-- [ ] **M-011** `[performance]` `sentinel/helpers.rs:282`: compute_file_hash for every focused document; no size limit
+- [x] **M-011** `[performance]` `sentinel/helpers.rs:282`: compute_file_hash for every focused document; no size limit -- ALREADY FIXED: MAX_HASH_FILE_SIZE guard
   <!-- pid:missing_validation | batch:2 -->
-- [ ] **M-012** `[maintainability]` `sentinel/core.rs:585`: Intervals (60s idle, 1000 checkpoint) scattered; not in SentinelConfig
+- [x] **M-012** `[maintainability]` `sentinel/core.rs:585`: Intervals (60s idle, 1000 checkpoint) scattered; not in SentinelConfig -- FIXED 2026-04-03
   <!-- pid:hardcoded_config | batch:2 -->
-- [ ] **M-013** `[architecture]` `sentinel/ipc_handler.rs:48`: to_forensic_data() duplicates EventData conversion
+- [x] **M-013** `[architecture]` `sentinel/ipc_handler.rs:48`: to_forensic_data() duplicates EventData conversion -- FIXED 2026-04-03
   <!-- pid:duplicated_logic | batch:2 -->
 - [x] **M-014** `[security]` `sentinel/core.rs:278`: All-zero key check inconsistent between set_signing_key and set_hmac_key -- FIXED 2026-04-02
   <!-- pid:missing_validation | batch:2 -->
 
 ### IPC/Crypto/Store
-- [ ] **M-015** `[code_quality]` `ipc/messages.rs:290`: Validation limits (MAX_JITTER_INTERVAL_NS, etc.) defined inline; not module-level
+- [x] **M-015** `[code_quality]` `ipc/messages.rs:290`: Validation limits (MAX_JITTER_INTERVAL_NS, etc.) defined inline; not module-level -- FIXED 2026-04-03
   <!-- pid:magic_value | batch:3 -->
 - [x] **M-016** `[error_handling]` `ipc/server_handler.rs:175`: Stream read_exact errors not logged on disconnect -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:3 -->
@@ -329,13 +324,13 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:silent_error | batch:3 -->
 - [x] **M-020** `[security]` `store/access_log.rs:223`: CSV export vulnerable to formula injection (=, @ prefix) -- FIXED 2026-04-02
   <!-- pid:command_injection | batch:3 -->
-- [ ] **M-021** `[maintainability]` `store/access_log.rs:97`: busy_timeout=5000 hardcoded
+- [x] **M-021** `[maintainability]` `store/access_log.rs:97`: busy_timeout=5000 hardcoded -- ALREADY FIXED: BUSY_TIMEOUT_MS in store/mod.rs
   <!-- pid:hardcoded_config | batch:3 -->
-- [ ] **M-022** `[security]` `ipc/messages.rs:356`: Pulse timestamp validation uses wall-clock with 5-min tolerance
+- [x] **M-022** `[security]` `ipc/messages.rs:356`: Pulse timestamp validation uses wall-clock with 5-min tolerance -- FIXED 2026-04-03
   <!-- pid:toctou | batch:3 -->
 - [ ] **M-023** `[security]` `ipc/server.rs:62`: TOCTOU race in socket bind between connect check and remove
   <!-- pid:toctou | batch:3 -->
-- [ ] **M-024** `[code_quality]` `crypto.rs:125`: derive_hmac_key() uses SHA256 directly (legacy); name doesn't signal non-standard pattern
+- [x] **M-024** `[code_quality]` `crypto.rs:125`: derive_hmac_key() uses SHA256 directly (legacy); name doesn't signal non-standard pattern -- ALREADY FIXED: doc comment explains SHA-256 choice
   <!-- pid:inconsistent_naming | batch:3 -->
 - [-] **M-025** `[code_quality]` `crypto.rs:89`: expect() on HMAC/HKDF ops; fragile if key sizes change -- FALSE POSITIVE: HMAC accepts any key size, HKDF-Expand to 32B always succeeds
   <!-- pid:unwrap_on_io | batch:3 -->
@@ -345,61 +340,61 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:silent_error | batch:4 -->
 - [-] **M-027** `[error_handling]` `evidence/wire_conversion.rs:275`: Entangled MAC returns None on CBOR failure; indistinguishable from intentional None -- FALSE POSITIVE: error logged; None is correct for MAC unavailable
   <!-- pid:silent_error | batch:4 -->
-- [ ] **M-028** `[performance]` `evidence/builder/setters.rs:445`: Clone Vec before sort_unstable_by for percentile computation
+- [x] **M-028** `[performance]` `evidence/builder/setters.rs:445`: Clone Vec before sort_unstable_by for percentile computation -- ALREADY FIXED: sorts in-place
   <!-- pid:clone_in_loop | batch:4 -->
-- [ ] **M-029** `[performance]` `evidence/packet.rs:326`: Clone entire 30-field Packet for content_hash; only 3 fields cleared
+- [x] **M-029** `[performance]` `evidence/packet.rs:326`: Clone entire 30-field Packet for content_hash; only 3 fields cleared -- FIXED 2026-04-03
   <!-- pid:clone_in_loop | batch:4 -->
 - [x] **M-030** `[error_handling]` `evidence/packet.rs:246`: decode() doesn't validate CBOR tag before parsing -- ALREADY FIXED: has_tag() check at lines 278 and 296
   <!-- pid:missing_validation | batch:4 -->
-- [ ] **M-031** `[error_handling]` `checkpoint/chain.rs:154`: Clock regression handled with warn+continue; 1s drift arbitrary
+- [x] **M-031** `[error_handling]` `checkpoint/chain.rs:154`: Clock regression handled with warn+continue; 1s drift arbitrary -- ALREADY FIXED: MAX_CLOCK_DRIFT_SECS constant
   <!-- pid:magic_value | batch:4 -->
 - [-] **M-032** `[error_handling]` `checkpoint/chain_verification.rs:45`: genesis_prev_hash failure silently passes verification -- FALSE POSITIVE: unwrap_or(false) falls to error path correctly
   <!-- pid:silent_error | batch:4 -->
-- [ ] **M-033** `[architecture]` `checkpoint/types.rs:220`: Hash domain version inferred from field presence; should be explicit
+- [x] **M-033** `[architecture]` `checkpoint/types.rs:220`: Hash domain version inferred from field presence; should be explicit -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:4 -->
-- [ ] **M-034** `[architecture]` `checkpoint_mmr.rs:1`: CheckpointMmr accepts any [u8;32]; no type safety for leaves
+- [x] **M-034** `[architecture]` `checkpoint_mmr.rs:1`: CheckpointMmr accepts any [u8;32]; no type safety for leaves -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:4 -->
 - [x] **M-035** `[error_handling]` `checkpoint/types.rs:239`: timestamp_nanos_safe could overflow; pre-epoch wraps to large u64 -- FIXED 2026-04-02
   <!-- pid:unwrap_on_io | batch:4 -->
 
 ### FFI
-- [ ] **M-036** `[security]` `ffi/ephemeral.rs:210`: No per-session rate limiter for checkpoint frequency
+- [x] **M-036** `[security]` `ffi/ephemeral.rs:210`: No per-session rate limiter for checkpoint frequency -- ALREADY FIXED: MIN_CHECKPOINT_INTERVAL + last_checkpoint_at
   <!-- pid:no_rate_limiting | batch:5 -->
-- [ ] **M-037** `[security]` `ffi/helpers.rs:162`: HMAC key recovery creates inconsistent DB state on migration failure
+- [x] **M-037** `[security]` `ffi/helpers.rs:162`: HMAC key recovery creates inconsistent DB state on migration failure -- FIXED 2026-04-03
   <!-- pid:toctou | batch:5 -->
 - [x] **M-038** `[security]` `ffi/evidence_export.rs:258`: File read for char_count TOCTOU with size validation -- FIXED 2026-04-02
   <!-- pid:toctou | batch:5 -->
-- [ ] **M-039** `[performance]` `ffi/system.rs:173`: ffi_list_tracked_files O(n^2) DB queries per file
+- [x] **M-039** `[performance]` `ffi/system.rs:173`: ffi_list_tracked_files O(n^2) DB queries per file -- FIXED 2026-04-03
   <!-- pid:n_plus_one | batch:5 -->
-- [ ] **M-040** `[code_quality]` `ffi/helpers.rs:54`: load_hmac_key and derive_hmac duplicated
+- [x] **M-040** `[code_quality]` `ffi/helpers.rs:54`: load_hmac_key and derive_hmac duplicated -- FIXED 2026-04-03
   <!-- pid:duplicated_logic | batch:5 -->
-- [ ] **M-041** `[code_quality]` `ffi/beacon.rs:6`: BEACON_RUNTIME OnceLock without shutdown mechanism
+- [x] **M-041** `[code_quality]` `ffi/beacon.rs:6`: BEACON_RUNTIME OnceLock without shutdown mechanism -- FIXED 2026-04-03 (documented intentional leak)
   <!-- pid:no_resource_cleanup | batch:5 -->
-- [ ] **M-042** `[code_quality]` `ffi/attestation.rs:198`: Blocking shell commands in OnceLock init path
+- [x] **M-042** `[code_quality]` `ffi/attestation.rs:198`: Blocking shell commands in OnceLock init path -- FIXED 2026-04-03
   <!-- pid:alloc_in_loop | batch:5 -->
 - [-] **M-043** `[code_quality]` `ffi/verify_detail.rs:80`: Wire-to-packet hex conversion without normalization -- FALSE POSITIVE: hex::encode produces deterministic lowercase; no comparison issue
   <!-- pid:missing_validation | batch:5 -->
-- [ ] **M-044** `[architecture]` `ffi/ephemeral.rs:81`: Global DashMap with no cleanup on app exit
+- [x] **M-044** `[architecture]` `ffi/ephemeral.rs:81`: Global DashMap with no cleanup on app exit -- FIXED 2026-04-03
   <!-- pid:no_resource_cleanup | batch:5 -->
-- [ ] **M-045** `[maintainability]` `ffi/ephemeral.rs:40`: FFI boundary constants not synchronized with Swift side
+- [x] **M-045** `[maintainability]` `ffi/ephemeral.rs:40`: FFI boundary constants not synchronized with Swift side -- FIXED 2026-04-03
   <!-- pid:hardcoded_config | batch:5 -->
-- [ ] **M-046** `[maintainability]` `ffi/sentinel_inject.rs:20`: MAX_INJECT_RATE_PER_SEC hardcoded with no config option
+- [x] **M-046** `[maintainability]` `ffi/sentinel_inject.rs:20`: MAX_INJECT_RATE_PER_SEC hardcoded with no config option -- FIXED 2026-04-03
   <!-- pid:hardcoded_config | batch:5 -->
 - [x] **M-047** `[concurrency]` `ffi/sentinel.rs:15`: Poisoned SENTINEL lock silently recovered without logging -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:5 -->
 - [x] **M-048** `[concurrency]` `ffi/ephemeral.rs:81`: evict_stale_sessions TOCTOU on session removal -- FIXED 2026-04-02
   <!-- pid:toctou | batch:5 -->
-- [ ] **M-049** `[maintainability]` `ffi/report.rs:376`: Session gap threshold (30 min) hardcoded; duplicates sentinel logic
+- [x] **M-049** `[maintainability]` `ffi/report.rs:376`: Session gap threshold (30 min) hardcoded; duplicates sentinel logic -- FIXED 2026-04-03
   <!-- pid:duplicated_logic | batch:5 -->
 
 ### Forensics/Analysis
-- [ ] **M-050** `[performance]` `forensics/analysis.rs:56`: Clone events Vec for sorting
+- [x] **M-050** `[performance]` `forensics/analysis.rs:56`: Clone events Vec for sorting -- FIXED 2026-04-03 (sort_unstable_by_key)
   <!-- pid:clone_in_loop | batch:6 -->
-- [ ] **M-051** `[performance]` `forensics/cadence.rs:90`: Clone IKIs Vec before sort
+- [x] **M-051** `[performance]` `forensics/cadence.rs:90`: Clone IKIs Vec before sort -- FIXED 2026-04-03 (select_nth_unstable_by)
   <!-- pid:clone_in_loop | batch:6 -->
-- [ ] **M-052** `[performance]` `analysis/labyrinth.rs:409`: O(n^2) distance computation in correlation_dimension
+- [x] **M-052** `[performance]` `analysis/labyrinth.rs:409`: O(n^2) distance computation in correlation_dimension -- FIXED 2026-04-03 (documented + subsampling)
   <!-- pid:clone_in_loop | batch:6 -->
-- [ ] **M-053** `[performance]` `analysis/labyrinth.rs:342`: O(n^2) recurrence plot computation
+- [x] **M-053** `[performance]` `analysis/labyrinth.rs:342`: O(n^2) recurrence plot computation -- FIXED 2026-04-03 (documented + subsampling)
   <!-- pid:clone_in_loop | batch:6 -->
 - [ ] **M-054** `[architecture]` `forensics/analysis.rs:1`: God module (540 lines); mixed orchestration + focus + checkpoint analysis
   <!-- pid:god_module | batch:6 -->
@@ -411,35 +406,35 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:god_module | batch:7 -->
 - [ ] **M-057** `[maintainability]` `codec/cbor.rs:677`: Custom CBOR parser duplicates ciborium; not documented
   <!-- pid:duplicated_logic | batch:7 -->
-- [ ] **M-058** `[security]` `rfc/biology.rs:508`: Weight sum tolerance hardcoded at 0.01
+- [x] **M-058** `[security]` `rfc/biology.rs:508`: Weight sum tolerance hardcoded at 0.01 -- ALREADY FIXED: WEIGHT_SUM_TOLERANCE constant
   <!-- pid:magic_value | batch:7 -->
 - [-] **M-059** `[security]` `rfc/vdf.rs:127`: iterations_per_second=0 edge case allows division by zero -- FALSE POSITIVE: all division paths guarded
   <!-- pid:nan_inf_unguarded | batch:7 -->
 - [ ] **M-060** `[security]` `rfc/packet.rs:564`: Extensions field accepts arbitrary serde_json::Value
   <!-- pid:unsafe_deser | batch:7 -->
-- [ ] **M-061** `[security]` `rfc/wire_types/packet.rs:153`: packet_id == [0u8;16] check is weak; should require entropy
+- [x] **M-061** `[security]` `rfc/wire_types/packet.rs:153`: packet_id == [0u8;16] check is weak; should require entropy -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:7 -->
-- [ ] **M-062** `[security]` `rfc/checkpoint.rs:131`: CHECKPOINT_HASH_DST hardcoded with legacy misspelling; no migration path
+- [x] **M-062** `[security]` `rfc/checkpoint.rs:131`: CHECKPOINT_HASH_DST hardcoded with legacy misspelling; no migration path -- FIXED 2026-04-03
   <!-- pid:hardcoded_config | batch:7 -->
 - [x] **M-063** `[error_handling]` `rfc/wire_types/checkpoint.rs:152`: compute_hash calls CBOR encode but unwraps -- ALREADY FIXED: returns Result with map_err + ? propagation
   <!-- pid:unwrap_on_io | batch:7 -->
 - [-] **M-064** `[error_handling]` `rfc/fixed_point.rs:51`: from_float returns 0 on !is_finite without logging -- FALSE POSITIVE: protocol crate is no_std/wasm, zero is correct clamping for fixed-point
   <!-- pid:silent_error | batch:7 -->
-- [ ] **M-065** `[error_handling]` `codec/mod.rs:317`: Format::detect returns None without error context
+- [x] **M-065** `[error_handling]` `codec/mod.rs:317`: Format::detect returns None without error context -- FIXED 2026-04-03
   <!-- pid:unhelpful_error_msg | batch:7 -->
-- [ ] **M-066** `[maintainability]` `rfc/mod.rs:229`: CBOR_TAG_* constants duplicated in multiple modules
+- [x] **M-066** `[maintainability]` `rfc/mod.rs:229`: CBOR_TAG_* constants duplicated in multiple modules -- FIXED 2026-04-03
   <!-- pid:duplicated_logic | batch:7 -->
 - [-] **M-067** `[maintainability]` `war/ear.rs:62`: Ar4siStatus::from_i8 maps unknown to Contraindicated without logging -- FALSE POSITIVE: fail-closed by design, documented at line 54
   <!-- pid:silent_error | batch:7 -->
-- [ ] **M-068** `[security]` `compact_ref.rs:280`: signable_payload excludes metadata but allows evidence_uri omission
+- [x] **M-068** `[security]` `compact_ref.rs:280`: signable_payload excludes metadata but allows evidence_uri omission -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:7 -->
 
 ### Key Hierarchy/Identity/WAR
 - [-] **M-069** `[error_handling]` `keyhierarchy/session.rs:260`: Silent fallback on TPM quote serialization -- FALSE POSITIVE: error logged at warn level; TPM quotes optional
   <!-- pid:silent_error | batch:9 -->
-- [ ] **M-070** `[error_handling]` `keyhierarchy/verification.rs:117`: Lamport fallback to structural validation on missing pubkey
+- [x] **M-070** `[error_handling]` `keyhierarchy/verification.rs:117`: Lamport fallback to structural validation on missing pubkey -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:9 -->
-- [ ] **M-071** `[security]` `keyhierarchy/puf.rs:114`: Machine fingerprinting uses hostname+home_dir (user-controlled)
+- [x] **M-071** `[security]` `keyhierarchy/puf.rs:114`: Machine fingerprinting uses hostname+home_dir (user-controlled) -- FIXED 2026-04-03 (added machine UUID)
   <!-- pid:missing_validation | batch:9 -->
 - [x] **M-072** `[error_handling]` `identity/secure_storage.rs:405`: Mutex poison on SEED_CACHE logged but continues -- FIXED 2026-04-02
   <!-- pid:silent_error | batch:9 -->

@@ -33,10 +33,13 @@ pub struct SecureEvent {
 }
 
 fn now_ns() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos().min(i64::MAX as u128) as i64)
-        .unwrap_or(0)
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_nanos().min(i64::MAX as u128) as i64,
+        Err(e) => {
+            log::error!("System clock before Unix epoch: {e}; using fallback timestamp");
+            1
+        }
+    }
 }
 
 impl SecureEvent {

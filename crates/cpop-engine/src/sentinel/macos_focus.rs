@@ -102,9 +102,11 @@ impl MacOSFocusMonitor {
         let raw = self.query_focused_window_attribute(pid, "AXDocument")?;
         if raw.starts_with("file://") {
             let path = raw.trim_start_matches("file://");
-            let decoded = urlencoding::decode(path).unwrap_or_default().into_owned();
-            if !decoded.is_empty() {
-                return Some(decoded);
+            if let Ok(decoded) = urlencoding::decode(path) {
+                let owned = decoded.into_owned();
+                if !owned.is_empty() {
+                    return Some(owned);
+                }
             }
         }
         None

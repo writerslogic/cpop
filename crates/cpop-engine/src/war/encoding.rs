@@ -220,6 +220,7 @@ impl Seal {
             h3,
             signature,
             public_key,
+            reconstructed: false,
         })
     }
 }

@@ -54,12 +54,12 @@ impl SecureStore {
     }
 
     /// Update a physical baseline signal using Welford's online algorithm.
-    pub fn update_baseline(&self, signal: &str, value: f64) -> anyhow::Result<()> {
+    pub fn update_baseline(&mut self, signal: &str, value: f64) -> anyhow::Result<()> {
         if !value.is_finite() {
             return Ok(()); // Silently reject non-finite values to prevent database corruption
         }
 
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.conn.transaction()?;
 
         let res = tx.query_row(
             "SELECT sample_count, mean, m2 FROM physical_baselines WHERE signal_name = ?",

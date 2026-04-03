@@ -183,13 +183,14 @@ impl CheckpointMmr {
     }
 }
 
-/// `SHA256("witnessd-chain-metadata-v1" || checkpoint_count || mmr_root || mmr_leaf_count)`.
+/// `SHA256("witnessd-chain-metadata-v1" || checkpoint_count || mmr_root || mmr_leaf_count || metadata_version)`.
 pub fn metadata_signing_payload(metadata: &ChainMetadata) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-chain-metadata-v1");
     hasher.update(metadata.checkpoint_count.to_be_bytes());
     hasher.update(metadata.mmr_root);
     hasher.update(metadata.mmr_leaf_count.to_be_bytes());
+    hasher.update(metadata.metadata_version.to_be_bytes());
     hasher.finalize().into()
 }
 

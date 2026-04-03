@@ -106,6 +106,9 @@ pub struct Seal {
     /// H4: Ed25519 signature of H3
     pub signature: [u8; 64],
     pub public_key: [u8; 32],
+    /// True when this seal was reconstructed from a format (e.g. EAR) that
+    /// lacked the original seal data, so all hash/signature fields are zeroed.
+    pub reconstructed: bool,
 }
 
 impl Serialize for Seal {
@@ -114,12 +117,16 @@ impl Serialize for Seal {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Seal", 5)?;
+        let field_count = if self.reconstructed { 6 } else { 5 };
+        let mut state = serializer.serialize_struct("Seal", field_count)?;
         state.serialize_field("h1", &hex::encode(self.h1))?;
         state.serialize_field("h2", &hex::encode(self.h2))?;
         state.serialize_field("h3", &hex::encode(self.h3))?;
         state.serialize_field("signature", &hex::encode(self.signature))?;
         state.serialize_field("public_key", &hex::encode(self.public_key))?;
+        if self.reconstructed {
+            state.serialize_field("reconstructed", &true)?;
+        }
         state.end()
     }
 }
@@ -136,6 +143,8 @@ impl<'de> Deserialize<'de> for Seal {
             h3: String,
             signature: String,
             public_key: String,
+            #[serde(default)]
+            reconstructed: bool,
         }
 
         let helper = SealHelper::deserialize(deserializer)?;
@@ -162,6 +171,7 @@ impl<'de> Deserialize<'de> for Seal {
             h3: [0u8; 32],
             signature: [0u8; 64],
             public_key: [0u8; 32],
+            reconstructed: helper.reconstructed,
         };
         seal.h1.copy_from_slice(&h1);
         seal.h2.copy_from_slice(&h2);

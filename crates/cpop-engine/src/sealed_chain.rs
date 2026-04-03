@@ -19,7 +19,7 @@
 use std::fs;
 use std::path::Path;
 
-use aes_gcm::aead::Aead;
+use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -90,15 +90,27 @@ pub fn save_sealed(
     rand::Fill::fill(&mut nonce_bytes, &mut rand::rng());
     let nonce = Nonce::from_slice(&nonce_bytes);
 
+    // Build the header first so it can serve as AAD (associated data).
+    // This authenticates magic, version, nonce, and document_id during
+    // decryption, preventing header tampering.
+    let mut header = Vec::with_capacity(HEADER_SIZE);
+    header.extend_from_slice(SEALED_MAGIC);
+    header.extend_from_slice(&SEALED_VERSION.to_le_bytes());
+    header.extend_from_slice(&nonce_bytes);
+    header.extend_from_slice(document_id);
+
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(
+            nonce,
+            Payload {
+                msg: &plaintext,
+                aad: &header,
+            },
+        )
         .map_err(|_| Error::crypto("AES-GCM encryption failed"))?;
 
     let mut output = Vec::with_capacity(HEADER_SIZE + ciphertext.len());
-    output.extend_from_slice(SEALED_MAGIC);
-    output.extend_from_slice(&SEALED_VERSION.to_le_bytes());
-    output.extend_from_slice(&nonce_bytes);
-    output.extend_from_slice(document_id);
+    output.extend_from_slice(&header);
     output.extend_from_slice(&ciphertext);
 
     if let Some(parent) = path.parent() {
@@ -167,14 +179,23 @@ pub fn load_sealed_verified(
         }
     }
 
+    let header = &data[..HEADER_SIZE];
     let ciphertext = &data[HEADER_SIZE..];
 
     let cipher = Aes256Gcm::new_from_slice(key.key.as_bytes())
         .map_err(|_| Error::crypto("AES-GCM key init failed"))?;
 
     let nonce = Nonce::from_slice(nonce_bytes);
+    // Use the header as AAD so that any tampering of magic, version, nonce,
+    // or document_id causes decryption to fail with an auth tag mismatch.
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad: header,
+            },
+        )
         .map_err(|_| Error::crypto("AES-GCM decryption failed (tampered or wrong key)"))?;
 
     let mut chain: Chain = serde_json::from_slice(&plaintext)

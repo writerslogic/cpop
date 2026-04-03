@@ -12,10 +12,10 @@ pub mod wire_conversion;
 
 pub use self::types::{
     AccessControlInfo, AnchorProof, BehavioralEvidence, CheckpointProof, CheckpointSignature,
-    Claim, ClaimType, ContextPeriod, DictationEvent, DocumentInfo, EditRegion, ExternalAnchors,
-    ForensicMetrics, HardwareEvidence, InputDeviceInfo, KeyHierarchyEvidencePacket,
-    KeystrokeEvidence, OtsProof, Packet, RecordProvenance, Rfc3161Proof, TrustTier,
-    WpBeaconAttestation,
+    Claim, ClaimType, ContextPeriod, ContextPeriodType, DictationEvent, DocumentInfo, EditRegion,
+    ExternalAnchors, ForensicMetrics, HardwareEvidence, InputDeviceInfo,
+    KeyHierarchyEvidencePacket, KeystrokeEvidence, OtsProof, Packet, RecordProvenance,
+    Rfc3161Proof, TrustTier, WpBeaconAttestation,
 };
 
 pub use self::builder::{

@@ -163,7 +163,6 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                         backup_path.display()
                     );
                     if let Err(e) = std::fs::rename(db_path, &backup_path) {
-                        log::error!("Failed to rename stale database: {e}");
                         return Err(format!("HMAC mismatch; database backup failed: {e}"));
                     }
                     match SecureStore::open(db_path, std::mem::take(&mut *k)) {

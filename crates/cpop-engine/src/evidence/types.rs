@@ -190,11 +190,63 @@ pub struct WpBeaconAttestation {
     pub wp_key_id: Option<String>,
 }
 
+/// Classification of a context period within a writing session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContextPeriodType {
+    /// Active writing with document focus.
+    Focused,
+    /// AI-assisted writing (copilot, dictation, etc.).
+    Assisted,
+    /// Content sourced from outside the session (paste, import).
+    External,
+    /// Pause or away-from-keyboard interval.
+    Break,
+    /// Research activity (browser, reference material).
+    Research,
+    /// Editing or revising existing content.
+    Revision,
+    /// Idle period with no meaningful input.
+    Idle,
+}
+
+impl std::fmt::Display for ContextPeriodType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Focused => "focused",
+            Self::Assisted => "assisted",
+            Self::External => "external",
+            Self::Break => "break",
+            Self::Research => "research",
+            Self::Revision => "revision",
+            Self::Idle => "idle",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for ContextPeriodType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "focused" => Ok(Self::Focused),
+            "assisted" => Ok(Self::Assisted),
+            "external" => Ok(Self::External),
+            "break" => Ok(Self::Break),
+            "research" => Ok(Self::Research),
+            "revision" => Ok(Self::Revision),
+            "idle" => Ok(Self::Idle),
+            other => Err(format!("unknown context period type: {other}")),
+        }
+    }
+}
+
 /// Time-bounded context annotation (e.g. break, research, revision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPeriod {
     #[serde(rename = "type")]
-    pub period_type: String,
+    pub period_type: ContextPeriodType,
     pub note: Option<String>,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,

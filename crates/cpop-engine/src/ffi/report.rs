@@ -150,33 +150,34 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         });
     }
 
-    let key_fp = crate::ffi::helpers::load_signing_key()
-        .map(|k| {
-            let vk = k.verifying_key();
-            hex::encode(&vk.as_bytes()[..4])
-        })
-        .unwrap_or_else(|_| "unknown".to_string());
+    let (key_fp, guilloche_seed_hex) = match crate::ffi::helpers::load_signing_key() {
+        Ok(signing_key) => {
+            let vk = signing_key.verifying_key();
+            let fp = hex::encode(&vk.as_bytes()[..4]);
 
-    let guilloche_seed_hex = crate::ffi::helpers::load_signing_key()
-        .map_err(|e| log::error!("load signing key for guilloche seed failed: {e}"))
-        .ok()
-        .map(|signing_key| {
             // Derive a separate seed via HKDF so the signing key is never used
             // directly as an oracle for non-signing purposes (EH-010).
             use hkdf::Hkdf;
             use sha2::Sha256;
             let hk = Hkdf::<Sha256>::new(None, signing_key.as_bytes());
             let mut seed = [0u8; 32];
-            if hk.expand(b"witnessd-guilloche-seed-v1", &mut seed).is_err() {
+            let seed_hex = if hk.expand(b"witnessd-guilloche-seed-v1", &mut seed).is_err() {
                 log::error!("HKDF expand failed for guilloche seed");
                 seed.zeroize();
-                return String::new();
-            }
-            let result = hex::encode(seed);
-            seed.zeroize();
-            result
-        })
-        .unwrap_or_default(); // None -> empty string is intentional (no key loaded)
+                String::new()
+            } else {
+                let result = hex::encode(seed);
+                seed.zeroize();
+                result
+            };
+
+            (fp, seed_hex)
+        }
+        Err(e) => {
+            log::error!("load signing key failed: {e}");
+            ("unknown".to_string(), String::new())
+        }
+    };
 
     let device_id = last.machine_id.clone();
     let device_attestation = if hardware_backed {

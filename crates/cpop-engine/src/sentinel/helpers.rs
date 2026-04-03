@@ -223,20 +223,23 @@ pub fn focus_document_sync(
     } else {
         // Compute file hash and load cumulative stats before acquiring the
         // sessions write lock to avoid blocking keystroke counting during I/O.
-        let hash = if !path.starts_with("shadow://") {
+        // We also record the mtime so we can detect staleness inside the lock.
+        let (hash, _pre_mtime) = if !path.starts_with("shadow://") {
             match open_nofollow(path) {
                 Ok(file) => match file.metadata() {
                     Ok(meta) if meta.len() <= MAX_HASH_FILE_SIZE => {
-                        crate::crypto::hash_file_handle(file)
+                        let mtime = meta.modified().ok();
+                        let h = crate::crypto::hash_file_handle(file)
                             .ok()
-                            .map(|(h, _)| hex::encode(h))
+                            .map(|(h, _)| hex::encode(h));
+                        (h, mtime)
                     }
-                    _ => None,
+                    _ => (None, None),
                 },
-                Err(_) => None,
+                Err(_) => (None, None),
             }
         } else {
-            None
+            (None, None)
         };
         let k = signing_key.read_recover().clone();
         let stats = {

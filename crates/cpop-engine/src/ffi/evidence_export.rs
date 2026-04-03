@@ -270,11 +270,12 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         .map(|s| s.chars().count() as u64)
         .unwrap_or(byte_length);
 
-    // Embed the signing public key so verifiers can identify the signer
-    // without requiring out-of-band key distribution.
-    let signing_pub = crate::ffi::helpers::load_signing_key()
+    // Load the signing key once for both public key embedding and COSE signing.
+    let signing_key = crate::ffi::helpers::load_signing_key()
         .map_err(|e| log::warn!("load signing key for evidence export failed: {e}"))
-        .ok()
+        .ok();
+    let signing_pub = signing_key
+        .as_ref()
         .map(|sk| serde_bytes::ByteBuf::from(sk.verifying_key().to_bytes().to_vec()));
 
     let wire_packet = EvidencePacketWire {
@@ -313,21 +314,19 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
             // This prevents tampering, replay, and evidence reuse; any modification
             // to the packet content invalidates the signature.
             let mut is_signed = false;
-            let signed_bytes = match crate::ffi::helpers::load_signing_key() {
-                Ok(signing_key) => {
-                    match cpop_protocol::crypto::sign_evidence_cose(&encoded, &signing_key) {
-                        Ok(cose) => {
-                            is_signed = true;
-                            cose
-                        }
-                        Err(e) => {
-                            log::warn!("COSE signing failed, exporting unsigned: {e}");
-                            encoded
-                        }
+            let signed_bytes = match signing_key {
+                Some(ref sk) => match cpop_protocol::crypto::sign_evidence_cose(&encoded, sk) {
+                    Ok(cose) => {
+                        is_signed = true;
+                        cose
                     }
-                }
-                Err(e) => {
-                    log::warn!("Signing key unavailable, exporting unsigned: {e}");
+                    Err(e) => {
+                        log::warn!("COSE signing failed, exporting unsigned: {e}");
+                        encoded
+                    }
+                },
+                None => {
+                    log::warn!("Signing key unavailable, exporting unsigned");
                     encoded
                 }
             };
