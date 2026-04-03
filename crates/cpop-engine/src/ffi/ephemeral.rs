@@ -360,59 +360,64 @@ pub fn ffi_ephemeral_finalize(
         statement
     };
 
-    // Atomically remove the session, then validate. Re-insert if invalid (M-048).
-    let (_, session) = match sessions().remove(&session_id) {
-        Some(pair) => pair,
-        None => {
+    // Keep the session in the map during WAR construction so it survives
+    // failures and the user can retry. Only remove on success.
+    {
+        let session_ref = match sessions().get(&session_id) {
+            Some(r) => r,
+            None => {
+                return FfiEphemeralFinalizeResult {
+                    success: false,
+                    war_block: String::new(),
+                    compact_ref: String::new(),
+                    error_message: Some(format!("No ephemeral session: {session_id}")),
+                };
+            }
+        };
+        if session_ref.content_snapshots.is_empty() {
             return FfiEphemeralFinalizeResult {
                 success: false,
                 war_block: String::new(),
                 compact_ref: String::new(),
-                error_message: Some(format!("No ephemeral session: {session_id}")),
+                error_message: Some("No checkpoints recorded in session".to_string()),
             };
         }
-    };
-    if session.content_snapshots.is_empty() {
-        sessions().insert(session_id, session);
-        return FfiEphemeralFinalizeResult {
-            success: false,
-            war_block: String::new(),
-            compact_ref: String::new(),
-            error_message: Some("No checkpoints recorded in session".to_string()),
-        };
-    }
 
-    let final_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
-    let final_hash_hex = hex::encode(final_hash);
-    let _char_count = content.len() as u64;
+        let final_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
+        let final_hash_hex = hex::encode(final_hash);
 
-    let checkpoint_count = session.content_snapshots.len();
+        let checkpoint_count = session_ref.content_snapshots.len();
 
-    let war_block_str = match build_war_block(&final_hash_hex, &statement, &session) {
-        Ok(s) => s,
-        Err(e) => {
-            return FfiEphemeralFinalizeResult {
-                success: false,
-                war_block: String::new(),
-                compact_ref: String::new(),
-                error_message: Some(format!("Failed to create WAR block: {e}")),
+        let war_block_str = match build_war_block(&final_hash_hex, &statement, &session_ref) {
+            Ok(s) => s,
+            Err(e) => {
+                // Session stays in the map; user can retry.
+                return FfiEphemeralFinalizeResult {
+                    success: false,
+                    war_block: String::new(),
+                    compact_ref: String::new(),
+                    error_message: Some(format!("Failed to create WAR block: {e}")),
+                };
             }
+        };
+
+        let compact_ref = format!(
+            "pop-ref:writerslogic:{}:{}",
+            &final_hash_hex[..final_hash_hex.len().min(12)],
+            checkpoint_count
+        );
+
+        // WAR block built successfully; drop the read guard before removing.
+        drop(session_ref);
+        sessions().remove(&session_id);
+        cleanup_session_state(&session_id);
+
+        FfiEphemeralFinalizeResult {
+            success: true,
+            war_block: war_block_str,
+            compact_ref,
+            error_message: None,
         }
-    };
-
-    let compact_ref = format!(
-        "pop-ref:writerslogic:{}:{}",
-        &final_hash_hex[..final_hash_hex.len().min(12)],
-        checkpoint_count
-    );
-
-    cleanup_session_state(&session_id);
-
-    FfiEphemeralFinalizeResult {
-        success: true,
-        war_block: war_block_str,
-        compact_ref,
-        error_message: None,
     }
 }
 
