@@ -349,11 +349,13 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         physical_context: None,
         beacon_info: None,
         anomalies: report_anomalies,
-        verifiable_credential_json: build_vc_json(score, &doc_hash, &key_fp),
+        verifiable_credential_json: None,
         author_did: crate::ffi::helpers::load_signing_key()
             .ok()
             .map(|sk| crate::identity::did_key_from_public(sk.verifying_key().as_bytes())),
     };
+
+    war_report.verifiable_credential_json = build_vc_json(&war_report);
 
     Ok((war_report, guilloche_seed_hex))
 }
@@ -571,7 +573,7 @@ fn make_report_session(
 
 /// Build a W3C Verifiable Credential 2.0 JSON string from report data.
 /// Returns `None` if the signing key is unavailable or VC construction fails.
-fn build_vc_json(score: u32, doc_hash: &str, _key_fingerprint: &str) -> Option<String> {
+fn build_vc_json(report: &WarReport) -> Option<String> {
     use crate::war::ear::*;
     use crate::war::profiles::vc;
     use std::collections::BTreeMap;
@@ -580,31 +582,96 @@ fn build_vc_json(score: u32, doc_hash: &str, _key_fingerprint: &str) -> Option<S
     let pub_key = signing_key.verifying_key();
     let author_did = crate::identity::did_key_from_public(pub_key.as_bytes());
 
-    let status = if score >= 60 {
+    let status = if report.score >= 60 {
         Ar4siStatus::Affirming
-    } else if score >= 40 {
+    } else if report.score >= 40 {
         Ar4siStatus::None
-    } else if score >= 20 {
+    } else if report.score >= 20 {
         Ar4siStatus::Warning
     } else {
         Ar4siStatus::Contraindicated
     };
 
+    let (_, tier_num, _) = crate::ffi::helpers::detect_attestation_tier_info();
+
+    // Build AR4SI trust vector from available report data.
+    let mut tv = TrustworthinessVector::default();
+    tv.sourced_data = if report.score >= 60 {
+        Ar4siStatus::Affirming as i8
+    } else if report.score >= 40 {
+        Ar4siStatus::Warning as i8
+    } else {
+        Ar4siStatus::None as i8
+    };
+    tv.hardware = if tier_num >= 2 {
+        Ar4siStatus::Affirming as i8
+    } else {
+        Ar4siStatus::None as i8
+    };
+    tv.instance_identity = if tier_num >= 3 {
+        Ar4siStatus::Affirming as i8
+    } else if tier_num >= 1 {
+        Ar4siStatus::Warning as i8
+    } else {
+        Ar4siStatus::None as i8
+    };
+
+    // Chain timing from report sessions.
+    let chain_duration = if report.total_duration_min > 0.0 {
+        Some((report.total_duration_min * 60.0) as u64)
+    } else {
+        None
+    };
+    let process_start = report
+        .checkpoints
+        .first()
+        .map(|cp| cp.timestamp.to_rfc3339());
+    let process_end = report
+        .checkpoints
+        .last()
+        .map(|cp| cp.timestamp.to_rfc3339());
+
+    // Forensic summary from metrics.
+    let forensic_summary = report.forensic_metrics.as_ref().map(|fm| {
+        format!(
+            "mode={} score={:.2} risk={} hurst={} cv={:.3}",
+            fm.writing_mode,
+            fm.assessment_score,
+            fm.risk_level,
+            fm.hurst_exponent
+                .map(|h| format!("{h:.2}"))
+                .unwrap_or_else(|| "n/a".into()),
+            fm.coefficient_of_variation,
+        )
+    });
+
+    // Collect warnings.
+    let warnings: Vec<String> = report
+        .anomalies
+        .iter()
+        .filter(|a| a.severity == "Alert" || a.severity == "Warning")
+        .map(|a| format!("{}: {}", a.anomaly_type, a.description))
+        .collect();
+
     let appraisal = EarAppraisal {
         ear_status: status,
-        ear_trustworthiness_vector: None,
-        ear_appraisal_policy_id: None,
+        ear_trustworthiness_vector: Some(tv),
+        ear_appraisal_policy_id: Some("urn:writerslogic:policy:pop-standard:1.0".to_string()),
         pop_seal: None,
-        pop_evidence_ref: Some(hex::decode(doc_hash).unwrap_or_default()),
+        pop_evidence_ref: Some(hex::decode(&report.document_hash).unwrap_or_default()),
         pop_entropy_report: None,
         pop_forgery_cost: None,
-        pop_forensic_summary: None,
-        pop_chain_length: None,
-        pop_chain_duration: None,
-        pop_process_start: None,
-        pop_process_end: None,
+        pop_forensic_summary: forensic_summary,
+        pop_chain_length: Some(report.checkpoints.len() as u64),
+        pop_chain_duration: chain_duration,
+        pop_process_start: process_start,
+        pop_process_end: process_end,
         pop_absence_claims: None,
-        pop_warnings: None,
+        pop_warnings: if warnings.is_empty() {
+            None
+        } else {
+            Some(warnings)
+        },
     };
 
     let mut submods = BTreeMap::new();
