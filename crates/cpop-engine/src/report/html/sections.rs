@@ -1149,10 +1149,9 @@ pub(super) fn write_glossary(html: &mut String) -> fmt::Result {
 
 pub(super) fn write_embedded_evidence(html: &mut String, r: &WarReport) -> fmt::Result {
     if let Some(ref b64) = r.evidence_cbor_b64 {
-        write!(
+        writeln!(
             html,
-            r#"<script type="application/vnd.writerslogic.cpop+cbor">{}</script>
-"#,
+            r#"<script type="application/vnd.writerslogic.cpop+cbor">{}</script>"#,
             html_escape(b64),
         )?;
     }

@@ -170,8 +170,12 @@ pub(super) fn write_head(html: &mut String, r: &WarReport) -> fmt::Result {
 {css_components}
 {css_layout}
 </style>
+
+<!-- Integrity: rendered fields digest (verifier compares visible values against signed payload) -->
+<meta name="cpop-signature-algorithm" content="Ed25519">
+<meta name="cpop-signing-key-fingerprint" content="{key_fp}">
 </head>
-<body class="pop-report">
+<body class="cpop-report">
 <div class="report">
 "#,
         css_base = CSS_BASE,
