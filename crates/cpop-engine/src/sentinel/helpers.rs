@@ -218,10 +218,11 @@ pub fn focus_document_sync(
         }
     }
 
-    // Compute file hash BEFORE acquiring write lock to avoid blocking FFI.
-    // Open once, check size from the handle to avoid TOCTOU race.
-    let pre_hash = {
-        match std::fs::File::open(path) {
+    // Compute file hash and load cumulative stats BEFORE acquiring the
+    // sessions write lock to avoid blocking keystroke counting and focus
+    // changes during I/O (file hashing, SQLite open/migration).
+    let pre_hash = if !path.starts_with("shadow://") {
+        match open_nofollow(path) {
             Ok(file) => match file.metadata() {
                 Ok(meta) if meta.len() <= MAX_HASH_FILE_SIZE => {
                     crate::crypto::hash_file_handle(file)
@@ -232,8 +233,18 @@ pub fn focus_document_sync(
             },
             Err(_) => None,
         }
+    } else {
+        None
     };
     let key = signing_key.read_recover().clone();
+    let pre_stats = {
+        let db_path = wal_dir.parent().unwrap_or(wal_dir).join("events.db");
+        key.as_ref().and_then(|sk| {
+            crate::store::open_store_with_signing_key(sk, &db_path)
+                .ok()
+                .and_then(|store| store.load_document_stats(path).ok().flatten())
+        })
+    };
 
     let new_session_info = {
         let mut sessions_map = sessions.write_recover();
@@ -252,19 +263,11 @@ pub fn focus_document_sync(
                 session.current_hash = Some(hash.clone());
             }
 
-            // Load cumulative stats so total_keystrokes() returns lifetime count.
-            // Use the already-cloned `key` to avoid re-acquiring signing_key
-            // lock while sessions write lock is held (AUD-041 lock ordering).
-            let db_path = wal_dir.parent().unwrap_or(wal_dir).join("events.db");
-            if let Some(ref sk) = key {
-                if let Ok(store) = crate::store::open_store_with_signing_key(sk, &db_path) {
-                    if let Ok(Some(stats)) = store.load_document_stats(path) {
-                        session.cumulative_keystrokes_base =
-                            u64::try_from(stats.total_keystrokes).unwrap_or(0);
-                        session.cumulative_focus_ms_base = stats.total_focus_ms;
-                        session.session_number = u32::try_from(stats.session_count).unwrap_or(0);
-                    }
-                }
+            if let Some(ref stats) = pre_stats {
+                session.cumulative_keystrokes_base =
+                    u64::try_from(stats.total_keystrokes).unwrap_or(0);
+                session.cumulative_focus_ms_base = stats.total_focus_ms;
+                session.session_number = u32::try_from(stats.session_count).unwrap_or(0);
             }
 
             session
@@ -370,6 +373,83 @@ pub fn handle_change_event_sync(
     let key = signing_key.read_recover().clone();
     let mut sessions_map = sessions.write_recover();
 
+    // Handle Renamed and Deleted first: they remove the entry from the map
+    // and don't need a mutable reference through get_mut.
+    match event.event_type {
+        ChangeEventType::Deleted => {
+            let removed = sessions_map.remove(&event.path);
+            drop(sessions_map);
+            if let Some(session) = removed {
+                let _ = session_events_tx.send(SessionEvent {
+                    event_type: SessionEventType::Ended,
+                    session_id: session.session_id,
+                    document_path: event.path.clone(),
+                    timestamp: SystemTime::now(),
+                });
+            }
+            return;
+        }
+        ChangeEventType::Renamed { ref new_path } => {
+            let new_path = new_path.clone();
+            if sessions_map.contains_key(&new_path) {
+                log::warn!(
+                    "Rename target already tracked, ignoring: {} -> {}",
+                    event.path,
+                    new_path
+                );
+                return;
+            }
+            let mut session = match sessions_map.remove(&event.path) {
+                Some(s) => s,
+                None => return,
+            };
+            let old_path = session.path.clone();
+            session.path = new_path.clone();
+            let session_id = session.session_id.clone();
+            sessions_map.insert(new_path.clone(), session);
+            drop(sessions_map);
+
+            let old_bytes = old_path.as_bytes();
+            let new_bytes = new_path.as_bytes();
+            let mut payload = Vec::with_capacity(4 + old_bytes.len() + 4 + new_bytes.len());
+            payload.extend_from_slice(
+                &u32::try_from(old_bytes.len())
+                    .unwrap_or(u32::MAX)
+                    .to_be_bytes(),
+            );
+            payload.extend_from_slice(old_bytes);
+            payload.extend_from_slice(
+                &u32::try_from(new_bytes.len())
+                    .unwrap_or(u32::MAX)
+                    .to_be_bytes(),
+            );
+            payload.extend_from_slice(new_bytes);
+            wal_append_session_event(
+                &session_id,
+                wal_dir,
+                key.clone(),
+                EntryType::PathChange,
+                payload,
+            );
+
+            if let Some(current_focus) = current_focus_opt {
+                let mut focus = current_focus.write_recover();
+                if focus.as_deref() == Some(old_path.as_str()) {
+                    *focus = Some(new_path.clone());
+                }
+            }
+
+            let _ = session_events_tx.send(SessionEvent {
+                event_type: SessionEventType::Renamed,
+                session_id,
+                document_path: new_path,
+                timestamp: SystemTime::now(),
+            });
+            return;
+        }
+        _ => {}
+    }
+
     if let Some(session) = sessions_map.get_mut(&event.path) {
         match event.event_type {
             ChangeEventType::Saved => {
@@ -394,7 +474,6 @@ pub fn handle_change_event_sync(
                     }
                 }
 
-                // Intentionally ignored: broadcast send fails only when no receivers are subscribed
                 let _ = session_events_tx.send(SessionEvent {
                     event_type: SessionEventType::Saved,
                     session_id: session.session_id.clone(),
@@ -408,80 +487,11 @@ pub fn handle_change_event_sync(
                     session.current_hash = Some(hash.clone());
                 }
             }
-            ChangeEventType::Deleted => {
-                // Remove within existing lock scope to avoid TOCTOU race
-                let removed = sessions_map.remove(&event.path);
-                drop(sessions_map);
-                if let Some(session) = removed {
-                    // Intentionally ignored: broadcast send fails only when no receivers are subscribed
-                    let _ = session_events_tx.send(SessionEvent {
-                        event_type: SessionEventType::Ended,
-                        session_id: session.session_id,
-                        document_path: event.path.clone(),
-                        timestamp: SystemTime::now(),
-                    });
-                }
-            }
             ChangeEventType::Created => {
                 // Picked up on next focus event
             }
-            ChangeEventType::Renamed { ref new_path } => {
-                let new_path = new_path.clone();
-                if sessions_map.contains_key(&new_path) {
-                    log::warn!(
-                        "Rename target already tracked, ignoring: {} -> {}",
-                        event.path,
-                        new_path
-                    );
-                    return;
-                }
-                let mut session = match sessions_map.remove(&event.path) {
-                    Some(s) => s,
-                    None => return,
-                };
-                let old_path = session.path.clone();
-                session.path = new_path.clone();
-                let session_id = session.session_id.clone();
-                sessions_map.insert(new_path.clone(), session);
-                drop(sessions_map);
-
-                // Record the path change in the WAL.
-                let old_bytes = old_path.as_bytes();
-                let new_bytes = new_path.as_bytes();
-                let mut payload = Vec::with_capacity(4 + old_bytes.len() + 4 + new_bytes.len());
-                payload.extend_from_slice(
-                    &u32::try_from(old_bytes.len())
-                        .unwrap_or(u32::MAX)
-                        .to_be_bytes(),
-                );
-                payload.extend_from_slice(old_bytes);
-                payload.extend_from_slice(
-                    &u32::try_from(new_bytes.len())
-                        .unwrap_or(u32::MAX)
-                        .to_be_bytes(),
-                );
-                payload.extend_from_slice(new_bytes);
-                wal_append_session_event(
-                    &session_id,
-                    wal_dir,
-                    key.clone(),
-                    EntryType::PathChange,
-                    payload,
-                );
-
-                if let Some(current_focus) = current_focus_opt {
-                    let mut focus = current_focus.write_recover();
-                    if focus.as_deref() == Some(old_path.as_str()) {
-                        *focus = Some(new_path.clone());
-                    }
-                }
-
-                let _ = session_events_tx.send(SessionEvent {
-                    event_type: SessionEventType::Renamed,
-                    session_id,
-                    document_path: new_path,
-                    timestamp: SystemTime::now(),
-                });
+            ChangeEventType::Deleted | ChangeEventType::Renamed { .. } => {
+                unreachable!("handled above")
             }
         }
     }
@@ -587,7 +597,8 @@ fn wal_append_session_event(
 }
 
 pub fn compute_file_hash(path: &str) -> std::io::Result<String> {
-    let meta = std::fs::metadata(path)?;
+    let file = open_nofollow(path)?;
+    let meta = file.metadata()?;
     if meta.len() > MAX_HASH_FILE_SIZE {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -598,8 +609,23 @@ pub fn compute_file_hash(path: &str) -> std::io::Result<String> {
             ),
         ));
     }
-    let hash = crate::crypto::hash_file(Path::new(path))?;
+    let (hash, _) = crate::crypto::hash_file_handle(file)?;
     Ok(hex::encode(hash))
+}
+
+/// Open a file with O_NOFOLLOW to prevent symlink-following TOCTOU attacks.
+#[cfg(unix)]
+fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
 }
 
 pub fn create_session_start_payload(session: &DocumentSession) -> Vec<u8> {
