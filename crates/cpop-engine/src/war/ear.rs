@@ -40,18 +40,13 @@ pub const POP_KEY_WARNINGS: i64 = 70009;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(i8)]
 pub enum Ar4siStatus {
-    /// No status determined
     None = 0,
-    /// Evidence affirms trustworthiness
     Affirming = 2,
-    /// Evidence contains warnings
     Warning = 32,
-    /// Evidence contradicts trustworthiness
     Contraindicated = 96,
 }
 
 impl Ar4siStatus {
-    /// Convert a raw i8 value to the corresponding status variant.
     pub fn from_i8(v: i8) -> Self {
         match v {
             2 => Self::Affirming,
@@ -64,7 +59,6 @@ impl Ar4siStatus {
         }
     }
 
-    /// Return the lowercase string name of this status.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::None => "none",
@@ -81,35 +75,25 @@ impl Ar4siStatus {
 /// - 2 = affirming, 32 = warning, 96 = contraindicated, 0 = none
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustworthinessVector {
-    /// Hardware attestation tier (TPM/Secure Enclave)
     #[serde(rename = "0")]
     pub instance_identity: i8,
-    /// Software configuration integrity
     #[serde(rename = "1")]
     pub configuration: i8,
-    /// Binary attestation (TPM quote)
     #[serde(rename = "2")]
     pub executables: i8,
-    /// Document hash chain integrity (H1/H2/H3)
     #[serde(rename = "3")]
     pub file_system: i8,
-    /// TPM/Secure Enclave tier
     #[serde(rename = "4")]
     pub hardware: i8,
-    /// VDF proof strength
     #[serde(rename = "5")]
     pub runtime_opaque: i8,
-    /// Key hierarchy integrity
     #[serde(rename = "6")]
     pub storage_opaque: i8,
-    /// Behavioral entropy + jitter
     #[serde(rename = "7")]
     pub sourced_data: i8,
 }
 
 impl TrustworthinessVector {
-    /// Returns the maximum (worst) component value (weakest link).
-    /// Higher AR4SI values indicate worse status (Contraindicated=96 > Warning=32 > Affirming=2).
     pub fn worst_component(&self) -> i8 {
         [
             self.instance_identity,
@@ -126,7 +110,6 @@ impl TrustworthinessVector {
         .unwrap_or(Ar4siStatus::None as i8)
     }
 
-    /// Derive overall AR4SI status from the weakest component.
     pub fn overall_status(&self) -> Ar4siStatus {
         let min = self.worst_component();
         if min >= Ar4siStatus::Contraindicated as i8 {
@@ -140,7 +123,6 @@ impl TrustworthinessVector {
         }
     }
 
-    /// Format as compact header string: "II=2 CO=2 EX=0 FS=2 HW=2 RO=2 SO=2 SD=2"
     pub fn header_string(&self) -> String {
         format!(
             "II={} CO={} EX={} FS={} HW={} RO={} SO={} SD={}",
@@ -155,19 +137,10 @@ impl TrustworthinessVector {
         )
     }
 
-    /// Parse from header string format.
-    ///
-    /// Labels are matched by prefix (`II=`, `CO=`, etc.), not by position,
-    /// so components may appear in any order. All 8 must be present.
-    ///
-    /// Returns `None` if any label is missing or any value is not a known
-    /// AR4SI status code (0 = None, 2 = Affirming, 32 = Warning,
-    /// 96 = Contraindicated).
     pub fn parse_header(s: &str) -> Option<Self> {
         const VALID_AR4SI: &[i8] = &[0, 2, 32, 96];
         let mut vals = [0i8; 8];
         let labels = ["II=", "CO=", "EX=", "FS=", "HW=", "RO=", "SO=", "SD="];
-        // Collect parts once; find() on the slice is order-independent.
         let parts: Vec<&str> = s.split_whitespace().collect();
         for (i, label) in labels.iter().enumerate() {
             let part = parts.iter().find(|p| p.starts_with(label))?;
@@ -193,9 +166,7 @@ impl TrustworthinessVector {
 /// Verifier identity per EAR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifierId {
-    /// Build identifier string (e.g. "cpop-engine/0.3.6")
     pub build: String,
-    /// Developer/organization name
     pub developer: String,
 }
 
@@ -211,19 +182,14 @@ impl Default for VerifierId {
 /// Seal claims extracted from a WAR block for embedding in EAR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealClaims {
-    /// H1: document/checkpoint/declaration binding hash
     #[serde(with = "hex_bytes_32")]
     pub h1: [u8; 32],
-    /// H2: jitter/identity binding hash
     #[serde(with = "hex_bytes_32")]
     pub h2: [u8; 32],
-    /// H3: VDF/document binding hash (signed)
     #[serde(with = "hex_bytes_32")]
     pub h3: [u8; 32],
-    /// Ed25519 signature over H3
     #[serde(with = "hex_bytes_64")]
     pub signature: [u8; 64],
-    /// Author's Ed25519 public key
     #[serde(with = "hex_bytes_32")]
     pub public_key: [u8; 32],
 }
@@ -231,59 +197,45 @@ pub struct SealClaims {
 /// Single submodule appraisal within an EAR token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EarAppraisal {
-    /// AR4SI status
     #[serde(rename = "1000")]
     pub ear_status: Ar4siStatus,
 
-    /// Trustworthiness vector
     #[serde(rename = "1001", default, skip_serializing_if = "Option::is_none")]
     pub ear_trustworthiness_vector: Option<TrustworthinessVector>,
 
-    /// Appraisal policy ID
     #[serde(rename = "1003", default, skip_serializing_if = "Option::is_none")]
     pub ear_appraisal_policy_id: Option<String>,
 
-    /// WAR seal claims
     #[serde(rename = "70001", default, skip_serializing_if = "Option::is_none")]
     pub pop_seal: Option<SealClaims>,
 
-    /// SHA-256 of evidence packet
     #[serde(rename = "70002", default, skip_serializing_if = "Option::is_none")]
     pub pop_evidence_ref: Option<Vec<u8>>,
 
-    /// Entropy assessment report
     #[serde(rename = "70003", default, skip_serializing_if = "Option::is_none")]
     pub pop_entropy_report: Option<EntropyReport>,
 
-    /// Forgery cost estimate
     #[serde(rename = "70004", default, skip_serializing_if = "Option::is_none")]
     pub pop_forgery_cost: Option<ForgeryCostEstimate>,
 
-    /// Forensic assessment summary
     #[serde(rename = "70005", default, skip_serializing_if = "Option::is_none")]
     pub pop_forensic_summary: Option<ForensicSummary>,
 
-    /// Checkpoint chain length
     #[serde(rename = "70006", default, skip_serializing_if = "Option::is_none")]
     pub pop_chain_length: Option<u64>,
 
-    /// Chain duration (seconds)
     #[serde(rename = "70007", default, skip_serializing_if = "Option::is_none")]
     pub pop_chain_duration: Option<u64>,
 
-    /// Absence claims
     #[serde(rename = "70008", default, skip_serializing_if = "Option::is_none")]
     pub pop_absence_claims: Option<Vec<AbsenceClaim>>,
 
-    /// Warning messages
     #[serde(rename = "70009", default, skip_serializing_if = "Option::is_none")]
     pub pop_warnings: Option<Vec<String>>,
 
-    /// Process start time (RFC 3339) per C2PA PR #2009 processStart metadata
     #[serde(rename = "70010", default, skip_serializing_if = "Option::is_none")]
     pub pop_process_start: Option<String>,
 
-    /// Process end time (RFC 3339) per C2PA PR #2009 processEnd metadata
     #[serde(rename = "70011", default, skip_serializing_if = "Option::is_none")]
     pub pop_process_end: Option<String>,
 }
@@ -291,25 +243,20 @@ pub struct EarAppraisal {
 /// EAR token per draft-ietf-rats-ear, carrying one or more appraisals.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EarToken {
-    /// EAT profile URI (CWT key 265)
     #[serde(rename = "265")]
     pub eat_profile: String,
 
-    /// Issued-at timestamp, epoch seconds (CWT key 6)
     #[serde(rename = "6")]
     pub iat: i64,
 
-    /// Verifier identity (key 1004)
     #[serde(rename = "1004")]
     pub ear_verifier_id: VerifierId,
 
-    /// Submodule appraisals keyed by name (key 266)
     #[serde(rename = "266")]
     pub submods: BTreeMap<String, EarAppraisal>,
 }
 
 impl EarToken {
-    /// Overall status: the worst (highest) status across all submodule appraisals.
     pub fn overall_status(&self) -> Ar4siStatus {
         self.submods
             .values()

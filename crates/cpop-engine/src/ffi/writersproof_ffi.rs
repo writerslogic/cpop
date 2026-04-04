@@ -16,11 +16,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let doc_path = match crate::sentinel::helpers::validate_path(&document_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid document path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid document path: {e}"));
         }
     };
 
@@ -28,32 +24,20 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
     let doc_path_str = doc_path.to_string_lossy();
     let events = match store.get_events_for_file(&doc_path_str) {
         Ok(e) => e,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to load events: {e}")),
-            };
+            return FfiResult::err(format!("Failed to load events: {e}"));
         }
     };
     let latest = match events.last() {
         Some(ev) => ev,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("No checkpoints found for this document".to_string()),
-            };
+            return FfiResult::err("No checkpoints found for this document".to_string());
         }
     };
 
@@ -64,11 +48,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let signing_key = match load_signing_key() {
         Ok(k) => k,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
     let signature = {
@@ -81,11 +61,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let api_key = match load_api_key() {
         Ok(k) => k,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("WritersProof API key not configured. {e}")),
-            };
+            return FfiResult::err(format!("WritersProof API key not configured. {e}"));
         }
     };
 
@@ -97,11 +73,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to create async runtime: {e}")),
-            };
+            return FfiResult::err(format!("Failed to create async runtime: {e}"));
         }
     };
 
@@ -109,11 +81,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     {
         Ok(c) => c.with_jwt((*api_key).clone()),
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to create API client: {e}")),
-            };
+            return FfiResult::err(format!("Failed to create API client: {e}"));
         }
     };
 
@@ -136,23 +104,11 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     });
 
     match result {
-        Err(_) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("Anchor request timed out after 30s".to_string()),
-        },
-        Ok(Err(e)) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Anchor request failed: {e}")),
-        },
-        Ok(Ok(resp)) => FfiResult {
-            success: true,
-            message: Some(format!(
-                "Anchored: {} (log index {})",
-                resp.anchor_id, resp.log_index
-            )),
-            error_message: None,
-        },
+        Err(_) => FfiResult::err("Anchor request timed out after 30s".to_string()),
+        Ok(Err(e)) => FfiResult::err(format!("Anchor request failed: {e}")),
+        Ok(Ok(resp)) => FfiResult::ok(format!(
+            "Anchored: {} (log index {})",
+            resp.anchor_id, resp.log_index
+        )),
     }
 }

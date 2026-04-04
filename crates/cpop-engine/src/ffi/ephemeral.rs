@@ -222,42 +222,26 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     let mut entry = match sessions().get_mut(&session_id) {
         Some(e) => e,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("No ephemeral session: {session_id}")),
-            }
+            return FfiResult::err(format!("No ephemeral session: {session_id}"))
         }
     };
 
     if content.len() > MAX_CONTENT_SIZE {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!(
-                "Content too large: {} bytes (max {})",
-                content.len(),
-                MAX_CONTENT_SIZE
-            )),
-        };
+        return FfiResult::err(format!(
+            "Content too large: {} bytes (max {})",
+            content.len(),
+            MAX_CONTENT_SIZE
+        ));
     }
 
     if entry.content_snapshots.len() >= MAX_SNAPSHOTS {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Max snapshots reached ({})", MAX_SNAPSHOTS)),
-        };
+        return FfiResult::err(format!("Max snapshots reached ({})", MAX_SNAPSHOTS));
     }
 
     let now = Instant::now();
     if let Some(last) = entry.last_checkpoint_at {
         if now.duration_since(last) < MIN_CHECKPOINT_INTERVAL {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Checkpoint rate limited (min 1s interval)".to_string()),
-            };
+            return FfiResult::err("Checkpoint rate limited (min 1s interval)".to_string());
         }
     }
 
@@ -310,15 +294,11 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     entry.last_activity = Instant::now();
     flush_session_state(&session_id, &entry);
 
-    FfiResult {
-        success: true,
-        message: Some(format!(
-            "Ephemeral checkpoint #{}: {}",
-            entry.checkpoint_count,
-            hex::encode(&content_hash[..8])
-        )),
-        error_message: None,
-    }
+    FfiResult::ok(format!(
+        "Ephemeral checkpoint #{}: {}",
+        entry.checkpoint_count,
+        hex::encode(&content_hash[..8])
+    ))
 }
 
 /// Accumulate keystroke timing intervals for jitter analysis.
@@ -327,11 +307,7 @@ pub fn ffi_ephemeral_inject_jitter(session_id: String, intervals: Vec<u64>) -> F
     let mut entry = match sessions().get_mut(&session_id) {
         Some(e) => e,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("No ephemeral session: {session_id}")),
-            }
+            return FfiResult::err(format!("No ephemeral session: {session_id}"))
         }
     };
 
@@ -351,13 +327,9 @@ pub fn ffi_ephemeral_inject_jitter(session_id: String, intervals: Vec<u64>) -> F
     entry.keystroke_count += accepted as u64;
     entry.last_activity = Instant::now();
 
-    FfiResult {
-        success: true,
-        message: Some(format!(
-            "Accepted {accepted} intervals, rejected {rejected}"
-        )),
-        error_message: None,
-    }
+    FfiResult::ok(format!(
+        "Accepted {accepted} intervals, rejected {rejected}"
+    ))
 }
 
 /// Finalize an ephemeral session: build evidence packet → WAR block + compact ref.
@@ -492,23 +464,15 @@ pub fn ffi_ephemeral_checkpoint_hash(
     let mut entry = match sessions().get_mut(&session_id) {
         Some(e) => e,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("No ephemeral session: {session_id}")),
-            }
+            return FfiResult::err(format!("No ephemeral session: {session_id}"))
         }
     };
 
     if content_hash_hex.len() != 64 {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!(
-                "Invalid hash length: {} chars (expected 64 hex chars)",
-                content_hash_hex.len()
-            )),
-        };
+        return FfiResult::err(format!(
+            "Invalid hash length: {} chars (expected 64 hex chars)",
+            content_hash_hex.len()
+        ));
     }
 
     let content_hash: [u8; 32] = match hex::decode(&content_hash_hex) {
@@ -518,30 +482,18 @@ pub fn ffi_ephemeral_checkpoint_hash(
             arr
         }
         _ => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Invalid hex in content hash".to_string()),
-            }
+            return FfiResult::err("Invalid hex in content hash".to_string())
         }
     };
 
     if entry.content_snapshots.len() >= MAX_SNAPSHOTS {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Max snapshots reached ({})", MAX_SNAPSHOTS)),
-        };
+        return FfiResult::err(format!("Max snapshots reached ({})", MAX_SNAPSHOTS));
     }
 
     let now = Instant::now();
     if let Some(last) = entry.last_checkpoint_at {
         if now.duration_since(last) < MIN_CHECKPOINT_INTERVAL {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Checkpoint rate limited (min 1s interval)".to_string()),
-            };
+            return FfiResult::err("Checkpoint rate limited (min 1s interval)".to_string());
         }
     }
 
@@ -585,15 +537,11 @@ pub fn ffi_ephemeral_checkpoint_hash(
 
     flush_session_state(&session_id, &entry);
 
-    FfiResult {
-        success: true,
-        message: Some(format!(
-            "Ephemeral checkpoint #{}: {}",
-            entry.checkpoint_count,
-            &content_hash_hex[..16]
-        )),
-        error_message: None,
-    }
+    FfiResult::ok(format!(
+        "Ephemeral checkpoint #{}: {}",
+        entry.checkpoint_count,
+        &content_hash_hex[..16]
+    ))
 }
 
 /// Set the canary seed for an ephemeral session (derived during NMH handshake).
@@ -602,41 +550,25 @@ pub fn ffi_ephemeral_set_canary_seed(session_id: String, canary_seed_hex: String
     let mut entry = match sessions().get_mut(&session_id) {
         Some(e) => e,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("No ephemeral session: {session_id}")),
-            }
+            return FfiResult::err(format!("No ephemeral session: {session_id}"))
         }
     };
 
     if canary_seed_hex.len() != 64 {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!(
-                "Invalid canary seed length: {} chars (expected 64 hex chars)",
-                canary_seed_hex.len()
-            )),
-        };
+        return FfiResult::err(format!(
+            "Invalid canary seed length: {} chars (expected 64 hex chars)",
+            canary_seed_hex.len()
+        ));
     }
 
     if hex::decode(&canary_seed_hex).is_err() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("Invalid hex in canary seed".to_string()),
-        };
+        return FfiResult::err("Invalid hex in canary seed".to_string());
     }
 
     entry.canary_seed = Some(canary_seed_hex);
     entry.last_activity = Instant::now();
 
-    FfiResult {
-        success: true,
-        message: Some("Canary seed set".to_string()),
-        error_message: None,
-    }
+    FfiResult::ok("Canary seed set".to_string())
 }
 
 /// Build a signed WAR block from ephemeral session data.
