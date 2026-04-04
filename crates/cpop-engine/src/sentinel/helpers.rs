@@ -782,3 +782,68 @@ fn validate_canonical_path(path: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Try to perform an entangled hardware co-signature on a document session.
+///
+/// Checks the scheduler threshold, computes the entangled hash (binding document
+/// content, device time, device identity, and the previous HW signature), signs
+/// with the TPM/Secure Enclave, and persists the result to the event store.
+/// Returns `true` if a co-signature was performed.
+pub(crate) fn try_hw_cosign(
+    session: &mut DocumentSession,
+    tpm: &dyn crate::tpm::Provider,
+    content_hash: &[u8; 32],
+    store: Option<(&crate::store::SecureStore, &str)>,
+) -> bool {
+    use sha2::{Digest, Sha256};
+
+    let sched = match session.hw_cosign_scheduler.as_mut() {
+        Some(s) => s,
+        None => return false,
+    };
+    if !sched.record_checkpoint() {
+        return false;
+    }
+
+    let clock_ms = tpm.clock_info().map(|c| c.clock).unwrap_or(0);
+    let device_id = tpm.device_id();
+    let prev_sig = session.last_hw_cosign_signature.as_deref().unwrap_or(&[]);
+
+    let mut h = Sha256::new();
+    h.update(crate::evidence::HW_COSIGN_DST);
+    h.update(content_hash);
+    h.update(clock_ms.to_be_bytes());
+    h.update(device_id.as_bytes());
+    h.update(prev_sig);
+    let entangled_hash: [u8; 32] = h.finalize().into();
+
+    let sig = match tpm.sign(&entangled_hash) {
+        Ok(s) => s,
+        Err(_) => {
+            sched.reset_after_cosign();
+            return false;
+        }
+    };
+
+    let chain_idx = session.hw_cosign_chain_index;
+    session.hw_cosign_chain_index += 1;
+    let salt_commit = sched.salt_commitment();
+    let (ent_digest, ent_bytes) = sched.flush_entropy();
+
+    if let Some((store, path)) = store {
+        let _ = store.update_hw_cosign(
+            path,
+            &sig,
+            &tpm.public_key(),
+            &salt_commit,
+            chain_idx,
+            &entangled_hash,
+            Some(&ent_digest),
+            Some(ent_bytes as u64),
+        );
+    }
+
+    session.last_hw_cosign_signature = Some(sig);
+    sched.reset_after_cosign();
+    true
+}

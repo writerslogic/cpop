@@ -1045,61 +1045,28 @@ impl Sentinel {
                                         }
                                     }
 
-                                    // HW co-sign: threshold check + sign + persist
-                                    if let (Some(ref mut sched), Some(ref tpm)) =
-                                        (&mut session.hw_cosign_scheduler, &tpm_provider_for_loop)
-                                    {
-                                        if sched.record_checkpoint() {
-                                            let content_hash = {
-                                                use sha2::Digest;
-                                                let src = std::path::Path::new(path);
-                                                match std::fs::read(src) {
-                                                    Ok(data) => sha2::Sha256::digest(&data).into(),
-                                                    Err(_) => [0u8; 32],
-                                                }
-                                            };
-                                            let prev_sig = session.last_hw_cosign_signature.as_deref().unwrap_or(&[]);
-                                            let clock_info = tpm.clock_info().ok();
-                                            let clock_ms = clock_info.as_ref().map(|c| c.clock).unwrap_or(0);
-                                            let counter = clock_ms;
-                                            let device_id = tpm.device_id();
-                                            let entangled_hash = {
-                                                use sha2::Digest;
-                                                let mut h = sha2::Sha256::new();
-                                                h.update(crate::evidence::HW_COSIGN_DST);
-                                                h.update(content_hash);
-                                                h.update(clock_ms.to_be_bytes());
-                                                h.update(counter.to_be_bytes());
-                                                h.update(device_id.as_bytes());
-                                                h.update(prev_sig);
-                                                let result: [u8; 32] = h.finalize().into();
-                                                result
-                                            };
-                                            if let Ok(sig) = tpm.sign(&entangled_hash) {
-                                                let chain_idx = session.hw_cosign_chain_index;
-                                                session.last_hw_cosign_signature = Some(sig.clone());
-                                                session.hw_cosign_chain_index += 1;
-                                                let salt_commit = sched.salt_commitment().to_vec();
-                                                let (ent_digest, ent_bytes) = sched.flush_entropy();
-
-                                                if let Some(ref sk) = *signing_key_for_cp.read_recover() {
-                                                    let db = writersproof_dir.join("events.db");
-                                                    if let Ok(store) = crate::store::open_store_with_signing_key(sk, &db) {
-                                                        let _ = store.update_hw_cosign(
-                                                            path,
-                                                            &sig,
-                                                            &tpm.public_key(),
-                                                            &salt_commit,
-                                                            chain_idx,
-                                                            &entangled_hash,
-                                                            Some(&ent_digest),
-                                                            Some(ent_bytes as u64),
-                                                        );
-                                                    }
-                                                }
+                                    if let Some(ref tpm) = tpm_provider_for_loop {
+                                        let content_hash: [u8; 32] = {
+                                            use sha2::Digest;
+                                            let src = std::path::Path::new(path);
+                                            match std::fs::read(src) {
+                                                Ok(data) => sha2::Sha256::digest(&data).into(),
+                                                Err(_) => [0u8; 32],
                                             }
-                                            sched.reset_after_cosign();
-                                        }
+                                        };
+                                        let store_and_path = signing_key_for_cp
+                                            .read_recover()
+                                            .as_ref()
+                                            .and_then(|sk| {
+                                                let db = writersproof_dir.join("events.db");
+                                                crate::store::open_store_with_signing_key(sk, &db).ok()
+                                            });
+                                        try_hw_cosign(
+                                            session,
+                                            tpm.as_ref(),
+                                            &content_hash,
+                                            store_and_path.as_ref().map(|s| (s, path.as_str())),
+                                        );
                                     }
                                 }
                             }
