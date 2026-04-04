@@ -15,7 +15,7 @@ mod windows;
 pub use signer::TpmSigner;
 pub use software::SoftwareProvider;
 pub use types::*;
-pub use verification::{verify_binding_chain, verify_quote};
+pub use verification::{verify_binding_chain, verify_quote, verify_signature_for_provider};
 
 use std::sync::Arc;
 

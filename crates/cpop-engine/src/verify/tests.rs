@@ -35,6 +35,7 @@ fn make_test_packet() -> Packet {
         packet_signature: None,
         signing_public_key: None,
         author_did: None,
+        hardware_cosignature: None,
         biology_claim: None,
         physical_context: None,
         trust_tier: None,

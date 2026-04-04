@@ -457,6 +457,125 @@ impl Packet {
         self.sign(signing_key)
     }
 
+    /// Compute the entangled hash for hardware co-signature.
+    ///
+    /// Binds document content, software signature, device time, and device identity
+    /// into a single hash that the TPM/Secure Enclave signs.
+    fn compute_hw_cosign_hash(
+        doc_hash: &[u8],
+        sw_signature: &[u8; 64],
+        tpm_clock_ms: u64,
+        monotonic_counter: u64,
+        device_id: &str,
+    ) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(super::types::HW_COSIGN_DST);
+        hasher.update(doc_hash);
+        hasher.update(sw_signature);
+        hasher.update(tpm_clock_ms.to_be_bytes());
+        hasher.update(monotonic_counter.to_be_bytes());
+        hasher.update(device_id.as_bytes());
+        hasher.finalize().into()
+    }
+
+    /// Add an entangled hardware co-signature from a TPM/Secure Enclave.
+    ///
+    /// Must be called AFTER `sign()`. The hardware signature covers:
+    /// `SHA-256(DST || H(doc) || S_sw || tpm_clock || counter || device_id)`
+    ///
+    /// This creates a 4-way binding: document + evidence + time + device.
+    pub fn cosign_hardware(
+        &mut self,
+        tpm_provider: &dyn tpm::Provider,
+    ) -> crate::error::Result<()> {
+        let sw_sig = self
+            .packet_signature
+            .ok_or_else(|| Error::signature("must sign with software key before hardware co-sign"))?;
+
+        let doc_hash = self.document.final_hash.as_bytes();
+
+        let clock_info = tpm_provider
+            .clock_info()
+            .map_err(|e| Error::crypto(format!("TPM clock: {e}")))?;
+
+        let caps = tpm_provider.capabilities();
+        let counter = if caps.monotonic_counter {
+            // The sign() call on the provider implicitly increments the counter
+            // on Secure Enclave; for software providers we use the clock as proxy
+            clock_info.clock
+        } else {
+            clock_info.clock
+        };
+
+        let entangled_hash = Self::compute_hw_cosign_hash(
+            doc_hash,
+            &sw_sig,
+            clock_info.clock,
+            counter,
+            &tpm_provider.device_id(),
+        );
+
+        let signature = tpm_provider
+            .sign(&entangled_hash)
+            .map_err(|e| Error::crypto(format!("hardware co-sign: {e}")))?;
+
+        self.hardware_cosignature = Some(super::types::HardwareCosignature {
+            entangled_hash: entangled_hash.to_vec(),
+            signature,
+            public_key: tpm_provider.public_key(),
+            device_id: tpm_provider.device_id(),
+            tpm_clock_ms: clock_info.clock,
+            monotonic_counter: counter,
+            provider_type: if caps.hardware_backed {
+                "hardware".to_string()
+            } else {
+                "software".to_string()
+            },
+            algorithm: format!("{:?}", tpm_provider.algorithm()),
+        });
+
+        Ok(())
+    }
+
+    /// Verify the hardware co-signature against the packet's software signature
+    /// and document hash.
+    pub fn verify_hardware_cosignature(&self) -> crate::error::Result<()> {
+        let cosig = self
+            .hardware_cosignature
+            .as_ref()
+            .ok_or_else(|| Error::signature("no hardware co-signature present"))?;
+
+        let sw_sig = self
+            .packet_signature
+            .ok_or_else(|| Error::signature("no software signature for co-sign verification"))?;
+
+        let doc_hash = self.document.final_hash.as_bytes();
+
+        let expected_hash = Self::compute_hw_cosign_hash(
+            doc_hash,
+            &sw_sig,
+            cosig.tpm_clock_ms,
+            cosig.monotonic_counter,
+            &cosig.device_id,
+        );
+
+        if expected_hash.ct_eq(&cosig.entangled_hash).unwrap_u8() != 1 {
+            return Err(Error::signature(
+                "hardware co-signature entangled hash mismatch; document or signature was modified",
+            ));
+        }
+
+        tpm::verify_signature_for_provider(
+            &cosig.provider_type,
+            &cosig.public_key,
+            &cosig.entangled_hash,
+            &cosig.signature,
+        )
+        .map_err(|e| Error::signature(format!("hardware co-signature invalid: {e}")))?;
+
+        Ok(())
+    }
+
     /// Verify the packet signature, optionally checking `expected_nonce`
     /// to prevent replay attacks.
     pub fn verify_signature(&self, expected_nonce: Option<&[u8; 32]>) -> crate::error::Result<()> {

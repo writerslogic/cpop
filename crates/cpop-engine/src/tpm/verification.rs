@@ -117,7 +117,7 @@ pub fn verify_quote(quote: &Quote) -> Result<(), TpmError> {
     )
 }
 
-fn verify_signature_for_provider(
+pub fn verify_signature_for_provider(
     provider_type: &str,
     public_key: &[u8],
     payload: &[u8],

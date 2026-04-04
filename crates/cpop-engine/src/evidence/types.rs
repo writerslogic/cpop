@@ -45,6 +45,32 @@ fn default_version() -> i32 {
     1
 }
 
+/// Hardware co-signature entangled with document content, software signature, and device time.
+///
+/// Binds four elements into a single hardware-attested proof:
+/// - Document content hash (content binding)
+/// - Software Ed25519 signature (causal chain)
+/// - TPM/Secure Enclave clock + monotonic counter (temporal binding)
+/// - Device identity (device binding)
+///
+/// The entangled hash is: SHA-256("cpop-hw-cosign-v1" || doc_hash || sw_signature
+///                                 || tpm_clock_ms || monotonic_counter || device_id)
+/// Signed by the hardware-bound key that never leaves the TPM/Secure Enclave.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HardwareCosignature {
+    pub entangled_hash: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub public_key: Vec<u8>,
+    pub device_id: String,
+    pub tpm_clock_ms: u64,
+    pub monotonic_counter: u64,
+    pub provider_type: String,
+    pub algorithm: String,
+}
+
+/// Domain separator for the hardware co-signature entangled hash.
+pub const HW_COSIGN_DST: &[u8] = b"cpop-hw-cosign-v1";
+
 /// Complete evidence packet containing all attestation data for a document session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Packet {
@@ -109,6 +135,8 @@ pub struct Packet {
     pub signing_public_key: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author_did: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hardware_cosignature: Option<HardwareCosignature>,
     /// RFC-compliant biology invariant claim (RFC Section: Biology Invariant).
     /// Contains behavioral biometric evidence with millibits scoring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
