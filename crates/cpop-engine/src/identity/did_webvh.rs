@@ -306,25 +306,21 @@ impl WebVHIdentity {
         let state_json = serde_json::to_string(&envelope)
             .map_err(|e| Error::identity(format!("serialize webvh metadata: {e}")))?;
 
-        // Atomic write: temp file with restricted perms, then rename
         let meta_path = data_dir.join("did_webvh_meta.json");
-        let meta_tmp = data_dir.join("did_webvh_meta.json.tmp");
-        std::fs::write(&meta_tmp, state_json.as_bytes())
-            .map_err(|e| Error::identity(format!("write webvh metadata: {e}")))?;
-        if let Err(e) = crate::crypto::restrict_permissions(&meta_tmp, 0o600) {
-            log::warn!("could not restrict did_webvh_meta.json.tmp permissions: {e}");
-        }
-        std::fs::rename(&meta_tmp, &meta_path)
-            .map_err(|e| Error::identity(format!("rename webvh metadata: {e}")))?;
+        atomic_write(&meta_path, state_json.as_bytes())?;
 
-        let path = data_dir.join("did_webvh_state.json");
-        let path_str = path
+        let state_path = data_dir.join("did_webvh_state.json");
+        let state_tmp = data_dir.join("did_webvh_state.json.tmp");
+        let state_tmp_str = state_tmp
             .to_str()
             .ok_or_else(|| Error::identity("non-UTF-8 data directory path"))?;
-        self.state.save_state(path_str).map_err(map_webvh_err)?;
-        if let Err(e) = crate::crypto::restrict_permissions(&path, 0o600) {
-            log::warn!("could not restrict did_webvh_state.json permissions: {e}");
-        }
+        self.state
+            .save_state(state_tmp_str)
+            .map_err(map_webvh_err)?;
+        crate::crypto::restrict_permissions(&state_tmp, 0o600)
+            .map_err(|e| Error::identity(format!("restrict state file permissions: {e}")))?;
+        std::fs::rename(&state_tmp, &state_path)
+            .map_err(|e| Error::identity(format!("rename webvh state: {e}")))?;
 
         Ok(())
     }
@@ -373,7 +369,7 @@ pub fn load_active_did() -> Result<String, Error> {
         return Ok(identity.did);
     }
     let sk = load_signing_key()
-        .map_err(|e| Error::identity(format!("load signing key: {e}")))?;
+        .map_err(|e| Error::identity(format!("load signing key for active DID fallback: {e}")))?;
     Ok(did_key_from_public(sk.verifying_key().as_bytes()))
 }
 
@@ -442,6 +438,12 @@ pub async fn verify_packet_author_did(
     signing_public_key: &[u8; 32],
     packet_created_ms: u64,
 ) -> Result<bool, Error> {
+    const MAX_REASONABLE_MS: u64 = 32503680000000; // year 3000
+    if packet_created_ms > MAX_REASONABLE_MS {
+        return Err(Error::identity(format!(
+            "packet_created_ms {packet_created_ms} exceeds reasonable range"
+        )));
+    }
     let secs = (packet_created_ms / 1000) as i64;
     let nanos = ((packet_created_ms % 1000) * 1_000_000) as u32;
     let version_time =
@@ -504,6 +506,17 @@ fn build_did_document(did_template: &str, pk_multibase: &str) -> Value {
         "authentication": [format!("{did_template}#key-0")],
         "assertionMethod": [format!("{did_template}#key-0")],
     })
+}
+
+fn atomic_write(path: &std::path::Path, data: &[u8]) -> Result<(), Error> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, data)
+        .map_err(|e| Error::identity(format!("write {}: {e}", path.display())))?;
+    crate::crypto::restrict_permissions(&tmp, 0o600)
+        .map_err(|e| Error::identity(format!("restrict permissions {}: {e}", path.display())))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| Error::identity(format!("rename {}: {e}", path.display())))?;
+    Ok(())
 }
 
 fn map_webvh_err(e: DIDWebVHError) -> Error {
