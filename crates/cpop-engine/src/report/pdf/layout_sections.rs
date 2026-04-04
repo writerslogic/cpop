@@ -8,6 +8,7 @@ use super::layout::{
 };
 use super::PdfFonts;
 use crate::report::types::*;
+use crate::utils::finite_or;
 use printpdf::*;
 
 /// Light border color used for card outlines.
@@ -18,15 +19,6 @@ const BORDER_THICKNESS: f32 = 0.3;
 const WHITE: (f32, f32, f32) = (1.0, 1.0, 1.0);
 /// Subtle alternating-row tint for tables.
 const ALT_ROW: (f32, f32, f32) = (0.98, 0.98, 0.98);
-
-/// Return `fallback` when `v` is NaN or infinite.
-fn finite_or(v: f64, fallback: f64) -> f64 {
-    if v.is_finite() {
-        v
-    } else {
-        fallback
-    }
-}
 
 // ── Page 2 ────────────────────────────────────────────────────────────
 

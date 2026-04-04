@@ -17,22 +17,6 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-fn error_result(msg: &str) -> FfiResult {
-    FfiResult {
-        success: false,
-        message: None,
-        error_message: Some(msg.to_string()),
-    }
-}
-
-fn ok_result(message: String) -> FfiResult {
-    FfiResult {
-        success: true,
-        message: Some(message),
-        error_message: None,
-    }
-}
-
 /// Create a new did:webvh identity bound to the given address.
 ///
 /// Loads the signing key from disk, derives a did:webvh key via HKDF,
@@ -44,7 +28,7 @@ pub fn ffi_create_webvh_identity(address: String) -> FfiResult {
         Ok(k) => k,
         Err(e) => {
             log::error!("ffi_create_webvh_identity: load signing key: {e}");
-            return error_result("Failed to load signing key");
+            return FfiResult::err("Failed to load signing key");
         }
     };
 
@@ -61,17 +45,17 @@ pub fn ffi_create_webvh_identity(address: String) -> FfiResult {
         Ok(Ok(id)) => id,
         Ok(Err(e)) => {
             log::error!("ffi_create_webvh_identity: create: {e}");
-            return error_result("Failed to create did:webvh identity");
+            return FfiResult::err("Failed to create did:webvh identity");
         }
-        Err(_) => return error_result("Identity creation timed out"),
+        Err(_) => return FfiResult::err("Identity creation timed out"),
     };
 
     if let Err(e) = identity.save() {
         log::error!("ffi_create_webvh_identity: save: {e}");
-        return error_result("Failed to save identity state");
+        return FfiResult::err("Failed to save identity state");
     }
 
-    ok_result(identity.did().to_string())
+    FfiResult::ok(identity.did().to_string())
 }
 
 /// Return the current did:webvh DID string.
@@ -81,10 +65,10 @@ pub fn ffi_create_webvh_identity(address: String) -> FfiResult {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_webvh_did() -> FfiResult {
     match WebVHIdentity::load() {
-        Ok(identity) => ok_result(identity.did().to_string()),
+        Ok(identity) => FfiResult::ok(identity.did().to_string()),
         Err(e) => {
             log::debug!("ffi_get_webvh_did: {e}");
-            error_result("No did:webvh identity configured")
+            FfiResult::err("No did:webvh identity configured")
         }
     }
 }
@@ -96,10 +80,10 @@ pub fn ffi_get_webvh_did() -> FfiResult {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_active_did() -> FfiResult {
     match crate::identity::did_webvh::load_active_did() {
-        Ok(did) => ok_result(did),
+        Ok(did) => FfiResult::ok(did),
         Err(e) => {
             log::error!("ffi_get_active_did: {e}");
-            error_result("Failed to resolve active DID")
+            FfiResult::err("Failed to resolve active DID")
         }
     }
 }
@@ -114,7 +98,7 @@ pub fn ffi_deactivate_webvh_identity() -> FfiResult {
         Ok(k) => k,
         Err(e) => {
             log::error!("ffi_deactivate_webvh_identity: load signing key: {e}");
-            return error_result("Failed to load signing key");
+            return FfiResult::err("Failed to load signing key");
         }
     };
 
@@ -122,7 +106,7 @@ pub fn ffi_deactivate_webvh_identity() -> FfiResult {
         Ok(id) => id,
         Err(e) => {
             log::error!("ffi_deactivate_webvh_identity: load identity: {e}");
-            return error_result("No did:webvh identity to deactivate");
+            return FfiResult::err("No did:webvh identity to deactivate");
         }
     };
 
@@ -139,17 +123,17 @@ pub fn ffi_deactivate_webvh_identity() -> FfiResult {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
             log::error!("ffi_deactivate_webvh_identity: deactivate: {e}");
-            return error_result("Failed to deactivate identity");
+            return FfiResult::err("Failed to deactivate identity");
         }
-        Err(_) => return error_result("Identity deactivation timed out"),
+        Err(_) => return FfiResult::err("Identity deactivation timed out"),
     }
 
     if let Err(e) = identity.save() {
         log::error!("ffi_deactivate_webvh_identity: save: {e}");
-        return error_result("Failed to save deactivated state");
+        return FfiResult::err("Failed to save deactivated state");
     }
 
-    ok_result("did:webvh identity deactivated".to_string())
+    FfiResult::ok("did:webvh identity deactivated".to_string())
 }
 
 #[cfg(test)]
@@ -204,7 +188,7 @@ mod tests {
     /// Error messages at FFI boundary must not contain internal details.
     #[test]
     fn error_result_is_generic() {
-        let r = error_result("test message");
+        let r = FfiResult::err("test message");
         assert!(!r.success);
         assert_eq!(r.error_message.as_deref(), Some("test message"));
         assert!(r.message.is_none());
@@ -213,7 +197,7 @@ mod tests {
     /// Ok result contains the DID in message field.
     #[test]
     fn ok_result_carries_message() {
-        let r = ok_result("did:webvh:example.com:abc".to_string());
+        let r = FfiResult::ok("did:webvh:example.com:abc".to_string());
         assert!(r.success);
         assert_eq!(r.message.as_deref(), Some("did:webvh:example.com:abc"));
         assert!(r.error_message.is_none());

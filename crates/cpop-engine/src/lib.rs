@@ -48,6 +48,7 @@ pub mod timing;
 pub mod tpm;
 pub mod transcription;
 pub mod trust_policy;
+pub mod utils;
 pub mod vdf;
 pub mod verify;
 pub mod wal;

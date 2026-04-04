@@ -2,6 +2,7 @@
 
 use super::helpers::*;
 use crate::report::types::*;
+use crate::utils::finite_or;
 use std::fmt::{self, Write};
 
 const TMPL_METHODOLOGY: &str = include_str!("templates/methodology.html");
@@ -43,15 +44,6 @@ fn sanitize_css_color(color: &str) -> &str {
         color
     } else {
         "#4a4a4a"
-    }
-}
-
-/// Return `fallback` when `v` is NaN or infinite.
-fn finite_or(v: f64, fallback: f64) -> f64 {
-    if v.is_finite() {
-        v
-    } else {
-        fallback
     }
 }
 

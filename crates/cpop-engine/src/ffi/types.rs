@@ -8,6 +8,15 @@ pub struct FfiResult {
     pub error_message: Option<String>,
 }
 
+impl FfiResult {
+    pub fn ok(message: impl Into<String>) -> Self {
+        Self { success: true, message: Some(message.into()), error_message: None }
+    }
+    pub fn err(message: impl Into<String>) -> Self {
+        Self { success: false, message: None, error_message: Some(message.into()) }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct FfiProcessScore {
