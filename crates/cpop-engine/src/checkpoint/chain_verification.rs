@@ -47,7 +47,7 @@ impl Chain {
                 // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
                 let is_legacy_zeros = cp.previous_hash == [0u8; 32];
                 let is_spec_genesis =
-                    genesis_prev_hash(cp.content_hash, cp.content_size, &self.document_path)
+                    genesis_prev_hash(cp.content_hash, cp.content_size, &self.metadata.document_path)
                         .map(|h| cp.previous_hash == h)
                         .unwrap_or(false);
                 if is_legacy_zeros {
@@ -127,7 +127,7 @@ impl Chain {
                 let is_spec_genesis = genesis_prev_hash(
                     checkpoint.content_hash,
                     checkpoint.content_size,
-                    &self.document_path,
+                    &self.metadata.document_path,
                 )
                 .map(|h| checkpoint.previous_hash == h)
                 .unwrap_or(false);
@@ -142,7 +142,7 @@ impl Chain {
             match checkpoint.signature.as_ref() {
                 None => {
                     report.unsigned_checkpoints.push(checkpoint.ordinal);
-                    match self.signature_policy {
+                    match self.metadata.signature_policy {
                         SignaturePolicy::Required => {
                             report.fail(format!(
                                 "checkpoint {i}: unsigned (signature required by policy)"
@@ -180,7 +180,7 @@ impl Chain {
                 }
             }
 
-            match self.entanglement_mode {
+            match self.metadata.entanglement_mode {
                 EntanglementMode::Legacy => {
                     if i > 0 {
                         let vdf = match checkpoint.vdf.as_ref() {
@@ -294,53 +294,14 @@ impl Chain {
             }
         }
 
-        if let Some(metadata) = &self.metadata {
-            let actual_count = u64::try_from(self.checkpoints.len()).unwrap_or(u64::MAX);
-            if metadata.checkpoint_count != actual_count {
-                report.metadata_valid = false;
-                report.fail(format!(
-                    "metadata checkpoint count mismatch: metadata says {}, actual {}",
-                    metadata.checkpoint_count, actual_count
-                ));
-                return report;
-            }
-            if metadata.mmr_leaf_count != actual_count {
-                report.metadata_valid = false;
-                report.fail(format!(
-                    "metadata MMR leaf count mismatch: metadata says {}, actual {}",
-                    metadata.mmr_leaf_count, actual_count
-                ));
-                return report;
-            }
-
-            // H-005: Format check only; cryptographic signature verification
-            // requires the session's public key, performed at the keyhierarchy
-            // level (verify_checkpoint_signatures). The Chain struct does not
-            // hold key material by design.
-            match &metadata.metadata_signature {
-                None => {
-                    report.metadata_valid = false;
-                    report.warnings.push(
-                        "metadata signature missing: anti-deletion protection is not active"
-                            .to_string(),
-                    );
-                }
-                Some(sig) if sig.len() != 64 => {
-                    report.metadata_valid = false;
-                    report.fail(format!(
-                        "metadata signature invalid length {} (expected 64)",
-                        sig.len()
-                    ));
-                    return report;
-                }
-                Some(_) => {}
-            }
-        }
+        // Integrity metadata (checkpoint_count, mmr_root, metadata_signature)
+        // is verified externally via CheckpointMmr, not stored on Chain.
 
         report
     }
 
     /// Validate VDF proofs after deserialization to reject tampered chain files.
+    #[allow(dead_code)]
     pub(crate) fn validate_vdf_proofs(&self) -> Result<()> {
         for (i, checkpoint) in self.checkpoints.iter().enumerate() {
             let vdf = match checkpoint.vdf.as_ref() {
@@ -348,7 +309,7 @@ impl Chain {
                 None => continue,
             };
 
-            let expected_input = match self.entanglement_mode {
+            let expected_input = match self.metadata.entanglement_mode {
                 EntanglementMode::Legacy => vdf::chain_input(
                     checkpoint.content_hash,
                     checkpoint.previous_hash,

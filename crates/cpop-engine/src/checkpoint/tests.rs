@@ -41,9 +41,9 @@ fn test_vdf_params() -> Parameters {
 fn test_chain_creation() {
     let (_dir, path) = temp_document();
     let chain = test_chain(&path);
-    assert!(!chain.document_id.is_empty());
+    assert!(!chain.metadata.document_id.is_empty());
     assert!(chain.checkpoints.is_empty());
-    assert_eq!(chain.document_path, path.to_string_lossy());
+    assert_eq!(chain.metadata.document_path, path.to_string_lossy());
 }
 
 #[test]
@@ -193,8 +193,8 @@ fn test_save_and_load_chain() {
     chain.save(&chain_path).expect("save chain");
 
     let loaded = Chain::load(&chain_path).expect("load chain");
-    assert_eq!(loaded.document_id, chain.document_id);
-    assert_eq!(loaded.document_path, chain.document_path);
+    assert_eq!(loaded.metadata.document_id, chain.metadata.document_id);
+    assert_eq!(loaded.metadata.document_path, chain.metadata.document_path);
     assert_eq!(loaded.checkpoints.len(), chain.checkpoints.len());
     assert_eq!(loaded.checkpoints[0].hash, chain.checkpoints[0].hash);
     loaded.verify().expect("loaded chain should verify");
@@ -382,7 +382,7 @@ fn test_vdf_input_mismatch_detection() {
 fn test_entangled_chain_creation() {
     let (dir, path) = temp_document();
     let chain = test_chain_entangled(&path);
-    assert_eq!(chain.entanglement_mode, EntanglementMode::Entangled);
+    assert_eq!(chain.metadata.entanglement_mode, EntanglementMode::Entangled);
     assert!(chain.checkpoints.is_empty());
     drop(dir);
 }
@@ -614,7 +614,7 @@ fn test_entangled_chain_save_load() {
     chain.save(&chain_path).expect("save");
 
     let loaded = Chain::load(&chain_path).expect("load");
-    assert_eq!(loaded.entanglement_mode, EntanglementMode::Entangled);
+    assert_eq!(loaded.metadata.entanglement_mode, EntanglementMode::Entangled);
     assert_eq!(loaded.checkpoints.len(), 1);
 
     let binding = loaded.checkpoints[0].jitter_binding.as_ref().unwrap();
@@ -630,7 +630,7 @@ fn test_entangled_chain_save_load() {
 fn test_legacy_mode_default() {
     let (dir, path) = temp_document();
     let chain = test_chain(&path);
-    assert_eq!(chain.entanglement_mode, EntanglementMode::Legacy);
+    assert_eq!(chain.metadata.entanglement_mode, EntanglementMode::Legacy);
     drop(dir);
 }
 
@@ -881,7 +881,7 @@ fn test_ordinal_gap_detected() {
 fn test_unsigned_checkpoint_rejected_required_policy() {
     let (_dir, path) = temp_document();
     let mut chain = Chain::new(&path, test_vdf_params()).expect("create chain");
-    assert_eq!(chain.signature_policy, SignaturePolicy::Required);
+    assert_eq!(chain.metadata.signature_policy, SignaturePolicy::Required);
 
     chain
         .commit_with_vdf_duration(None, Duration::from_millis(10))
@@ -911,7 +911,7 @@ fn test_unsigned_checkpoint_accepted_optional_policy() {
 fn test_signature_policy_serialization() {
     let (dir, path) = temp_document();
     let mut chain = test_chain(&path);
-    chain.signature_policy = SignaturePolicy::Required;
+    chain.metadata.signature_policy = SignaturePolicy::Required;
 
     chain
         .commit_with_vdf_duration(None, Duration::from_millis(10))
@@ -921,7 +921,7 @@ fn test_signature_policy_serialization() {
     chain.save(&chain_path).expect("save");
 
     let loaded = Chain::load(&chain_path).expect("load");
-    assert_eq!(loaded.signature_policy, SignaturePolicy::Required);
+    assert_eq!(loaded.metadata.signature_policy, SignaturePolicy::Required);
     drop(dir);
 }
 
@@ -929,16 +929,18 @@ fn test_signature_policy_serialization() {
 fn test_legacy_chain_deserializes_optional_policy() {
     // Legacy chains without signature_policy field should deserialize as Optional
     let json = r#"{
-        "document_id": "test",
-        "document_path": "/tmp/test.txt",
-        "created_at": "2024-01-01T00:00:00Z",
-        "checkpoints": [],
-        "vdf_params": {"iterations_per_second": 1000, "min_iterations": 10, "max_iterations": 100000},
-        "entanglement_mode": "Legacy"
+        "metadata": {
+            "document_id": "test",
+            "document_path": "/tmp/test.txt",
+            "created_at": "2024-01-01T00:00:00Z",
+            "vdf_params": {"iterations_per_second": 1000, "min_iterations": 10, "max_iterations": 100000},
+            "entanglement_mode": "Legacy"
+        },
+        "checkpoints": []
     }"#;
 
     let chain: Chain = serde_json::from_str(json).expect("deserialize");
-    assert_eq!(chain.signature_policy, SignaturePolicy::Optional);
+    assert_eq!(chain.metadata.signature_policy, SignaturePolicy::Optional);
 }
 
 #[test]
@@ -963,32 +965,8 @@ fn test_verify_detailed_report() {
     drop(dir);
 }
 
-#[test]
-fn test_metadata_count_mismatch_detected() {
-    let (dir, path) = temp_document();
-    let mut chain = test_chain(&path);
-
-    chain
-        .commit_with_vdf_duration(None, Duration::from_millis(10))
-        .expect("commit 0");
-
-    chain.metadata = Some(ChainMetadata {
-        checkpoint_count: 5,
-        mmr_root: [0u8; 32],
-        mmr_leaf_count: 5,
-        metadata_signature: None,
-        metadata_version: 1,
-    });
-
-    let report = chain.verify_detailed();
-    assert!(!report.valid);
-    assert!(!report.metadata_valid);
-    assert!(report
-        .errors
-        .iter()
-        .any(|e| e.contains("metadata checkpoint count mismatch")));
-    drop(dir);
-}
+// Integrity metadata (checkpoint_count, mmr_root) verification is now handled
+// externally by CheckpointMmr, not by Chain::verify_detailed().
 
 #[test]
 fn test_entangled_commit_with_physics_context() {
@@ -1289,11 +1267,11 @@ fn test_save_load_roundtrip() {
     chain.save(&chain_path).expect("save");
 
     let loaded = Chain::load(&chain_path).expect("load");
-    assert_eq!(loaded.document_id, chain.document_id);
-    assert_eq!(loaded.document_path, chain.document_path);
+    assert_eq!(loaded.metadata.document_id, chain.metadata.document_id);
+    assert_eq!(loaded.metadata.document_path, chain.metadata.document_path);
     assert_eq!(loaded.checkpoints.len(), 2);
-    assert_eq!(loaded.entanglement_mode, chain.entanglement_mode);
-    assert_eq!(loaded.signature_policy, chain.signature_policy);
+    assert_eq!(loaded.metadata.entanglement_mode, chain.metadata.entanglement_mode);
+    assert_eq!(loaded.metadata.signature_policy, chain.metadata.signature_policy);
 
     for i in 0..2 {
         assert_eq!(loaded.checkpoints[i].ordinal, chain.checkpoints[i].ordinal);

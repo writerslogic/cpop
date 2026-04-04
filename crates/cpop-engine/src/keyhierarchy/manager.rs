@@ -116,7 +116,7 @@ impl ChainSigner {
         chain: checkpoint::Chain,
         puf: Box<dyn PufProvider>,
     ) -> Result<Self, KeyHierarchyError> {
-        let manager = SessionManager::new(puf, chain.document_path.clone())?;
+        let manager = SessionManager::new(puf, chain.metadata.document_path.clone())?;
         Ok(Self { chain, manager })
     }
 

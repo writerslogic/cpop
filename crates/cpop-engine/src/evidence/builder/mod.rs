@@ -48,12 +48,12 @@ impl Builder {
             provenance: None,
             document: DocumentInfo {
                 title: title.to_string(),
-                path: chain.document_path.clone(),
+                path: chain.metadata.document_path.clone(),
                 final_hash: String::new(),
                 final_size: 0,
             },
             checkpoints: Vec::with_capacity(chain.checkpoints.len()),
-            vdf_params: chain.vdf_params,
+            vdf_params: chain.metadata.vdf_params,
             chain_hash: String::new(),
             declaration: None,
             presence: None,
@@ -116,7 +116,7 @@ impl Builder {
                 proof.vdf_input = Some(hex::encode(vdf_proof.input));
                 proof.vdf_output = Some(hex::encode(vdf_proof.output));
                 proof.vdf_iterations = Some(vdf_proof.iterations);
-                proof.elapsed_time = Some(vdf_proof.min_elapsed_time(chain.vdf_params));
+                proof.elapsed_time = Some(vdf_proof.min_elapsed_time(chain.metadata.vdf_params));
             }
 
             packet.checkpoints.push(proof);

@@ -307,7 +307,7 @@ impl Session {
     /// This makes checkpoint deletion detectable: changing the count breaks the signature.
     pub fn sign_chain_metadata(
         &self,
-        metadata: &mut crate::checkpoint::ChainMetadata,
+        metadata: &mut crate::checkpoint::ChainIntegrityMetadata,
     ) -> Result<(), KeyHierarchyError> {
         if self.ratchet.wiped {
             return Err(KeyHierarchyError::RatchetWiped);

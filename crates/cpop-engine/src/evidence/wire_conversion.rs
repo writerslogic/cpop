@@ -71,7 +71,7 @@ pub fn chain_to_wire_with_signatures(
     let content_hash = last_cp.map(|cp| cp.content_hash).unwrap_or([0u8; 32]);
     let content_size = last_cp.map(|cp| cp.content_size).unwrap_or(0);
 
-    let filename = std::path::Path::new(&chain.document_path)
+    let filename = std::path::Path::new(&chain.metadata.document_path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string());
 

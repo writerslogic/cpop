@@ -199,7 +199,7 @@ impl SentinelIpcHandler {
         };
 
         let checkpoint =
-            if chain.entanglement_mode == crate::checkpoint::EntanglementMode::Entangled {
+            if chain.metadata.entanglement_mode == crate::checkpoint::EntanglementMode::Entangled {
                 let accumulator = self.sentinel.activity_accumulator.read_recover();
                 let samples = accumulator.samples();
                 let keystroke_count = samples.len() as u64;

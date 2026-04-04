@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::checkpoint::{Chain, ChainMetadata};
+use crate::checkpoint::{Chain, ChainIntegrityMetadata};
 use crate::error::{Error, Result};
 use crate::mmr::{FileStore, InclusionProof, MemoryStore, Mmr, RangeProof};
 
@@ -148,12 +148,12 @@ impl CheckpointMmr {
         Ok(Some(proof))
     }
 
-    /// Build a `ChainMetadata` snapshot from the current MMR state.
-    pub fn build_metadata(&self) -> Result<ChainMetadata> {
+    /// Build a `ChainIntegrityMetadata` snapshot from the current MMR state.
+    pub fn build_metadata(&self) -> Result<ChainIntegrityMetadata> {
         let count = self.leaf_count();
         let mmr_root = if count > 0 { self.root()? } else { [0u8; 32] };
 
-        Ok(ChainMetadata {
+        Ok(ChainIntegrityMetadata {
             checkpoint_count: count,
             mmr_root,
             mmr_leaf_count: count,
@@ -184,7 +184,7 @@ impl CheckpointMmr {
 }
 
 /// `SHA256("witnessd-chain-metadata-v1" || checkpoint_count || mmr_root || mmr_leaf_count || metadata_version)`.
-pub fn metadata_signing_payload(metadata: &ChainMetadata) -> [u8; 32] {
+pub fn metadata_signing_payload(metadata: &ChainIntegrityMetadata) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"witnessd-chain-metadata-v1");
     hasher.update(metadata.checkpoint_count.to_be_bytes());
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_metadata_signing_payload_deterministic() {
-        let metadata = ChainMetadata {
+        let metadata = ChainIntegrityMetadata {
             checkpoint_count: 10,
             mmr_root: [0xAAu8; 32],
             mmr_leaf_count: 10,
