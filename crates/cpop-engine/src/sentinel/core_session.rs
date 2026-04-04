@@ -383,16 +383,16 @@ impl Sentinel {
         key_bytes.zeroize();
         let store = crate::store::SecureStore::open(&db_path, hmac_key.to_vec())?;
 
-        let current_digest =
+        let mut current_digest =
             if let Some((cbor, _)) = store.get_baseline_digest(&identity_fingerprint)? {
                 serde_json::from_slice::<cpop_protocol::baseline::BaselineDigest>(&cbor)?
             } else {
                 crate::baseline::compute_initial_digest(identity_fingerprint.clone())
             };
 
-        let updated_digest = crate::baseline::update_digest(current_digest, &summary);
+        crate::baseline::update_digest_in_place(&mut current_digest, &summary);
 
-        let digest_json = serde_json::to_vec(&updated_digest)?;
+        let digest_json = serde_json::to_vec(&current_digest)?;
         let signature = signing_key_local.sign(&digest_json);
         // SigningKey zeroizes its secret material on Drop.
         drop(signing_key_local);
@@ -401,7 +401,7 @@ impl Sentinel {
 
         log::info!(
             "Authorship baseline updated. Tier: {:?}",
-            updated_digest.confidence_tier
+            current_digest.confidence_tier
         );
         Ok(())
     }

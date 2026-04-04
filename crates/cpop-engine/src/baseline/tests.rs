@@ -27,7 +27,7 @@ fn make_summary(
 #[test]
 fn initial_digest_has_zero_sessions() {
     let fp = vec![0xAA; 32];
-    let d = compute_initial_digest(fp.clone());
+    let mut d = compute_initial_digest(fp.clone());
     assert_eq!(d.version, 1);
     assert_eq!(d.session_count, 0);
     assert_eq!(d.total_keystrokes, 0);
@@ -38,7 +38,7 @@ fn initial_digest_has_zero_sessions() {
 
 #[test]
 fn initial_digest_histogram_is_zeroed() {
-    let d = compute_initial_digest(vec![1, 2, 3]);
+    let mut d = compute_initial_digest(vec![1, 2, 3]);
     for bin in &d.aggregate_iki_histogram {
         assert_eq!(*bin, 0.0);
     }
@@ -46,7 +46,7 @@ fn initial_digest_histogram_is_zeroed() {
 
 #[test]
 fn initial_digest_stats_are_empty() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     assert_eq!(d.iki_stats.count, 0);
     assert_eq!(d.cv_stats.count, 0);
     assert_eq!(d.hurst_stats.count, 0);
@@ -59,7 +59,7 @@ fn initial_digest_computed_at_is_recent() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     assert!(d.computed_at >= before);
     assert!(d.computed_at <= before + 2);
 }
@@ -68,22 +68,22 @@ fn initial_digest_computed_at_is_recent() {
 
 #[test]
 fn single_update_increments_session_count() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     let s = make_summary(100, 0.5, 0.7, 3.0);
-    let d = update_digest(d, &s);
+    update_digest_in_place(&mut d, &s);
     assert_eq!(d.session_count, 1);
     assert_eq!(d.total_keystrokes, 100);
 }
 
 #[test]
 fn multiple_updates_accumulate_keystrokes() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     let s1 = make_summary(100, 0.5, 0.7, 3.0);
     let s2 = make_summary(200, 0.5, 0.7, 3.0);
     let s3 = make_summary(50, 0.5, 0.7, 3.0);
-    let d = update_digest(d, &s1);
-    let d = update_digest(d, &s2);
-    let d = update_digest(d, &s3);
+    update_digest_in_place(&mut d, &s1);
+    update_digest_in_place(&mut d, &s2);
+    update_digest_in_place(&mut d, &s3);
     assert_eq!(d.session_count, 3);
     assert_eq!(d.total_keystrokes, 350);
 }
@@ -94,26 +94,26 @@ fn update_advances_confidence_tier() {
     let s = make_summary(100, 0.5, 0.7, 3.0);
 
     for _ in 0..5 {
-        d = update_digest(d, &s);
+        update_digest_in_place(&mut d, &s);
     }
     assert_eq!(d.confidence_tier, ConfidenceTier::Emerging);
 
     for _ in 0..5 {
-        d = update_digest(d, &s);
+        update_digest_in_place(&mut d, &s);
     }
     assert_eq!(d.confidence_tier, ConfidenceTier::Established);
 
     for _ in 0..10 {
-        d = update_digest(d, &s);
+        update_digest_in_place(&mut d, &s);
     }
     assert_eq!(d.confidence_tier, ConfidenceTier::Mature);
 }
 
 #[test]
 fn update_sets_histogram_to_session_on_first_update() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     let s = make_summary(100, 0.5, 0.7, 3.0);
-    let d = update_digest(d, &s);
+    update_digest_in_place(&mut d, &s);
     for i in 0..9 {
         assert!(
             (d.aggregate_iki_histogram[i] - s.iki_histogram[i]).abs() < 1e-10,
@@ -127,7 +127,7 @@ fn update_sets_histogram_to_session_on_first_update() {
 
 #[test]
 fn update_averages_histogram_over_sessions() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     let s1 = SessionBehavioralSummary {
         iki_histogram: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ..make_summary(100, 0.5, 0.7, 3.0)
@@ -136,17 +136,17 @@ fn update_averages_histogram_over_sessions() {
         iki_histogram: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ..make_summary(100, 0.5, 0.7, 3.0)
     };
-    let d = update_digest(d, &s1);
-    let d = update_digest(d, &s2);
+    update_digest_in_place(&mut d, &s1);
+    update_digest_in_place(&mut d, &s2);
     assert!((d.aggregate_iki_histogram[0] - 0.5).abs() < 1e-10);
     assert!((d.aggregate_iki_histogram[1] - 0.5).abs() < 1e-10);
 }
 
 #[test]
 fn update_tracks_iki_stats() {
-    let d = compute_initial_digest(vec![]);
+    let mut d = compute_initial_digest(vec![]);
     let s = make_summary(100, 0.5, 0.7, 3.0);
-    let d = update_digest(d, &s);
+    update_digest_in_place(&mut d, &s);
     assert_eq!(d.iki_stats.count, 1);
     assert!(d.iki_stats.mean > 0.0, "IKI mean should be positive");
 }
@@ -208,7 +208,7 @@ fn build_trained_digest(sessions: u64) -> BaselineDigest {
     let mut d = compute_initial_digest(vec![0xAA; 32]);
     let s = make_summary(500, 0.45, 0.72, 3.5);
     for _ in 0..sessions {
-        d = update_digest(d, &s);
+        update_digest_in_place(&mut d, &s);
     }
     d
 }
@@ -257,7 +257,7 @@ fn verify_with_few_sessions_is_lenient() {
     // With count < 2, gaussian_similarity returns 1.0
     let mut d = compute_initial_digest(vec![]);
     let s = make_summary(100, 0.5, 0.7, 3.0);
-    d = update_digest(d, &s);
+    update_digest_in_place(&mut d, &s);
 
     // Even a very different session should score high when baseline is thin
     let different = SessionBehavioralSummary {
@@ -285,7 +285,7 @@ fn full_roundtrip_enrollment_to_verification() {
 
     // Enroll 10 sessions
     for _ in 0..10 {
-        d = update_digest(d, &session);
+        update_digest_in_place(&mut d, &session);
     }
     assert_eq!(d.session_count, 10);
     assert_eq!(d.total_keystrokes, 10_000);
@@ -310,7 +310,7 @@ fn roundtrip_with_varying_sessions() {
         make_summary(520, 0.46, 0.69, 3.6),
     ];
     for s in &sessions {
-        d = update_digest(d, s);
+        update_digest_in_place(&mut d, s);
     }
 
     // Verify with a session close to the mean

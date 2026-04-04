@@ -5,7 +5,10 @@ use cpop_protocol::baseline::{
     BaselineDigest, ConfidenceTier, SessionBehavioralSummary, StreamingStats,
 };
 
-/// Create a zero-session baseline digest for a new identity.
+const IKI_BIN_CENTERS: [f64; 9] = [
+    25.0, 75.0, 125.0, 175.0, 250.0, 400.0, 750.0, 1500.0, 2500.0,
+];
+
 pub fn compute_initial_digest(identity_fingerprint: Vec<u8>) -> BaselineDigest {
     BaselineDigest {
         version: 1,
@@ -18,55 +21,56 @@ pub fn compute_initial_digest(identity_fingerprint: Vec<u8>) -> BaselineDigest {
         pause_stats: StreamingStats::new_empty(),
         session_merkle_root: vec![0u8; 32],
         confidence_tier: ConfidenceTier::PopulationReference,
-        computed_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        computed_at: now_as_secs(),
         identity_fingerprint,
     }
 }
 
-/// Incorporate a session's behavioral summary into the running digest.
-pub fn update_digest(
-    mut digest: BaselineDigest,
+/// Incorporate a session's behavioral summary into the running digest in place.
+///
+/// Uses numerically stable running average: mu_n = mu_{n-1} + (x_n - mu_{n-1}) / n
+pub fn update_digest_in_place(
+    digest: &mut BaselineDigest,
     summary: &SessionBehavioralSummary,
-) -> BaselineDigest {
+) {
     digest.session_count += 1;
     digest.total_keystrokes += summary.keystroke_count;
 
-    let bin_centers: [f64; 9] = [
-        25.0, 75.0, 125.0, 175.0, 250.0, 400.0, 750.0, 1500.0, 2500.0,
-    ];
     let total_weight: f64 = summary.iki_histogram.iter().sum();
-    let mean_iki: f64 = if total_weight > 0.0 {
+    let mean_iki = if total_weight > f64::EPSILON {
         summary
             .iki_histogram
             .iter()
-            .zip(bin_centers.iter())
+            .zip(IKI_BIN_CENTERS.iter())
             .map(|(&w, &c)| w * c)
             .sum::<f64>()
             / total_weight
     } else {
         0.0
     };
+
     digest.iki_stats.update(mean_iki);
     digest.cv_stats.update(summary.iki_cv);
     digest.hurst_stats.update(summary.hurst);
     digest.pause_stats.update(summary.pause_frequency);
 
-    let n = digest.session_count as f64;
-    for i in 0..9 {
-        let prev = digest.aggregate_iki_histogram[i];
-        let cur = summary.iki_histogram[i];
-        digest.aggregate_iki_histogram[i] = (prev * (n - 1.0) + cur) / n;
+    let n_inv = 1.0 / (digest.session_count as f64);
+    for (prev, &cur) in digest
+        .aggregate_iki_histogram
+        .iter_mut()
+        .zip(summary.iki_histogram.iter())
+    {
+        *prev += (cur - *prev) * n_inv;
     }
 
     digest.confidence_tier = ConfidenceTier::from_session_count(digest.session_count);
+    digest.computed_at = now_as_secs();
+}
 
-    digest.computed_at = std::time::SystemTime::now()
+#[inline(always)]
+fn now_as_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-
-    digest
+        .as_secs()
 }
