@@ -57,16 +57,8 @@ impl Default for LabyrinthParams {
 
 const MIN_LABYRINTH_DATA_POINTS: usize = 50;
 
-/// Keystroke-only analysis entry point.
+/// Analyze keystroke timing and optional mouse trajectory via Takens' embedding.
 pub fn analyze_labyrinth(
-    data: &[f64],
-    params: &LabyrinthParams,
-) -> Result<LabyrinthAnalysis, String> {
-    analyze_fused(data, &[], params)
-}
-
-/// Fused keystroke + mouse analysis.
-pub fn analyze_fused(
     keystroke_deltas: &[f64],
     mouse_coords: &[(f64, f64)],
     params: &LabyrinthParams,
@@ -433,7 +425,7 @@ mod tests {
     fn keystroke_only_analysis() {
         let data = make_sine_data(200);
         let params = LabyrinthParams::default();
-        let result = analyze_labyrinth(&data, &params).unwrap();
+        let result = analyze_labyrinth(&data, &[], &params).unwrap();
         assert!(result.confidence > 0.0);
         assert!(result.embedding_dimension > 0);
     }
@@ -443,7 +435,7 @@ mod tests {
         let keys = make_sine_data(200);
         let mouse = make_mouse_data(200);
         let params = LabyrinthParams::default();
-        let result = analyze_fused(&keys, &mouse, &params).unwrap();
+        let result = analyze_labyrinth(&keys, &mouse, &params).unwrap();
         assert!(result.confidence > 0.0);
         assert!(result.embedding_dimension > 0);
     }
@@ -452,14 +444,14 @@ mod tests {
     fn insufficient_data() {
         let data = vec![1.0; 10];
         let params = LabyrinthParams::default();
-        assert!(analyze_labyrinth(&data, &params).is_err());
+        assert!(analyze_labyrinth(&data, &[], &params).is_err());
     }
 
     #[test]
     fn quantization_detects_grid() {
         let data: Vec<f64> = (0..200).map(|i| (i % 5) as f64 * 50.0).collect();
         let params = LabyrinthParams::default();
-        let result = analyze_labyrinth(&data, &params).unwrap();
+        let result = analyze_labyrinth(&data, &[], &params).unwrap();
         assert!(
             result.quantization_index > 0.0,
             "quantized input should have non-zero quantization index"
@@ -470,7 +462,7 @@ mod tests {
     fn biological_plausibility_check() {
         let data = make_sine_data(500);
         let params = LabyrinthParams::default();
-        let result = analyze_labyrinth(&data, &params).unwrap();
+        let result = analyze_labyrinth(&data, &[], &params).unwrap();
         assert_eq!(result.is_valid, result.is_biologically_plausible());
     }
 
@@ -478,7 +470,7 @@ mod tests {
     fn betti_numbers_populated() {
         let data = make_sine_data(200);
         let params = LabyrinthParams::default();
-        let result = analyze_labyrinth(&data, &params).unwrap();
+        let result = analyze_labyrinth(&data, &[], &params).unwrap();
         assert!(result.betti_numbers[0] >= 1, "beta_0 should be at least 1");
     }
 }

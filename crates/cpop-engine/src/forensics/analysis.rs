@@ -247,7 +247,7 @@ pub fn analyze_forensics_ext_with_focus(
         // Labyrinth (Takens' embedding) analysis
         if iki_intervals.len() >= MIN_IKI_FOR_LABYRINTH {
             let params = LabyrinthParams::default();
-            if let Ok(lab) = analyze_labyrinth(&iki_intervals, &params) {
+            if let Ok(lab) = analyze_labyrinth(&iki_intervals, &[], &params) {
                 if !lab.is_biologically_plausible() {
                     metrics.anomaly_count += 1;
                 }
