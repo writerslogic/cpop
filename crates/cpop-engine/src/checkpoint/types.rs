@@ -183,12 +183,10 @@ pub struct TpmBinding {
 ///
 /// Signed with the current ratchet key; deleting checkpoints invalidates the signature.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChainMetadata {
+pub struct ChainIntegrityMetadata {
     pub checkpoint_count: u64,
     pub mmr_root: [u8; 32],
-    /// Should equal `checkpoint_count`
     pub mmr_leaf_count: u64,
-    /// Ed25519 over `(checkpoint_count || mmr_root || mmr_leaf_count)`
     pub metadata_signature: Option<Vec<u8>>,
     pub metadata_version: u32,
 }

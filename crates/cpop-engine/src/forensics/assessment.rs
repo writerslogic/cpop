@@ -433,6 +433,39 @@ pub fn apply_focus_penalties(score: &mut f64, focus: &FocusMetrics) {
     };
 }
 
+/// Apply cross-window transcription penalties to an assessment score.
+///
+/// Call after `compute_assessment_score` when cross-window match data is available.
+/// Each match above the 0.70 threshold applies a penalty proportional to its
+/// similarity score, capped at 0.30 total.
+pub fn apply_cross_window_penalties(
+    score: &mut f64,
+    matches: &[crate::transcription::CrossWindowMatch],
+) {
+    /// Per-match penalty at similarity = 1.0.
+    const CROSS_WINDOW_MAX_PER_MATCH: f64 = 0.20;
+    /// Total cap on cross-window penalty.
+    const CROSS_WINDOW_PENALTY_CAP: f64 = 0.30;
+    /// Similarity floor below which no penalty applies.
+    const CROSS_WINDOW_SIM_FLOOR: f64 = 0.70;
+
+    let mut total_penalty = 0.0;
+    for m in matches {
+        if m.similarity_score >= CROSS_WINDOW_SIM_FLOOR {
+            let excess = (m.similarity_score - CROSS_WINDOW_SIM_FLOOR)
+                / (1.0 - CROSS_WINDOW_SIM_FLOOR);
+            total_penalty += CROSS_WINDOW_MAX_PER_MATCH * excess;
+        }
+    }
+    total_penalty = total_penalty.min(CROSS_WINDOW_PENALTY_CAP);
+    *score -= total_penalty;
+    *score = if score.is_finite() {
+        score.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+}
+
 /// Map assessment score to risk level.
 pub fn determine_risk_level(score: f64, event_count: usize) -> RiskLevel {
     if event_count < MIN_EVENTS_FOR_ANALYSIS {

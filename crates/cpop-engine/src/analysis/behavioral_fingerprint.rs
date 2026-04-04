@@ -6,113 +6,60 @@ use crate::analysis::stats;
 use crate::jitter::SimpleJitterSample;
 use serde::{Deserialize, Serialize};
 
-/// Maximum interval in ms before filtering as an outlier pause (5 seconds).
 const MAX_PAUSE_FILTER_MS: f64 = 5000.0;
-
-/// Intervals above this threshold indicate paragraph-level pauses.
 const PARAGRAPH_PAUSE_MS: f64 = 2000.0;
-
-/// Intervals above this threshold separate typing bursts.
 const BURST_SEPARATOR_MS: f64 = 500.0;
-
-/// Intervals below this threshold count as fast typing within a burst.
 const BURST_INTERVAL_MS: f64 = 200.0;
-
-/// CV below this flags suspiciously regular (robotic) timing.
 const CV_FORGERY_THRESHOLD: f64 = 0.2;
-
-/// Skewness below this flags non-human timing distribution.
 const SKEWNESS_FORGERY_THRESHOLD: f64 = 0.2;
-
-/// Lower bound for micro-pause detection (ms).
 const MICRO_PAUSE_MIN_MS: f64 = 150.0;
-
-/// Upper bound for micro-pause detection (ms).
 const MICRO_PAUSE_MAX_MS: f64 = 500.0;
-
-/// Minimum fraction of micro-pauses expected in natural typing.
 const MICRO_PAUSE_RATIO_THRESHOLD: f64 = 0.05;
-
-/// Intervals below this are physically impossible for a single typist.
 const IMPOSSIBLY_FAST_MS: f64 = 20.0;
-
-/// Percentage of impossibly fast intervals that triggers a flag.
 const SUSPICIOUS_FAST_PERCENT: usize = 10;
-
-/// Minimum interval count required for fatigue analysis.
 const MIN_FATIGUE_SAMPLES: usize = 40;
-
-/// Last-quarter mean must exceed first-quarter mean by this ratio to show fatigue.
 const FATIGUE_SLOWDOWN_RATIO: f64 = 1.05;
-
-/// Per-flag confidence multiplier in forgery analysis.
 const FORGERY_CONFIDENCE_PER_FLAG: f64 = 0.3;
-
-/// Maximum number of samples processed for fingerprint/forgery analysis.
-/// Limits memory allocation from untrusted IPC input.
 const MAX_FINGERPRINT_SAMPLES: usize = 100_000;
 
-/// Features extracted from typing that are hard to fake
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehavioralFingerprint {
-    /// Mean inter-keystroke interval in milliseconds.
     pub keystroke_interval_mean: f64,
-    /// Standard deviation of inter-keystroke intervals.
     pub keystroke_interval_std: f64,
-    /// Skewness of the interval distribution (positive = right-tailed).
     pub keystroke_interval_skewness: f64,
-    /// Excess kurtosis of the interval distribution.
     pub keystroke_interval_kurtosis: f64,
 
-    /// Normalized histogram of interval durations across fixed buckets.
     pub interval_buckets: Vec<f64>,
 
-    /// Mean duration of sentence-level pauses (> 500ms).
     pub sentence_pause_mean: f64,
-    /// Mean duration of paragraph-level pauses (> 2000ms).
     pub paragraph_pause_mean: f64,
-    /// Fraction of keystrokes preceded by a thinking pause.
     pub thinking_pause_frequency: f64,
 
-    /// Mean number of keystrokes per typing burst.
     pub burst_length_mean: f64,
-    /// Variance of within-burst keystroke speeds.
     pub burst_speed_variance: f64,
 }
 
-/// Result of automated forgery detection on typing samples.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgeryAnalysis {
-    /// True if any forgery indicator was triggered.
     pub is_suspicious: bool,
-    /// Confidence score (0.0 to 1.0) based on number of flags.
     pub confidence: f64,
-    /// Individual forgery indicators that were triggered.
     pub flags: Vec<ForgeryFlag>,
 }
 
-/// Individual forgery indicator from behavioral analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ForgeryFlag {
-    /// Coefficient of variation is suspiciously low (robotic regularity).
     TooRegular { cv: f64 },
-    /// Skewness is too low for natural human timing distribution.
     WrongSkewness { skewness: f64 },
-    /// Expected micro-pauses (150-500ms) are absent or too rare.
     MissingMicroPauses,
-    /// Intervals below 20ms exceed plausible threshold.
     SuperhumanSpeed { count: usize },
-    /// No detectable slowdown between first and last quarter (fatigue absent).
     NoFatiguePattern,
 }
 
-/// Convert a nanosecond timestamp difference to milliseconds.
 fn interval_ms(a: &SimpleJitterSample, b: &SimpleJitterSample) -> f64 {
     b.timestamp_ns.saturating_sub(a.timestamp_ns).max(0) as f64 / 1_000_000.0
 }
 
 impl BehavioralFingerprint {
-    /// Build a fingerprint from jitter samples, computing all statistical features.
     pub fn from_samples(samples: &[SimpleJitterSample]) -> Self {
         if samples.len() < 2 {
             return Self::default();
@@ -247,7 +194,6 @@ impl BehavioralFingerprint {
         }
     }
 
-    /// Scan timing samples for statistical anomalies indicating synthetic input.
     pub fn detect_forgery(samples: &[SimpleJitterSample]) -> ForgeryAnalysis {
         if samples.len() < 10 {
             return ForgeryAnalysis {

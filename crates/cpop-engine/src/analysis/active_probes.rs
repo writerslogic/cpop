@@ -5,128 +5,79 @@
 
 use serde::{Deserialize, Serialize};
 
-// ── Galton invariant thresholds ──────────────────────────────────────────────
-
-/// Fraction of baseline interval that defines a perturbation.
 const PERTURBATION_THRESHOLD_FRACTION: f64 = 0.3;
-/// Minimum samples required for statistically meaningful Galton analysis.
 const MIN_GALTON_SAMPLES: usize = 20;
-/// Minimum detected perturbation events for absorption estimation.
 const MIN_PERTURBATION_COUNT: usize = 3;
-/// Number of samples after a perturbation to track recovery.
 const RECOVERY_WINDOW_SIZE: usize = 10;
-/// Minimum recovery samples needed to estimate a decay rate.
 const MIN_RECOVERY_SAMPLES: usize = 3;
-
-// ── Decay rate estimation ────────────────────────────────────────────────────
-
-/// Default decay rate when insufficient data is available.
 const DEFAULT_DECAY_RATE: f64 = 0.5;
-/// Floor value for deviations to avoid division-by-zero in log fits.
 const MIN_DEVIATION_FLOOR: f64 = 0.001;
-/// Upper clamp for estimated decay rates.
 const MAX_DECAY_RATE: f64 = 2.0;
-
-// ── Reflex gate thresholds ───────────────────────────────────────────────────
-
-/// Minimum stimulus-response samples for reflex gate analysis.
 const MIN_STIMULUS_RESPONSES: usize = 5;
-/// Minimum data points for lag-1 autocorrelation to be meaningful.
 const MIN_AUTOCORRELATION_SAMPLES: usize = 3;
 
-/// The Galton Board analogy: human timing naturally absorbs perturbations
-/// back to a mean rhythm, like balls falling through pegs produce a bell curve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GaltonInvariantResult {
-    /// Human range: α ∈ [0.3, 0.8]
     pub absorption_coefficient: f64,
 
-    /// τ = 1/α, scaled to ms
     pub time_constant_ms: f64,
 
-    /// Recovery from acceleration vs. deceleration. Humans: ~1.1-1.3.
     pub asymmetry_factor: f64,
 
-    /// Standard error of the absorption coefficient estimate.
     pub std_error: f64,
-    /// Whether absorption coefficient falls within biologically plausible range.
     pub is_valid: bool,
-    /// Number of detected perturbation events.
     pub perturbation_count: usize,
 }
 
 impl GaltonInvariantResult {
-    /// Minimum absorption coefficient for human-plausible recovery.
     pub const MIN_VALID_ALPHA: f64 = 0.3;
-    /// Maximum absorption coefficient for human-plausible recovery.
     pub const MAX_VALID_ALPHA: f64 = 0.8;
 
-    /// Return true if absorption coefficient is within the human-plausible range.
     pub fn is_biologically_plausible(&self) -> bool {
         self.absorption_coefficient >= Self::MIN_VALID_ALPHA
             && self.absorption_coefficient <= Self::MAX_VALID_ALPHA
     }
 }
 
-/// Neural pathway delay in responding to unexpected stimuli.
-/// Human reflexes have physiological lower bounds (~100ms for visual).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflexGateResult {
-    /// Below ~100ms is physiologically implausible for visual stimuli.
     pub min_latency_ms: f64,
 
-    /// Mean response latency across all stimuli.
     pub mean_latency_ms: f64,
-    /// Standard deviation of response latencies.
     pub std_latency_ms: f64,
 
-    /// Humans: CV ∈ [0.15, 0.40]
     pub coefficient_of_variation: f64,
 
-    /// Humans show mild positive correlation (~0.2-0.5).
     pub sequential_dependency: f64,
 
-    /// Whether latency distribution falls within human-plausible bounds.
     pub is_valid: bool,
-    /// Total stimulus responses analyzed.
     pub response_count: usize,
 }
 
 impl ReflexGateResult {
-    /// Minimum physiological visual response latency in milliseconds.
     pub const MIN_PHYSIOLOGICAL_LATENCY_MS: f64 = 100.0;
-    /// Minimum coefficient of variation for human-like response variability.
     pub const MIN_VALID_CV: f64 = 0.15;
-    /// Maximum coefficient of variation for human-like response variability.
     pub const MAX_VALID_CV: f64 = 0.40;
 
-    /// Return true if latency and variability are within human-plausible bounds.
     pub fn is_biologically_plausible(&self) -> bool {
         self.min_latency_ms >= Self::MIN_PHYSIOLOGICAL_LATENCY_MS
             && self.coefficient_of_variation >= Self::MIN_VALID_CV
             && self.coefficient_of_variation <= Self::MAX_VALID_CV
     }
 
-    /// Return true if any response was faster than physiologically possible.
     pub fn has_superhuman_responses(&self) -> bool {
         self.min_latency_ms < Self::MIN_PHYSIOLOGICAL_LATENCY_MS
     }
 }
 
-/// Single timing sample for active probe analysis.
 #[derive(Debug, Clone)]
 pub struct ProbeSample {
-    /// Absolute timestamp in nanoseconds.
     pub timestamp_ns: i64,
-    /// Interval since previous sample in milliseconds.
     pub interval_ms: f64,
-    /// Whether this sample followed an intentional perturbation.
     pub is_perturbed: bool,
-    /// Whether this sample is a response to a visual stimulus.
     pub is_stimulus_response: bool,
 }
 
-/// Compute the Galton invariant from timing samples and a baseline interval.
 pub fn analyze_galton_invariant(
     samples: &[ProbeSample],
     baseline_interval_ms: f64,
@@ -259,7 +210,6 @@ fn estimate_decay_rate(deviations: &[f64]) -> f64 {
     }
 }
 
-/// Analyze stimulus-response latencies for physiological plausibility.
 pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, String> {
     let responses: Vec<f64> = samples
         .iter()
@@ -336,21 +286,15 @@ fn compute_lag1_autocorrelation(data: &[f64]) -> f64 {
     }
 }
 
-/// Combined results from all active probe mechanisms.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveProbeResults {
-    /// Galton invariant analysis, if enough perturbations were present.
     pub galton: Option<GaltonInvariantResult>,
-    /// Reflex gate analysis, if enough stimulus responses were present.
     pub reflex: Option<ReflexGateResult>,
-    /// Fraction of probes that passed (0.0 to 1.0).
     pub combined_score: f64,
-    /// True when every executed probe passed validation.
     pub all_valid: bool,
 }
 
 impl ActiveProbeResults {
-    /// Merge individual probe results into a combined score and validity flag.
     pub fn combine(
         galton: Option<GaltonInvariantResult>,
         reflex: Option<ReflexGateResult>,

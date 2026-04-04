@@ -17,60 +17,38 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Hurst exponent analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HurstAnalysis {
-    /// The calculated Hurst exponent.
     pub exponent: f64,
-
-    /// Standard error of the estimate.
     pub std_error: f64,
-
-    /// R-squared value indicating fit quality.
     pub r_squared: f64,
-
-    /// Interpretation of the result.
     pub interpretation: HurstInterpretation,
-
-    /// Whether this passes RFC validation.
     pub is_valid: bool,
 }
 
-/// Interpretation of Hurst exponent value.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HurstInterpretation {
-    /// H ≈ 0.5: White noise, random walk (suspicious for human input).
     WhiteNoise,
-    /// H < 0.5: Anti-persistent, mean-reverting.
     AntiPersistent,
-    /// H ∈ (0.5, 0.85]: Persistent, long memory (typical of human input).
     Persistent,
-    /// H > 0.85: Highly predictable (suspicious for human input).
     HighlyPredictable,
 }
 
 impl HurstAnalysis {
-    /// RFC-compliant validation range for human input.
     pub const MIN_VALID: f64 = 0.55;
-    /// Upper bound of the RFC-valid Hurst exponent range.
     pub const MAX_VALID: f64 = 0.85;
-    /// Tolerance around 0.5 for classifying as white noise.
     pub const WHITE_NOISE_TOLERANCE: f64 = 0.05;
 
-    /// Return true if the exponent falls within biologically plausible bounds.
     pub fn is_biologically_plausible(&self) -> bool {
         self.exponent >= Self::MIN_VALID && self.exponent <= Self::MAX_VALID
     }
 
-    /// Return true if the exponent is indistinguishable from white noise.
     pub fn is_white_noise(&self) -> bool {
         (self.exponent - 0.5).abs() < Self::WHITE_NOISE_TOLERANCE
     }
 
-    /// Threshold above which the series is suspiciously deterministic.
     pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
 
-    /// Return true if the exponent suggests scripted or deterministic input.
     pub fn is_suspiciously_predictable(&self) -> bool {
         self.exponent > Self::SUSPICIOUSLY_PREDICTABLE
     }
@@ -81,8 +59,6 @@ const RS_MIN_WINDOW: usize = 8;
 const DFA_MIN_DATA_POINTS: usize = 32;
 const DFA_MIN_SCALE: usize = 8;
 
-/// Calculate Hurst exponent using R/S (Rescaled Range) analysis
-/// (Mandelbrot & Wallis method).
 pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
     if n < RS_MIN_DATA_POINTS {
@@ -111,7 +87,6 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
 
     let (slope, _intercept, r_squared, std_error) = linear_regression(&log_n_vec, &log_rs_vec)?;
 
-    // NaN/Inf from degenerate inputs would bypass clamp and propagate silently
     if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
         return Err(
             "R/S regression produced NaN/Inf; likely caused by constant variance \
@@ -120,7 +95,6 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
         );
     }
 
-    // R/S Hurst exponent is bounded [0, 1] by definition
     let exponent = slope.clamp(0.0, 1.0);
 
     let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
@@ -144,7 +118,6 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     })
 }
 
-/// R/S statistic for a specific window size.
 fn compute_rs_for_window(data: &[f64], window_size: usize) -> f64 {
     let n = data.len();
     if window_size > n || window_size < 2 {
@@ -197,8 +170,6 @@ fn compute_rs_for_window(data: &[f64], window_size: usize) -> f64 {
     }
 }
 
-/// Calculate Hurst exponent using Detrended Fluctuation Analysis (DFA).
-/// More robust to non-stationarities than R/S.
 pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     let n = data.len();
     if n < DFA_MIN_DATA_POINTS {
@@ -270,7 +241,6 @@ pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     })
 }
 
-/// DFA fluctuation for a given scale.
 fn compute_dfa_fluctuation(profile: &[f64], scale: usize) -> f64 {
     let n = profile.len();
     if scale > n || scale < 4 {
@@ -296,7 +266,6 @@ fn compute_dfa_fluctuation(profile: &[f64], scale: usize) -> f64 {
     (total_variance / num_segments as f64).sqrt()
 }
 
-/// Variance after linear detrending.
 fn detrend_variance(segment: &[f64]) -> f64 {
     let n = segment.len();
     if n < 2 {

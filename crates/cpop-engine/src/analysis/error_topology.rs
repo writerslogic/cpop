@@ -21,18 +21,12 @@ use serde::{Deserialize, Serialize};
 /// Error topology analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorTopology {
-    /// rho_gap: pause/error correlation
     pub gap_correlation: f64,
-    /// Hurst exponent of inter-error intervals
     pub error_hurst: f64,
-    /// Adjacent-key error rate
     pub adjacency_correlation: f64,
-    /// Weighted composite: 0.4*gap + 0.2*hurst + 0.4*adjacency
     pub score: f64,
-    /// Passes RFC threshold (>= 0.75)
     pub is_valid: bool,
     pub error_count: usize,
-    /// Errors per 100 events
     pub error_rate: f64,
     pub error_distribution: ErrorDistribution,
 }
@@ -40,13 +34,9 @@ pub struct ErrorTopology {
 /// Error type breakdown by timing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ErrorDistribution {
-    /// < 500ms
     pub immediate_corrections: usize,
-    /// 500ms - 2s
     pub delayed_corrections: usize,
-    /// > 2s
     pub long_delayed_corrections: usize,
-    /// Multiple errors within 1s
     pub burst_errors: usize,
     pub isolated_errors: usize,
 }
@@ -85,7 +75,6 @@ impl ErrorTopology {
         self.score >= Self::VALIDITY_THRESHOLD
     }
 
-    /// Human-plausible error rate: 1-10%.
     pub fn is_error_rate_plausible(&self) -> bool {
         self.error_rate >= 1.0 && self.error_rate <= 10.0
     }
@@ -103,7 +92,6 @@ pub enum EventType {
 pub struct TopologyEvent {
     pub timestamp_ns: i64,
     pub event_type: EventType,
-    /// For adjacency analysis
     pub key_code: Option<u16>,
     pub gap_ns: u64,
 }
@@ -162,7 +150,6 @@ pub fn analyze_error_topology(events: &[TopologyEvent]) -> Result<ErrorTopology,
     })
 }
 
-/// rho_gap: longer pauses before errors (hesitation), shorter after (quick correction).
 fn compute_gap_correlation(events: &[TopologyEvent], error_indices: &[usize]) -> f64 {
     if error_indices.is_empty() || events.len() < 3 {
         return 0.0;
@@ -213,7 +200,6 @@ fn compute_gap_correlation(events: &[TopologyEvent], error_indices: &[usize]) ->
     ((pre_ratio - 1.0).max(0.0) * 0.5 + (post_ratio - 1.0).max(0.0) * 0.5).min(1.0)
 }
 
-/// Simplified R/S Hurst exponent of inter-error intervals.
 fn compute_error_hurst(events: &[TopologyEvent], error_indices: &[usize]) -> f64 {
     if error_indices.len() < 5 {
         return 0.5;
@@ -262,7 +248,6 @@ fn compute_error_hurst(events: &[TopologyEvent], error_indices: &[usize]) -> f64
     }
 }
 
-/// Fraction of errors involving QWERTY-adjacent keys, normalized to 0-1.
 fn compute_adjacency_correlation(events: &[TopologyEvent], error_indices: &[usize]) -> f64 {
     if error_indices.is_empty() {
         return 0.0;
@@ -301,7 +286,6 @@ fn compute_adjacency_correlation(events: &[TopologyEvent], error_indices: &[usiz
     }
 }
 
-/// Heuristic QWERTY adjacency check (US layout, within 1 row/col).
 fn are_keys_adjacent(key1: u16, key2: u16) -> bool {
     let pos1 = key_to_position(key1);
     let pos2 = key_to_position(key2);
@@ -316,7 +300,6 @@ fn are_keys_adjacent(key1: u16, key2: u16) -> bool {
     }
 }
 
-/// Approximate (row, col) on US QWERTY layout. `None` for unknown keys.
 fn key_to_position(key: u16) -> Option<(u8, u8)> {
     if key > 127 {
         return None;

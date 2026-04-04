@@ -54,20 +54,12 @@ pub struct HybridJitterSession {
     pub(crate) samples: Vec<HybridSample>,
     pub(crate) keystroke_count: u64,
     pub(crate) last_jitter: u32,
-    /// True if this session was loaded from disk. Loaded sessions cannot record
-    /// new keystrokes because the cpop_jitter crate does not support restoring
-    /// PhysSession state from serialized evidence.
     loaded_readonly: bool,
-    /// Preserved cpop_jitter evidence from a loaded session, since the fresh
-    /// PhysSession created on load has no recorded samples.
     loaded_cpop_jitter_evidence: Option<String>,
-    /// Cached result of chain validation to avoid redundant O(n) SHA-256
-    /// recomputation on every export. Set after record_keystroke and load.
     chain_valid_cache: Option<bool>,
 }
 
 impl HybridJitterSession {
-    /// Create a new session for the document at `document_path`.
     pub fn new(
         document_path: impl AsRef<Path>,
         params: Option<Parameters>,
@@ -115,7 +107,6 @@ impl HybridJitterSession {
         })
     }
 
-    /// Create a new session with an explicit session ID.
     pub fn new_with_id(
         document_path: impl AsRef<Path>,
         params: Option<Parameters>,
@@ -126,10 +117,6 @@ impl HybridJitterSession {
         Ok(session)
     }
 
-    /// Record a keystroke, returning `(jitter_micros, was_sampled)`.
-    ///
-    /// Returns an error if this session was loaded from disk, since the
-    /// cpop_jitter PhysSession cannot be restored from serialized evidence.
     pub fn record_keystroke(&mut self, keycode: u16) -> Result<(u32, bool), String> {
         if self.loaded_readonly {
             return Err(
@@ -188,17 +175,14 @@ impl HybridJitterSession {
         Ok((jitter, true))
     }
 
-    /// Mark the session as ended at the current time.
     pub fn end(&mut self) {
         self.ended_at = Some(Utc::now());
     }
 
-    /// Return the total number of keystrokes recorded.
     pub fn keystroke_count(&self) -> u64 {
         self.keystroke_count
     }
 
-    /// Return the number of jitter samples collected.
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
@@ -207,7 +191,6 @@ impl HybridJitterSession {
         self.ended_at.unwrap_or_else(Utc::now)
     }
 
-    /// Return the elapsed session duration.
     pub fn duration(&self) -> Duration {
         let end = self.effective_end();
         end.signed_duration_since(self.started_at)
@@ -215,12 +198,10 @@ impl HybridJitterSession {
             .unwrap_or(Duration::from_secs(0))
     }
 
-    /// Return the ratio of hardware-sourced entropy samples.
     pub fn phys_ratio(&self) -> f64 {
         self.cpop_jitter_session.phys_ratio()
     }
 
-    /// Compute entropy quality metrics for this session.
     pub fn entropy_quality(&self) -> EntropyQuality {
         if self.loaded_readonly {
             if let Some(ref json) = self.loaded_cpop_jitter_evidence {
@@ -252,23 +233,18 @@ impl HybridJitterSession {
         }
     }
 
-    /// Return the zone-based typing profile.
     pub fn profile(&self) -> &crate::jitter::TypingProfile {
         self.zone_engine.profile()
     }
 
-    /// Return all collected hybrid samples.
     pub fn samples(&self) -> &[HybridSample] {
         &self.samples
     }
 
-    /// Verify the hash chain integrity, timestamp monotonicity, and keystroke
-    /// count monotonicity of all samples.
     pub fn verify_chain(&self) -> Result<(), String> {
         verify_sample_chain(&self.samples)
     }
 
-    /// Export the session as a `HybridEvidence` record.
     pub fn export(&self) -> HybridEvidence {
         let end = self.effective_end();
         let statistics = self.compute_stats();
@@ -298,7 +274,6 @@ impl HybridJitterSession {
         }
     }
 
-    /// Export the session as a standard `Evidence` record (without hybrid fields).
     pub fn export_standard(&self) -> Evidence {
         let end = self.effective_end();
 
@@ -359,7 +334,6 @@ impl HybridJitterSession {
         }
     }
 
-    /// Serialize the session state to a JSON file.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
         let data = HybridSessionData {
             id: self.id.clone(),
@@ -397,7 +371,6 @@ impl HybridJitterSession {
         Ok(())
     }
 
-    /// Load a previously saved session from a JSON file.
     pub fn load(path: impl AsRef<Path>, key_material: Option<[u8; 32]>) -> Result<Self, String> {
         let meta = fs::metadata(path.as_ref()).map_err(|e| e.to_string())?;
         if meta.len() > 100 * 1024 * 1024 {
@@ -458,7 +431,6 @@ impl HybridJitterSession {
 }
 
 impl HybridEvidence {
-    /// Verify hash chain, timestamp monotonicity, and optional cpop_jitter evidence.
     pub fn verify(&self) -> Result<(), String> {
         verify_sample_chain(&self.samples)?;
 
@@ -484,17 +456,14 @@ impl HybridEvidence {
         Ok(())
     }
 
-    /// Serialize to pretty-printed JSON bytes.
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec_pretty(self).map_err(|e| e.to_string())
     }
 
-    /// Deserialize from JSON bytes.
     pub fn decode(data: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(data).map_err(|e| e.to_string())
     }
 
-    /// Compute the average typing rate in keystrokes per minute.
     pub fn typing_rate(&self) -> f64 {
         if self.statistics.duration.as_secs_f64() > 0.0 {
             self.statistics.total_keystrokes as f64
@@ -504,18 +473,12 @@ impl HybridEvidence {
         }
     }
 
-    /// Minimum plausible typing rate (KPM) when enough keystrokes have been recorded.
     const MIN_PLAUSIBLE_RATE_KPM: f64 = 10.0;
-    /// Maximum plausible human typing rate (KPM).
     const MAX_PLAUSIBLE_RATE_KPM: f64 = 1000.0;
-    /// Keystroke threshold below which low typing rate is not suspicious.
     const LOW_RATE_KEYSTROKE_THRESHOLD: u64 = 100;
-    /// Minimum unique document hashes expected for long sessions.
     const MIN_UNIQUE_DOC_HASHES: i32 = 2;
-    /// Keystroke threshold above which document hash diversity is checked.
     const DOC_HASH_KEYSTROKE_THRESHOLD: u64 = 500;
 
-    /// Check whether the typing rate and document hash diversity are plausibly human.
     pub fn is_plausible_human_typing(&self) -> bool {
         let rate = self.typing_rate();
         if rate < Self::MIN_PLAUSIBLE_RATE_KPM
@@ -534,7 +497,6 @@ impl HybridEvidence {
         true
     }
 
-    /// Return a human-readable label for the dominant entropy source.
     pub fn entropy_source(&self) -> &'static str {
         if self.entropy_quality.phys_ratio > 0.9 {
             "hardware (TSC-based)"
