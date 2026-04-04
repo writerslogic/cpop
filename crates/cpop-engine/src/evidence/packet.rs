@@ -469,15 +469,14 @@ impl Packet {
         device_id: &str,
         prev_hw_signature: &[u8],
     ) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(super::types::HW_COSIGN_DST);
-        hasher.update(doc_hash);
-        hasher.update(sw_signature);
-        hasher.update(tpm_clock_ms.to_be_bytes());
-        hasher.update(monotonic_counter.to_be_bytes());
-        hasher.update(device_id.as_bytes());
-        hasher.update(prev_hw_signature);
-        hasher.finalize().into()
+        super::types::compute_hw_entangled_hash(
+            doc_hash,
+            sw_signature,
+            tpm_clock_ms,
+            monotonic_counter,
+            device_id,
+            prev_hw_signature,
+        )
     }
 
     /// Add a self-entangled hardware co-signature from a TPM/Secure Enclave.
@@ -542,6 +541,7 @@ impl Packet {
             salt_commitment: None,
             prev_hw_signature: Some(prev_sig.to_vec()),
             chain_index,
+            binding_type: Some("ed25519".to_string()),
         });
 
         Ok(())

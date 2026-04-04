@@ -803,7 +803,6 @@ pub(crate) fn try_hw_cosign(
     event_hash: Option<&[u8; 32]>,
     store: Option<(&crate::store::SecureStore, &str)>,
 ) -> bool {
-    use sha2::{Digest, Sha256};
 
     let sched = match session.hw_cosign_scheduler.as_mut() {
         Some(s) => s,
@@ -824,17 +823,16 @@ pub(crate) fn try_hw_cosign(
     let device_id = tpm.device_id();
     let prev_sig = session.last_hw_cosign_signature.as_deref().unwrap_or(&[]);
     let empty_hash = [0u8; 32];
-    let sw_binding = event_hash.unwrap_or(&empty_hash);
+    let sw_binding: &[u8] = event_hash.map(|h| h.as_slice()).unwrap_or(&empty_hash);
 
-    let mut h = Sha256::new();
-    h.update(crate::evidence::HW_COSIGN_DST);
-    h.update(content_hash);
-    h.update(sw_binding);
-    h.update(clock_ms.to_be_bytes());
-    h.update(counter.to_be_bytes());
-    h.update(device_id.as_bytes());
-    h.update(prev_sig);
-    let entangled_hash: [u8; 32] = h.finalize().into();
+    let entangled_hash = crate::evidence::compute_hw_entangled_hash(
+        content_hash,
+        sw_binding,
+        clock_ms,
+        counter,
+        &device_id,
+        prev_sig,
+    );
 
     let sig = match tpm.sign(&entangled_hash) {
         Ok(s) => s,

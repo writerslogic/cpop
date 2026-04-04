@@ -17,6 +17,7 @@ pub use self::types::{
     ExternalAnchors, ForensicMetrics, HardwareCosignature, HardwareEvidence, InputDeviceInfo,
     KeyHierarchyEvidencePacket, KeystrokeEvidence, OtsProof, Packet, RecordProvenance,
     Rfc3161Proof, TrustTier, WpBeaconAttestation, HW_COSIGN_DST,
+    compute_hw_entangled_hash,
 };
 
 pub use self::builder::{

@@ -81,6 +81,39 @@ pub struct HardwareCosignature {
     /// Sequence number in the hardware co-signature chain (0-indexed).
     #[serde(default)]
     pub chain_index: u64,
+    /// What software binding was used in the entangled hash.
+    /// "ed25519" = packet-level Ed25519 signature (64B).
+    /// "event_hmac" = checkpoint event hash from HMAC chain (32B).
+    /// "none" = no software binding available (32B zeros).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_type: Option<String>,
+}
+
+/// Compute the canonical entangled hash for hardware co-signatures.
+///
+/// Both the sentinel checkpoint path and the packet signing path MUST
+/// use this function to avoid hash asymmetry.
+pub fn compute_hw_entangled_hash(
+    doc_hash: &[u8],
+    sw_binding: &[u8],
+    tpm_clock_ms: u64,
+    monotonic_counter: u64,
+    device_id: &str,
+    prev_hw_signature: &[u8],
+) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(HW_COSIGN_DST);
+    h.update(doc_hash);
+    // Length-prefix the software binding to prevent ambiguity between
+    // 64-byte Ed25519 signatures and 32-byte event hashes.
+    h.update((sw_binding.len() as u32).to_be_bytes());
+    h.update(sw_binding);
+    h.update(tpm_clock_ms.to_be_bytes());
+    h.update(monotonic_counter.to_be_bytes());
+    h.update(device_id.as_bytes());
+    h.update(prev_hw_signature);
+    h.finalize().into()
 }
 
 /// Domain separator for the hardware co-signature entangled hash.
