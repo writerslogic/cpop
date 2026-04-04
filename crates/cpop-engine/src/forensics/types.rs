@@ -213,6 +213,9 @@ pub struct ForensicMetrics {
     pub focus: FocusMetrics,
     /// Writing mode classification (cognitive vs. transcriptive).
     pub writing_mode: Option<WritingModeAnalysis>,
+    /// Cross-window transcription matches detected during the session.
+    #[serde(default)]
+    pub cross_window_matches: Vec<crate::transcription::CrossWindowMatch>,
 }
 
 impl ForensicMetrics {
@@ -231,6 +234,15 @@ impl ForensicMetrics {
             if cm.verdict == crate::forensics::cross_modal::CrossModalVerdict::Inconsistent {
                 return ForensicVerdict::V4LikelySynthetic;
             }
+        }
+
+        // Cross-window transcription: high-similarity match against visible windows
+        if self
+            .cross_window_matches
+            .iter()
+            .any(|m| m.similarity_score >= 0.80)
+        {
+            return ForensicVerdict::V3Suspicious;
         }
 
         match self.risk_level {
@@ -317,6 +329,26 @@ pub struct AuthorshipProfile {
     pub metrics: PrimaryMetrics,
     pub anomalies: Vec<Anomaly>,
     pub assessment: Assessment,
+}
+
+impl AuthorshipProfile {
+    pub fn writing_mode(&self) -> &str {
+        match self.assessment {
+            Assessment::Consistent => "cognitive",
+            Assessment::Insufficient => "undetermined",
+            Assessment::Suspicious => "transcriptive",
+        }
+    }
+    pub fn cognitive_score(&self) -> f64 { 0.7 }
+    pub fn writing_mode_confidence(&self) -> f64 { if self.event_count > 20 { 0.8 } else { 0.3 } }
+    pub fn revision_cycle_count(&self) -> u32 { self.session_count as u32 }
+    pub fn risk_level(&self) -> &str {
+        match self.assessment {
+            Assessment::Consistent => "low",
+            Assessment::Suspicious => "high",
+            Assessment::Insufficient => "undetermined",
+        }
+    }
 }
 
 impl Default for AuthorshipProfile {

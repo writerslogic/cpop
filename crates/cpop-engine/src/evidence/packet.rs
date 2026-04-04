@@ -503,7 +503,7 @@ impl Packet {
             .clock_info()
             .map_err(|e| Error::crypto(format!("TPM clock: {e}")))?;
 
-        let _caps = tpm_provider.capabilities();
+        let caps = tpm_provider.capabilities();
         let counter = clock_info.clock;
 
         let prev_sig = prev_cosignature
