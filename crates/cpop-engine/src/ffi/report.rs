@@ -61,7 +61,11 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
     let enfsi_tier = EnfsiTier::from_lr(lr);
 
     let total_iterations: u64 = events.iter().map(|e| e.vdf_iterations).sum();
-    let total_secs = total_iterations as f64 / ips as f64;
+    let total_secs = if ips > 0 {
+        total_iterations as f64 / ips as f64
+    } else {
+        0.0
+    };
     let total_min = total_secs / 60.0;
 
     let sessions = detect_sessions_from_events(&events);

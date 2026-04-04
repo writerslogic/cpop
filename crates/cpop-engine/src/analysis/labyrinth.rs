@@ -228,7 +228,7 @@ fn compute_rqa(
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / diag_pts.max(1) as f64;
-            -p * p.ln()
+            if p > f64::EPSILON { -p * p.ln() } else { 0.0 }
         })
         .sum();
 
@@ -269,7 +269,7 @@ fn estimate_lyapunov(embed: &FlatEmbedding, delay: usize) -> f64 {
             let d0 = min_dist.sqrt();
             let dt =
                 sq_dist(embed.get_point(i + evol_steps), embed.get_point(j + evol_steps)).sqrt();
-            if d0 > 1e-10 {
+            if d0 > 1e-10 && dt > 1e-10 {
                 divergence += (dt / d0).ln();
                 count += 1;
             }

@@ -151,13 +151,14 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     if dwell_times.len() >= 5 {
         let mean = dwell_times.iter().sum::<f64>() / dwell_times.len() as f64;
         metrics.mean_dwell_ns = mean;
-        if mean > 0.0 {
+        if mean > f64::EPSILON {
             let var = dwell_times.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
                 / dwell_times.len() as f64;
-            metrics.dwell_cv = var.sqrt() / mean;
-            if !metrics.dwell_cv.is_finite() {
-                metrics.dwell_cv = 0.0;
-            }
+            metrics.dwell_cv = if var.is_finite() {
+                crate::utils::finite_or(var.sqrt() / mean, 0.0)
+            } else {
+                0.0
+            };
         }
     }
 
@@ -169,13 +170,14 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     if flight_times.len() >= 5 {
         let mean = flight_times.iter().sum::<f64>() / flight_times.len() as f64;
         metrics.mean_flight_ns = mean;
-        if mean > 0.0 {
+        if mean > f64::EPSILON {
             let var = flight_times.iter().map(|f| (f - mean).powi(2)).sum::<f64>()
                 / flight_times.len() as f64;
-            metrics.flight_cv = var.sqrt() / mean;
-            if !metrics.flight_cv.is_finite() {
-                metrics.flight_cv = 0.0;
-            }
+            metrics.flight_cv = if var.is_finite() {
+                crate::utils::finite_or(var.sqrt() / mean, 0.0)
+            } else {
+                0.0
+            };
         }
     }
 
@@ -406,12 +408,13 @@ fn compute_burst_speed_cv(bursts: &[TypingBurst], ikis: &[f64]) -> f64 {
                 return None;
             }
             let mean = burst_ikis.iter().sum::<f64>() / burst_ikis.len() as f64;
-            if mean <= 0.0 {
+            if mean <= f64::EPSILON {
                 return None;
             }
             let variance = burst_ikis.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
                 / burst_ikis.len() as f64;
-            Some(variance.sqrt() / mean)
+            let cv = crate::utils::finite_or(variance.sqrt() / mean, 0.0);
+            Some(cv)
         })
         .collect();
 

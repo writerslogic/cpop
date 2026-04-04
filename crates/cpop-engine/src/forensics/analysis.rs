@@ -351,18 +351,13 @@ pub fn per_checkpoint_flags(
                 .map(|w| w[1].timestamp_ns.saturating_sub(w[0].timestamp_ns) as f64)
                 .collect();
             let mean = intervals.iter().sum::<f64>() / intervals.len() as f64;
-            if mean > 0.0 {
+            if mean > f64::EPSILON {
                 let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
                     / intervals.len() as f64;
-                if !variance.is_finite() || !mean.is_finite() {
-                    0.0
+                if mean.is_finite() && variance.is_finite() {
+                    crate::utils::finite_or(variance.sqrt() / mean, 0.0)
                 } else {
-                    let cv = variance.sqrt() / mean;
-                    if cv.is_finite() {
-                        cv
-                    } else {
-                        0.0
-                    }
+                    0.0
                 }
             } else {
                 0.0
@@ -487,7 +482,11 @@ pub fn analyze_focus_patterns(
     }
 
     let total_session_sec = total_session_ms as f64 / 1000.0;
-    let out_of_focus_ratio = (total_away_sec / total_session_sec).min(1.0);
+    let out_of_focus_ratio = if total_session_sec > f64::EPSILON {
+        (total_away_sec / total_session_sec).min(1.0)
+    } else {
+        0.0
+    };
     let avg_away_duration_sec = if completed_count > 0 {
         total_away_sec / completed_count as f64
     } else {

@@ -242,7 +242,12 @@ fn compute_error_hurst(events: &[TopologyEvent], error_indices: &[usize]) -> f64
     if std_dev > 0.0 && range > 0.0 {
         let rs = range / std_dev;
         // H ~ log(R/S) / log(n)
-        (rs.ln() / (n as f64).ln()).clamp(0.0, 1.0)
+        let nf = n as f64;
+        if nf.ln() < f64::EPSILON {
+            0.5
+        } else {
+            crate::utils::finite_or(rs.ln() / nf.ln(), 0.5).clamp(0.0, 1.0)
+        }
     } else {
         0.5
     }

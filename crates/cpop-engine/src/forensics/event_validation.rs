@@ -8,6 +8,8 @@
 
 use std::collections::VecDeque;
 
+use crate::utils::finite_or;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -130,7 +132,7 @@ pub fn compute_cv(values: &[i64]) -> f64 {
         .map(|&v| (v as f64 - mean).powi(2))
         .sum::<f64>()
         / n;
-    variance.sqrt() / mean
+    finite_or(variance.sqrt() / mean, 0.0)
 }
 
 /// Shannon entropy (bits) of the keycode distribution in the window.
