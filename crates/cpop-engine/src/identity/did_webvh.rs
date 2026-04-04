@@ -509,13 +509,10 @@ fn build_did_document(did_template: &str, pk_multibase: &str) -> Value {
 }
 
 fn atomic_write(path: &std::path::Path, data: &[u8]) -> Result<(), Error> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, data)
-        .map_err(|e| Error::identity(format!("write {}: {e}", path.display())))?;
-    crate::crypto::restrict_permissions(&tmp, 0o600)
+    crate::crypto::atomic_write(path, data)
+        .map_err(|e| Error::identity(format!("atomic write {}: {e}", path.display())))?;
+    crate::crypto::restrict_permissions(path, 0o600)
         .map_err(|e| Error::identity(format!("restrict permissions {}: {e}", path.display())))?;
-    std::fs::rename(&tmp, path)
-        .map_err(|e| Error::identity(format!("rename {}: {e}", path.display())))?;
     Ok(())
 }
 

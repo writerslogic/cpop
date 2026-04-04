@@ -101,6 +101,16 @@ pub struct RegionData {
     pub byte_count: i32,
 }
 
+/// Compute estimated cursor position and edit extent from file size trajectory.
+///
+/// Returns `(cursor_pct, extent)` both clamped to `[0.0, 1.0]`.
+pub fn compute_edit_extents(file_size: i64, size_delta: i32, max_file_size: f32) -> (f32, f32) {
+    let max = max_file_size.max(1.0);
+    let cursor = ((file_size as f32 - size_delta.unsigned_abs() as f32) / max).clamp(0.0, 1.0);
+    let extent = (size_delta.unsigned_abs() as f32 / max).clamp(0.0, 1.0);
+    (cursor, extent)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PrimaryMetrics {
     /// Fraction of edits at document end (>0.95 position).

@@ -3,12 +3,10 @@
 //! Helper functions for evidence packet construction.
 
 use base64::{engine::general_purpose, Engine as _};
-use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use crate::declaration;
 use crate::error::Error;
-use crate::vdf;
 
 use crate::evidence::types::*;
 
@@ -196,9 +194,6 @@ pub fn build_ephemeral_packet(
     }
 
     let packet = Packet {
-        version: 1,
-        exported_at: Utc::now(),
-        provenance: None,
         document: DocumentInfo {
             title: context_label.to_string(),
             path: format!("ephemeral://{}", hex::encode(&doc_hash[..8])),
@@ -206,38 +201,12 @@ pub fn build_ephemeral_packet(
             final_size: snapshots.last().map(|s| s.char_count).unwrap_or(0),
         },
         checkpoints,
-        vdf_params: vdf::default_parameters(),
         chain_hash: hex::encode(chain_hash),
         declaration: Some(signed_decl),
-        presence: None,
-        hardware: None,
         keystroke: keystroke_evidence,
-        behavioral: None,
-        contexts: vec![],
-        external: None,
-        key_hierarchy: None,
-        jitter_binding: None,
-        time_evidence: None,
-        provenance_links: None,
-        continuation: None,
-        collaboration: None,
-        vdf_aggregate: None,
-        verifier_nonce: None,
-        packet_signature: None,
-        signing_public_key: None,
-        author_did: None,
-        hardware_cosignature: None,
-        biology_claim: None,
-        physical_context: None,
-        trust_tier: None,
-        mmr_root: None,
-        mmr_proof: None,
-        writersproof_certificate_id: None,
-        baseline_verification: None,
-        dictation_events: Vec::new(),
         claims,
         limitations,
-        beacon_attestation: None,
+        ..Default::default()
     };
 
     Ok(packet)

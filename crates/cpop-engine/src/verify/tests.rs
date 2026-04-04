@@ -1,52 +1,17 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::*;
-use chrono::Utc;
 
 fn make_test_packet() -> Packet {
     Packet {
-        version: 1,
-        exported_at: Utc::now(),
-        provenance: None,
         document: crate::evidence::DocumentInfo {
             title: "test".to_string(),
             path: "test.txt".to_string(),
             final_hash: "a".repeat(64),
             final_size: 100,
         },
-        checkpoints: vec![],
-        vdf_params: vdf::default_parameters(),
         chain_hash: "b".repeat(64),
-        declaration: None,
-        presence: None,
-        hardware: None,
-        keystroke: None,
-        behavioral: None,
-        contexts: vec![],
-        external: None,
-        key_hierarchy: None,
-        jitter_binding: None,
-        time_evidence: None,
-        provenance_links: None,
-        continuation: None,
-        collaboration: None,
-        vdf_aggregate: None,
-        verifier_nonce: None,
-        packet_signature: None,
-        signing_public_key: None,
-        author_did: None,
-        hardware_cosignature: None,
-        biology_claim: None,
-        physical_context: None,
-        trust_tier: None,
-        mmr_root: None,
-        mmr_proof: None,
-        writersproof_certificate_id: None,
-        baseline_verification: None,
-        dictation_events: vec![],
-        claims: vec![],
-        limitations: vec![],
-        beacon_attestation: None,
+        ..Default::default()
     }
 }
 

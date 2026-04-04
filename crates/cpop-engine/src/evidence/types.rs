@@ -188,6 +188,50 @@ pub struct Packet {
     pub beacon_attestation: Option<WpBeaconAttestation>,
 }
 
+impl Default for Packet {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            exported_at: Utc::now(),
+            provenance: None,
+            document: DocumentInfo::default(),
+            checkpoints: Vec::new(),
+            vdf_params: vdf::default_parameters(),
+            chain_hash: String::new(),
+            declaration: None,
+            presence: None,
+            hardware: None,
+            keystroke: None,
+            behavioral: None,
+            contexts: Vec::new(),
+            external: None,
+            key_hierarchy: None,
+            jitter_binding: None,
+            time_evidence: None,
+            provenance_links: None,
+            continuation: None,
+            collaboration: None,
+            vdf_aggregate: None,
+            verifier_nonce: None,
+            packet_signature: None,
+            signing_public_key: None,
+            author_did: None,
+            hardware_cosignature: None,
+            biology_claim: None,
+            physical_context: None,
+            trust_tier: None,
+            mmr_root: None,
+            mmr_proof: None,
+            writersproof_certificate_id: None,
+            baseline_verification: None,
+            dictation_events: Vec::new(),
+            claims: Vec::new(),
+            limitations: Vec::new(),
+            beacon_attestation: None,
+        }
+    }
+}
+
 /// Key hierarchy snapshot proving session certificate chain and ratchet state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyHierarchyEvidencePacket {

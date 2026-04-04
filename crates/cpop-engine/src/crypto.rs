@@ -216,6 +216,15 @@ pub fn sign_event_lamport(
     Ok(())
 }
 
+/// Atomically write `data` to `path` via tmp-file + fsync + rename.
+pub fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    let mut f = std::fs::File::create(&tmp)?;
+    std::io::Write::write_all(&mut f, data)?;
+    f.sync_all()?;
+    std::fs::rename(&tmp, path)
+}
+
 /// Owner-only permissions: Unix chmod `mode`, Windows icacls current-user-only.
 pub fn restrict_permissions(path: &Path, mode: u32) -> std::io::Result<()> {
     #[cfg(unix)]

@@ -210,9 +210,8 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             } else {
                 0
             };
-            let cursor_pct =
-                ((e.file_size as f32 - delta.abs() as f32) / max_file_size).clamp(0.0, 1.0);
-            let extent = (delta.abs() as f32 / max_file_size).clamp(0.0, 1.0);
+            let (cursor_pct, extent) =
+                crate::forensics::compute_edit_extents(e.file_size, delta, max_file_size);
             let end_pct = (cursor_pct + extent).min(1.0);
             regions.insert(
                 id,

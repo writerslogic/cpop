@@ -7,8 +7,6 @@ mod setters;
 
 use std::time::Duration;
 
-use chrono::Utc;
-
 use crate::checkpoint;
 use crate::error::Error;
 
@@ -43,9 +41,6 @@ impl Builder {
     /// Create a builder from a document title and checkpoint chain.
     pub fn new(title: &str, chain: &checkpoint::Chain) -> Self {
         let mut packet = Packet {
-            version: 1,
-            exported_at: Utc::now(),
-            provenance: None,
             document: DocumentInfo {
                 title: title.to_string(),
                 path: chain.metadata.document_path.clone(),
@@ -54,37 +49,7 @@ impl Builder {
             },
             checkpoints: Vec::with_capacity(chain.checkpoints.len()),
             vdf_params: chain.metadata.vdf_params,
-            chain_hash: String::new(),
-            declaration: None,
-            presence: None,
-            hardware: None,
-            keystroke: None,
-            behavioral: None,
-            contexts: Vec::new(),
-            external: None,
-            key_hierarchy: None,
-            jitter_binding: None,
-            time_evidence: None,
-            provenance_links: None,
-            continuation: None,
-            collaboration: None,
-            vdf_aggregate: None,
-            verifier_nonce: None,
-            packet_signature: None,
-            signing_public_key: None,
-            author_did: None,
-            hardware_cosignature: None,
-            biology_claim: None,
-            physical_context: None,
-            trust_tier: None,
-            mmr_root: None,
-            mmr_proof: None,
-            writersproof_certificate_id: None,
-            baseline_verification: None,
-            dictation_events: Vec::new(),
-            claims: Vec::new(),
-            limitations: Vec::new(),
-            beacon_attestation: None,
+            ..Default::default()
         };
 
         if let Some(latest) = chain.latest() {
