@@ -15,47 +15,27 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
     let source = match crate::sentinel::helpers::validate_path(&source_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid source path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid source path: {e}"));
         }
     };
     let export = match crate::sentinel::helpers::validate_path(&export_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid export path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid export path: {e}"));
         }
     };
 
     if !source.exists() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Source file not found: {}", source.display())),
-        };
+        return FfiResult::err(format!("Source file not found: {}", source.display()));
     }
     if !export.exists() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Export file not found: {}", export.display())),
-        };
+        return FfiResult::err(format!("Export file not found: {}", export.display()));
     }
 
     let mut store = match open_store() {
         Ok(s) => s,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
 
@@ -63,20 +43,12 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
     let events = match store.get_events_for_file(&source_str) {
         Ok(e) => e,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to load events: {e}")),
-            };
+            return FfiResult::err(format!("Failed to load events: {e}"));
         }
     };
 
     if events.is_empty() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("No evidence chain for source. Track the file first.".to_string()),
-        };
+        return FfiResult::err("No evidence chain for source. Track the file first.".to_string());
     }
 
     // Note: inherent TOCTOU between size check and hashing below. The file
@@ -85,23 +57,15 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
     for (label, p) in [("Export", &export), ("Source", &source)] {
         match std::fs::metadata(p) {
             Ok(m) if m.len() > crate::MAX_FILE_SIZE => {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!(
-                        "{} file too large ({:.0} MB, max {} MB)",
-                        label,
-                        m.len() as f64 / 1_000_000.0,
-                        crate::MAX_FILE_SIZE / 1_000_000
-                    )),
-                };
+                return FfiResult::err(format!(
+                    "{} file too large ({:.0} MB, max {} MB)",
+                    label,
+                    m.len() as f64 / 1_000_000.0,
+                    crate::MAX_FILE_SIZE / 1_000_000
+                ));
             }
             Err(e) => {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("{} file metadata error: {e}", label)),
-                };
+                return FfiResult::err(format!("{} file metadata error: {e}", label));
             }
             _ => {}
         }
@@ -111,21 +75,13 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
     let export_hash = match crate::crypto::hash_file(&export) {
         Ok(h) => h,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to hash export: {e}")),
-            };
+            return FfiResult::err(format!("Failed to hash export: {e}"));
         }
     };
     let content_hash = match crate::crypto::hash_file(&source) {
         Ok(h) => h,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to hash source: {e}")),
-            };
+            return FfiResult::err(format!("Failed to hash source: {e}"));
         }
     };
 
@@ -169,11 +125,7 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
         match crate::vdf::compute(vdf_input, std::time::Duration::from_secs(1), vdf_params) {
             Ok(p) => p,
             Err(e) => {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("VDF computation failed: {e}")),
-                };
+                return FfiResult::err(format!("VDF computation failed: {e}"));
             }
         };
 
@@ -194,20 +146,12 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
     event.forensic_score = 1.0;
 
     match store.add_secure_event(&mut event) {
-        Ok(_) => FfiResult {
-            success: true,
-            message: Some(format!(
-                "Linked {} to evidence chain (hash: {}...)",
-                export.file_name().unwrap_or_default().to_string_lossy(),
-                hex::encode(&export_hash[..8])
-            )),
-            error_message: None,
-        },
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to save link event: {e}")),
-        },
+        Ok(_) => FfiResult::ok(format!(
+            "Linked {} to evidence chain (hash: {}...)",
+            export.file_name().unwrap_or_default().to_string_lossy(),
+            hex::encode(&export_hash[..8])
+        )),
+        Err(e) => FfiResult::err(format!("Failed to save link event: {e}")),
     }
 }
 
@@ -225,104 +169,64 @@ pub fn ffi_export_c2pa_manifest(
     let evidence_file = match crate::sentinel::helpers::validate_path(&evidence_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid evidence path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid evidence path: {e}"));
         }
     };
     let doc_file = match crate::sentinel::helpers::validate_path(&document_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid document path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid document path: {e}"));
         }
     };
     let out_file = match crate::sentinel::helpers::validate_path(&output_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid output path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid output path: {e}"));
         }
     };
 
     if !evidence_file.exists() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!(
-                "Evidence file not found: {}",
-                evidence_file.display()
-            )),
-        };
+        return FfiResult::err(format!(
+            "Evidence file not found: {}",
+            evidence_file.display()
+        ));
     }
     const MAX_EVIDENCE_FILE_SIZE: u64 = 100_000_000;
     match std::fs::metadata(&evidence_file) {
         Ok(m) if m.len() > MAX_EVIDENCE_FILE_SIZE => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!(
-                    "Evidence file too large: {} bytes (max {})",
-                    m.len(),
-                    MAX_EVIDENCE_FILE_SIZE
-                )),
-            };
+            return FfiResult::err(format!(
+                "Evidence file too large: {} bytes (max {})",
+                m.len(),
+                MAX_EVIDENCE_FILE_SIZE
+            ));
         }
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Cannot stat evidence file: {e}")),
-            };
+            return FfiResult::err(format!("Cannot stat evidence file: {e}"));
         }
         _ => {}
     }
     if !doc_file.exists() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Document not found: {}", doc_file.display())),
-        };
+        return FfiResult::err(format!("Document not found: {}", doc_file.display()));
     }
 
     let evidence_bytes = match std::fs::read(&evidence_file) {
         Ok(b) => b,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to read evidence: {e}")),
-            };
+            return FfiResult::err(format!("Failed to read evidence: {e}"));
         }
     };
 
     let evidence_packet = match decode_evidence_for_c2pa(&evidence_bytes) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to decode evidence: {e}")),
-            };
+            return FfiResult::err(format!("Failed to decode evidence: {e}"));
         }
     };
 
     let doc_hash = match crate::crypto::hash_file(&doc_file) {
         Ok(h) => h,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to hash document: {e}")),
-            };
+            return FfiResult::err(format!("Failed to hash document: {e}"));
         }
     };
 
@@ -353,11 +257,7 @@ pub fn ffi_export_c2pa_manifest(
     let jumbf = match builder.build_jumbf(&signer) {
         Ok(j) => j,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to build C2PA manifest: {e}")),
-            };
+            return FfiResult::err(format!("Failed to build C2PA manifest: {e}"));
         }
     };
 
@@ -369,34 +269,18 @@ pub fn ffi_export_c2pa_manifest(
         Ok(mut tmp) => {
             use std::io::Write;
             if let Err(e) = tmp.write_all(&jumbf).and_then(|_| tmp.as_file().sync_all()) {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("Failed to write C2PA manifest: {e}")),
-                };
+                return FfiResult::err(format!("Failed to write C2PA manifest: {e}"));
             }
             match tmp.persist(&out_file) {
-                Ok(_) => FfiResult {
-                    success: true,
-                    message: Some(format!(
-                        "C2PA manifest exported to {} ({} bytes)",
-                        out_file.display(),
-                        jumbf.len()
-                    )),
-                    error_message: None,
-                },
-                Err(e) => FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("Failed to persist C2PA manifest: {e}")),
-                },
+                Ok(_) => FfiResult::ok(format!(
+                    "C2PA manifest exported to {} ({} bytes)",
+                    out_file.display(),
+                    jumbf.len()
+                )),
+                Err(e) => FfiResult::err(format!("Failed to persist C2PA manifest: {e}")),
             }
         }
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to create temp file for C2PA manifest: {e}")),
-        },
+        Err(e) => FfiResult::err(format!("Failed to create temp file for C2PA manifest: {e}")),
     }
 }
 

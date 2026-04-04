@@ -11,33 +11,21 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
     let file_path = match crate::sentinel::helpers::validate_path(&path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
 
     let mut store = match open_store() {
         Ok(s) => s,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
 
     let content_hash = match crate::crypto::hash_file(&file_path) {
         Ok(h) => h,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to hash file: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to hash file: {}", e));
         }
     };
 
@@ -63,19 +51,11 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
     event.machine_id = mach_id.clone();
 
     match store.add_secure_event(&mut event) {
-        Ok(_) => FfiResult {
-            success: true,
-            message: Some(format!(
-                "Checkpoint created: {}",
-                hex::encode(&content_hash[..8])
-            )),
-            error_message: None,
-        },
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to create checkpoint: {}", e)),
-        },
+        Ok(_) => FfiResult::ok(format!(
+            "Checkpoint created: {}",
+            hex::encode(&content_hash[..8])
+        )),
+        Err(e) => FfiResult::err(format!("Failed to create checkpoint: {}", e)),
     }
 }
 

@@ -165,18 +165,10 @@ pub fn ffi_revoke_voice_consent() -> FfiResult {
     match with_manager(|mgr| {
         mgr.disable_voice()
             .map_err(|e| format!("Failed to revoke consent: {e}"))?;
-        Ok(FfiResult {
-            success: true,
-            message: Some("Voice fingerprinting disabled and data deleted".into()),
-            error_message: None,
-        })
+        Ok(FfiResult::ok("Voice fingerprinting disabled and data deleted"))
     }) {
         Ok(r) => r,
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(e),
-        },
+        Err(e) => FfiResult::err(e),
     }
 }
 
@@ -192,18 +184,10 @@ pub fn ffi_reset_fingerprint() -> FfiResult {
             mgr.delete(&p.id)
                 .map_err(|e| format!("Failed to delete profile {}: {e}", p.id))?;
         }
-        Ok(FfiResult {
-            success: true,
-            message: Some("All fingerprint data reset".into()),
-            error_message: None,
-        })
+        Ok(FfiResult::ok("All fingerprint data reset"))
     }) {
         Ok(r) => r,
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(e),
-        },
+        Err(e) => FfiResult::err(e),
     }
 }
 
@@ -214,17 +198,9 @@ pub fn ffi_export_fingerprint_json() -> FfiResult {
         let author_fp = mgr.current_author_fingerprint();
         let json = serde_json::to_string_pretty(&author_fp)
             .map_err(|e| format!("Serialization failed: {e}"))?;
-        Ok(FfiResult {
-            success: true,
-            message: Some(json),
-            error_message: None,
-        })
+        Ok(FfiResult::ok(json))
     }) {
         Ok(r) => r,
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(e),
-        },
+        Err(e) => FfiResult::err(e),
     }
 }

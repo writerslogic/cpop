@@ -13,47 +13,27 @@ pub fn ffi_sentinel_start_witnessing(path: String) -> FfiResult {
     let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(
-                    "Sentinel not initialized — call ffi_sentinel_start() first".to_string(),
-                ),
-            };
+            return FfiResult::err(
+                "Sentinel not initialized — call ffi_sentinel_start() first".to_string(),
+            );
         }
     };
 
     if !sentinel.is_running() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("Sentinel not running".to_string()),
-        };
+        return FfiResult::err("Sentinel not running".to_string());
     }
 
     // AUD-084: Validate path to prevent traversal attacks (canonicalize to resolve symlinks)
     let validated_path = match crate::sentinel::helpers::validate_path(&path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid path: {e}")),
-            };
+            return FfiResult::err(format!("Invalid path: {e}"));
         }
     };
 
     match sentinel.start_witnessing(&validated_path) {
-        Ok(()) => FfiResult {
-            success: true,
-            message: Some(format!("Now witnessing: {path}")),
-            error_message: None,
-        },
-        Err((_code, msg)) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(msg),
-        },
+        Ok(()) => FfiResult::ok(format!("Now witnessing: {path}")),
+        Err((_code, msg)) => FfiResult::err(msg),
     }
 }
 
@@ -64,25 +44,13 @@ pub fn ffi_sentinel_stop_witnessing(path: String) -> FfiResult {
     let sentinel = match sentinel_opt.as_ref() {
         Some(s) => s,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Sentinel not initialized".to_string()),
-            };
+            return FfiResult::err("Sentinel not initialized".to_string());
         }
     };
 
     match sentinel.stop_witnessing(std::path::Path::new(&path)) {
-        Ok(()) => FfiResult {
-            success: true,
-            message: Some(format!("Stopped witnessing: {path}")),
-            error_message: None,
-        },
-        Err((_code, msg)) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(msg),
-        },
+        Ok(()) => FfiResult::ok(format!("Stopped witnessing: {path}")),
+        Err((_code, msg)) => FfiResult::err(msg),
     }
 }
 

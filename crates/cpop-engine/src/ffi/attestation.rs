@@ -29,47 +29,27 @@ pub fn ffi_reseal_identity() -> FfiResult {
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Could not determine data directory".to_string()),
-            };
+            return FfiResult::err("Could not determine data directory".to_string());
         }
     };
 
     let store = crate::sealed_identity::SealedIdentityStore::auto_detect(&data_dir);
 
     if !store.is_bound() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("No sealed identity found on this device".to_string()),
-        };
+        return FfiResult::err("No sealed identity found on this device".to_string());
     }
 
     let puf_seed_path = data_dir.join("puf_seed");
     let puf = match crate::keyhierarchy::SoftwarePUF::new_with_path(&puf_seed_path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to initialize PUF: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to initialize PUF: {}", e));
         }
     };
 
     match store.reseal(&puf) {
-        Ok(()) => FfiResult {
-            success: true,
-            message: Some("Identity re-sealed under current platform state".to_string()),
-            error_message: None,
-        },
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Reseal failed: {}", e)),
-        },
+        Ok(()) => FfiResult::ok("Identity re-sealed under current platform state".to_string()),
+        Err(e) => FfiResult::err(format!("Reseal failed: {}", e)),
     }
 }
 

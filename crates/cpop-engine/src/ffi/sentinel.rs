@@ -52,34 +52,22 @@ pub fn ffi_sentinel_start() -> FfiResult {
     // If a sentinel already exists, reuse it (handles restart after stop)
     let existing = get_sentinel();
     if existing.as_ref().is_some_and(|s| s.is_running()) {
-        return FfiResult {
-            success: true,
-            message: Some("Sentinel already running".to_string()),
-            error_message: None,
-        };
+        return FfiResult::ok("Sentinel already running".to_string());
     }
 
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Cannot determine data directory".to_string()),
-            };
+            return FfiResult::err("Cannot determine data directory".to_string());
         }
     };
 
     if !data_dir.exists() {
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!(
-                    "Cannot create data directory {}: {e}",
-                    data_dir.display()
-                )),
-            };
+            return FfiResult::err(format!(
+                "Cannot create data directory {}: {e}",
+                data_dir.display()
+            ));
         }
     }
 
@@ -90,28 +78,20 @@ pub fn ffi_sentinel_start() -> FfiResult {
 
     #[cfg(target_os = "macos")]
     if !accessibility_granted {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(
-                "Accessibility permission required — grant access in System \
+        return FfiResult::err(
+            "Accessibility permission required — grant access in System \
                  Settings > Privacy & Security > Accessibility"
-                    .to_string(),
-            ),
-        };
+                .to_string(),
+        );
     }
 
     #[cfg(target_os = "macos")]
     if !input_monitoring_granted {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(
-                "Input Monitoring permission required — grant access in System \
+        return FfiResult::err(
+            "Input Monitoring permission required — grant access in System \
                  Settings > Privacy & Security > Input Monitoring"
-                    .to_string(),
-            ),
-        };
+                .to_string(),
+        );
     }
 
     // Reuse existing stopped sentinel or create a new one
@@ -123,11 +103,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
         let s = match Sentinel::new(config) {
             Ok(s) => Arc::new(s),
             Err(e) => {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("Failed to create sentinel: {e}")),
-                };
+                return FfiResult::err(format!("Failed to create sentinel: {e}"));
             }
         };
         if let Some(mut key) = load_hmac_key() {
@@ -143,11 +119,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
     let rt = match ffi_runtime() {
         Ok(rt) => rt,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
     crate::sentinel::trace!("[FFI] ffi_sentinel_start calling sentinel.start()");
@@ -162,11 +134,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
                     *guard = None;
                 }
             }
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to start sentinel: {e}")),
-            };
+            return FfiResult::err(format!("Failed to start sentinel: {e}"));
         }
         Err(_) => {
             if is_new_sentinel {
@@ -174,13 +142,9 @@ pub fn ffi_sentinel_start() -> FfiResult {
                     *guard = None;
                 }
             }
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(
-                    "Sentinel start timed out — check accessibility permissions".to_string(),
-                ),
-            };
+            return FfiResult::err(
+                "Sentinel start timed out — check accessibility permissions".to_string(),
+            );
         }
     }
 
@@ -211,11 +175,7 @@ pub fn ffi_sentinel_start() -> FfiResult {
             );
         }
     }
-    FfiResult {
-        success: true,
-        message: Some(msg),
-        error_message: None,
-    }
+    FfiResult::ok(msg)
 }
 
 /// Stop the sentinel daemon.
@@ -224,30 +184,18 @@ pub fn ffi_sentinel_stop() -> FfiResult {
     let sentinel = match get_sentinel() {
         Some(s) => s,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Sentinel not initialized".to_string()),
-            };
+            return FfiResult::err("Sentinel not initialized".to_string());
         }
     };
 
     if !sentinel.is_running() {
-        return FfiResult {
-            success: true,
-            message: Some("Sentinel already stopped".to_string()),
-            error_message: None,
-        };
+        return FfiResult::ok("Sentinel already stopped".to_string());
     }
 
     let rt = match ffi_runtime() {
         Ok(rt) => rt,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
     let stop_result = rt.block_on(async {
@@ -255,18 +203,10 @@ pub fn ffi_sentinel_stop() -> FfiResult {
     });
     match stop_result {
         Err(_) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Sentinel stop timed out after 5s".to_string()),
-            };
+            return FfiResult::err("Sentinel stop timed out after 5s".to_string());
         }
         Ok(Err(e)) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to stop sentinel: {e}")),
-            };
+            return FfiResult::err(format!("Failed to stop sentinel: {e}"));
         }
         Ok(Ok(())) => {}
     }
@@ -275,11 +215,7 @@ pub fn ffi_sentinel_stop() -> FfiResult {
     // creating a new instance (which leaks CGEventTap threads).
     // Sessions are preserved (unfocused) by stop(); start() re-focuses them.
 
-    FfiResult {
-        success: true,
-        message: Some("Sentinel stopped".to_string()),
-        error_message: None,
-    }
+    FfiResult::ok("Sentinel stopped".to_string())
 }
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -293,38 +229,22 @@ pub fn ffi_sentinel_restart_keystroke_capture() -> FfiResult {
     let sentinel = match get_sentinel() {
         Some(s) => s,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Sentinel not initialized".to_string()),
-            };
+            return FfiResult::err("Sentinel not initialized".to_string());
         }
     };
 
     if !sentinel.is_running() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("Sentinel not running".to_string()),
-        };
+        return FfiResult::err("Sentinel not running".to_string());
     }
 
     if sentinel.restart_keystroke_capture() {
-        FfiResult {
-            success: true,
-            message: Some("Keystroke capture restarted".to_string()),
-            error_message: None,
-        }
+        FfiResult::ok("Keystroke capture restarted".to_string())
     } else {
-        FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(
-                "Failed to restart keystroke capture. \
+        FfiResult::err(
+            "Failed to restart keystroke capture. \
                  Check Input Monitoring permission in System Settings > Privacy & Security"
-                    .to_string(),
-            ),
-        }
+                .to_string(),
+        )
     }
 }
 

@@ -13,20 +13,12 @@ pub fn ffi_init() -> FfiResult {
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some("Failed to determine data directory".to_string()),
-            };
+            return FfiResult::err("Failed to determine data directory".to_string());
         }
     };
 
     if let Err(e) = std::fs::create_dir_all(&data_dir) {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to create data directory: {}", e)),
-        };
+        return FfiResult::err(format!("Failed to create data directory: {}", e));
     }
 
     // AUD-089/AUD-090: Atomic key file creation to prevent TOCTOU race
@@ -36,11 +28,7 @@ pub fn ffi_init() -> FfiResult {
         use ed25519_dalek::SigningKey;
         let mut seed = [0u8; 32];
         if let Err(e) = getrandom::getrandom(&mut seed) {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to generate random seed: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to generate random seed: {}", e));
         }
         let signing_key = SigningKey::from_bytes(&seed);
         use zeroize::Zeroize;
@@ -50,53 +38,29 @@ pub fn ffi_init() -> FfiResult {
         // Write to temp file first, restrict permissions, then atomic rename
         let tmp_path = key_path.with_extension("tmp");
         if let Err(e) = std::fs::write(&tmp_path, key_bytes.as_ref()) {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to write signing key: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to write signing key: {}", e));
         }
         if let Err(e) = crate::crypto::restrict_permissions(&tmp_path, 0o600) {
             let _ = std::fs::remove_file(&tmp_path);
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to set key file permissions: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to set key file permissions: {}", e));
         }
         if let Err(e) = std::fs::rename(&tmp_path, &key_path) {
             let _ = std::fs::remove_file(&tmp_path);
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to finalize signing key: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to finalize signing key: {}", e));
         }
         // H-016: Verify permissions on final path after atomic rename;
         // some filesystems may not preserve permissions across rename.
         if let Err(e) = crate::crypto::restrict_permissions(&key_path, 0o600) {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!(
-                    "Failed to set key file permissions after rename: {e}"
-                )),
-            };
+            return FfiResult::err(format!(
+                "Failed to set key file permissions after rename: {e}"
+            ));
         }
     }
 
     let db_path = data_dir.join("events.db");
     match crate::ffi::helpers::open_store_at(&db_path) {
-        Ok(_) => FfiResult {
-            success: true,
-            message: Some(format!("Initialized at {}", data_dir.display())),
-            error_message: None,
-        },
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to initialize database: {}", e)),
-        },
+        Ok(_) => FfiResult::ok(format!("Initialized at {}", data_dir.display())),
+        Err(e) => FfiResult::err(format!("Failed to initialize database: {}", e)),
     }
 }
 
@@ -471,21 +435,9 @@ pub fn ffi_get_activity_data(days: u32) -> Vec<FfiActivityPoint> {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_identity_mnemonic() -> FfiResult {
     match crate::identity::secure_storage::SecureStorage::load_mnemonic() {
-        Ok(Some(phrase)) => FfiResult {
-            success: true,
-            message: Some((*phrase).clone()),
-            error_message: None,
-        },
-        Ok(None) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("No identity mnemonic found".to_string()),
-        },
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to load mnemonic: {e}")),
-        },
+        Ok(Some(phrase)) => FfiResult::ok((*phrase).clone()),
+        Ok(None) => FfiResult::err("No identity mnemonic found".to_string()),
+        Err(e) => FfiResult::err(format!("Failed to load mnemonic: {e}")),
     }
 }
 

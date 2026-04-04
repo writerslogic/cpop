@@ -23,11 +23,7 @@ pub fn ffi_export_evidence_json(path: String, tier: String, output: String) -> F
     let data = match std::fs::read(output_path) {
         Ok(d) => d,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to read exported file: {e}")),
-            };
+            return FfiResult::err(format!("Failed to read exported file: {e}"));
         }
     };
     let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
@@ -40,36 +36,20 @@ pub fn ffi_export_evidence_json(path: String, tier: String, output: String) -> F
             Err(_) => match cpop_protocol::codec::cbor::decode(&cbor_payload) {
                 Ok(w) => w,
                 Err(e) => {
-                    return FfiResult {
-                        success: false,
-                        message: None,
-                        error_message: Some(format!(
-                            "Evidence packet could not be decoded: {e}"
-                        )),
-                    };
+                    return FfiResult::err(format!(
+                        "Evidence packet could not be decoded: {e}"
+                    ));
                 }
             },
         };
     match serde_json::to_string_pretty(&wire) {
         Ok(json) => {
             if let Err(e) = std::fs::write(output_path, json.as_bytes()) {
-                return FfiResult {
-                    success: false,
-                    message: None,
-                    error_message: Some(format!("Failed to write JSON: {e}")),
-                };
+                return FfiResult::err(format!("Failed to write JSON: {e}"));
             }
-            FfiResult {
-                success: true,
-                message: Some(format!("Exported JSON to {}", output_path.display())),
-                error_message: None,
-            }
+            FfiResult::ok(format!("Exported JSON to {}", output_path.display()))
         }
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("JSON serialization failed: {e}")),
-        },
+        Err(e) => FfiResult::err(format!("JSON serialization failed: {e}")),
     }
 }
 
@@ -79,40 +59,24 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
     let file_path = match crate::sentinel::helpers::validate_path(&path) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid source path: {}", e)),
-            };
+            return FfiResult::err(format!("Invalid source path: {}", e));
         }
     };
     let output_path = match crate::sentinel::helpers::validate_path(&output) {
         Ok(p) => p,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid output path: {}", e)),
-            };
+            return FfiResult::err(format!("Invalid output path: {}", e));
         }
     };
 
     if !file_path.exists() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("File not found: {}", file_path.display())),
-        };
+        return FfiResult::err(format!("File not found: {}", file_path.display()));
     }
 
     let store = match open_store() {
         Ok(s) => s,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(e),
-            };
+            return FfiResult::err(e);
         }
     };
 
@@ -120,20 +84,12 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
     let events = match store.get_events_for_file(&file_path_str) {
         Ok(e) => e,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Failed to load events: {}", e)),
-            };
+            return FfiResult::err(format!("Failed to load events: {}", e));
         }
     };
 
     if events.is_empty() {
-        return FfiResult {
-            success: false,
-            message: None,
-            error_message: Some("No events found for this file".to_string()),
-        };
+        return FfiResult::err("No events found for this file".to_string());
     }
 
     let latest = &events[events.len() - 1];
@@ -234,22 +190,14 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
     {
         Ok(c) => c,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid hash in event data: {e}")),
-            };
+            return FfiResult::err(format!("Invalid hash in event data: {e}"));
         }
     };
 
     let doc_content_hash = match HashValue::try_sha256(latest.content_hash.to_vec()) {
         Ok(h) => h,
         Err(e) => {
-            return FfiResult {
-                success: false,
-                message: None,
-                error_message: Some(format!("Invalid document content hash: {e}")),
-            };
+            return FfiResult::err(format!("Invalid document content hash: {e}"));
         }
     };
 
@@ -364,27 +312,15 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                     } else {
                         "unsigned CBOR (signing unavailable)"
                     };
-                    FfiResult {
-                        success: true,
-                        message: Some(format!("Exported {} to {}", label, output_path.display())),
-                        error_message: None,
-                    }
+                    FfiResult::ok(format!("Exported {} to {}", label, output_path.display()))
                 }
                 Err(e) => {
                     let _ = std::fs::remove_file(&tmp_path);
-                    FfiResult {
-                        success: false,
-                        message: None,
-                        error_message: Some(format!("Failed to write output: {}", e)),
-                    }
+                    FfiResult::err(format!("Failed to write output: {}", e))
                 }
             }
         }
-        Err(e) => FfiResult {
-            success: false,
-            message: None,
-            error_message: Some(format!("Failed to encode CBOR packet: {}", e)),
-        },
+        Err(e) => FfiResult::err(format!("Failed to encode CBOR packet: {}", e)),
     }
 }
 
