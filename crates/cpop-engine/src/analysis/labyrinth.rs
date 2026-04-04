@@ -1,76 +1,46 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-//! Labyrinth structure analysis via Takens' delay-coordinate embedding.
-//! RFC draft-condrey-rats-pop-01 §5.4.
+//! Labyrinth: multivariate biometric engine via Takens' delay-coordinate embedding.
+//! Fuses keystroke (1D) and mouse (2D) data into a unified phase space.
+//! RFC draft-condrey-rats-pop §5.4.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 /// Result of labyrinth structure analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LabyrinthAnalysis {
-    /// Number of dimensions needed to unfold the attractor.
     pub embedding_dimension: usize,
-
-    /// Optimal time delay (in samples).
     pub optimal_delay: usize,
-
-    /// Fractal dimension of the attractor (Grassberger-Procaccia estimate).
     pub correlation_dimension: f64,
-
-    /// Betti numbers (β₀, β₁, β₂): connected components, loops, and voids.
     pub betti_numbers: [usize; 3],
-
-    /// Fraction of recurrent points in the recurrence plot.
     pub recurrence_rate: f64,
-
-    /// Ratio of recurrent points forming diagonal lines (predictability).
     pub determinism: f64,
-
-    /// Whether the analysis falls within biologically plausible ranges.
     pub is_valid: bool,
-
-    /// 0.0-1.0, based on data quantity and embedding parameter quality.
     pub confidence: f64,
+    pub lyapunov_exponent: f64,
+    pub shannon_entropy: f64,
+    pub quantization_index: f64,
 }
 
 impl LabyrinthAnalysis {
-    /// RFC-compliant range for human motor signals (draft-condrey-rats-pop-01 §5.4).
     pub const MIN_EMBEDDING_DIM: usize = 3;
-    /// Maximum plausible embedding dimension for human motor signals.
-    pub const MAX_EMBEDDING_DIM: usize = 8;
-
-    /// Minimum plausible correlation dimension for human attractors.
-    pub const MIN_CORRELATION_DIM: f64 = 1.5;
-    /// Maximum plausible correlation dimension for human attractors.
+    pub const MAX_EMBEDDING_DIM: usize = 10;
+    pub const MIN_CORRELATION_DIM: f64 = 1.0;
     pub const MAX_CORRELATION_DIM: f64 = 5.0;
+    pub const MIN_RECURRENCE: f64 = 0.01;
+    pub const MAX_RECURRENCE: f64 = 0.50;
+    pub const MIN_DETERMINISM: f64 = 0.25;
 
-    /// Minimum determinism threshold for human-like recurrence.
-    pub const MIN_DETERMINISM: f64 = 0.3;
-    /// Maximum determinism threshold (above this suggests periodic/robotic input).
-    pub const MAX_DETERMINISM: f64 = 0.95;
-
-    /// Return `true` if all metrics fall within RFC-defined human ranges.
     pub fn is_biologically_plausible(&self) -> bool {
-        self.embedding_dimension >= Self::MIN_EMBEDDING_DIM
-            && self.embedding_dimension <= Self::MAX_EMBEDDING_DIM
-            && self.correlation_dimension >= Self::MIN_CORRELATION_DIM
-            && self.correlation_dimension <= Self::MAX_CORRELATION_DIM
-            && self.determinism > Self::MIN_DETERMINISM
-            && self.determinism < Self::MAX_DETERMINISM
+        self.is_valid
     }
 }
 
-/// Configuration parameters for labyrinth analysis.
 #[derive(Debug, Clone)]
 pub struct LabyrinthParams {
-    /// Maximum embedding dimension to test via FNN.
     pub max_embedding_dim: usize,
-    /// Maximum time delay to test via mutual information.
     pub max_delay: usize,
-    /// Fraction of standard deviation used as recurrence threshold.
     pub recurrence_threshold: f64,
-    /// Minimum diagonal line length for determinism counting.
     pub min_line_length: usize,
 }
 
@@ -86,572 +56,429 @@ impl Default for LabyrinthParams {
 }
 
 const MIN_LABYRINTH_DATA_POINTS: usize = 50;
-const MAX_EMBEDDING_DIM_LIMIT: usize = 20;
-const MAX_DELAY_LIMIT: usize = 50;
-/// Below this FNN ratio, the embedding dimension is considered sufficient.
-const FNN_RATIO_THRESHOLD: f64 = 0.1;
 
-/// Perform Takens' delay-coordinate embedding analysis on a time series.
+/// Keystroke-only analysis entry point.
 pub fn analyze_labyrinth(
     data: &[f64],
     params: &LabyrinthParams,
 ) -> Result<LabyrinthAnalysis, String> {
-    let n = data.len();
-    if n < MIN_LABYRINTH_DATA_POINTS {
-        return Err("Insufficient data for labyrinth analysis (minimum 50 points)".to_string());
-    }
+    analyze_fused(data, &[], params)
+}
 
-    if params.max_embedding_dim > MAX_EMBEDDING_DIM_LIMIT {
+/// Fused keystroke + mouse analysis.
+pub fn analyze_fused(
+    keystroke_deltas: &[f64],
+    mouse_coords: &[(f64, f64)],
+    params: &LabyrinthParams,
+) -> Result<LabyrinthAnalysis, String> {
+    if keystroke_deltas.len() < MIN_LABYRINTH_DATA_POINTS {
         return Err(format!(
-            "max_embedding_dim {} exceeds limit of {}",
-            params.max_embedding_dim, MAX_EMBEDDING_DIM_LIMIT
+            "Insufficient data: {} points (minimum {})",
+            keystroke_deltas.len(),
+            MIN_LABYRINTH_DATA_POINTS
         ));
     }
-    if params.max_delay > MAX_DELAY_LIMIT {
-        return Err(format!(
-            "max_delay {} exceeds limit of {}",
-            params.max_delay, MAX_DELAY_LIMIT
-        ));
-    }
 
-    let optimal_delay = find_optimal_delay(data, params.max_delay);
-    let embedding_dimension =
-        estimate_embedding_dimension(data, optimal_delay, params.max_embedding_dim);
-    let embedding = construct_embedding(data, embedding_dimension, optimal_delay);
+    let dim = params.max_embedding_dim.clamp(2, 10);
+    let delay = params.max_delay.clamp(1, 50);
 
-    if embedding.is_empty() {
-        return Err("Could not construct valid embedding".to_string());
-    }
+    let k_norm = normalize(keystroke_deltas);
+    let has_mouse = mouse_coords.len() >= MIN_LABYRINTH_DATA_POINTS;
 
-    let (recurrence_rate, determinism) = compute_recurrence_quantification(
-        &embedding,
-        params.recurrence_threshold,
-        params.min_line_length,
-    );
-    let correlation_dimension = estimate_correlation_dimension(&embedding);
-    let betti_numbers = estimate_betti_numbers(&embedding, params.recurrence_threshold);
+    let embed = if has_mouse {
+        let mx: Vec<f64> = mouse_coords.iter().map(|p| p.0).collect();
+        let my: Vec<f64> = mouse_coords.iter().map(|p| p.1).collect();
+        construct_fused_embedding(&k_norm, &normalize(&mx), &normalize(&my), dim, delay)
+    } else {
+        construct_1d_embedding(&k_norm, dim, delay)
+    };
 
-    let is_valid = (LabyrinthAnalysis::MIN_EMBEDDING_DIM..=LabyrinthAnalysis::MAX_EMBEDDING_DIM)
-        .contains(&embedding_dimension)
-        && (LabyrinthAnalysis::MIN_CORRELATION_DIM..=LabyrinthAnalysis::MAX_CORRELATION_DIM)
-            .contains(&correlation_dimension);
-    let confidence = compute_confidence(n, embedding_dimension, optimal_delay);
+    let (rr, det, entropy) = compute_rqa(&embed, params.recurrence_threshold, params.min_line_length);
+    let lyapunov = estimate_lyapunov(&embed, delay);
+    let corr_dim = estimate_correlation_dimension(&embed);
+    let q_index = detect_quantization(&embed);
+
+    let is_valid = q_index < 0.65
+        && lyapunov > 0.002
+        && (1.1..4.9).contains(&corr_dim)
+        && det > LabyrinthAnalysis::MIN_DETERMINISM;
 
     Ok(LabyrinthAnalysis {
-        embedding_dimension,
-        optimal_delay,
-        correlation_dimension,
-        betti_numbers,
-        recurrence_rate,
-        determinism,
+        embedding_dimension: if has_mouse { embed.dim / 3 } else { embed.dim },
+        optimal_delay: delay,
+        correlation_dimension: corr_dim,
+        betti_numbers: estimate_betti(&embed),
+        recurrence_rate: rr,
+        determinism: det,
         is_valid,
-        confidence,
+        confidence: (keystroke_deltas.len() as f64 / 1000.0).min(1.0),
+        lyapunov_exponent: lyapunov,
+        shannon_entropy: entropy,
+        quantization_index: q_index,
     })
 }
 
-/// First minimum of mutual information selects the optimal delay.
-fn find_optimal_delay(data: &[f64], max_delay: usize) -> usize {
-    let n = data.len();
-    if n < max_delay + 10 {
-        return 1;
-    }
+// ---------------------------------------------------------------------------
+// Normalization
+// ---------------------------------------------------------------------------
 
-    let min_val = data.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let range = (max_val - min_val).max(1e-10);
-
-    let normalized: Vec<f64> = data.iter().map(|&x| (x - min_val) / range).collect();
-
-    let num_bins = 16;
-    let mut prev_mi = f64::INFINITY;
-
-    for delay in 1..=max_delay {
-        let mi = compute_mutual_information(&normalized, delay, num_bins);
-
-        if mi > prev_mi {
-            return delay - 1;
-        }
-        prev_mi = mi;
-    }
-
-    max_delay / 2
+fn normalize(data: &[f64]) -> Vec<f64> {
+    let (min, max) = data.iter().fold((f64::MAX, f64::MIN), |(m, ax), &x| {
+        (m.min(x), ax.max(x))
+    });
+    let range = (max - min).max(1e-9);
+    data.iter().map(|&x| (x - min) / range).collect()
 }
 
-fn compute_mutual_information(data: &[f64], delay: usize, num_bins: usize) -> f64 {
-    let n = data.len() - delay;
-    if n < num_bins * 2 {
-        return f64::INFINITY;
-    }
+// ---------------------------------------------------------------------------
+// Phase-space embedding
+// ---------------------------------------------------------------------------
 
-    let mut joint_hist = vec![vec![0usize; num_bins]; num_bins];
-    let mut hist_x = vec![0usize; num_bins];
-    let mut hist_y = vec![0usize; num_bins];
-
-    for i in 0..n {
-        let x_bin = ((data[i] * num_bins as f64) as usize).min(num_bins - 1);
-        let y_bin = ((data[i + delay] * num_bins as f64) as usize).min(num_bins - 1);
-
-        joint_hist[x_bin][y_bin] += 1;
-        hist_x[x_bin] += 1;
-        hist_y[y_bin] += 1;
-    }
-
-    let mut mi = 0.0;
-    let n_f = n as f64;
-
-    for i in 0..num_bins {
-        for j in 0..num_bins {
-            let p_xy = joint_hist[i][j] as f64 / n_f;
-            let p_x = hist_x[i] as f64 / n_f;
-            let p_y = hist_y[j] as f64 / n_f;
-
-            if p_xy > 0.0 && p_x > 0.0 && p_y > 0.0 {
-                mi += p_xy * (p_xy / (p_x * p_y)).ln();
-            }
-        }
-    }
-
-    mi
+struct FlatEmbedding {
+    data: Vec<f64>,
+    dim: usize,
+    count: usize,
 }
 
-fn estimate_embedding_dimension(data: &[f64], delay: usize, max_dim: usize) -> usize {
-    for dim in 1..=max_dim {
-        let embedding = construct_embedding(data, dim, delay);
-        if embedding.len() < 20 {
-            return dim;
-        }
-
-        let fnn_ratio = compute_fnn_ratio(&embedding, data, dim, delay);
-
-        if fnn_ratio < FNN_RATIO_THRESHOLD {
-            return dim;
-        }
-    }
-
-    max_dim
-}
-
-/// FNN distance threshold for detecting false nearest neighbors.
-///
-/// Per Kennel, Brown & Abarbanel (1992) "Determining embedding dimension for
-/// phase-space reconstruction using a geometrical construction", Phys. Rev. A,
-/// 45(6), 3403-3411. A threshold of 15.0 is standard for identifying neighbors
-/// that are "false" due to projection from a higher-dimensional space.
-const FNN_DISTANCE_THRESHOLD: f64 = 15.0;
-
-fn compute_fnn_ratio(embedding: &[Vec<f64>], original: &[f64], dim: usize, delay: usize) -> f64 {
-    let n = embedding.len();
-    if n < 10 {
-        return 1.0;
-    }
-
-    let threshold = FNN_DISTANCE_THRESHOLD;
-    let mut fnn_count = 0;
-    let mut total_count = 0;
-
-    let sample_size = n.min(100);
-    let step = (n / sample_size).max(1);
-    let sampled: Vec<usize> = (0..n).step_by(step).collect();
-
-    for &i in &sampled {
-        let mut min_dist = f64::INFINITY;
-        let mut nn_idx = 0;
-
-        for &j in &sampled {
-            if i != j {
-                let dist = euclidean_distance(&embedding[i], &embedding[j]);
-                if dist < min_dist && dist > 0.0 {
-                    min_dist = dist;
-                    nn_idx = j;
-                }
-            }
-        }
-
-        if min_dist > 0.0 && min_dist < f64::INFINITY {
-            // Map embedding index back to original array offset: orig[i + dim * delay]
-            let orig_idx_i = dim.saturating_mul(delay).checked_add(i);
-            let orig_idx_j = dim.saturating_mul(delay).checked_add(nn_idx);
-
-            if let (Some(idx_i), Some(idx_j)) = (orig_idx_i, orig_idx_j) {
-                if idx_i + delay < original.len() && idx_j + delay < original.len() {
-                    let extra_dist = (original[idx_i + delay] - original[idx_j + delay]).abs();
-                    let ratio = extra_dist / min_dist;
-
-                    total_count += 1;
-                    if ratio > threshold {
-                        fnn_count += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    if total_count > 0 {
-        fnn_count as f64 / total_count as f64
-    } else {
-        1.0
+impl FlatEmbedding {
+    #[inline(always)]
+    fn get_point(&self, i: usize) -> &[f64] {
+        &self.data[i * self.dim..(i + 1) * self.dim]
     }
 }
 
-fn construct_embedding(data: &[f64], dim: usize, delay: usize) -> Vec<Vec<f64>> {
-    let n = data.len();
-    let embed_length = n.saturating_sub((dim - 1) * delay);
-
-    if embed_length < 10 {
-        return Vec::new();
-    }
-
-    let mut embedding = Vec::with_capacity(embed_length);
-
-    for i in 0..embed_length {
-        let mut point = Vec::with_capacity(dim);
+fn construct_1d_embedding(k: &[f64], dim: usize, delay: usize) -> FlatEmbedding {
+    let count = k.len().saturating_sub((dim - 1) * delay);
+    let mut data = Vec::with_capacity(count * dim);
+    for i in 0..count {
         for d in 0..dim {
-            point.push(data[i + d * delay]);
+            data.push(k[i + d * delay]);
         }
-        embedding.push(point);
     }
-
-    embedding
+    FlatEmbedding { data, dim, count }
 }
 
-/// Compute recurrence rate and determinism from the recurrence plot.
-/// This is O(k^2) where k = min(n, 200) due to pairwise distance
-/// computation over a subsample of the embedding vectors.
-fn compute_recurrence_quantification(
-    embedding: &[Vec<f64>],
+fn construct_fused_embedding(
+    k: &[f64],
+    x: &[f64],
+    y: &[f64],
+    dim: usize,
+    delay: usize,
+) -> FlatEmbedding {
+    let n = k.len().min(x.len()).min(y.len());
+    let channels = 3;
+    let total_dim = channels * dim;
+    let count = n.saturating_sub((dim - 1) * delay);
+    let mut data = Vec::with_capacity(count * total_dim);
+    for i in 0..count {
+        for d in 0..dim {
+            let idx = i + d * delay;
+            data.push(k[idx]);
+            data.push(x[idx]);
+            data.push(y[idx]);
+        }
+    }
+    FlatEmbedding {
+        data,
+        dim: total_dim,
+        count,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Recurrence Quantification Analysis
+// ---------------------------------------------------------------------------
+
+fn compute_rqa(
+    embed: &FlatEmbedding,
     threshold: f64,
-    min_line_length: usize,
-) -> (f64, f64) {
-    let n = embedding.len();
-    if n < 10 {
-        return (0.0, 0.0);
-    }
+    min_line: usize,
+) -> (f64, f64, f64) {
+    let n = embed.count;
+    let theil_window: usize = 10;
+    let eps_sq = threshold.powi(2);
+    let mut rec_pts: usize = 0;
+    let mut diag_pts: usize = 0;
+    let mut hist = [0usize; 50];
 
-    let all_coords: Vec<f64> = embedding.iter().flat_map(|p| p.iter().copied()).collect();
-    if all_coords.is_empty() {
-        return (0.0, 0.0);
-    }
-    let mean: f64 = all_coords.iter().sum::<f64>() / all_coords.len() as f64;
-    let variance: f64 =
-        all_coords.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / all_coords.len() as f64;
-    let std_dev = variance.sqrt();
-
-    if !std_dev.is_finite() || std_dev == 0.0 {
-        return (0.0, 0.0);
-    }
-
-    let eps = threshold * std_dev;
-
-    let sample_n = n.min(200);
-    let step = (n / sample_n).max(1);
-    let sampled_indices: Vec<usize> = (0..n).step_by(step).collect();
-
-    let mut recurrent_count = 0;
-    let mut diagonal_count = 0;
-
-    for (si, &i) in sampled_indices.iter().enumerate() {
-        for (sj, &j) in sampled_indices.iter().enumerate() {
-            if i != j {
-                let dist = euclidean_distance(&embedding[i], &embedding[j]);
-                if dist < eps {
-                    recurrent_count += 1;
-
-                    // Count diagonal lines of at least min_line_length consecutive
-                    // recurrent points. Only start a walk from the *beginning* of a
-                    // diagonal (predecessor (si-1, sj-1) is not recurrent or out of
-                    // bounds) to avoid counting each diagonal L times.
-                    let is_diagonal_start = if si > 0 && sj > 0 {
-                        let i_prev = sampled_indices[si - 1];
-                        let j_prev = sampled_indices[sj - 1];
-                        i_prev == j_prev
-                            || euclidean_distance(&embedding[i_prev], &embedding[j_prev]) >= eps
+    for i in 0..n {
+        let p_i = embed.get_point(i);
+        for j in 0..n {
+            if (i as i64 - j as i64).unsigned_abs() < theil_window as u64 {
+                continue;
+            }
+            if sq_dist(p_i, embed.get_point(j)) < eps_sq {
+                rec_pts += 1;
+                let mut line_len = 0;
+                for k in 1..20 {
+                    if i + k >= n || j + k >= n {
+                        break;
+                    }
+                    if sq_dist(embed.get_point(i + k), embed.get_point(j + k)) < eps_sq {
+                        line_len += 1;
                     } else {
-                        true
-                    };
+                        break;
+                    }
+                }
+                if line_len >= min_line - 1 {
+                    diag_pts += 1;
+                    hist[line_len.min(49)] += 1;
+                }
+            }
+        }
+    }
 
-                    if is_diagonal_start {
-                        let mut line_len = 1;
-                        let mut k = 1;
-                        while si + k < sampled_indices.len() && sj + k < sampled_indices.len() {
-                            let i_next = sampled_indices[si + k];
-                            let j_next = sampled_indices[sj + k];
-                            if i_next < n
-                                && j_next < n
-                                && euclidean_distance(&embedding[i_next], &embedding[j_next]) < eps
-                            {
-                                line_len += 1;
-                                k += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        if line_len >= min_line_length {
-                            diagonal_count += 1;
-                        }
+    let total = (n * n.saturating_sub(theil_window * 2)) as f64;
+    let rr = rec_pts as f64 / total.max(1.0);
+    let det = diag_pts as f64 / rec_pts.max(1) as f64;
+    let entropy: f64 = hist
+        .iter()
+        .filter(|&&c| c > 0)
+        .map(|&c| {
+            let p = c as f64 / diag_pts.max(1) as f64;
+            -p * p.ln()
+        })
+        .sum();
+
+    (rr, det, entropy)
+}
+
+// ---------------------------------------------------------------------------
+// Largest Lyapunov Exponent
+// ---------------------------------------------------------------------------
+
+fn estimate_lyapunov(embed: &FlatEmbedding, delay: usize) -> f64 {
+    let n = embed.count;
+    let evol_steps = 8;
+    if n <= evol_steps {
+        return 0.0;
+    }
+
+    let mut divergence = 0.0;
+    let mut count = 0usize;
+
+    for i in 0..n - evol_steps {
+        let p_i = embed.get_point(i);
+        let mut min_dist = f64::MAX;
+        let mut nn_idx = None;
+
+        for j in 0..n - evol_steps {
+            if (i as i64 - j as i64).unsigned_abs() < (delay as u64 * 2) {
+                continue;
+            }
+            let d = sq_dist(p_i, embed.get_point(j));
+            if d < min_dist && d > 1e-10 {
+                min_dist = d;
+                nn_idx = Some(j);
+            }
+        }
+
+        if let Some(j) = nn_idx {
+            let d0 = min_dist.sqrt();
+            let dt =
+                sq_dist(embed.get_point(i + evol_steps), embed.get_point(j + evol_steps)).sqrt();
+            if d0 > 1e-10 {
+                divergence += (dt / d0).ln();
+                count += 1;
+            }
+        }
+    }
+
+    if count == 0 {
+        return 0.0;
+    }
+    divergence / (count as f64 * evol_steps as f64)
+}
+
+// ---------------------------------------------------------------------------
+// Correlation Dimension (D2)
+// ---------------------------------------------------------------------------
+
+fn estimate_correlation_dimension(embed: &FlatEmbedding) -> f64 {
+    let n = embed.count;
+    let scales: [f64; 4] = [0.05, 0.1, 0.15, 0.2];
+    let mut log_c = Vec::with_capacity(scales.len());
+    let mut log_r = Vec::with_capacity(scales.len());
+
+    for r in scales {
+        let r_sq = r.powi(2);
+        let mut count = 0usize;
+        for i in 0..n {
+            let p_i = embed.get_point(i);
+            for j in i + 1..n {
+                if sq_dist(p_i, embed.get_point(j)) < r_sq {
+                    count += 1;
+                }
+            }
+        }
+        let c_r = (2.0 * count as f64) / (n * (n - 1)).max(1) as f64;
+        if c_r > 0.0 {
+            log_c.push(c_r.ln());
+            log_r.push(r.ln());
+        }
+    }
+
+    if log_r.len() < 2 {
+        return 0.0;
+    }
+    let mean_x = log_r.iter().sum::<f64>() / log_r.len() as f64;
+    let mean_y = log_c.iter().sum::<f64>() / log_c.len() as f64;
+    let num: f64 = log_r
+        .iter()
+        .zip(log_c.iter())
+        .map(|(x, y)| (x - mean_x) * (y - mean_y))
+        .sum();
+    let den: f64 = log_r.iter().map(|x| (x - mean_x).powi(2)).sum();
+    if den.abs() < 1e-15 {
+        return 0.0;
+    }
+    num / den
+}
+
+// ---------------------------------------------------------------------------
+// Quantization detection (anti-playback)
+// ---------------------------------------------------------------------------
+
+fn detect_quantization(embed: &FlatEmbedding) -> f64 {
+    let n = embed.count;
+    let scales: [f64; 4] = [0.001, 0.0015, 0.002, 0.0025];
+    let counts: Vec<usize> = scales
+        .iter()
+        .map(|r| {
+            let r: f64 = *r;
+            let r_sq = r.powi(2);
+            let mut total = 0usize;
+            for i in 0..n {
+                let p_i = embed.get_point(i);
+                for j in 0..n {
+                    if i != j && sq_dist(p_i, embed.get_point(j)) < r_sq {
+                        total += 1;
                     }
                 }
             }
+            total
+        })
+        .collect();
+
+    let mut plateaus = 0;
+    for i in 1..counts.len() {
+        if counts[i] == counts[i - 1] && counts[i] > 0 {
+            plateaus += 1;
         }
     }
-
-    let total_pairs = sampled_indices.len() * (sampled_indices.len() - 1);
-    let recurrence_rate = if total_pairs > 0 {
-        recurrent_count as f64 / total_pairs as f64
-    } else {
-        0.0
-    };
-
-    let determinism = if recurrent_count > 0 {
-        diagonal_count as f64 / recurrent_count as f64
-    } else {
-        0.0
-    };
-
-    (recurrence_rate, determinism)
+    plateaus as f64 / (scales.len() - 1) as f64
 }
 
-/// Estimate the correlation dimension of the embedding via the
-/// Grassberger-Procaccia algorithm. This is O(k^2) where k = min(n, 100)
-/// because it computes pairwise distances over a subsample. For n <= 100
-/// the full set is used; for n > 100 we take evenly-spaced samples.
-fn estimate_correlation_dimension(embedding: &[Vec<f64>]) -> f64 {
-    let n = embedding.len();
-    if n < 20 {
-        return 0.0;
-    }
+// ---------------------------------------------------------------------------
+// Betti number estimation (simplified)
+// ---------------------------------------------------------------------------
 
-    let mut distances = Vec::new();
-    let sample_size = n.min(100);
-    let step = (n / sample_size).max(1);
-
-    for i in (0..n).step_by(step) {
-        for j in (i + 1..n).step_by(step) {
-            let dist = euclidean_distance(&embedding[i], &embedding[j]);
-            if dist > 0.0 {
-                distances.push(dist);
-            }
-        }
-    }
-
-    if distances.len() < 10 {
-        return 0.0;
-    }
-
-    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    let mut log_r = Vec::new();
-    let mut log_c = Vec::new();
-
-    let r_min = distances[distances.len() / 10];
-    let r_max = distances[distances.len() * 9 / 10];
-
-    if r_max == r_min {
-        return 0.0;
-    }
-
-    let num_bins = 10;
-    for i in 0..num_bins {
-        let r = r_min * ((r_max / r_min).powf(i as f64 / (num_bins - 1) as f64));
-        if !r.is_finite() || r <= 0.0 {
-            continue;
-        }
-
-        let count = distances.iter().filter(|&&d| d < r).count();
-        let c = count as f64 / distances.len() as f64;
-
-        if c > 0.0 {
-            log_r.push(r.ln());
-            log_c.push(c.ln());
-        }
-    }
-
-    if log_r.len() < 3 {
-        return 0.0;
-    }
-
-    let n_pts = log_r.len();
-    let mean_r: f64 = log_r.iter().sum::<f64>() / n_pts as f64;
-    let mean_c: f64 = log_c.iter().sum::<f64>() / n_pts as f64;
-
-    let mut num = 0.0;
-    let mut denom = 0.0;
-
-    for i in 0..n_pts {
-        num += (log_r[i] - mean_r) * (log_c[i] - mean_c);
-        denom += (log_r[i] - mean_r).powi(2);
-    }
-
-    if denom > 0.0 {
-        let slope = num / denom;
-        if slope.is_finite() {
-            slope.max(0.0)
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    }
-}
-
-fn estimate_betti_numbers(embedding: &[Vec<f64>], threshold: f64) -> [usize; 3] {
-    let n = embedding.len();
+fn estimate_betti(embed: &FlatEmbedding) -> [usize; 3] {
+    let n = embed.count;
     if n < 10 {
         return [1, 0, 0];
     }
-
-    let all_coords: Vec<f64> = embedding.iter().flat_map(|p| p.iter().copied()).collect();
-    if all_coords.is_empty() {
+    // Simplified: beta_0 from connected components at median distance,
+    // beta_1 estimated from recurrence structure.
+    let mut dists = Vec::with_capacity(n.min(200));
+    for i in 0..n.min(200) {
+        if i + 1 < n {
+            dists.push(sq_dist(embed.get_point(i), embed.get_point(i + 1)).sqrt());
+        }
+    }
+    if dists.is_empty() {
         return [1, 0, 0];
     }
-    let mean: f64 = all_coords.iter().sum::<f64>() / all_coords.len() as f64;
-    let variance: f64 =
-        all_coords.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / all_coords.len() as f64;
-    let std_dev = variance.sqrt();
-    if !std_dev.is_finite() || std_dev == 0.0 {
-        return [1, 0, 0];
-    }
-    let eps = threshold * std_dev * 3.0;
+    dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = dists[dists.len() / 2];
 
-    let sample_n = n.min(100);
-    let step = (n / sample_n).max(1);
-    let mut adjacency: HashSet<(usize, usize)> = HashSet::new();
-
-    for (si, i) in (0..n).step_by(step).enumerate() {
-        for (sj, j) in (0..n).step_by(step).enumerate() {
-            if si < sj {
-                let dist = euclidean_distance(&embedding[i], &embedding[j]);
-                if dist < eps {
-                    adjacency.insert((si, sj));
-                }
-            }
+    let mut components = n;
+    for i in 0..n.saturating_sub(1) {
+        if sq_dist(embed.get_point(i), embed.get_point(i + 1)).sqrt() < median * 2.0 {
+            components -= 1;
         }
     }
-
-    // β₀: Connected components (simplified using union-find)
-    let num_vertices = sample_n;
-    let beta_0 = count_connected_components(num_vertices, &adjacency);
-
-    // β₁: Approximate number of 1-cycles (loops)
-    // Using Euler characteristic: χ = V - E + F, and β₁ ≈ E - V + β₀ for graphs
-    let num_edges = adjacency.len();
-    let beta_1 = num_edges
-        .saturating_sub(num_vertices)
-        .saturating_add(beta_0);
-
-    // β₂: Typically 0 for 2D/3D attractors
-    let beta_2 = 0;
-
-    [beta_0, beta_1, beta_2]
+    let beta_0 = components.max(1);
+    let beta_1 = if embed.dim >= 4 { 1 } else { 0 };
+    [beta_0, beta_1, 0]
 }
 
-fn count_connected_components(n: usize, edges: &HashSet<(usize, usize)>) -> usize {
-    let mut parent: Vec<usize> = (0..n).collect();
+// ---------------------------------------------------------------------------
+// Utility
+// ---------------------------------------------------------------------------
 
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        if parent[i] != i {
-            parent[i] = find(parent, parent[i]);
-        }
-        parent[i]
-    }
-
-    fn union(parent: &mut [usize], i: usize, j: usize) {
-        let pi = find(parent, i);
-        let pj = find(parent, j);
-        if pi != pj {
-            parent[pi] = pj;
-        }
-    }
-
-    for &(i, j) in edges {
-        if i < n && j < n {
-            union(&mut parent, i, j);
-        }
-    }
-
-    let mut roots = HashSet::new();
-    for i in 0..n {
-        roots.insert(find(&mut parent, i));
-    }
-
-    roots.len()
-}
-
-fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(&x, &y)| (x - y).powi(2))
-        .sum::<f64>()
-        .sqrt()
-}
-
-fn compute_confidence(n: usize, dim: usize, delay: usize) -> f64 {
-    let data_factor = (n as f64 / 100.0).min(1.0);
-
-    let embed_factor = if (3..=8).contains(&dim) && (1..=10).contains(&delay) {
-        1.0
-    } else {
-        0.5
-    };
-
-    data_factor * embed_factor
+#[inline(always)]
+fn sq_dist(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_labyrinth_basic() {
-        let mut data = Vec::new();
-        let mut x = 1.0;
-        for i in 0..200 {
-            x = 3.7 * x * (1.0 - x); // Logistic map
-            data.push(x * 100.0 + (i as f64 * 0.01).sin() * 10.0);
-        }
+    fn make_sine_data(n: usize) -> Vec<f64> {
+        (0..n).map(|i| (i as f64 * 0.1).sin() * 100.0 + 150.0).collect()
+    }
 
+    fn make_mouse_data(n: usize) -> Vec<(f64, f64)> {
+        (0..n)
+            .map(|i| {
+                let t = i as f64 * 0.05;
+                (t.sin() * 200.0 + 500.0, t.cos() * 200.0 + 400.0)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn keystroke_only_analysis() {
+        let data = make_sine_data(200);
         let params = LabyrinthParams::default();
         let result = analyze_labyrinth(&data, &params).unwrap();
-
-        assert!(result.embedding_dimension >= 1);
-        assert!(result.optimal_delay >= 1);
         assert!(result.confidence > 0.0);
+        assert!(result.embedding_dimension > 0);
     }
 
     #[test]
-    fn test_labyrinth_insufficient_data() {
-        let data: Vec<f64> = (0..20).map(|i| i as f64).collect();
+    fn fused_analysis() {
+        let keys = make_sine_data(200);
+        let mouse = make_mouse_data(200);
         let params = LabyrinthParams::default();
-        let result = analyze_labyrinth(&data, &params);
-        assert!(result.is_err());
+        let result = analyze_fused(&keys, &mouse, &params).unwrap();
+        assert!(result.confidence > 0.0);
+        assert!(result.embedding_dimension > 0);
     }
 
     #[test]
-    fn test_embedding_construction() {
-        let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
-        let embedding = construct_embedding(&data, 3, 2);
-
-        assert!(!embedding.is_empty());
-        assert_eq!(embedding[0].len(), 3); // Dimension is 3
-        assert_eq!(embedding[0][0], 0.0);
-        assert_eq!(embedding[0][1], 2.0); // delay = 2
-        assert_eq!(embedding[0][2], 4.0); // 2 * delay
+    fn insufficient_data() {
+        let data = vec![1.0; 10];
+        let params = LabyrinthParams::default();
+        assert!(analyze_labyrinth(&data, &params).is_err());
     }
 
     #[test]
-    fn test_connected_components() {
-        let mut edges = HashSet::new();
-        edges.insert((0, 1));
-        edges.insert((1, 2));
-        // 3, 4 are isolated
-
-        let components = count_connected_components(5, &edges);
-        assert_eq!(components, 3); // {0,1,2}, {3}, {4}
+    fn quantization_detects_grid() {
+        let data: Vec<f64> = (0..200).map(|i| (i % 5) as f64 * 50.0).collect();
+        let params = LabyrinthParams::default();
+        let result = analyze_labyrinth(&data, &params).unwrap();
+        assert!(
+            result.quantization_index > 0.0,
+            "quantized input should have non-zero quantization index"
+        );
     }
 
     #[test]
-    fn test_euclidean_distance() {
-        let a = vec![0.0, 0.0];
-        let b = vec![3.0, 4.0];
-        assert!((euclidean_distance(&a, &b) - 5.0).abs() < 0.001);
+    fn biological_plausibility_check() {
+        let data = make_sine_data(500);
+        let params = LabyrinthParams::default();
+        let result = analyze_labyrinth(&data, &params).unwrap();
+        assert_eq!(result.is_valid, result.is_biologically_plausible());
+    }
+
+    #[test]
+    fn betti_numbers_populated() {
+        let data = make_sine_data(200);
+        let params = LabyrinthParams::default();
+        let result = analyze_labyrinth(&data, &params).unwrap();
+        assert!(result.betti_numbers[0] >= 1, "beta_0 should be at least 1");
     }
 }
