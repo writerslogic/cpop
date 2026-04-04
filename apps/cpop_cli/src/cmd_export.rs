@@ -1190,6 +1190,16 @@ fn build_war_report(
             "Cannot prove absence of AI involvement in ideation".into(),
         ],
         analyzed_text: None,
+        forensic_metrics: None,
+        edit_topology: Vec::new(),
+        activity_contexts: Vec::new(),
+        declaration_summary: None,
+        key_hierarchy_summary: None,
+        physical_context: None,
+        beacon_info: None,
+        anomalies: Vec::new(),
+        verifiable_credential_json: None,
+        author_did: None,
     }
 }
 

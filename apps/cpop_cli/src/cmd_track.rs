@@ -308,6 +308,13 @@ fn auto_checkpoint_file(
         lamport_signature: None,
         lamport_pubkey_fingerprint: None,
         challenge_nonce: None,
+        hw_cosign_signature: None,
+        hw_cosign_pubkey: None,
+        hw_cosign_salt_commitment: None,
+        hw_cosign_chain_index: None,
+        hw_cosign_entangled_hash: None,
+        hw_cosign_entropy_digest: None,
+        hw_cosign_entropy_bytes: None,
     };
 
     db.add_secure_event(&mut event)?;
