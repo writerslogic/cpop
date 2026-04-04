@@ -318,7 +318,12 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         packet_sequence: None,
         physical_liveness: None,
         baseline_verification: None,
-        author_did: None,
+        author_did: {
+            #[cfg(feature = "did-webvh")]
+            { crate::identity::did_webvh::load_active_did().ok() }
+            #[cfg(not(feature = "did-webvh"))]
+            { None }
+        },
     };
 
     match wire_packet.encode_cbor() {
