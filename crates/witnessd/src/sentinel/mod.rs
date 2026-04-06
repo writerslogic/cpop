@@ -18,6 +18,7 @@ macro_rules! trace {
 pub(crate) use trace;
 
 pub mod core;
+mod core_setup;
 pub mod core_session;
 pub mod daemon;
 pub mod error;

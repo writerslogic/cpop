@@ -9,6 +9,7 @@ use crate::RwLockRecover;
 use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
@@ -876,4 +877,71 @@ pub(crate) fn try_hw_cosign(
     session.last_hw_cosign_signature = Some(sig);
     sched.reset_after_cosign();
     true
+}
+
+/// Hash a file, open the secure store, and write a checkpoint event.
+///
+/// Returns the committed event hash on success, or `None` on any failure.
+/// Extracted from the event loop to eliminate duplicate checkpoint logic
+/// between the idle-timeout and periodic-checkpoint timer arms.
+pub(super) fn commit_checkpoint_for_path(
+    path: &str,
+    reason: &str,
+    signing_key: &Arc<RwLock<super::behavioral_key::BehavioralKey>>,
+    writersproof_dir: &Path,
+    challenge_nonce: &Option<String>,
+    stopping: &AtomicBool,
+) -> Option<[u8; 32]> {
+    if stopping.load(Ordering::SeqCst) {
+        log::debug!("Skipping checkpoint for {path}: sentinel stopping");
+        return None;
+    }
+    if challenge_nonce.is_none() {
+        log::warn!(
+            "Checkpoint for {path} has no server nonce — temporal binding absent; \
+             WP unreachable or nonce not fetched before checkpoint window"
+        );
+    }
+    let file_path = std::path::Path::new(path);
+    let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
+        Ok(pair) => pair,
+        Err(e) => {
+            log::debug!("Auto-checkpoint hash failed for {path}: {e}");
+            return None;
+        }
+    };
+    let file_size = i64::try_from(raw_size).unwrap_or(i64::MAX);
+
+    let mut store = {
+        let guard = signing_key.read_recover();
+        let sk = guard.key()?;
+        let db_path = writersproof_dir.join("events.db");
+        match crate::store::open_store_with_signing_key(&sk, &db_path) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("Auto-checkpoint store open failed for {path}: {e}");
+                return None;
+            }
+        }
+    };
+
+    let mut event = crate::store::SecureEvent::new(
+        path.to_string(),
+        content_hash,
+        file_size,
+        Some(reason.to_string()),
+    );
+    event.challenge_nonce = challenge_nonce.clone();
+    let sk_guard = signing_key.read_recover();
+    let sk_opt = sk_guard.key();
+    match store.add_secure_event_with_signer(&mut event, sk_opt.as_ref()) {
+        Ok(_) => {
+            log::info!("Auto-checkpoint committed for {path} ({reason})");
+            Some(event.event_hash)
+        }
+        Err(e) => {
+            log::warn!("Auto-checkpoint store write failed for {path}: {e}");
+            None
+        }
+    }
 }

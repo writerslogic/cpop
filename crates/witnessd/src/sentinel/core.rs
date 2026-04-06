@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::error::{Result, SentinelError};
-use super::focus::SentinelFocusTracker;
 use super::helpers::*;
 use super::shadow::ShadowManager;
 use super::types::*;
@@ -10,81 +9,12 @@ use crate::platform::{KeystrokeCapture, MouseCapture};
 use crate::{MutexRecover, RwLockRecover};
 use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::interval;
 use zeroize::Zeroize;
-
-/// Hash a file, open the secure store, and write a checkpoint event.
-///
-/// Returns `true` if the checkpoint was committed, `false` on any failure.
-/// Extracted from the event loop to eliminate duplicate checkpoint logic
-/// between the idle-timeout and periodic-checkpoint timer arms.
-/// Returns the committed event hash on success, or `None` on any failure.
-fn commit_checkpoint_for_path(
-    path: &str,
-    reason: &str,
-    signing_key: &Arc<RwLock<super::behavioral_key::BehavioralKey>>,
-    writersproof_dir: &Path,
-    challenge_nonce: &Option<String>,
-    stopping: &AtomicBool,
-) -> Option<[u8; 32]> {
-    if stopping.load(Ordering::SeqCst) {
-        log::debug!("Skipping checkpoint for {path}: sentinel stopping");
-        return None;
-    }
-    if challenge_nonce.is_none() {
-        log::warn!(
-            "Checkpoint for {path} has no server nonce — temporal binding absent; \
-             WP unreachable or nonce not fetched before checkpoint window"
-        );
-    }
-    let file_path = std::path::Path::new(path);
-    let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
-        Ok(pair) => pair,
-        Err(e) => {
-            log::debug!("Auto-checkpoint hash failed for {path}: {e}");
-            return None;
-        }
-    };
-    let file_size = i64::try_from(raw_size).unwrap_or(i64::MAX);
-
-    let mut store = {
-        let guard = signing_key.read_recover();
-        let sk = guard.key()?;
-        let db_path = writersproof_dir.join("events.db");
-        match crate::store::open_store_with_signing_key(&sk, &db_path) {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("Auto-checkpoint store open failed for {path}: {e}");
-                return None;
-            }
-        }
-    };
-
-    let mut event = crate::store::SecureEvent::new(
-        path.to_string(),
-        content_hash,
-        file_size,
-        Some(reason.to_string()),
-    );
-    event.challenge_nonce = challenge_nonce.clone();
-    let sk_guard = signing_key.read_recover();
-    let sk_opt = sk_guard.key();
-    match store.add_secure_event_with_signer(&mut event, sk_opt.as_ref()) {
-        Ok(_) => {
-            log::info!("Auto-checkpoint committed for {path} ({reason})");
-            Some(event.event_hash)
-        }
-        Err(e) => {
-            log::warn!("Auto-checkpoint store write failed for {path}: {e}");
-            None
-        }
-    }
-}
 
 /// Sentinel source PID for events pre-verified by CGEventTap.
 ///
@@ -94,7 +24,7 @@ fn commit_checkpoint_for_path(
 const CGEVENTTAP_VERIFIED_PID: i64 = -1;
 
 /// Async channel buffer size for keystroke and mouse bridge threads.
-const EVENT_CHANNEL_BUFFER: usize = 1000;
+pub(super) const EVENT_CHANNEL_BUFFER: usize = 1000;
 
 /// Duration after last keystroke within which mouse micro-movements are recorded.
 const TYPING_PROXIMITY_SECS: u64 = 2;
@@ -178,13 +108,13 @@ pub struct Sentinel {
     mouse_idle_stats: Arc<RwLock<crate::platform::MouseIdleStats>>,
     mouse_stego_engine: Arc<RwLock<crate::platform::MouseStegoEngine>>,
     session_nonce: Arc<RwLock<Option<[u8; 32]>>>,
-    bridge_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
+    pub(super) bridge_threads: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
     /// Handle for the main event loop task; aborted on Drop if stop() was never called.
     event_loop_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Active keystroke capture; stored so stop() can clean up CGEventTap threads.
-    keystroke_capture: Arc<Mutex<Option<Box<dyn KeystrokeCapture>>>>,
+    pub(super) keystroke_capture: Arc<Mutex<Option<Box<dyn KeystrokeCapture>>>>,
     /// Active mouse capture; stored so stop() can clean up CGEventTap threads.
-    mouse_capture: Arc<Mutex<Option<Box<dyn MouseCapture>>>>,
+    pub(super) mouse_capture: Arc<Mutex<Option<Box<dyn MouseCapture>>>>,
     /// Whether keystroke capture is active (false = degraded/focus-only mode).
     pub(crate) keystroke_capture_active: Arc<AtomicBool>,
     /// Last paste character count reported by the host app.
@@ -418,203 +348,6 @@ impl Sentinel {
             log::warn!("HMAC key length {} is not 32 bytes, ignoring", key.len());
             key.zeroize();
         }
-    }
-
-    /// Create the platform focus monitor, verify availability, start it,
-    /// and return the monitor along with its event receivers.
-    #[allow(clippy::type_complexity)]
-    fn setup_focus(
-        &self,
-    ) -> Result<(
-        Box<dyn SentinelFocusTracker>,
-        mpsc::Receiver<super::types::FocusEvent>,
-        mpsc::Receiver<super::types::ChangeEvent>,
-    )> {
-        #[cfg(target_os = "macos")]
-        let focus_monitor: Box<dyn SentinelFocusTracker> =
-            super::macos_focus::MacOSFocusMonitor::new_monitor(self.config.clone());
-
-        #[cfg(target_os = "windows")]
-        let focus_monitor: Box<dyn SentinelFocusTracker> =
-            super::windows_focus::WindowsFocusMonitor::new_monitor(self.config.clone());
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let focus_monitor: Box<dyn SentinelFocusTracker> = Box::new(
-            super::stub_focus::StubSentinelFocusTracker::new(self.config.clone()),
-        );
-
-        let (available, reason) = focus_monitor.available();
-        if !available {
-            return Err(SentinelError::NotAvailable(reason));
-        }
-
-        focus_monitor.start()?;
-
-        let focus_rx = focus_monitor.focus_events()?;
-        let change_rx = focus_monitor.change_events()?;
-
-        Ok((focus_monitor, focus_rx, change_rx))
-    }
-
-    /// Initialize keystroke capture, spawn a bridge thread forwarding
-    /// events into the returned async receiver, and start HID capture
-    /// for dual-layer validation.
-    fn setup_keystroke_bridge(
-        &self,
-        running: &Arc<AtomicBool>,
-    ) -> mpsc::Receiver<crate::platform::KeystrokeEvent> {
-        let (keystroke_tx, keystroke_rx) =
-            tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(EVENT_CHANNEL_BUFFER);
-        let keystroke_running = Arc::clone(running);
-
-        #[cfg(target_os = "macos")]
-        let capture_result = crate::platform::macos::MacOSKeystrokeCapture::new();
-        #[cfg(target_os = "windows")]
-        let capture_result = crate::platform::windows::WindowsKeystrokeCapture::new();
-        #[cfg(target_os = "linux")]
-        let capture_result = crate::platform::linux::LinuxKeystrokeCapture::new();
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let capture_result: anyhow::Result<Box<dyn crate::platform::KeystrokeCapture>> = Err(
-            anyhow::anyhow!("Keystroke capture not supported on this platform"),
-        );
-
-        let keystroke_active = Arc::clone(&self.keystroke_capture_active);
-        let keystroke_capture_store = Arc::clone(&self.keystroke_capture);
-        match capture_result {
-            Ok(mut keystroke_capture) => match keystroke_capture.start() {
-                Ok(sync_rx) => {
-                    keystroke_active.store(true, Ordering::SeqCst);
-                    *keystroke_capture_store.lock_recover() =
-                        Some(Box::new(keystroke_capture) as Box<dyn KeystrokeCapture>);
-                    let sync_rx: std::sync::mpsc::Receiver<crate::platform::KeystrokeEvent> =
-                        sync_rx;
-                    let handle = std::thread::spawn(move || {
-                        #[cfg(debug_assertions)]
-                        let mut bridge_count: u64 = 0;
-                        let mut dropped_count: u64 = 0;
-                        while keystroke_running.load(Ordering::SeqCst) {
-                            match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                                Ok(event) => {
-                                    #[cfg(debug_assertions)]
-                                    {
-                                        bridge_count += 1;
-                                        if bridge_count % 100 == 0 {
-                                            log::debug!(
-                                                "keystroke bridge: forwarded {bridge_count}"
-                                            );
-                                        }
-                                    }
-                                    if let Err(e) = keystroke_tx.try_send(event) {
-                                        match e {
-                                            tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                                dropped_count += 1;
-                                                if dropped_count == 1
-                                                    || dropped_count.is_power_of_two()
-                                                {
-                                                    log::warn!(
-                                                        "keystroke channel full, \
-                                                         {} events dropped",
-                                                        dropped_count
-                                                    );
-                                                }
-                                            }
-                                            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                                                log::debug!("keystroke channel closed");
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                            }
-                        }
-                    });
-                    self.bridge_threads.lock_recover().push(handle);
-                }
-                Err(e) => {
-                    log::warn!("Keystroke capture failed to start: {e}; running in degraded mode");
-                }
-            },
-            Err(e) => {
-                log::warn!(
-                    "Keystroke capture unavailable: {e}; \
-                     running in degraded mode (focus-only)"
-                );
-            }
-        }
-
-        // Start IOKit HID capture for dual-layer keystroke validation.
-        // This runs alongside CGEventTap; HID provides hardware ground truth.
-        super::start_hid_capture();
-
-        keystroke_rx
-    }
-
-    /// Initialize mouse capture and spawn a bridge thread forwarding
-    /// events into the returned async receiver.
-    fn setup_mouse_bridge(
-        &self,
-        running: &Arc<AtomicBool>,
-    ) -> mpsc::Receiver<crate::platform::MouseEvent> {
-        let (mouse_tx, mouse_rx) =
-            tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(EVENT_CHANNEL_BUFFER);
-        let mouse_running = Arc::clone(running);
-
-        #[cfg(target_os = "macos")]
-        let capture_result = crate::platform::macos::MacOSMouseCapture::new();
-        #[cfg(target_os = "linux")]
-        let capture_result = crate::platform::linux::LinuxMouseCapture::new();
-        #[cfg(target_os = "windows")]
-        let capture_result = crate::platform::windows::WindowsMouseCapture::new();
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let capture_result: anyhow::Result<Box<dyn crate::platform::MouseCapture>> = Err(
-            anyhow::anyhow!("Mouse capture not supported on this platform"),
-        );
-
-        let mouse_capture_store = Arc::clone(&self.mouse_capture);
-        match capture_result {
-            Ok(mut mouse_capture) => match mouse_capture.start() {
-                Ok(sync_rx) => {
-                    *mouse_capture_store.lock_recover() =
-                        Some(Box::new(mouse_capture) as Box<dyn MouseCapture>);
-                    let sync_rx: std::sync::mpsc::Receiver<crate::platform::MouseEvent> = sync_rx;
-                    let handle = std::thread::spawn(move || {
-                        while mouse_running.load(Ordering::SeqCst) {
-                            match sync_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                                Ok(event) => {
-                                    if let Err(e) = mouse_tx.try_send(event) {
-                                        match e {
-                                            tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                                log::debug!("mouse channel full, dropping event");
-                                            }
-                                            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                                                log::debug!("mouse channel closed");
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                            }
-                        }
-                    });
-                    self.bridge_threads.lock_recover().push(handle);
-                }
-                Err(e) => {
-                    log::warn!("Mouse capture failed to start: {e}; running in degraded mode");
-                }
-            },
-            Err(e) => {
-                log::warn!(
-                    "Mouse capture unavailable: {e}; \
-                     running in degraded mode (focus-only)"
-                );
-            }
-        }
-
-        mouse_rx
     }
 
     /// Start the sentinel event loop (focus, keystroke, mouse monitoring).
