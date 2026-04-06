@@ -2,7 +2,7 @@
 
 <!-- suggest | Updated: 2026-04-02 | Domain: code | Languages: rust | Files: 374 | Issues: 148 -->
 
-**Updated**: 2026-04-03
+**Updated**: 2026-04-06
 **Scope**: Full workspace scan -- CLI (21 files), Engine (290+ files), Protocol (22 files), Jitter (4 files)
 **Previous audit**: 2026-03-30 -- 265 findings, all resolved
 **macOS app**: 381 findings fixed, 0 open (see apps/cpop_macos/audit-todo.md)
@@ -12,8 +12,8 @@
 | Severity | Open | Fixed | Skipped |
 |----------|------|-------|---------|
 | CRITICAL | 0    | 12    | 0       |
-| HIGH     | 4    | 131   | 0       |
-| MEDIUM   | 27   | 228   | 14      |
+| HIGH     | 1    | 134   | 0       |
+| MEDIUM   | 7    | 242   | 20      |
 
 ---
 
@@ -183,11 +183,11 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   Impact: Console spam in production | Fix: Replaced with log::debug!()
 
 ### Anchors
-- [ ] **H-021** `[security]` `anchors/rfc3161.rs:188`: CMS signature verification NOT implemented; only hash checked
+- [x] **H-021** `[security]` `anchors/rfc3161.rs:188`: CMS signature verification NOT implemented; only hash checked
   <!-- pid:missing_validation | batch:1 | verified:analytical | first:2026-04-02 | last:2026-04-02 -->
   Impact: Forged timestamps with correct hash pass verification | Fix: Implement CMS/PKCS#7 signature verification per RFC 5652 | Effort: large
 
-- [ ] **H-022** `[security]` `anchors/ots.rs:298`: Bitcoin block header cross-check not implemented
+- [x] **H-022** `[security]` `anchors/ots.rs:298`: Bitcoin block header cross-check not implemented
   <!-- pid:missing_validation | batch:1 | verified:analytical | first:2026-04-02 | last:2026-04-02 -->
   Impact: OTS proofs without Bitcoin confirmation treated as valid | Fix: Fetch and validate Bitcoin block header | Effort: large
 
@@ -329,7 +329,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:hardcoded_config | batch:3 -->
 - [x] **M-022** `[security]` `ipc/messages.rs:356`: Pulse timestamp validation uses wall-clock with 5-min tolerance -- FIXED 2026-04-03
   <!-- pid:toctou | batch:3 -->
-- [ ] **M-023** `[security]` `ipc/server.rs:62`: TOCTOU race in socket bind between connect check and remove
+- [x] **M-023** `[security]` `ipc/server.rs:62`: TOCTOU race in socket bind between connect check and remove -- ALREADY FIXED: direct-bind first, symlink guard before remove, liveness probe in between
   <!-- pid:toctou | batch:3 -->
 - [x] **M-024** `[code_quality]` `crypto.rs:125`: derive_hmac_key() uses SHA256 directly (legacy); name doesn't signal non-standard pattern -- ALREADY FIXED: doc comment explains SHA-256 choice
   <!-- pid:inconsistent_naming | batch:3 -->
@@ -405,13 +405,13 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
 ### Protocol
 - [ ] **M-056** `[architecture]` `c2pa.rs:1`: God module (1255 lines); JUMBF + JSON + COSE in single file
   <!-- pid:god_module | batch:7 -->
-- [ ] **M-057** `[maintainability]` `codec/cbor.rs:677`: Custom CBOR parser duplicates ciborium; not documented
+- [x] **M-057** `[maintainability]` `codec/cbor.rs:677`: Custom CBOR parser duplicates ciborium; not documented -- ALREADY FIXED: check_cbor_depth is fully documented with inline comments explaining purpose (depth/size guard before ciborium deserialization)
   <!-- pid:duplicated_logic | batch:7 -->
 - [x] **M-058** `[security]` `rfc/biology.rs:508`: Weight sum tolerance hardcoded at 0.01 -- ALREADY FIXED: WEIGHT_SUM_TOLERANCE constant
   <!-- pid:magic_value | batch:7 -->
 - [-] **M-059** `[security]` `rfc/vdf.rs:127`: iterations_per_second=0 edge case allows division by zero -- FALSE POSITIVE: all division paths guarded
   <!-- pid:nan_inf_unguarded | batch:7 -->
-- [ ] **M-060** `[security]` `rfc/packet.rs:564`: Extensions field accepts arbitrary serde_json::Value
+- [x] **M-060** `[security]` `rfc/packet.rs:564`: Extensions field accepts arbitrary serde_json::Value -- ALREADY FIXED: count/key-length/value-bytes/depth limits in validate()
   <!-- pid:unsafe_deser | batch:7 -->
 - [x] **M-061** `[security]` `rfc/wire_types/packet.rs:153`: packet_id == [0u8;16] check is weak; should require entropy -- FIXED 2026-04-03
   <!-- pid:missing_validation | batch:7 -->
@@ -443,19 +443,19 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:toctou | batch:9 -->
 - [x] **M-074** `[security]` `sealed_identity/store.rs:183`: Public key mismatch detection after unseal success; HMAC not verified first -- ALREADY FIXED: HMAC verified in load_blob()
   <!-- pid:missing_validation | batch:9 -->
-- [ ] **M-075** `[security]` `sealed_chain.rs:161`: document_id read unverified before decryption; header tamperable
+- [-] **M-075** `[security]` `sealed_chain.rs:161`: document_id read unverified before decryption; header tamperable -- FALSE POSITIVE: full header (magic+version+nonce+document_id) is used as GCM AAD; tampering detected by AES-GCM auth tag on decrypt
   <!-- pid:toctou | batch:9 -->
 - [-] **M-076** `[security]` `war/appraisal.rs:203`: Keystroke rate anomaly degrades only sourced_data, not overall verdict -- FALSE POSITIVE: overall_status takes max severity; sourced_data degradation propagates
   <!-- pid:missing_validation | batch:9 -->
-- [ ] **M-077** `[code_quality]` `war/appraisal.rs:279`: packet_hash uses serde_json round-trip for canonicalization; platform-dependent
+- [-] **M-077** `[code_quality]` `war/appraisal.rs:279`: packet_hash uses serde_json round-trip for canonicalization; platform-dependent -- FALSE POSITIVE: packet_hash uses ciborium::into_writer (deterministic CBOR per RFC 8949), not serde_json
   <!-- pid:missing_validation | batch:9 -->
-- [ ] **M-078** `[security]` `war/compat.rs:77`: from_ear() reconstruction uses zero-initialized Seal fallback without flag
+- [-] **M-078** `[security]` `war/compat.rs:77`: from_ear() reconstruction uses zero-initialized Seal fallback without flag -- FALSE POSITIVE: fallback explicitly sets reconstructed: true; debug log emitted
   <!-- pid:silent_error | batch:9 -->
 - [-] **M-079** `[error_handling]` `war/compat.rs:147`: to_ear() loses forensic_summary on roundtrip -- FALSE POSITIVE: to_ear preserves forensic_summary; from_ear->Block is different type
   <!-- pid:silent_error | batch:9 -->
-- [ ] **M-080** `[security]` `war/ear.rs:159`: TrustworthinessVector parse_header assumes fixed 8-component order
+- [-] **M-080** `[security]` `war/ear.rs:159`: TrustworthinessVector parse_header assumes fixed 8-component order -- FALSE POSITIVE: parse_header uses label-prefix find (e.g. "II=") to locate each component by name, not by position
   <!-- pid:missing_validation | batch:9 -->
-- [ ] **M-081** `[security]` `war/profiles/eu_ai_act.rs:84`: evidence_backed flag based on jitter_sealed without crypto verification
+- [-] **M-081** `[security]` `war/profiles/eu_ai_act.rs:84`: evidence_backed flag based on jitter_sealed without crypto verification -- FALSE POSITIVE: eu_ai_act profile is descriptive metadata; cryptographic verification is done at the WAR/verification layer, not in profile metadata
   <!-- pid:missing_validation | batch:9 -->
 
 ### Anchors/Bridge
@@ -465,15 +465,15 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:unhelpful_error_msg | batch:1 -->
 - [x] **M-084** `[code_quality]` `anchors/rfc3161.rs:146`: DER length encoding uses unchecked as u8 cast -- FIXED 2026-04-02
   <!-- pid:unwrap_on_io | batch:1 -->
-- [ ] **M-085** `[performance]` `cpop_jitter_bridge/session.rs:180`: session_id String cloned per sample
+- [-] **M-085** `[performance]` `cpop_jitter_bridge/session.rs:180`: session_id String cloned per sample -- FALSE POSITIVE: session_id is Arc<str>; Arc::clone is a refcount bump, not a String allocation
   <!-- pid:clone_in_loop | batch:1 -->
-- [ ] **M-086** `[performance]` `cpop_jitter_bridge/session.rs:263`: export() clones entire Vec<HybridSample>
+- [-] **M-086** `[performance]` `cpop_jitter_bridge/session.rs:263`: export() clones entire Vec<HybridSample> -- FALSE POSITIVE: HybridSample contains only fixed-size arrays ([u8;32]), primitive scalars, and Arc<str>; clone is O(n) shallow copies
   <!-- pid:clone_in_loop | batch:1 -->
 - [x] **M-087** `[error_handling]` `cpop_jitter_bridge/session.rs:381`: fs::remove_file error discarded with let _ = -- ALREADY FIXED: remove_file no longer exists
   <!-- pid:silent_error | batch:1 -->
 - [-] **M-088** `[code_quality]` `cpop_jitter_bridge/zone_engine.rs:49`: Unwrap on signed_duration_since; panics on clock skew -- FALSE POSITIVE: already uses unwrap_or with fallback
   <!-- pid:unwrap_on_io | batch:1 -->
-- [ ] **M-089** `[code_quality]` `anchors/ots.rs:104,112,120`: TODO(WU-14) markers for unimplemented OTS parsing
+- [-] **M-089** `[code_quality]` `anchors/ots.rs:104,112,120`: TODO(WU-14) markers for unimplemented OTS parsing -- FALSE POSITIVE: no TODO(WU-14) markers exist in current code; find_pending_calendars is implemented
   <!-- pid:todo_fixme | batch:1 -->
 
 ### CLI
@@ -483,19 +483,18 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:god_module | batch:8 -->
 - [ ] **M-092** `[architecture]` `cmd_export.rs:1`: God module (1384 lines); mixed concerns
   <!-- pid:god_module | batch:8 -->
-- [ ] **M-093** `[security]` `native_messaging_host.rs:630`: handle_stop_session doesn't fsync evidence file
+- [-] **M-093** `[security]` `native_messaging_host.rs:630`: handle_stop_session doesn't fsync evidence file -- FALSE POSITIVE: line ~661 has `let _ = std::fs::File::open(&session.evidence_path).and_then(|f| f.sync_all())`
   <!-- pid:no_resource_cleanup | batch:8 -->
-- [ ] **M-094** `[security]` `native_messaging_host.rs:670`: Rate limit uses f64 arithmetic; precision accumulates
+- [-] **M-094** `[security]` `native_messaging_host.rs:670`: Rate limit uses f64 arithmetic; precision accumulates -- FALSE POSITIVE: jitter rate limit uses integer u64 millitokens (JITTER_REFILL_PER_MS, JITTER_TOKEN_COST, JITTER_TOKEN_MAX); no f64
   <!-- pid:magic_value | batch:8 -->
-- [ ] **M-095** `[security]` `cmd_track.rs:150`: Symlink tracking warns but doesn't reject
+- [-] **M-095** `[security]` `cmd_track.rs:150`: Symlink tracking warns but doesn't reject -- FALSE POSITIVE: watcher loop at line 641 uses `continue` to silently skip symlinks (reject without processing)
   <!-- pid:path_traversal | batch:8 -->
-- [ ] **M-096** `[performance]` `cmd_export.rs:95`: Full file read for checksum; no streaming hash
-  <!-- pid:alloc_in_loop | batch:8 -->
-- [ ] **M-097** `[error_handling]` `cmd_export.rs:764,785,800`: expect() on 32-byte hash assumptions
+- [-] **M-096** `[performance]` `cmd_export.rs:95`: Full file read for checksum; no streaming hash -- FALSE POSITIVE: gated behind CHAR_COUNT_READ_LIMIT=10MB; hash verified after read to ensure content integrity; CLI tool, not server
+- [-] **M-097** `[error_handling]` `cmd_export.rs:764,785,800`: expect() on 32-byte hash assumptions -- FALSE POSITIVE: code uses HashValue::try_sha256(...).map_err(|e| anyhow::anyhow!(e))? with proper error propagation; no expect()
   <!-- pid:unwrap_on_io | batch:8 -->
-- [ ] **M-098** `[security]` `main.rs:220`: Interactive menu path validation doesn't canonicalize symlinks
+- [-] **M-098** `[security]` `main.rs:220`: Interactive menu path validation doesn't canonicalize symlinks -- FALSE POSITIVE: main.rs:220 checks is_symlink() and bail!s; then calls util::normalize_path
   <!-- pid:path_traversal | batch:8 -->
-- [ ] **M-099** `[maintainability]` `native_messaging_host.rs:1`: Browser protocol not versioned; no backcompat
+- [x] **M-099** `[maintainability]` `native_messaging_host.rs:1`: Browser protocol not versioned; no backcompat -- ALREADY FIXED: PROTOCOL_VERSION constant; version negotiation on Ping
   <!-- pid:hardcoded_config | batch:8 -->
 
 ## Quick Wins
