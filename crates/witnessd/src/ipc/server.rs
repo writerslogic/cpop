@@ -79,6 +79,16 @@ impl IpcServer {
                     }
                     Err(e) => return Err(e.into()),
                 }
+                // Second liveness check immediately before removal to narrow the TOCTOU
+                // window: a server that started between our first connect() and here
+                // would succeed now.
+                if let Ok(stream) = std::os::unix::net::UnixStream::connect(&path) {
+                    drop(stream);
+                    return Err(anyhow!(
+                        "Another IPC server is already listening on {}",
+                        path.display()
+                    ));
+                }
                 // Stale socket; remove and retry.
                 std::fs::remove_file(&path)?;
             }

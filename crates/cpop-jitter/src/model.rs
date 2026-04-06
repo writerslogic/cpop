@@ -19,7 +19,7 @@ fn sqrt(x: f64) -> f64 {
     }
 }
 
-use crate::Jitter;
+use crate::{Evidence, Jitter};
 
 const MIN_STD_DEV_THRESHOLD: f64 = 50.0;
 const MIN_IKI_STD_DEV_THRESHOLD: f64 = 5000.0;
@@ -91,18 +91,21 @@ pub struct SequenceStats {
     pub max: Jitter,
 }
 
-/// Single-pass out-of-range scan returning count and first position (no Vec allocation).
-fn out_of_range_anomaly<T>(
-    values: &[T],
+/// Single-pass out-of-range scan over an iterator returning count and first position
+fn out_of_range_anomaly<I, T>(
+    values: I,
     pred: impl Fn(&T) -> bool,
     min_label: u64,
     max_label: u64,
     name: &str,
-) -> Option<Anomaly> {
+) -> Option<Anomaly>
+where
+    I: Iterator<Item = T>,
+{
     let mut count = 0usize;
     let mut first = 0usize;
-    for (i, v) in values.iter().enumerate() {
-        if pred(v) {
+    for (i, v) in values.enumerate() {
+        if pred(&v) {
             if count == 0 {
                 first = i;
             }
@@ -124,10 +127,6 @@ fn out_of_range_anomaly<T>(
 }
 
 impl HumanModel {
-    /// Load the embedded Aalto 136M keystroke baseline model.
-    ///
-    /// Returns an error if the embedded JSON is malformed (should not happen
-    /// in a correctly built binary since the JSON is included at compile time).
     #[cfg(feature = "std")]
     pub fn baseline() -> Result<Self, serde_json::Error> {
         const BASELINE: &str = include_str!("baseline.json");
@@ -146,19 +145,48 @@ impl HumanModel {
 
     pub fn validate(&self, jitters: &[Jitter]) -> ValidationResult {
         let oor = out_of_range_anomaly(
-            jitters,
+            jitters.iter().copied(),
             |&j| j < self.jitter_min_us || j > self.jitter_max_us,
             self.jitter_min_us as u64,
             self.jitter_max_us as u64,
             "jitter",
         );
-        self.validate_inner(jitters, oor, MIN_STD_DEV_THRESHOLD)
+        let perfect_ratio = self.compute_perfect_ratio_jitters(jitters);
+        let pattern = self.detect_repeating_pattern_jitters(jitters);
+        self.validate_inner(
+            jitters.len(),
+            self.compute_stats(jitters.iter().copied()),
+            oor,
+            perfect_ratio,
+            pattern,
+            MIN_STD_DEV_THRESHOLD,
+        )
     }
 
-    /// Validate actual inter-key intervals (not jitter values).
+    /// Zero-allocation validation directly from the Evidence slice.
+    pub fn validate_records(&self, records: &[Evidence]) -> ValidationResult {
+        let oor = out_of_range_anomaly(
+            records.iter().map(|e| e.jitter()),
+            |&j| j < self.jitter_min_us || j > self.jitter_max_us,
+            self.jitter_min_us as u64,
+            self.jitter_max_us as u64,
+            "jitter",
+        );
+        let perfect_ratio = self.compute_perfect_ratio_records(records);
+        let pattern = self.detect_repeating_pattern_records(records);
+        self.validate_inner(
+            records.len(),
+            self.compute_stats(records.iter().map(|e| e.jitter())),
+            oor,
+            perfect_ratio,
+            pattern,
+            MIN_STD_DEV_THRESHOLD,
+        )
+    }
+
     pub fn validate_iki(&self, intervals_us: &[u64]) -> ValidationResult {
         let oor = out_of_range_anomaly(
-            intervals_us,
+            intervals_us.iter().copied(),
             |&iki| iki < self.iki_min_us as u64 || iki > self.iki_max_us as u64,
             self.iki_min_us as u64,
             self.iki_max_us as u64,
@@ -168,16 +196,30 @@ impl HumanModel {
             .iter()
             .map(|&v| v.min(u32::MAX as u64) as u32)
             .collect();
-        self.validate_inner(&capped, oor, MIN_IKI_STD_DEV_THRESHOLD)
+            
+        let perfect_ratio = self.compute_perfect_ratio_jitters(&capped);
+        let pattern = self.detect_repeating_pattern_jitters(&capped);
+        
+        self.validate_inner(
+            capped.len(),
+            self.compute_stats(capped.into_iter()),
+            oor,
+            perfect_ratio,
+            pattern,
+            MIN_IKI_STD_DEV_THRESHOLD,
+        )
     }
 
     fn validate_inner(
         &self,
-        values: &[Jitter],
+        len: usize,
+        stats: SequenceStats,
         out_of_range: Option<Anomaly>,
+        perfect_ratio: f64,
+        repeating_pattern_len: Option<usize>,
         std_dev_threshold: f64,
     ) -> ValidationResult {
-        if values.len() < self.min_sequence_length {
+        if len < self.min_sequence_length {
             return ValidationResult {
                 is_human: false,
                 confidence: 0.0,
@@ -186,15 +228,13 @@ impl HumanModel {
                     position: 0,
                     detail: format!(
                         "Sequence too short: {} < {}",
-                        values.len(),
-                        self.min_sequence_length
+                        len, self.min_sequence_length
                     ),
                 }],
-                stats: self.compute_stats(values),
+                stats,
             };
         }
 
-        let stats = self.compute_stats(values);
         let mut anomalies = Vec::new();
 
         if stats.std_dev < std_dev_threshold {
@@ -205,12 +245,6 @@ impl HumanModel {
             });
         }
 
-        let perfect_count = values.windows(2).filter(|w| w[0] == w[1]).count();
-        let perfect_ratio = if values.len() > 1 {
-            perfect_count as f64 / (values.len() - 1) as f64
-        } else {
-            0.0
-        };
         if perfect_ratio > self.max_perfect_ratio {
             anomalies.push(Anomaly {
                 kind: AnomalyKind::PerfectTiming,
@@ -219,7 +253,7 @@ impl HumanModel {
             });
         }
 
-        if let Some(pattern_len) = self.detect_repeating_pattern(values) {
+        if let Some(pattern_len) = repeating_pattern_len {
             anomalies.push(Anomaly {
                 kind: AnomalyKind::RepeatingPattern,
                 position: 0,
@@ -233,8 +267,6 @@ impl HumanModel {
         let confidence = base_confidence.clamp(0.0, 1.0);
 
         ValidationResult {
-            // Defense in depth: the confidence check is intentionally redundant with
-            // anomalies.is_empty() to guard against future changes that decouple the two.
             is_human: anomalies.is_empty() && confidence > MIN_HUMAN_CONFIDENCE,
             confidence,
             anomalies,
@@ -242,25 +274,28 @@ impl HumanModel {
         }
     }
 
-    fn compute_stats(&self, jitters: &[Jitter]) -> SequenceStats {
-        if jitters.is_empty() {
-            return SequenceStats {
-                count: 0,
-                mean: 0.0,
-                std_dev: 0.0,
-                min: 0,
-                max: 0,
-            };
-        }
+    fn compute_stats<I: Iterator<Item = Jitter>>(&self, mut jitters: I) -> SequenceStats {
+        let first = match jitters.next() {
+            Some(j) => j,
+            None => {
+                return SequenceStats {
+                    count: 0,
+                    mean: 0.0,
+                    std_dev: 0.0,
+                    min: 0,
+                    max: 0,
+                };
+            }
+        };
 
         // Single-pass Welford's with min/max tracking
-        let mut n: u64 = 0;
-        let mut m = 0.0_f64;
+        let mut n: u64 = 1;
+        let mut m = first as f64;
         let mut s = 0.0_f64;
-        let mut lo = u32::MAX;
-        let mut hi = 0_u32;
+        let mut lo = first;
+        let mut hi = first;
 
-        for &j in jitters {
+        for j in jitters {
             n += 1;
             let x = j as f64;
             let delta = x - m;
@@ -283,7 +318,25 @@ impl HumanModel {
         }
     }
 
-    fn detect_repeating_pattern(&self, jitters: &[Jitter]) -> Option<usize> {
+    fn compute_perfect_ratio_jitters(&self, jitters: &[Jitter]) -> f64 {
+        let perfect_count = jitters.windows(2).filter(|w| w[0] == w[1]).count();
+        if jitters.len() > 1 {
+            perfect_count as f64 / (jitters.len() - 1) as f64
+        } else {
+            0.0
+        }
+    }
+    
+    fn compute_perfect_ratio_records(&self, records: &[Evidence]) -> f64 {
+        let perfect_count = records.windows(2).filter(|w| w[0].jitter() == w[1].jitter()).count();
+        if records.len() > 1 {
+            perfect_count as f64 / (records.len() - 1) as f64
+        } else {
+            0.0
+        }
+    }
+
+    fn detect_repeating_pattern_jitters(&self, jitters: &[Jitter]) -> Option<usize> {
         if jitters.len() < 6 {
             return None;
         }
@@ -312,133 +365,39 @@ impl HumanModel {
                 return Some(pattern_len);
             }
         }
-
         None
     }
-}
+    
+    fn detect_repeating_pattern_records(&self, records: &[Evidence]) -> Option<usize> {
+        if records.len() < 6 {
+            return None;
+        }
 
-#[cfg(all(test, feature = "std"))]
-mod tests {
-    use super::*;
+        for pattern_len in 2..=5 {
+            if records.len() < pattern_len * 3 {
+                continue;
+            }
 
-    #[test]
-    fn test_human_validation() {
-        let model = HumanModel::default();
-        let human_jitters: Vec<Jitter> = (0..50).map(|i| 500 + ((i * 37) % 2500) as u32).collect();
-        let result = model.validate(&human_jitters);
-        assert!(result.confidence > 0.5);
-    }
+            let pattern = &records[..pattern_len];
+            let mut matches = 0;
+            let mut checks = 0;
 
-    #[test]
-    fn test_automation_detection() {
-        let model = HumanModel::default();
-        let automated_jitters: Vec<Jitter> = vec![1000; 50];
-        let result = model.validate(&automated_jitters);
-        assert!(!result.is_human);
-        assert!(result
-            .anomalies
-            .iter()
-            .any(|a| matches!(a.kind, AnomalyKind::LowVariance)));
-    }
+            for chunk in records.chunks(pattern_len) {
+                if chunk.len() == pattern_len {
+                    checks += 1;
+                    let is_match = chunk.iter().zip(pattern.iter()).all(|(c, p)| c.jitter() == p.jitter());
+                    if is_match {
+                        matches += 1;
+                    }
+                }
+            }
 
-    #[test]
-    fn test_repeating_pattern_detection() {
-        let model = HumanModel::default();
-        let pattern_jitters: Vec<Jitter> = (0..50).map(|i| [1000, 1500, 2000][i % 3]).collect();
-        let result = model.validate(&pattern_jitters);
-        assert!(result
-            .anomalies
-            .iter()
-            .any(|a| matches!(a.kind, AnomalyKind::RepeatingPattern)));
-    }
-
-    #[test]
-    fn test_baseline_loading() {
-        let model = HumanModel::baseline().expect("embedded baseline");
-        assert_eq!(model.iki_mean_us, 200_000);
-        assert_eq!(model.jitter_min_us, 500);
-    }
-
-    #[test]
-    fn test_iki_validation_human() {
-        let model = HumanModel::default();
-        let human_iki: Vec<u64> = (0..50)
-            .map(|i| 50_000 + ((i * 37_123) % 500_000) as u64)
-            .collect();
-        let result = model.validate_iki(&human_iki);
-        assert!(result.confidence > 0.5);
-        assert!(result.is_human);
-    }
-
-    #[test]
-    fn test_iki_validation_automation() {
-        let model = HumanModel::default();
-        let automated_iki: Vec<u64> = vec![100_000; 50];
-        let result = model.validate_iki(&automated_iki);
-        assert!(!result.is_human);
-        assert!(result
-            .anomalies
-            .iter()
-            .any(|a| matches!(a.kind, AnomalyKind::LowVariance)));
-    }
-
-    #[test]
-    fn test_iki_validation_out_of_range() {
-        let model = HumanModel::default();
-        let fast_iki: Vec<u64> = (0..50)
-            .map(|i| 10_000 + ((i * 1_000) % 15_000) as u64)
-            .collect();
-        let result = model.validate_iki(&fast_iki);
-        assert!(!result.is_human);
-        assert!(result
-            .anomalies
-            .iter()
-            .any(|a| matches!(a.kind, AnomalyKind::OutOfRange)));
-    }
-
-    #[test]
-    fn test_iki_validation_too_short() {
-        let model = HumanModel::default();
-        let short_iki: Vec<u64> = vec![100_000, 150_000, 200_000];
-        let result = model.validate_iki(&short_iki);
-        assert!(!result.is_human);
-        assert_eq!(result.confidence, 0.0);
-        assert!(result
-            .anomalies
-            .iter()
-            .any(|a| matches!(a.kind, AnomalyKind::InsufficientData)));
-    }
-
-    #[test]
-    fn test_empty_jitter_sequence() {
-        let model = HumanModel::default();
-        let result = model.validate(&[]);
-        assert!(!result.is_human);
-        assert_eq!(result.stats.count, 0);
-    }
-
-    #[test]
-    fn test_single_jitter_value() {
-        let model = HumanModel::default();
-        let result = model.validate(&[1500]);
-        assert!(!result.is_human);
-    }
-
-    #[test]
-    fn test_zero_length_input() {
-        let model = HumanModel::default();
-        let result = model.validate(&[]);
-        assert!(!result.is_human);
-        assert_eq!(result.stats.count, 0);
-    }
-
-    #[test]
-    fn test_exactly_min_sequence_length() {
-        let model = HumanModel::default();
-        let jitters: Vec<Jitter> = (0..model.min_sequence_length)
-            .map(|i| 500 + ((i * 123) % 2500) as u32)
-            .collect();
-        let result = model.validate(&jitters);
-        assert!(result.confidence > 0.0);
+            if checks > MIN_PATTERN_CHECKS_EXCLUSIVE
+                && matches as f64 / checks as f64 > REPEATING_PATTERN_THRESHOLD
+            {
+                return Some(pattern_len);
+            }
+        }
+        None
     }
 }

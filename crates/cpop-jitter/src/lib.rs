@@ -277,7 +277,7 @@ impl Session {
     }
 
     pub fn validate(&self) -> ValidationResult {
-        let jitters: Vec<Jitter> = self.evidence.records.iter().map(|e| e.jitter()).collect();
+        let jitters: Vec<Jitter> = self.evidence.records().iter().map(|e| e.jitter()).collect();
         self.model.validate(&jitters)
     }
 
@@ -320,7 +320,7 @@ mod tests {
             assert!(jitter >= 500);
         }
 
-        assert_eq!(session.evidence().records.len(), 30);
+        assert_eq!(session.evidence().records().len(), 30);
         let validation = session.validate();
         println!("Validation: {:?}", validation);
     }

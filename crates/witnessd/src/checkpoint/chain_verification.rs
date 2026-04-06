@@ -192,9 +192,9 @@ impl Chain {
                         }
                         None => {
                             // Genesis without VDF: legacy chain predates genesis-VDF requirement.
-                            report.warnings.push(format!(
-                                "checkpoint 0: no VDF proof; chain predates genesis-VDF requirement"
-                            ));
+                            report.warnings.push(
+                                "checkpoint 0: no VDF proof; chain predates genesis-VDF requirement".to_string()
+                            );
                         }
                         Some(vdf) => {
                             let expected_input = vdf::chain_input(

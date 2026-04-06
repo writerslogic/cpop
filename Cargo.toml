@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     "crates/cpop-jitter",
-    "crates/cpop-protocol",
-    "crates/cpop-engine",
+    "crates/authorproof-protocol",
+    "crates/witnessd",
     "apps/cpop_cli",
 ]
 

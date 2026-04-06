@@ -82,7 +82,7 @@ impl Article50Compliance {
 
         // Evidence-backed requires a jitter seal with minimum quality thresholds;
         // presence alone does not suffice (a zero or trivial seal is not evidence).
-        let evidence_backed = decl.jitter_sealed.as_ref().map_or(false, |j| {
+        let evidence_backed = decl.jitter_sealed.as_ref().is_some_and(|j| {
             j.jitter_hash != [0u8; 32]
                 && j.keystroke_count >= 5
                 && j.entropy_bits >= 1.5

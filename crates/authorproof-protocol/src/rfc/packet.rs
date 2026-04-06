@@ -477,6 +477,7 @@ impl PacketRfc {
         const MAX_EXTENSIONS: usize = 32;
         const MAX_EXTENSION_KEY_LEN: usize = 128;
         const MAX_EXTENSION_VALUE_BYTES: usize = 4096;
+        const MAX_EXTENSION_JSON_DEPTH: usize = 8;
         if self.extensions.len() > MAX_EXTENSIONS {
             errors.push(format!(
                 "extensions count {} exceeds maximum {}",
@@ -488,6 +489,9 @@ impl PacketRfc {
             if k.is_empty() || k.len() > MAX_EXTENSION_KEY_LEN {
                 errors.push(format!("extension key has invalid length {}", k.len()));
             }
+            if k.bytes().any(|b| b < 0x20 || b == 0x7F) {
+                errors.push(format!("extension key '{}' contains control characters", k));
+            }
             let value_bytes = serde_json::to_vec(v)
                 .map(|b| b.len())
                 .unwrap_or(usize::MAX);
@@ -497,6 +501,12 @@ impl PacketRfc {
                     k, MAX_EXTENSION_VALUE_BYTES
                 ));
             }
+            if json_depth(v) > MAX_EXTENSION_JSON_DEPTH {
+                errors.push(format!(
+                    "extension '{}' value nesting exceeds maximum depth {}",
+                    k, MAX_EXTENSION_JSON_DEPTH
+                ));
+            }
         }
 
         errors
@@ -504,6 +514,18 @@ impl PacketRfc {
 
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
+    }
+}
+
+fn json_depth(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::Array(arr) => {
+            1 + arr.iter().map(json_depth).max().unwrap_or(0)
+        }
+        serde_json::Value::Object(map) => {
+            1 + map.values().map(json_depth).max().unwrap_or(0)
+        }
+        _ => 0,
     }
 }
 
