@@ -21,7 +21,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "writerslogic-native-messaging-host"
-path = "src/native_messaging_host.rs"
+path = "src/native_messaging_host/mod.rs"
 
 [features]
 default = ["cpop_jitter"]
