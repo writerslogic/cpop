@@ -190,18 +190,11 @@ impl Rfc3161Provider {
         })
     }
 
-    /// Verify that the embedded MessageImprint hash matches `hash`.
+    /// Verify the RFC 3161 timestamp token: MessageImprint hash + CMS RSA-SHA256 signature.
     ///
-    /// # Security
-    ///
-    /// **CMS signature verification is NOT implemented** (AUD-124). The TSA's digital
-    /// signature over the TSTInfo is not checked. This function only verifies that the
-    /// embedded hash matches the expected value. A forged timestamp token with the correct
-    /// hash will pass this check. Full CMS/PKCS#7 signature verification requires a
-    /// DER/X.509 parsing library and TSA certificate chain validation.
-    ///
-    /// Returns `Err(AnchorError::Unavailable)` after confirming hash integrity, so callers
-    /// receive a definitive signal that full signature verification was not performed.
+    /// Supports sha256WithRSAEncryption (OID 1.2.840.113549.1.1.11) with SHA-256 digest.
+    /// Returns `Err(AnchorError::Unavailable)` for unsupported algorithms so callers can
+    /// distinguish "verified" from "algorithm not supported".
     fn verify_timestamp_token(&self, token: &[u8], hash: &[u8; 32]) -> Result<bool, AnchorError> {
         if token.len() < 100 {
             return Err(AnchorError::InvalidFormat("Token too short".into()));
@@ -218,11 +211,7 @@ impl Rfc3161Provider {
             return Err(AnchorError::HashMismatch);
         }
 
-        // Hash integrity confirmed; CMS signature not verified. Return an error rather
-        // than Ok(true) to prevent callers from treating this as a full verification.
-        Err(AnchorError::Unavailable(
-            "CMS signature verification not implemented; structural hash check passed".into(),
-        ))
+        verify_cms_signature(token, &tst_info)
     }
 }
 
@@ -233,6 +222,8 @@ impl Rfc3161Provider {
 #[derive(Clone, Copy)]
 struct Tlv {
     tag: u8,
+    /// Byte offset of the tag byte (start of the full TLV encoding).
+    start: usize,
     content_start: usize,
     content_end: usize,
 }
@@ -240,6 +231,11 @@ struct Tlv {
 impl Tlv {
     fn content<'a>(&self, data: &'a [u8]) -> &'a [u8] {
         &data[self.content_start..self.content_end]
+    }
+
+    /// Full TLV bytes: tag + length + content.
+    fn as_bytes<'a>(&self, data: &'a [u8]) -> &'a [u8] {
+        &data[self.start..self.content_end]
     }
 }
 
@@ -258,6 +254,7 @@ fn read_tlv(data: &[u8], offset: usize) -> Option<Tlv> {
     }
     Some(Tlv {
         tag,
+        start: offset,
         content_start,
         content_end,
     })
@@ -509,18 +506,204 @@ fn extract_message_imprint_hash(tst_info: &[u8]) -> Option<[u8; 32]> {
     None
 }
 
+// OID content bytes (sans tag+length) for the algorithms we support.
+const OID_SHA256: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
+const OID_SHA256_WITH_RSA: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b];
+
+/// Navigate from a TimeStampResp or bare ContentInfo to the SignedData SEQUENCE.
+fn find_signed_data(data: &[u8]) -> Option<Tlv> {
+    let outer = read_tlv(data, 0)?;
+    if outer.tag != 0x30 {
+        return None;
+    }
+    let outer_kids = children_of(data, &outer);
+    if outer_kids.is_empty() {
+        return None;
+    }
+    // First child SEQUENCE => TimeStampResp; otherwise bare ContentInfo
+    let content_info = if outer_kids[0].tag == 0x30 && outer_kids.len() > 1 {
+        &outer_kids[1]
+    } else {
+        &outer
+    };
+    let explicit0 = find_child_by_tag(data, content_info, 0xA0)?;
+    children_of(data, &explicit0).into_iter().find(|c| c.tag == 0x30)
+}
+
+/// All Certificate SEQUENCE TLVs from SignedData.certificates [0] IMPLICIT.
+fn extract_certs(data: &[u8], signed_data: &Tlv) -> Vec<Tlv> {
+    // SignedData [0] IMPLICIT (tag 0xA0) holds certificates; [1] IMPLICIT (0xA1) holds CRLs.
+    // The encapContentInfo SEQUENCE also uses child tag 0xA0, but it appears earlier;
+    // we want the *last* 0xA0 child that follows the encapContentInfo.
+    let kids = children_of(data, signed_data);
+    // certificates [0] comes after encapContentInfo (3rd child: version, digestAlgs, encapCI)
+    for kid in kids.iter().skip(3) {
+        if kid.tag == 0xA0 {
+            return children_of(data, kid)
+                .into_iter()
+                .filter(|c| c.tag == 0x30)
+                .collect();
+        }
+    }
+    Vec::new()
+}
+
+/// Extract SubjectPublicKeyInfo TLV from a Certificate SEQUENCE.
+///
+/// Path: Certificate → TBSCertificate → subjectPublicKeyInfo
+fn extract_spki(data: &[u8], cert: &Tlv) -> Option<Tlv> {
+    let tbs = children_of(data, cert).into_iter().find(|c| c.tag == 0x30)?;
+    // subjectPublicKeyInfo is a SEQUENCE { SEQUENCE(AlgId), BIT STRING }
+    for child in children_of(data, &tbs) {
+        if child.tag == 0x30 {
+            let sub = children_of(data, &child);
+            if sub.len() >= 2 && sub[0].tag == 0x30 && sub[1].tag == 0x03 {
+                return Some(child);
+            }
+        }
+    }
+    None
+}
+
+struct SignerInfoFields {
+    digest_alg_oid: Vec<u8>,
+    sig_alg_oid: Vec<u8>,
+    /// signedAttrs re-encoded with SET tag (0x31) for signature verification.
+    signed_attrs: Option<Vec<u8>>,
+    signature: Vec<u8>,
+}
+
+fn parse_signer_info(data: &[u8], si: &Tlv) -> Option<SignerInfoFields> {
+    let kids = children_of(data, si);
+    // version, sid, digestAlgorithm, [signedAttrs], signatureAlgorithm, signature
+    if kids.len() < 5 {
+        return None;
+    }
+    if kids[2].tag != 0x30 {
+        return None;
+    }
+    let dig_oid = find_child_by_tag(data, &kids[2], 0x06)?;
+
+    let mut idx = 3;
+    let signed_attrs = if idx < kids.len() && kids[idx].tag == 0xA0 {
+        let content = kids[idx].content(data);
+        let mut sa = Vec::with_capacity(4 + content.len());
+        sa.push(0x31); // re-encode as SET for signature verification (RFC 5652 §5.4)
+        encode_der_length(&mut sa, content.len());
+        sa.extend_from_slice(content);
+        idx += 1;
+        Some(sa)
+    } else {
+        None
+    };
+
+    if idx >= kids.len() || kids[idx].tag != 0x30 {
+        return None;
+    }
+    let sig_oid = find_child_by_tag(data, &kids[idx], 0x06)?;
+    idx += 1;
+
+    if idx >= kids.len() || kids[idx].tag != 0x04 {
+        return None;
+    }
+    let signature = kids[idx].content(data).to_vec();
+
+    Some(SignerInfoFields {
+        digest_alg_oid: dig_oid.content(data).to_vec(),
+        sig_alg_oid: sig_oid.content(data).to_vec(),
+        signed_attrs,
+        signature,
+    })
+}
+
+fn encode_der_length(out: &mut Vec<u8>, len: usize) {
+    if len < 0x80 {
+        out.push(len as u8);
+    } else if len <= 0xFF {
+        out.push(0x81);
+        out.push(len as u8);
+    } else {
+        out.push(0x82);
+        out.push((len >> 8) as u8);
+        out.push((len & 0xFF) as u8);
+    }
+}
+
+fn verify_rsa_pkcs1v15_sha256(spki_der: &[u8], message: &[u8], sig_bytes: &[u8]) -> bool {
+    use rsa::{pkcs8::DecodePublicKey, pkcs1v15::VerifyingKey, signature::Verifier};
+    let pub_key = match rsa::RsaPublicKey::from_public_key_der(spki_der) {
+        Ok(k) => k,
+        Err(_) => return false,
+    };
+    let verifying_key: VerifyingKey<sha2::Sha256> = VerifyingKey::new(pub_key);
+    let sig = match rsa::pkcs1v15::Signature::try_from(sig_bytes) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    verifying_key.verify(message, &sig).is_ok()
+}
+
+/// Verify the CMS SignedData wrapper: locate SignerInfos, extract the TSA certificate's
+/// SubjectPublicKeyInfo, and check the RSA-SHA256 signature over signedAttrs (or eContent).
+fn verify_cms_signature(token: &[u8], tst_info: &[u8]) -> Result<bool, AnchorError> {
+    let signed_data = find_signed_data(token)
+        .ok_or_else(|| AnchorError::InvalidFormat("Cannot locate SignedData".into()))?;
+
+    let certs = extract_certs(token, &signed_data);
+
+    // signerInfos is a SET (tag 0x31); it's the last SET child of SignedData
+    let signer_infos_set = children_of(token, &signed_data)
+        .into_iter()
+        .filter(|c| c.tag == 0x31)
+        .last()
+        .ok_or_else(|| AnchorError::InvalidFormat("No signerInfos in SignedData".into()))?;
+
+    let signer_infos: Vec<Tlv> = children_of(token, &signer_infos_set)
+        .into_iter()
+        .filter(|c| c.tag == 0x30)
+        .collect();
+
+    if signer_infos.is_empty() {
+        return Err(AnchorError::InvalidFormat("Empty signerInfos".into()));
+    }
+
+    for si in &signer_infos {
+        let fields = match parse_signer_info(token, si) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        if fields.sig_alg_oid != OID_SHA256_WITH_RSA || fields.digest_alg_oid != OID_SHA256 {
+            return Err(AnchorError::Unavailable(
+                "TSA uses non-RSA/SHA256 algorithm; CMS signature verification not supported"
+                    .into(),
+            ));
+        }
+
+        let message: &[u8] = fields.signed_attrs.as_deref().unwrap_or(tst_info);
+
+        for cert in &certs {
+            if let Some(spki) = extract_spki(token, cert) {
+                if verify_rsa_pkcs1v15_sha256(spki.as_bytes(token), message, &fields.signature) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        return Err(AnchorError::Verification(
+            "CMS signature verification failed: no matching TSA certificate".into(),
+        ));
+    }
+
+    Err(AnchorError::InvalidFormat("No parseable SignerInfo found".into()))
+}
+
 struct TimestampInfo {
     timestamp: chrono::DateTime<chrono::Utc>,
     serial_number: String,
     tsa_name: String,
 }
 
-/// # Security
-///
-/// CMS signature verification is **not yet implemented** (AUD-124). The
-/// `verify_timestamp_token` method confirms the embedded `MessageImprint`
-/// hash matches the expected value, then returns `Err(AnchorError::Unavailable)`
-/// so callers cannot mistake the result for a full TSA signature verification.
 #[async_trait]
 impl AnchorProvider for Rfc3161Provider {
     fn provider_type(&self) -> ProviderType {

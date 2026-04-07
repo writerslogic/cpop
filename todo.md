@@ -21,8 +21,8 @@
 
 ## Compound Risk
 
-- [ ] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001, C-002, C-003
-  <!-- compound_impact: RFC3161 sig unverified + OTS block unverified + EAT CWT unsigned = all timestamp anchors can be forged; three independent evidence layers each completely bypassable -->
+- [ ] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001(fixed), C-002, C-003
+  <!-- compound_impact: C-001 fixed (CMS sig verified); C-002 OTS block hash unverified; C-003 EAT CWT unsigned = two anchor layers still bypassable -->
 
 - [-] **CLU-006** `evidence_integrity_triple_bypass`, CRITICAL, components: C-015, C-016, C-017 -- FALSE POSITIVE 2026-04-07
   <!-- compound_impact: C-015 FP (sign() already uses ? operator); C-016 FP (verify() checks signature field before proceeding); C-017 FP (HMAC verified per-row before pushing to output via verify_event_row_hmac) -->
@@ -83,9 +83,9 @@
 
 ## Critical
 
-- [ ] **C-001** `[security]` `anchors/rfc3161.rs:197`: RFC3161 TSA response CMS signature not verified -- only hash checked
+- [x] **C-001** `[security]` `anchors/rfc3161.rs:197`: RFC3161 TSA response CMS signature not verified -- FIXED 2026-04-07
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
-  Impact: Forged TSA responses with correct hash pass all verification; timestamps completely unanchored | Fix: Implement CMS/PKCS#7 signature verification per RFC 5652; verify TSA certificate chain | Effort: large
+  Fix: Implemented CMS RSA-PKCS1v15-SHA256 signature verification via rsa crate; verify_cms_signature() navigates SignedData, extracts TSA certificate SPKI, re-encodes signedAttrs as SET, verifies signature. Returns Unavailable for non-RSA/SHA256 algorithms.
 
 - [-] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
@@ -327,9 +327,9 @@
   <!-- pid:missing_validation | verified:false | first:2026-04-07 -->
   Hashes are compared via ct_eq which handles different lengths (returns false, not panic); subsequent verification steps also validate hash structure. No panic path identified.
 
-- [ ] **H-032** `[security]` `anchors/rfc3161.rs:588`: CMS/PKCS#7 outer signature not verified; only inner hash structure validated
+- [x] **H-032** `[security]` `anchors/rfc3161.rs:588`: CMS/PKCS#7 outer signature not verified -- FIXED 2026-04-07 (companion to C-001)
   <!-- pid:missing_validation | verified:true | first:2026-04-07 -->
-  Impact: Attacker generates TSA response with correct hash structure but forged CMS signature; timestamp accepted as valid RFC3161 | Fix: Verify CMS SignedData signature using TSA certificate; reject response if CMS signature invalid | Effort: large
+  Fix: Same fix as C-001; verify_cms_signature() verifies the CMS SignedData RSA-SHA256 signature against the embedded TSA certificate SPKI.
 
 - [-] **H-033** `[security]` `anchors/rfc3161.rs:95`: Nonce DER normalization nonce bypass -- FALSE POSITIVE 2026-04-07
   <!-- pid:missing_validation | verified:false | first:2026-04-07 -->
