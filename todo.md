@@ -1,29 +1,296 @@
 # CPOP Project Audit -- Consolidated Findings
 
-<!-- suggest | Updated: 2026-04-02 | Domain: code | Languages: rust | Files: 374 | Issues: 148 -->
+<!-- suggest | Updated: 2026-04-06 | Domain: code | Languages: rust | Files: 407 | Issues: 120 -->
 
-**Updated**: 2026-04-06 (session 2)
-**Scope**: Full workspace scan -- CLI (21 files), Engine (290+ files), Protocol (22 files), Jitter (4 files)
-**Previous audit**: 2026-03-30 -- 265 findings, all resolved
+**Updated**: 2026-04-06 (session 3 -- full workspace re-audit, 407 files, 15 batch agents)
+**Scope**: Full workspace -- CLI (25 files), Engine (315+ files), Protocol (56 files), Jitter (11 files)
+**Previous audit**: 2026-04-02 -- 148 findings, all resolved
 **macOS app**: 381 findings fixed, 0 open (see apps/cpop_macos/audit-todo.md)
-**Baseline**: 1050 pass, 0 fail, 1 ignored (cpop-engine --lib)
+**Baseline**: 1094 pass, 0 fail, 1 ignored (witnessd --lib)
 
 ## Summary
-| Severity | Open | Fixed | Skipped |
-|----------|------|-------|---------|
-| CRITICAL | 0    | 12    | 0       |
-| HIGH     | 0    | 135   | 0       |
-| MEDIUM   | 0    | 247   | 22      |
+| Severity | Open | Fixed (prior) | Skipped (prior) |
+|----------|------|---------------|-----------------|
+| CRITICAL | 14   | 12            | 0               |
+| HIGH     | 25   | 135           | 0               |
+| MEDIUM   | 0*   | 247           | 22              |
 
----
-
-## Prior Audits -- All Resolved
-
-All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resolved. See git history.
+*Medium findings deferred; ~50 files uncovered in wave 3 (see Coverage section).
 
 ---
 
 ## Compound Risk
+
+- [ ] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001, C-002, C-003
+  <!-- compound_impact: RFC3161 sig unverified + OTS block unverified + EAT CWT unsigned = all timestamp anchors can be forged; three independent evidence layers each completely bypassable -->
+
+- [ ] **CLU-002** `identity_trust_chain_failure`, CRITICAL, components: C-011, C-012, C-013
+  <!-- compound_impact: Legacy XOR recovery + SSRF via DID URI + biometric key in plaintext = identity infrastructure compromised from three independent vectors; attacker who breaks any one breaks the chain -->
+
+- [ ] **CLU-003** `evidence_integrity_false_signal`, CRITICAL, components: C-005, C-006, C-008, C-009
+  <!-- compound_impact: Self-signed default + zero-edit partial score + zero jitter_seal on CBOR error + [0u8;32] VDF fallback = forged evidence packets pass all four independent integrity checks -->
+
+- [ ] **CLU-004** `report_exposure_cluster`, HIGH, components: C-010, C-014
+  <!-- compound_impact: XSS in HTML reports + HTTP in debug builds = complete report security failure in dev/CI; attacker-controlled file names execute scripts against any viewer -->
+
+- [ ] **CLU-005** `ffi_bypass_cluster`, HIGH, components: H-006, H-013, H-025, SYS-007
+  <!-- compound_impact: Unverified FFI keystrokes accepted + validate_path discarded in two FFI sites = evidence stream can be injected and path validation is cosmetic; both hardening layers bypassed from Swift/Kotlin -->
+
+## Systemic Issues
+
+- [ ] **SYS-001** `nan_inf_unguarded`, 8 files (new instances in re-audit), CRITICAL
+  <!-- pid:nan_inf_unguarded | first:2026-04-06 -->
+  New instances: `forensics/analysis.rs:173` (perplexity_score NaN in signed metrics), `cpop_jitter_bridge/session.rs` (IKI autocorrelation sqrt), plus 6 additional files in `tpm/linux.rs`, `ipc/async_client.rs`, `transcription/`, and `physics/` (uncovered wave 3).
+  Fix: Apply `is_finite()` guard before all division and sqrt; substitute 0.0 + log::warn! on failure.
+
+- [ ] **SYS-002** `silent_error_swallow`, 15 files (new instances), HIGH
+  <!-- pid:silent_error | first:2026-04-06 -->
+  New instances: `rats/eat.rs` (unsigned payload accepted silently), `war/profiles/vc.rs:245` (signing error → empty sig returned), `keyhierarchy/recovery.rs:68` (XOR decrypt failure silent), `ffi/sentinel_inject.rs` (injection error logged only), `trust_policy/evaluation.rs`, `declaration/verification.rs`, and 9 additional files in engine/watcher.rs, research/, collaboration.rs.
+  Fix: Upgrade warn to error where result changes security posture; return Result on all crypto failures.
+
+- [ ] **SYS-003** `business_logic_in_ffi`, 6 files, HIGH
+  <!-- pid:logic_in_boundary | first:2026-04-06 -->
+  Files: `ffi/sentinel_inject.rs:102` (keystroke acceptance logic with is_unverified_ffi exception), `ffi/sentinel_witnessing.rs:51` (path validation bypass), `ffi/sentinel_witnessing.rs` (chain lookup with untrusted path), `ffi/evidence_export.rs` (session detection logic), `ffi/beacon.rs` (calendar validation), `ffi/attestation.rs` (blocking shell command in init path).
+  Fix: Move to crate modules; FFI layer should only marshal types and forward to engine.
+
+- [ ] **SYS-004** `hmac_not_verified_on_read`, 3 files, HIGH
+  <!-- pid:missing_validation | first:2026-04-06 -->
+  Files: `store/integrity.rs:174` (HMAC only at open, not per-read), `sealed_chain.rs:95` (AAD partial -- only header, not payload), `cpop_jitter_bridge/session.rs` (session state loaded without HMAC).
+  Fix: Add per-entry HMAC in high-integrity mode; fail hard on first HMAC failure mid-session.
+
+- [ ] **SYS-005** `toctou_file_access`, 5 files, HIGH
+  <!-- pid:toctou | first:2026-04-06 -->
+  Files: `sentinel/core_session.rs:36` (path not canonicalized before session key), `sentinel/helpers.rs:620` (non-Unix symlink gap), `identity/did_webvh.rs:402` (DID URI before validation), `fingerprint/storage.rs:363` (plaintext fallback write), `engine/watcher.rs` (file watch before hash).
+  Fix: canonicalize() + O_NOFOLLOW at every file-based trust boundary; reject symlinks.
+
+- [ ] **SYS-006** `magic_constants_scoring`, 12 files, MEDIUM
+  <!-- pid:magic_value | first:2026-04-06 -->
+  New instances in: `forensics/analysis.rs`, `war/appraisal.rs`, `rats/eat.rs`, `war/profiles/cawg.rs`, `war/profiles/c2pa/`, `war/profiles/standards.rs`, `continuation.rs`, `collaboration.rs`, and 4 additional files from wave 3.
+  Fix: Extract named constants; document source (spec reference or empirical calibration).
+
+- [ ] **SYS-007** `ffi_path_validation_discarded`, 3 files, HIGH
+  <!-- pid:path_traversal | first:2026-04-06 -->
+  Files: `ffi/sentinel_witnessing.rs:51` (start_witnessing uses original path after validate_path), `ffi/sentinel_witnessing.rs` (stop_witnessing uses &path not &validated_path), `ffi/evidence_export.rs:258` (TOCTOU between size check and read).
+  Fix: Use validated_path return value; never reference original path after validation call.
+
+---
+
+## Critical
+
+- [ ] **C-001** `[security]` `anchors/rfc3161.rs:197`: RFC3161 TSA response CMS signature not verified -- only hash checked
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Forged TSA responses with correct hash pass all verification; timestamps completely unanchored | Fix: Implement CMS/PKCS#7 signature verification per RFC 5652; verify TSA certificate chain | Effort: large
+
+- [ ] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: OTS proofs accepted from calendar without block confirmation; attacker fabricates calendar responses | Fix: Fetch and validate Bitcoin block header for each confirmed proof; fail hard without confirmation | Effort: large
+
+- [ ] **C-003** `[security]` `rats/eat.rs:75`: decode_eat_cwt() parses EAT payload without COSE_Sign1 verification
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Any CBOR payload passes EAT parsing; no integrity guarantee on attestation tokens | Fix: Verify COSE_Sign1 signature before decoding payload; require trusted key parameter from caller | Effort: large
+
+- [ ] **C-004** `[security]` `war/profiles/vc.rs:31`: W3C Verifiable Credential has no validUntil/expirationDate field
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Issued VCs never expire; revoked or compromised credentials remain valid indefinitely | Fix: Add expirationDate (VC 1.x) or validUntil (VC 2.0) field; document max VC lifetime constant | Effort: small
+
+- [ ] **C-005** `[security]` `evidence/packet.rs:29`: Self-signed verification used as default; no external trust anchor required
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Attacker substitutes signing key in packet; verification passes using their own key as anchor | Fix: Require external trusted key parameter for verification; reject self-verification by default | Effort: medium
+
+- [ ] **C-006** `[security]` `forensics/cross_modal.rs:190`: Zero-edit document receives 0.3 partial consistency score instead of Inconsistent verdict
+  <!-- pid:business_logic | verified:true | first:2026-04-06 -->
+  Impact: AI-generated document with no recorded keystrokes passes cross-modal check; bypasses behavioral detection | Fix: Return CrossModalVerdict::Inconsistent when total_edits == 0; no partial score on missing data | Effort: small
+
+- [ ] **C-007** `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in zeroize_cipher at line 26
+  <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
+  Impact: Key material persists in cloned cipher after use; unsafe ptr write in zeroize_cipher may not zero actual cipher state (compiler can optimize out non-volatile writes) | Fix: Use Zeroizing<> wrapper; replace unsafe ptr with zeroize::Zeroize on cipher state directly | Effort: medium
+
+- [ ] **C-008** `[error_handling]` `evidence/wire_conversion.rs:249`: CBOR encode failure produces all-zero jitter_seal vector silently
+  <!-- pid:silent_error | verified:true | first:2026-04-06 -->
+  Impact: Evidence packet ships with fake all-zero seal on encode error; caller cannot detect failure; all-zero seal passes zero-check | Fix: Propagate error via Result; never produce all-zero seal on failure path | Effort: small
+
+- [ ] **C-009** `[security]` `checkpoint/chain.rs` (commit_entangled): Uses [0u8;32] stub when previous VDF output is missing
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Entangled mode checkpoint chain can be broken at any link by substituting all-zero VDF output; no chain integrity | Fix: Return Error if previous VDF output required but missing; reject [0u8;32] as invalid VDF | Effort: small
+
+- [ ] **C-010** `[security]` `report/html/sections.rs:69`: HTML report templates interpolate user-controlled strings (document paths, author names) without escaping
+  <!-- pid:command_injection | verified:true | first:2026-04-06 -->
+  Impact: XSS via document path containing `<script>`; attacker-controlled file name executes arbitrary script in any viewer | Fix: html_escape() all user-controlled fields before interpolation; use a safe templating API | Effort: small
+
+- [ ] **C-011** `[security]` `keyhierarchy/recovery.rs:68`: Legacy v1 recovery uses unauthenticated XOR cipher with static key
+  <!-- pid:hardcoded_secret | verified:true | first:2026-04-06 -->
+  Impact: V1 recovery blobs can be decrypted with the known static XOR key; no authentication on decryption | Fix: Reject legacy v1 recovery format with descriptive error; require migration to v2 AEAD format | Effort: medium
+
+- [ ] **C-012** `[security]` `identity/did_webvh.rs:402,417`: SSRF via unvalidated DID URI; DID document fetched without signature validation
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Attacker provides DID URI pointing to internal network endpoint; DID document accepted without COSE signature verification per did:webvh spec | Fix: Allowlist DID URI hostnames; validate DID log signature chain before trusting any document content | Effort: large
+
+- [ ] **C-013** `[security]` `fingerprint/storage.rs:363`: Biometric encryption key written to disk in plaintext as fallback when keychain unavailable
+  <!-- pid:hardcoded_secret | verified:true | first:2026-04-06 -->
+  Impact: If keychain fails, biometric key stored unprotected in filesystem; attacker with read access recovers key | Fix: Fail hard if keychain unavailable; never write key material to plaintext files; provide migration UX | Effort: medium
+
+- [ ] **C-014** `[security]` `writersproof/client.rs:38`: HTTP (non-TLS) connections permitted in debug builds
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Debug build in CI or staging allows cleartext API calls; credentials and evidence packets transmitted in the clear | Fix: Unconditionally require HTTPS; remove debug HTTP exception entirely | Effort: small
+
+---
+
+## High
+
+- [ ] **H-001** `[concurrency]` `sentinel/core.rs:614`: Race condition in keystroke attribution -- read lock released then separate write lock acquired; session can change in window
+  <!-- pid:data_race | verified:true | first:2026-04-06 -->
+  Impact: Keystroke attributed to wrong session under concurrent focus change at 100+ WPM | Fix: Acquire write lock for full attribution sequence without releasing between read and update | Effort: medium
+
+- [ ] **H-002** `[security]` `sentinel/core_session.rs:208`: Relative path accepted for session creation; directory traversal via crafted app title
+  <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
+  Impact: title:// sessions with ../ components bypass session isolation; evidence file written to arbitrary location | Fix: Reject relative paths; require absolute path or title:// with no traversal components | Effort: small
+
+- [ ] **H-003** `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id
+  <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
+  Impact: Two chains with same document_id produce nonce collision; GCM authentication broken; full plaintext recovery | Fix: Include unique monotonic counter in nonce derivation alongside document_id | Effort: medium
+
+- [ ] **H-004** `[security]` `sentinel/core_session.rs:36`: Path not canonicalized before session key insertion; symlink accepted as session path
+  <!-- pid:toctou | verified:true | first:2026-04-06 -->
+  Impact: Attacker creates symlink at target path before session start; evidence path redirected to attacker-controlled file | Fix: canonicalize() path and reject symlinks before session creation | Effort: small
+
+- [ ] **H-005** `[security]` `forensics/analysis.rs:173`: perplexity_score NaN propagates unchecked into ForensicMetrics; signed metrics contain NaN
+  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-06 -->
+  Impact: CBOR serialization of NaN is implementation-defined; signature over NaN metrics not reproducible; verification fails | Fix: Guard perplexity_score with is_finite(); substitute 0.0 and log::warn! on degenerate input | Effort: small
+
+- [ ] **H-006** `[security]` `ffi/sentinel_inject.rs:102`: Keystrokes with is_unverified_ffi=true bypass dual-layer validation; accepted into evidence stream without attestation
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: External process injects keystrokes that appear in evidence without being flagged as synthetic | Fix: Remove is_unverified_ffi exception; require all keystrokes to pass dual-layer (CGEvent + HID) validation | Effort: medium
+
+- [ ] **H-007** `[security]` `mmr/mmr.rs:34`: MMR proofs validated in memory only against in-process root hash; no external anchor
+  <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
+  Impact: MMR root fabricated in memory; proof verification has no ground truth; attacker controls full proof chain | Fix: Anchor MMR root in signed checkpoint or RFC3161 timestamp before accepting proofs | Effort: large
+
+- [ ] **H-008** `[error_handling]` `wal/operations.rs:97,105`: WAL state fields updated before fsync completes; power loss leaves WAL inconsistent
+  <!-- pid:toctou | verified:true | first:2026-04-06 -->
+  Impact: WAL shows entry committed but data never persisted; evidence loss undetectable on recovery | Fix: Update state fields only after successful fsync returns; treat pre-fsync update as bug | Effort: small
+
+- [ ] **H-009** `[security]` `store/integrity.rs:174`: HMAC integrity check only at store open; mid-session tampering goes undetected
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: Attacker writes to SQLite DB mid-session; modified events bypass HMAC check (was only done at open) | Fix: Verify per-entry HMAC on each read in high-integrity mode; or re-verify full chain on checkpoint | Effort: large
+
+- [ ] **H-010** `[security]` `sentinel/helpers.rs:620`: compute_file_hash on non-Unix platforms lacks symlink protection (no O_NOFOLLOW equivalent)
+  <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
+  Impact: On Windows, file hash follows symlinks; hash of symlink target != hash of original content; content substitution undetected | Fix: On Windows, use FILE_FLAG_OPEN_REPARSE_POINT; detect and reject symlinks before hashing | Effort: medium
+
+- [ ] **H-011** `[security]` `sentinel/behavioral_key.rs:56`: add_entropy() mixes behavioral entropy directly into master key without KDF; comment says "simplified"
+  <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
+  Impact: Direct XOR of entropy into master key reduces independence; correlated behavioral inputs create predictable key evolution | Fix: Use HKDF-Expand(master_key, entropy_bytes, "witnessd-behavioral-entropy-v1") for key update | Effort: medium
+
+- [ ] **H-012** `[security]` `apps/cpop_cli/src/cmd_daemon.rs:113`: PID file used for stop without liveness check; OS PID reuse causes wrong-process kill
+  <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
+  Impact: If daemon dies and OS reuses PID, `cpop stop` kills an unrelated process | Fix: Verify /proc/{pid}/comm matches expected process name before sending signal; or use socket-based stop | Effort: medium
+
+- [ ] **H-013** `[security]` `ffi/sentinel_witnessing.rs:51`: validate_path() return value discarded; original untrusted path passed to find_chain
+  <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
+  Impact: Path validation executes but has no effect; attacker-controlled path used for chain lookup after validation | Fix: Use validated_path return value in find_chain call; assert original path is never referenced after validate_path | Effort: small
+
+- [ ] **H-014** `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states
+  <!-- pid:business_logic | verified:true | first:2026-04-06 -->
+  Impact: Evidence with provably invalid author declaration receives same verdict as valid evidence; comment creates false security assurance | Fix: Cap verdict at V2LikelyHuman when declaration_valid == false; add test case | Effort: small
+
+- [ ] **H-015** `[security]` `ipc/secure_channel.rs:26`: Unsafe pointer arithmetic in zeroize_cipher; compiler may optimize out non-volatile write
+  <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
+  Impact: Cipher key bytes persist after "zeroization"; side-channel or memory dump recovers IPC session key | Fix: Use zeroize::Zeroize trait on cipher state; replace unsafe block with safe API | Effort: medium
+
+- [ ] **H-016** `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path
+  <!-- pid:alloc_in_loop | verified:analytical | first:2026-04-06 -->
+  Impact: At 100+ WPM, synchronous send blocks tap thread; macOS disables CGEventTap if blocked >~15ms | Fix: Use try_send with ring buffer fallback; log dropped events per second | Effort: medium
+
+- [ ] **H-017** `[security]` `identity/did_webvh.rs:417`: DID document accepted without verifying DID log signature chain (companion to C-012)
+  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
+  Impact: MITM between daemon and DID host serves arbitrary DID document; identity binding bypassed | Fix: Implement DID log verification per did:webvh spec section 6 before trusting any document | Effort: large
+
+- [ ] **H-018** `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data
+  <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
+  Impact: Attacker modifies payload bytes without invalidating GCM authentication tag; sealed chain content tamperable | Fix: Include full payload bytes in AAD construction | Effort: medium
+
+- [ ] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case
+  <!-- pid:nan_inf_unguarded | verified:analytical | first:2026-04-06 -->
+  Impact: Negative variance from floating-point error produces NaN in IKI profile; propagates to signed metrics | Fix: Guard `variance > 0.0 && variance.is_finite()` before sqrt; return 0.0 on degenerate input | Effort: small
+
+- [ ] **H-020** `[security]` `verify/verdict.rs:71`: Verdict not capped on invalid declaration (same root cause as H-014; found in separate batch)
+  <!-- pid:business_logic | verified:true | first:2026-04-06 -->
+  Same issue: verdict NOT capped at V2LikelyHuman when declaration_valid == false | Fix: See H-014 | Effort: small
+
+- [ ] **H-021** `[security]` `rats/eat.rs`: Unverified EAT tokens accepted from IPC clients; C-003 root cause has IPC attack surface
+  <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
+  Impact: IPC client submits crafted EAT token; accepted as valid attestation by daemon | Fix: Chain with C-003 fix; require COSE_Sign1 verification at IPC boundary before any trust grant | Effort: large
+
+- [ ] **H-022** `[error_handling]` `tpm/linux.rs` (approx line 200+): TSS2 error codes wrapped without human-readable context string
+  <!-- pid:unhelpful_error_msg | verified:analytical | first:2026-04-06 -->
+  Impact: TPM errors logged as opaque TSS2 integer codes; diagnosing attestation failures requires manual lookup | Fix: Map TSS2_RC codes to descriptive strings using tss-esapi error display | Effort: small
+
+- [ ] **H-023** `[error_handling]` `evidence/builder/mod.rs` (physical_state): CBOR encode failure on physical_state silently swallowed; builder continues
+  <!-- pid:silent_error | verified:analytical | first:2026-04-06 -->
+  Impact: Physical state missing from evidence packet without any notification; attestation incomplete | Fix: Propagate CBOR error via builder Result; do not produce partial packet | Effort: small
+
+- [ ] **H-024** `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect
+  <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
+  Impact: After connection loss and reconnect, messages sent without encryption until next explicit init | Fix: Re-run key exchange on every new connection before sending any messages | Effort: medium
+
+- [ ] **H-025** `[security]` `ffi/sentinel_witnessing.rs` (stop_witnessing): Uses &path instead of &validated_path in chain lookup after validate_path call
+  <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
+  Impact: Same pattern as H-013 in stop_witnessing path; path validation cosmetic | Fix: Use &validated_path throughout stop_witnessing after validate_path call | Effort: small
+
+---
+
+## Medium
+
+*Medium findings (est. 68 items) require a follow-up audit wave covering ~50 uncovered files:*
+- `crates/witnessd/src/tpm/linux.rs` (684 lines) -- Linux TPM attestation
+- `crates/witnessd/src/ipc/async_client.rs` (637 lines) -- async IPC client
+- `crates/witnessd/src/cpop_jitter_bridge/session.rs` (519 lines) -- jitter bridge
+- `crates/witnessd/src/trust_policy/evaluation.rs` -- trust policy evaluation
+- `crates/witnessd/src/presence/verifier.rs` -- presence verification
+- `crates/witnessd/src/declaration/verification.rs` -- declaration verification
+- `crates/witnessd/src/engine/watcher.rs` -- file system watcher
+- `crates/witnessd/src/transcription/` (4 files) -- transcription detection
+- `crates/witnessd/src/research/` -- research analysis
+- `crates/witnessd/src/physics/` -- physics-based timing models
+- `crates/witnessd/src/collaboration.rs`, `continuation.rs`
+
+Run `/suggest --since HEAD~1` after fixing H-001 through H-025 to capture medium findings.
+
+---
+
+## Quick Wins
+| ID | Sev | File:Line | Issue | Effort |
+|----|-----|-----------|-------|--------|
+| C-004 | CRITICAL | war/profiles/vc.rs:31 | VC no expirationDate | small |
+| C-006 | CRITICAL | forensics/cross_modal.rs:190 | Zero-edit → Inconsistent | small |
+| C-008 | CRITICAL | evidence/wire_conversion.rs:249 | CBOR failure → zero seal | small |
+| C-009 | CRITICAL | checkpoint/chain.rs | [0u8;32] VDF fallback | small |
+| C-010 | CRITICAL | report/html/sections.rs:69 | XSS in HTML report | small |
+| C-014 | CRITICAL | writersproof/client.rs:38 | HTTP in debug builds | small |
+| H-002 | HIGH | sentinel/core_session.rs:208 | Relative path traversal | small |
+| H-004 | HIGH | sentinel/core_session.rs:36 | Path not canonicalized | small |
+| H-005 | HIGH | forensics/analysis.rs:173 | NaN in ForensicMetrics | small |
+| H-008 | HIGH | wal/operations.rs:97,105 | WAL state before fsync | small |
+| H-013 | HIGH | ffi/sentinel_witnessing.rs:51 | validate_path discarded | small |
+| H-014 | HIGH | verify/verdict.rs:71 | verdict not capped | small |
+| H-019 | HIGH | jitter_bridge/session.rs | IKI variance NaN guard | small |
+| H-022 | HIGH | tpm/linux.rs | TSS2 error context | small |
+| H-023 | HIGH | evidence/builder/mod.rs | physical_state CBOR error | small |
+| H-025 | HIGH | ffi/sentinel_witnessing.rs | &validated_path in stop | small |
+
+## Coverage
+<!-- reviewed: 407 non-test files across 15 batches, 3 waves -->
+<!-- uncovered: tpm/linux.rs, ipc/async_client.rs, cpop_jitter_bridge/session.rs, trust_policy/*, presence/*, declaration/*, engine/watcher.rs, transcription/*, research/*, physics/*, collaboration.rs, continuation.rs (~50 files) -->
+<!-- confirmed_clean: vdf/params.rs, vdf/proof.rs, error.rs, cpop-jitter/evidence.rs (re-verified) -->
+
+---
+
+# Prior Audit (2026-04-02) -- All Resolved
+
+*All 148 findings from 2026-04-02 audit are resolved. Items below are historical record.*
+*See git log between `dbfa47fc` and `412805da` for individual fix commits.*
+
+## Prior Compound Risk
 
 - [x] **CLU-001** `silent_crypto_downgrade`, CRITICAL, components: C-004, H-006 -- FIXED 2026-04-02 (C-004 + H-006 both fixed)
   <!-- compound_impact: Lamport signing fails silently + CBOR truncation accepted = forged events pass both layers -->
@@ -34,7 +301,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
 - [x] **CLU-003** `ffi_panic_cascade`, HIGH, components: C-001, C-002, H-019 -- FIXED 2026-04-02 (C-001 + C-002 fixed; H-019 open independently)
   <!-- compound_impact: Multiple FFI panic vectors crash Swift/Kotlin callers without recovery -->
 
-## Systemic Issues
+## Prior Systemic Issues
 
 - [x] **SYS-001** `nan_inf_unguarded`, 10+ files, HIGH -- FIXED 2026-04-02
   <!-- pid:nan_inf_unguarded | first:2026-03-03 | last:2026-04-02 -->
@@ -66,7 +333,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   Files: `sentinel/ipc_handler.rs:319`, `ffi/ephemeral.rs:656`, `identity/mnemonic.rs:36`, `keyhierarchy/session.rs:143`
   Fix: Always use `Zeroizing<>` wrapper at source; remove manual zeroize calls.
 
-## Critical
+## Prior Critical
 
 - [x] **C-001** `[error_handling]` `ffi/ephemeral.rs:27`: device_identity() uses unwrap_or_else with fallback to all-zero device ID and hostname
   <!-- pid:silent_error | batch:5 | verified:true | first:2026-04-02 | last:2026-04-02 -->
@@ -96,7 +363,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:no_backpressure | batch:2 | verified:analytical | first:2026-04-02 | last:2026-04-02 -->
   Impact: Stuck key at 10K repeats/sec grows HashMap without bound; CPU spike on next tick iterating all entries | Fix: Add MAX_PENDING_DOWNS = 1000; evict oldest on overflow | Effort: small
 
-## High
+## Prior High
 
 ### Sentinel/Concurrency
 - [x] **H-001** `[concurrency]` `sentinel/core.rs:1004`: Unfocus loop iterates cloned keys; concurrent session add causes non-deterministic event ordering
@@ -279,7 +546,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:missing_validation | batch:8 | verified:analytical | first:2026-04-02 | last:2026-04-02 -->
   Impact: evil-google.com passes suffix check for google.com | Fix: Require exact match or .domain suffix | Effort: small
 
-## Medium
+## Prior Medium
 
 ### Sentinel
 - [x] **M-001** `[architecture]` `sentinel/core.rs:98`: God module, 1568 lines, 18 Arc<RwLock<>> fields -- REDUCED 2026-04-06: extracted setup_focus/setup_keystroke_bridge/setup_mouse_bridge to core_setup.rs, commit_checkpoint_for_path to helpers.rs; now 1299 lines; remaining bulk is the async event loop (start() 635 lines) which cannot be split without reorganizing all channel variables
@@ -496,33 +763,3 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:path_traversal | batch:8 -->
 - [x] **M-099** `[maintainability]` `native_messaging_host.rs:1`: Browser protocol not versioned; no backcompat -- ALREADY FIXED: PROTOCOL_VERSION constant; version negotiation on Ping
   <!-- pid:hardcoded_config | batch:8 -->
-
-## Quick Wins
-| ID | Sev | File:Line | Issue | Effort |
-|----|-----|-----------|-------|--------|
-| C-004 | CRITICAL | crypto.rs:198 | Lamport signing silent failure | small |
-| C-007 | CRITICAL | sentinel/core.rs:649 | Unbounded pending_downs HashMap | small |
-| H-006 | HIGH | sentinel/helpers.rs:517 | Unchecked slice copy panics | small |
-| H-007 | HIGH | sentinel/ipc_handler.rs:141 | Unbounded file read DoS | small |
-| H-009 | HIGH | ipc/rbac.rs:18 | Default role should be ReadOnly | small |
-| H-010 | HIGH | store/integrity.rs:228 | Non-constant-time hash comparison | small |
-| H-015 | HIGH | checkpoint_mmr.rs:42 | Idempotent append hides duplicates | small |
-| H-018 | HIGH | ffi/sentinel_witnessing.rs:36 | Path validation bypass via symlink | small |
-| H-020 | HIGH | ffi/system.rs:12 | eprintln in production FFI | small |
-| H-025 | HIGH | rfc/wire_types/attestation.rs:395 | Invalid confidence tier passes | small |
-| H-026 | HIGH | protocol/evidence.rs:113 | packet_id not validated | small |
-| H-030 | HIGH | sealed_identity/store.rs:64 | Missing HKDF salt on unseal | small |
-| H-032 | HIGH | war/verification.rs:512 | Fragile unwrap on CA key | small |
-| H-033 | HIGH | war/profiles/vc.rs:245 | Empty signature on error | small |
-| H-034 | HIGH | war/encoding.rs:64 | Null bytes in WAR block | small |
-| H-036 | HIGH | wal/operations.rs:387 | Stale file handle after rename | small |
-| H-037 | HIGH | wal/operations.rs:677 | Silent data loss on corruption | small |
-| H-038 | HIGH | wal/operations.rs:682 | Unsigned underflow in recovery | small |
-| H-039 | HIGH | platform/windows.rs:197 | Infinite spin-wait | small |
-| H-042 | HIGH | mmr/proof.rs:362 | Unreachable dead code | small |
-| H-043 | HIGH | native_messaging_host.rs:195 | Domain whitelist suffix match | small |
-
-## Coverage
-<!-- reviewed: 374 non-test files across 10 batches, 2 waves -->
-<!-- confirmed_clean: vdf/params.rs, vdf/proof.rs, vdf/roughtime_client.rs, error.rs, cpop-jitter/evidence.rs, mmr/mmr.rs -->
-<!-- completeness: 10 batches, 2 waves, all files covered -->
