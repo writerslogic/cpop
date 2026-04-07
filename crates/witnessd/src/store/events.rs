@@ -3,7 +3,9 @@
 use crate::crypto;
 use crate::store::{SecureEvent, SecureStore};
 use crate::DateTimeNanosExt;
+use anyhow::anyhow;
 use rusqlite::params;
+use subtle::ConstantTimeEq;
 
 impl SecureStore {
     /// Add an event, computing its hash chain link and HMAC, then update integrity.
@@ -138,7 +140,7 @@ impl SecureStore {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<SecureEvent>> {
         let base_query = "SELECT id, device_id, machine_id, timestamp_ns, file_path, \
-                content_hash, file_size, size_delta, previous_hash, event_hash, \
+                content_hash, file_size, size_delta, previous_hash, event_hash, hmac, \
                 context_type, context_note, vdf_input, vdf_output, vdf_iterations, \
                 forensic_score, is_paste, hardware_counter, input_method, \
                 lamport_signature, lamport_pubkey_fingerprint, challenge_nonce, \
@@ -153,21 +155,49 @@ impl SecureStore {
         let mut stmt = self.conn.prepare(&query)?;
 
         let mut events = Vec::new();
-        match limit {
-            Some(n) => {
-                let rows = stmt.query_map(params![path, n], Self::row_to_event)?;
-                for row in rows {
-                    events.push(row?);
-                }
-            }
-            None => {
-                let rows = stmt.query_map(params![path], Self::row_to_event)?;
-                for row in rows {
-                    events.push(row?);
-                }
-            }
+        let rows: Box<dyn Iterator<Item = rusqlite::Result<(SecureEvent, Vec<u8>)>>> = match limit {
+            Some(n) => Box::new(stmt.query_map(params![path, n], Self::row_to_event_with_hmac)?),
+            None => Box::new(stmt.query_map(params![path], Self::row_to_event_with_hmac)?),
+        };
+        for row in rows {
+            let (event, stored_hmac) = row?;
+            self.verify_event_row_hmac(&event, &stored_hmac)?;
+            events.push(event);
         }
         Ok(events)
+    }
+
+    /// Verify that `stored_hmac` matches the HMAC recomputed from `event`'s fields.
+    /// Returns an error on mismatch to prevent returning tampered data.
+    fn verify_event_row_hmac(&self, event: &SecureEvent, stored_hmac: &[u8]) -> anyhow::Result<()> {
+        let device_id_arr: [u8; 16] = event.device_id;
+        let content_hash_arr: [u8; 32] = event.content_hash;
+        let previous_hash_arr: [u8; 32] = event.previous_hash;
+        let event_data = crypto::EventData {
+            device_id: device_id_arr,
+            timestamp_ns: event.timestamp_ns,
+            file_path: event.file_path.clone(),
+            content_hash: content_hash_arr,
+            file_size: event.file_size,
+            size_delta: event.size_delta,
+            previous_hash: previous_hash_arr,
+        };
+        let expected = crypto::compute_event_hmac(&self.hmac_key, &event_data);
+        if stored_hmac.ct_eq(&expected[..]).unwrap_u8() == 0 {
+            return Err(anyhow!(
+                "event {} HMAC mismatch: possible mid-session tampering",
+                event.id.unwrap_or(-1)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Deserialize a row into a `SecureEvent` and its stored HMAC bytes.
+    /// The SELECT must include `hmac` at column index 10 (after `event_hash`).
+    fn row_to_event_with_hmac(row: &rusqlite::Row<'_>) -> rusqlite::Result<(SecureEvent, Vec<u8>)> {
+        let stored_hmac: Vec<u8> = row.get(10)?;
+        let event = Self::row_to_event(row)?;
+        Ok((event, stored_hmac))
     }
 
     fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecureEvent> {
@@ -175,8 +205,9 @@ impl SecureStore {
         let content_hash: Vec<u8> = row.get(5)?;
         let previous_hash: Vec<u8> = row.get(8)?;
         let event_hash: Vec<u8> = row.get(9)?;
-        let vdf_input: Option<Vec<u8>> = row.get(12)?;
-        let vdf_output: Option<Vec<u8>> = row.get(13)?;
+        // column 10 is `hmac`; used by row_to_event_with_hmac; skip here
+        let vdf_input: Option<Vec<u8>> = row.get(13)?;
+        let vdf_output: Option<Vec<u8>> = row.get(14)?;
 
         Ok(SecureEvent {
             id: Some(row.get(0)?),
@@ -213,13 +244,13 @@ impl SecureStore {
                     rusqlite::types::Type::Blob,
                 )
             })?,
-            context_type: row.get(10)?,
-            context_note: row.get(11)?,
+            context_type: row.get(11)?,
+            context_note: row.get(12)?,
             vdf_input: vdf_input
                 .map(|v| {
                     v.try_into().map_err(|_| {
                         rusqlite::Error::InvalidColumnType(
-                            12,
+                            13,
                             "vdf_input".into(),
                             rusqlite::types::Type::Blob,
                         )
@@ -230,30 +261,30 @@ impl SecureStore {
                 .map(|v| {
                     v.try_into().map_err(|_| {
                         rusqlite::Error::InvalidColumnType(
-                            13,
+                            14,
                             "vdf_output".into(),
                             rusqlite::types::Type::Blob,
                         )
                     })
                 })
                 .transpose()?,
-            vdf_iterations: u64::try_from(row.get::<_, i64>(14)?).unwrap_or(0),
-            forensic_score: row.get(15)?,
-            is_paste: row.get::<_, i32>(16)? != 0,
+            vdf_iterations: u64::try_from(row.get::<_, i64>(15)?).unwrap_or(0),
+            forensic_score: row.get(16)?,
+            is_paste: row.get::<_, i32>(17)? != 0,
             hardware_counter: row
-                .get::<_, Option<i64>>(17)?
+                .get::<_, Option<i64>>(18)?
                 .map(|v| u64::try_from(v).unwrap_or(0)),
-            input_method: row.get(18)?,
-            lamport_signature: row.get(19)?,
-            lamport_pubkey_fingerprint: row.get(20)?,
-            challenge_nonce: row.get(21)?,
-            hw_cosign_signature: row.get(22)?,
-            hw_cosign_pubkey: row.get(23)?,
-            hw_cosign_salt_commitment: row.get(24)?,
-            hw_cosign_chain_index: row.get::<_, Option<i64>>(25)?.map(|v| v as u64),
-            hw_cosign_entangled_hash: row.get(26)?,
-            hw_cosign_entropy_digest: row.get(27)?,
-            hw_cosign_entropy_bytes: row.get::<_, Option<i64>>(28)?.map(|v| v as u64),
+            input_method: row.get(19)?,
+            lamport_signature: row.get(20)?,
+            lamport_pubkey_fingerprint: row.get(21)?,
+            challenge_nonce: row.get(22)?,
+            hw_cosign_signature: row.get(23)?,
+            hw_cosign_pubkey: row.get(24)?,
+            hw_cosign_salt_commitment: row.get(25)?,
+            hw_cosign_chain_index: row.get::<_, Option<i64>>(26)?.map(|v| v as u64),
+            hw_cosign_entangled_hash: row.get(27)?,
+            hw_cosign_entropy_digest: row.get(28)?,
+            hw_cosign_entropy_bytes: row.get::<_, Option<i64>>(29)?.map(|v| v as u64),
         })
     }
 
@@ -294,7 +325,7 @@ impl SecureStore {
     ) -> anyhow::Result<std::collections::HashMap<String, Vec<SecureEvent>>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, device_id, machine_id, timestamp_ns, file_path, \
-                content_hash, file_size, size_delta, previous_hash, event_hash, \
+                content_hash, file_size, size_delta, previous_hash, event_hash, hmac, \
                 context_type, context_note, vdf_input, vdf_output, vdf_iterations, \
                 forensic_score, is_paste, hardware_counter, input_method, \
                 lamport_signature, lamport_pubkey_fingerprint, challenge_nonce, \
@@ -303,11 +334,12 @@ impl SecureStore {
                 hw_cosign_entropy_digest, hw_cosign_entropy_bytes \
                 FROM secure_events ORDER BY id ASC",
         )?;
-        let rows = stmt.query_map([], Self::row_to_event)?;
+        let rows = stmt.query_map([], Self::row_to_event_with_hmac)?;
         let mut map: std::collections::HashMap<String, Vec<SecureEvent>> =
             std::collections::HashMap::new();
         for row in rows {
-            let event = row?;
+            let (event, stored_hmac) = row?;
+            self.verify_event_row_hmac(&event, &stored_hmac)?;
             map.entry(event.file_path.clone()).or_default().push(event);
         }
         Ok(map)
@@ -367,18 +399,21 @@ impl SecureStore {
     ) -> anyhow::Result<Vec<SecureEvent>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, device_id, machine_id, timestamp_ns, file_path, content_hash, file_size, size_delta,
-                    previous_hash, event_hash, context_type, context_note, vdf_input, vdf_output,
+                    previous_hash, event_hash, hmac, context_type, context_note, vdf_input, vdf_output,
                     vdf_iterations, forensic_score, is_paste, hardware_counter, input_method,
                     lamport_signature, lamport_pubkey_fingerprint, challenge_nonce,
                     hw_cosign_signature, hw_cosign_pubkey, hw_cosign_salt_commitment,
-                    hw_cosign_chain_index, hw_cosign_entangled_hash
+                    hw_cosign_chain_index, hw_cosign_entangled_hash,
+                    hw_cosign_entropy_digest, hw_cosign_entropy_bytes
              FROM secure_events WHERE device_id = ? ORDER BY id ASC",
         )?;
 
-        let rows = stmt.query_map([&device_id[..]], Self::row_to_event)?;
+        let rows = stmt.query_map([&device_id[..]], Self::row_to_event_with_hmac)?;
         let mut events = Vec::new();
         for row in rows {
-            events.push(row?);
+            let (event, stored_hmac) = row?;
+            self.verify_event_row_hmac(&event, &stored_hmac)?;
+            events.push(event);
         }
         Ok(events)
     }
