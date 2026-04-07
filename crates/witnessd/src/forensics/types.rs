@@ -174,6 +174,73 @@ pub struct CadenceMetrics {
     pub mean_flight_ns: f64,
     /// CV of flight times. Human: >0.3 (variable transition times).
     pub flight_cv: f64,
+    /// Cognitive-Linguistic Complexity: n-gram surprisal score.
+    /// Higher values indicate more natural/diverse language patterns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clc_surprisal_score: Option<f64>,
+    /// Repair locality tracking: mean offset of backspace events relative to cursor.
+    /// Human edits cluster repairs near recent text (low offset); synthetic edits scattered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair_locality_mean_offset: Option<f64>,
+    /// Coefficient of variation for repair localities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair_locality_cv: Option<f64>,
+    /// Three-phase fatigue trajectory: residual from flat baseline model.
+    /// Positive indicates fatigue (rising IKI over time); negative indicates improvement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fatigue_trajectory_residual: Option<f64>,
+    /// Phase classification from fatigue model: 0=warmup, 1=plateau, 2=fatigue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fatigue_phase: Option<u8>,
+}
+
+/// Cognitive-Linguistic Complexity metrics from n-gram surprisal analysis.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClcMetrics {
+    /// Mean surprisal (bits per word) across all checkpoint windows.
+    /// Higher = more natural/diverse; lower = more predictable/mechanical.
+    pub mean_surprisal_bpw: f64,
+    /// Standard deviation of surprisal across windows.
+    pub std_dev_surprisal: f64,
+    /// Percentage of windows with low surprisal (<3 bpw), indicating formulaic text.
+    pub low_surprisal_pct: f64,
+    /// Correlation coefficient between IKI samples and surprisal in the same window.
+    /// Near 0 = no correlation; positive = faster typing during predictable text.
+    pub iki_surprisal_correlation: f64,
+}
+
+/// Repair locality tracking: document offset of backspace events relative to cursor.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RepairLocalityMetrics {
+    /// Mean document offset (characters) of backspace target from cursor position.
+    /// Human: clusters near recent text (5-20 chars); synthetic: scattered (50+ chars).
+    pub mean_offset_chars: f64,
+    /// Coefficient of variation of repair offsets.
+    /// Human: <0.5 (focused repairs); synthetic: >1.0 (scattered).
+    pub offset_cv: f64,
+    /// Percentage of repairs within recent window (0-10 chars from cursor).
+    pub recent_repair_pct: f64,
+    /// Percentage of repairs scattered far from cursor (>50 chars).
+    pub distant_repair_pct: f64,
+}
+
+/// Three-phase fatigue trajectory: warmup, plateau, fatigue phases in IKI sequence.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FatigueTrajectoryMetrics {
+    /// Piecewise linear fit residual (sum of squared errors from baseline).
+    /// Lower = better fit to fatigue model; higher = constant/random pattern.
+    pub residual_sse: f64,
+    /// Phase 0 duration (warmup): fraction of session before plateau.
+    pub warmup_fraction: f64,
+    /// Phase 1 duration (plateau): fraction of stable typing speed.
+    pub plateau_fraction: f64,
+    /// Phase 2 duration (fatigue): fraction of increasing IKI (tiredness).
+    pub fatigue_fraction: f64,
+    /// Slope of Phase 2 (fatigue phase): IKI increase per 1000 keystrokes.
+    /// Positive = IKI increasing (fatigue); negative = improvement.
+    pub fatigue_slope_iki_per_kstroke: f64,
+    /// Dominant phase: 0=warmup, 1=plateau, 2=fatigue, 3=insufficient data.
+    pub dominant_phase: u8,
 }
 
 /// Focus pattern metrics for cognitive/transcriptive analysis.
@@ -228,6 +295,15 @@ pub struct ForensicMetrics {
     /// Cross-window transcription matches detected during the session.
     #[serde(default)]
     pub cross_window_matches: Vec<crate::transcription::CrossWindowMatch>,
+    /// Cognitive-Linguistic Complexity metrics (CLC).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clc_metrics: Option<ClcMetrics>,
+    /// Repair locality tracking metrics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair_locality: Option<RepairLocalityMetrics>,
+    /// Three-phase fatigue trajectory analysis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fatigue_trajectory: Option<FatigueTrajectoryMetrics>,
 }
 
 impl ForensicMetrics {

@@ -654,8 +654,7 @@ fn verify_cms_signature(token: &[u8], tst_info: &[u8]) -> Result<bool, AnchorErr
     // signerInfos is a SET (tag 0x31); it's the last SET child of SignedData
     let signer_infos_set = children_of(token, &signed_data)
         .into_iter()
-        .filter(|c| c.tag == 0x31)
-        .last()
+        .rfind(|c| c.tag == 0x31)
         .ok_or_else(|| AnchorError::InvalidFormat("No signerInfos in SignedData".into()))?;
 
     let signer_infos: Vec<Tlv> = children_of(token, &signer_infos_set)

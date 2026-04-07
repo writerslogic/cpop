@@ -13,6 +13,7 @@
 //! The dependency is one-directional: `forensics -> analysis`.
 
 pub(crate) mod analysis;
+mod advanced_metrics;
 mod assessment;
 mod cadence;
 mod comparison;
@@ -30,6 +31,9 @@ pub mod types;
 mod velocity;
 pub mod writing_mode;
 
+pub use advanced_metrics::{
+    analyze_fatigue_trajectory, analyze_repair_locality, compute_clc_metrics,
+};
 pub use analysis::*;
 pub use assessment::*;
 pub use cadence::*;

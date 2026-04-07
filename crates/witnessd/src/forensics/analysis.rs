@@ -41,6 +41,29 @@ const MIN_PLAUSIBLE_TS_NS: i64 = 946_684_800_000_000_000;
 /// Maximum plausible timestamp (2100-01-01 in nanoseconds).
 const MAX_PLAUSIBLE_TS_NS: i64 = 4_102_444_800_000_000_000;
 
+/// Split text into sliding windows of approximately `window_chars` characters.
+fn split_into_windows(text: &str, window_chars: usize) -> Vec<String> {
+    if window_chars == 0 || text.is_empty() {
+        return Vec::new();
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    let mut windows = Vec::new();
+
+    for i in (0..chars.len()).step_by(window_chars / 2) {
+        let end = (i + window_chars).min(chars.len());
+        let window: String = chars[i..end].iter().collect();
+        if !window.is_empty() {
+            windows.push(window);
+        }
+        if end >= chars.len() {
+            break;
+        }
+    }
+
+    windows
+}
+
 pub fn build_profile(
     events: &[EventData],
     regions_by_event: &HashMap<i64, Vec<RegionData>>,
@@ -259,6 +282,39 @@ pub fn analyze_forensics_ext_with_focus(
                 }
                 metrics.labyrinth = Some(lab);
             }
+        }
+
+        // Cognitive-Linguistic Complexity (CLC) analysis
+        let content_windows = if let Some(text) = document_text {
+            split_into_windows(text, 100)
+        } else {
+            Vec::new()
+        };
+        if !content_windows.is_empty() {
+            if let Some(clc) = super::advanced_metrics::compute_clc_metrics(&content_windows, samples)
+            {
+                metrics.cadence.clc_surprisal_score = Some(clc.mean_surprisal_bpw);
+                metrics.clc_metrics = Some(clc);
+            }
+        }
+
+        // Repair locality tracking
+        let file_sizes: Vec<i64> = events
+            .iter()
+            .map(|e| e.file_size)
+            .collect();
+        if let Some(repair) = super::advanced_metrics::analyze_repair_locality(samples, &file_sizes)
+        {
+            metrics.cadence.repair_locality_mean_offset = Some(repair.mean_offset_chars);
+            metrics.cadence.repair_locality_cv = Some(repair.offset_cv);
+            metrics.repair_locality = Some(repair);
+        }
+
+        // Three-phase fatigue trajectory analysis
+        if let Some(fatigue) = super::advanced_metrics::analyze_fatigue_trajectory(samples) {
+            metrics.cadence.fatigue_trajectory_residual = Some(fatigue.residual_sse);
+            metrics.cadence.fatigue_phase = Some(fatigue.dominant_phase);
+            metrics.fatigue_trajectory = Some(fatigue);
         }
     }
 
