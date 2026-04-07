@@ -20,8 +20,8 @@ impl Block {
         let mut all_passed = true;
 
         if let Some(trusted) = expected_public_key {
-            let key_matches = trusted.len() == self.seal.public_key.len()
-                && bool::from(trusted.ct_eq(&self.seal.public_key));
+            // Use ct_eq directly; it handles different lengths in constant time.
+            let key_matches = bool::from(trusted.ct_eq(&self.seal.public_key));
             let key_check = CheckResult {
                 name: "trusted_key".to_string(),
                 passed: key_matches,

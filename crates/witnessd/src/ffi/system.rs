@@ -225,33 +225,18 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
     // Include sentinel auto-detected sessions that don't yet have checkpoints
     if let Some(sentinel) = sentinel_opt.as_ref() {
         let all_sessions = sentinel.sessions();
-        #[cfg(debug_assertions)]
-        {
-            use std::io::Write;
-            let debug_path = std::env::var("CPOP_DATA_DIR")
-                .map(|d| format!("{}/list_debug.txt", d))
-                .unwrap_or_else(|_| "/tmp/cpop_list_debug.txt".to_string());
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&debug_path)
-            {
-                let _ = writeln!(
-                    f,
-                    "sentinel sessions: {} store files: {}",
-                    all_sessions.len(),
-                    result.len()
-                );
-                for s in &all_sessions {
-                    let _ = writeln!(
-                        f,
-                        "  session: path={} keystrokes={} seen={}",
-                        s.path,
-                        s.keystroke_count,
-                        seen_paths.contains(&s.path)
-                    );
-                }
-            }
+        log::debug!(
+            "ffi_list_sessions: sentinel={} store={}",
+            all_sessions.len(),
+            result.len()
+        );
+        for s in &all_sessions {
+            log::debug!(
+                "  sentinel session: path={} keystrokes={} seen={}",
+                s.path,
+                s.keystroke_count,
+                seen_paths.contains(&s.path)
+            );
         }
         for session in all_sessions {
             if session.path.starts_with("shadow://") {

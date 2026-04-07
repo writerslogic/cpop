@@ -678,10 +678,10 @@ impl JitterBinding {
         }
 
         if let Some(h) = self.summary.hurst_exponent {
-            if !(0.0..=1.0).contains(&h) {
-                findings.push(ValidationFinding::warning(
+            if !h.is_finite() || !(0.0..=1.0).contains(&h) {
+                findings.push(ValidationFinding::error(
                     "summary.hurst_exponent",
-                    format!("{} out of range [0, 1]", h),
+                    format!("{} out of range [0, 1] or non-finite", h),
                 ));
             }
         }
@@ -757,6 +757,23 @@ impl JitterBinding {
                     "labyrinth.correlation_dimension",
                     "is negative",
                 ));
+            }
+            const MAX_ATTRACTOR_POINTS: usize = 10_000;
+            if labyrinth.attractor_points.len() > MAX_ATTRACTOR_POINTS {
+                findings.push(ValidationFinding::error(
+                    "labyrinth.attractor_points",
+                    format!("count {} exceeds maximum {}", labyrinth.attractor_points.len(), MAX_ATTRACTOR_POINTS),
+                ));
+            }
+            let expected_dim = labyrinth.embedding_dimension as usize;
+            for (i, ap) in labyrinth.attractor_points.iter().enumerate() {
+                if ap.len() != expected_dim {
+                    findings.push(ValidationFinding::error(
+                        "labyrinth.attractor_points",
+                        format!("row {i} has length {} but embedding_dimension is {}", ap.len(), expected_dim),
+                    ));
+                    break;
+                }
             }
         }
 

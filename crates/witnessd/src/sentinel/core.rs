@@ -836,6 +836,11 @@ impl Sentinel {
                                 }
                             }
                             if committed.is_some() {
+                                // AUD-041: signing_key must be acquired before sessions.
+                                let sk_opt = {
+                                    let guard = signing_key_for_cp.read_recover();
+                                    guard.key()
+                                };
                                 let mut map = sessions.write_recover();
                                 if let Some(session) = map.get_mut(path.as_str()) {
                                     session.last_checkpoint_keystrokes =
@@ -843,8 +848,7 @@ impl Sentinel {
                                     // Persist cumulative keystroke count so the
                                     // history page shows accurate typing events
                                     // even after app restart.
-                                    let guard = signing_key_for_cp.read_recover();
-                                    if let Some(sk) = guard.key() {
+                                    if let Some(sk) = sk_opt {
                                         let db = writersproof_dir.join("events.db");
                                         if let Ok(store) =
                                             crate::store::open_store_with_signing_key(&sk, &db)
@@ -902,7 +906,12 @@ impl Sentinel {
                                             .unwrap_or("txt");
                                         let snap_dir =
                                             writersproof_dir.join("snapshots").join(&path_hash);
-                                        let _ = std::fs::create_dir_all(&snap_dir);
+                                        if let Err(e) = std::fs::create_dir_all(&snap_dir) {
+                                            log::warn!(
+                                                "Failed to create snapshot dir {}: {e}",
+                                                snap_dir.display()
+                                            );
+                                        }
                                         let ordinal = session.last_checkpoint_keystrokes;
                                         let snap_name =
                                             format!("{:06}.{}", ordinal, ext);
