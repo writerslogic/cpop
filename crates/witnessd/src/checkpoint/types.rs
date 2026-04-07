@@ -153,6 +153,15 @@ pub struct Checkpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmr_inclusion_proof: Option<Vec<u8>>,
 
+    /// MMR root hash at the time this checkpoint was created (pre-append).
+    ///
+    /// Included in `compute_hash()` so the root is covered by the signed checkpoint
+    /// hash, allowing external verifiers to audit MMR state without trusting
+    /// in-process memory. Set by `CheckpointMmr::finalize_checkpoint` before
+    /// the checkpoint hash is finalized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mmr_root: Option<[u8; 32]>,
+
     /// Argon2id-based SWF proof (draft-condrey-rats-pop, algorithm=20)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub argon2_swf: Option<Argon2SwfProof>,
@@ -217,6 +226,7 @@ impl Checkpoint {
             rfc_jitter: None,
             time_evidence: None,
             mmr_inclusion_proof: None,
+            mmr_root: None,
             argon2_swf: None,
             challenge_nonce: None,
             explicit_hash_version: None,
@@ -344,6 +354,11 @@ impl Checkpoint {
         if let Some(nonce) = &self.challenge_nonce {
             hasher.update(b"cpop-challenge-v1");
             hasher.update(nonce.as_bytes());
+        }
+
+        if let Some(root) = &self.mmr_root {
+            hasher.update(b"witnessd-mmr-root-v1");
+            hasher.update(root);
         }
 
         hasher.finalize().into()

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::checkpoint::{Chain, ChainIntegrityMetadata};
+use crate::checkpoint::{Chain, ChainIntegrityMetadata, Checkpoint};
 use crate::error::{Error, Result};
 use crate::mmr::{FileStore, InclusionProof, MemoryStore, Mmr, RangeProof};
 
@@ -160,6 +160,25 @@ impl CheckpointMmr {
             metadata_signature: None,
             metadata_version: 1,
         })
+    }
+
+    /// Bind the current MMR root into a checkpoint's signed hash, then append it.
+    ///
+    /// Call this after the checkpoint is fully constructed but before it is stored.
+    /// The pre-append MMR root is written into `checkpoint.mmr_root`, the checkpoint
+    /// hash is recomputed (so the root is covered by the signature), and then the
+    /// new hash is appended as a leaf. This makes the MMR root verifiable by any
+    /// external party who holds the signed checkpoint.
+    pub fn finalize_checkpoint(&self, checkpoint: &mut Checkpoint) -> Result<AppendResult> {
+        let count = self.mmr.leaf_count();
+        let pre_root = if count > 0 {
+            self.mmr.get_root().map_err(Error::from)?
+        } else {
+            [0u8; 32]
+        };
+        checkpoint.mmr_root = Some(pre_root);
+        checkpoint.recompute_hash();
+        self.append_checkpoint(checkpoint.hash)
     }
 
     /// Replay all checkpoint hashes from a chain into this MMR.
