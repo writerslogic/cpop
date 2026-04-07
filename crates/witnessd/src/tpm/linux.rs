@@ -249,22 +249,22 @@ impl Provider for LinuxTpmProvider {
                 buffer: [0; 64],
             },
         })
-        .map_err(|_| TpmError::Signing("ticket".into()))?;
+        .map_err(|e| TpmError::Signing(format!("ticket construction failed: {e}").into()))?;
 
         let signature = state
             .context
             .sign(
                 ak_handle,
                 TssDigest::try_from(data_hash.as_slice())
-                    .map_err(|_| TpmError::Signing("digest".into()))?,
+                    .map_err(|e| TpmError::Signing(format!("digest conversion failed: {e}").into()))?,
                 SignatureScheme::RsaSsa {
                     hash_scheme: HashScheme::new(HashingAlgorithm::Sha256),
                 },
                 null_ticket,
             )
-            .map_err(|_| TpmError::Signing("sign failed".into()))?
+            .map_err(|e| TpmError::Signing(format!("sign failed: {e}").into()))?
             .marshall()
-            .map_err(|_| TpmError::Signing("sig marshal".into()))?;
+            .map_err(|e| TpmError::Signing(format!("sig marshal failed: {e}").into()))?;
 
         Ok(signature)
     }
