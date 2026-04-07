@@ -52,7 +52,7 @@
   <!-- pid:silent_error | first:2026-04-06 -->
   rats/eat.rs: C-003 architectural (COSE verification). vc.rs:245: already returns error via sign_error capture. keyhierarchy/recovery.rs: fixed in C-011 (XOR path removed). ffi/sentinel_inject.rs: intentional design (caller doesn't need per-keystroke errors). trust_policy, declaration: no actionable silent swallows found. Remaining in research/collaboration are benign log::warn fallbacks.
 
-- [ ] **SYS-003** `business_logic_in_ffi`, 8 files, HIGH
+- [x] **SYS-003** `business_logic_in_ffi`, 8 files, HIGH -- FIXED 2026-04-07
   <!-- pid:logic_in_boundary | first:2026-04-06 | updated:2026-04-07 -->
   Files (session 3): `ffi/sentinel_inject.rs:102`, `ffi/sentinel_witnessing.rs:51`, `ffi/sentinel_witnessing.rs` (chain lookup), `ffi/evidence_export.rs`, `ffi/beacon.rs`, `ffi/attestation.rs`.
   New instances (session 4): `ffi/ephemeral.rs:565` (C-027 -- WAR proof signing), `ffi/report.rs:198` (C-028 -- full forensic analysis per call).
@@ -187,13 +187,13 @@
   <!-- pid:no_backpressure | verified:true | first:2026-04-07 -->
   Added MAX_ATTRACTOR_POINTS (10000) cap and per-row length validation against embedding_dimension; ValidationFinding::error on any violation.
 
-- [ ] **C-027** `[architecture]` `ffi/ephemeral.rs:565`: `build_war_block()` (cryptographic WAR proof signing) implemented inside FFI layer instead of engine internals
+- [x] **C-027** `[architecture]` `ffi/ephemeral.rs:565`: `build_war_block()` signing logic moved out of FFI layer -- FIXED 2026-04-07
   <!-- pid:logic_in_boundary | verified:true | first:2026-04-07 | systemic:SYS-003 -->
-  Impact: Signing logic inaccessible to unit tests; any refactor of FFI types silently breaks WAR signing; cannot fuzz signing path without Swift runtime | Fix: Move `build_war_block()` to `war/builder.rs`; FFI wrapper calls engine function and marshals result | Effort: medium
+  Added `war::build_signed_ephemeral_block()` in war/mod.rs; FFI layer retains key loading + snapshot marshaling, delegates packet assembly + signing + encoding to the engine function.
 
-- [ ] **C-028** `[architecture]` `ffi/report.rs:198-227`: Full forensic analysis (`ForensicEngine::evaluate_authorship` + `run_full_forensics`) re-executed at FFI boundary on every Swift call
+- [x] **C-028** `[architecture]` `ffi/report.rs:198-227`: Full forensic analysis re-executed on every Swift call -- FIXED 2026-04-07
   <!-- pid:logic_in_boundary | verified:true | first:2026-04-07 | systemic:SYS-003 -->
-  Impact: Expensive analysis (O(n) over all events) runs per UI refresh; results not cached; cannot test analysis path without crossing FFI | Fix: Cache `ForensicMetrics` in engine session state; FFI reads cached result; re-run only on session checkpoint | Effort: medium
+  Added process-level `ForensicCacheEntry` DashMap in ffi/report.rs keyed by (path, event_count); cache hit skips both evaluate_authorship and run_full_forensics; cache capped at 10 entries with clear-on-overflow.
 
 - [x] **C-029** `[security]` `apps/cpop_macos/cpop/SubscriptionService.swift:176`: Storage upgrade purchase proceeds without `appAccountToken` when `userId` is nil -- FIXED 2026-04-07
   <!-- pid:missing_validation | verified:true | first:2026-04-07 -->

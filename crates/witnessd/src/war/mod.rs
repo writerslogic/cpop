@@ -187,3 +187,33 @@ impl Block {
         Ok(())
     }
 }
+
+/// Build a signed ASCII-armored WAR block from ephemeral session data.
+///
+/// This is the engine-layer entry point for ephemeral WAR signing. The FFI
+/// layer handles key loading and snapshot type marshaling; this function
+/// owns the packet assembly, signing, and encoding so they are unit-testable
+/// without a key file or Swift runtime.
+pub fn build_signed_ephemeral_block(
+    final_hash_hex: &str,
+    statement: &str,
+    context_label: &str,
+    snapshots: &[crate::evidence::EphemeralSnapshot],
+    jitter_intervals: &[u64],
+    keystroke_count: u64,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<String, String> {
+    let packet = crate::evidence::build_ephemeral_packet(
+        final_hash_hex,
+        statement,
+        context_label,
+        snapshots,
+        signing_key,
+        jitter_intervals,
+        keystroke_count,
+    )
+    .map_err(|e| format!("{e}"))?;
+    let block = Block::from_packet_signed(&packet, signing_key)
+        .map_err(|e| format!("WAR block creation failed: {e}"))?;
+    Ok(block.encode_ascii())
+}

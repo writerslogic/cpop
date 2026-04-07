@@ -615,21 +615,15 @@ fn build_war_block(
         })
         .collect();
 
-    let packet = crate::evidence::build_ephemeral_packet(
+    crate::war::build_signed_ephemeral_block(
         final_hash_hex,
         statement,
         &session.context_label,
         &snapshots,
-        &signing_key,
         &session.jitter_intervals,
         session.keystroke_count,
+        &signing_key,
     )
-    .map_err(|e| format!("{e}"))?;
-
-    let block = crate::war::Block::from_packet_signed(&packet, &signing_key)
-        .map_err(|e| format!("WAR block creation failed: {e}"))?;
-
-    Ok(block.encode_ascii())
 }
 
 /// Flush ephemeral session state to disk for crash recovery.

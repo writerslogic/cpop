@@ -8,7 +8,20 @@ use crate::war::ear::{
     Ar4siStatus, EarAppraisal, EarToken, SealClaims, TrustworthinessVector, VerifierId,
 };
 use chrono::DateTime;
+use std::sync::OnceLock;
 use zeroize::Zeroize;
+
+struct ForensicCacheEntry {
+    event_count: usize,
+    profile: crate::forensics::AuthorshipProfile,
+    metrics: crate::forensics::ForensicMetrics,
+    regions: std::collections::HashMap<i64, Vec<crate::forensics::RegionData>>,
+}
+
+fn forensic_cache() -> &'static dashmap::DashMap<String, ForensicCacheEntry> {
+    static CACHE: OnceLock<dashmap::DashMap<String, ForensicCacheEntry>> = OnceLock::new();
+    CACHE.get_or_init(dashmap::DashMap::new)
+}
 
 /// Build the core WAR report data from stored events for a tracked file.
 ///
@@ -194,9 +207,37 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         format!("{} | Software-only Ed25519 key", device_id)
     };
 
-    // Run full forensic analysis for enhanced report data.
-    let profile = crate::forensics::ForensicEngine::evaluate_authorship(&file_path_str, &events);
-    let (metrics, regions) = crate::ffi::helpers::run_full_forensics(&events);
+    let (profile, metrics, regions) = {
+        let cache_key = file_path_str.to_string();
+        let hit = forensic_cache()
+            .get(&cache_key)
+            .filter(|e| e.event_count == events.len())
+            .map(|e| (e.profile.clone(), e.metrics.clone(), e.regions.clone()));
+        match hit {
+            Some(cached) => cached,
+            None => {
+                let p = crate::forensics::ForensicEngine::evaluate_authorship(
+                    &file_path_str,
+                    &events,
+                );
+                let (m, r) = crate::ffi::helpers::run_full_forensics(&events);
+                const MAX_FORENSIC_CACHE: usize = 10;
+                if forensic_cache().len() >= MAX_FORENSIC_CACHE {
+                    forensic_cache().clear();
+                }
+                forensic_cache().insert(
+                    cache_key,
+                    ForensicCacheEntry {
+                        event_count: events.len(),
+                        profile: p.clone(),
+                        metrics: m.clone(),
+                        regions: r.clone(),
+                    },
+                );
+                (p, m, r)
+            }
+        }
+    };
 
     let forensic_breakdown = {
         let c = &metrics.cadence;
