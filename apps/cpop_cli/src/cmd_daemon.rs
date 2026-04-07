@@ -177,6 +177,25 @@ pub(crate) fn cmd_stop() -> Result<()> {
 
             #[cfg(unix)]
             {
+                // H-012: Verify process name matches before sending SIGTERM to avoid
+                // killing an unrelated process that reused the PID after daemon exit.
+                let expected = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
+                let actual = std::process::Command::new("ps")
+                    .args(["-p", &pid.to_string(), "-o", "comm="])
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                if let Some(ref exp) = expected {
+                    if !actual.is_empty() && !actual.contains(exp.as_str()) && !exp.contains(actual.as_str()) {
+                        return Err(anyhow!(
+                            "PID {} belongs to '{}', not the daemon; refusing to send SIGTERM.",
+                            pid, actual
+                        ));
+                    }
+                }
+
                 match std::process::Command::new("kill")
                     .arg("-TERM")
                     .arg(pid.to_string())

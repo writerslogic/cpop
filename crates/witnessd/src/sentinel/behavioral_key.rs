@@ -2,6 +2,7 @@
 
 use crate::crypto::mem::ProtectedKey;
 use ed25519_dalek::SigningKey;
+use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use zeroize::{Zeroize, Zeroizing};
@@ -57,9 +58,14 @@ impl BehavioralKey {
         // In a real implementation, this might require re-authorizing with the TPM.
         if self.active_key.is_none() {
             if let Some(ref mk) = self.master_key {
-                // Re-derive signing key. In this simplified version, we just use the master key.
-                // In a more hardened version, we'd use KDF(master_key, entropy_pool).
-                self.active_key = Some(SigningKey::from_bytes(mk.as_bytes()));
+                let hk = Hkdf::<Sha256>::new(Some(&self.entropy_pool[..]), mk.as_bytes());
+                let mut derived = Zeroizing::new([0u8; 32]);
+                if hk
+                    .expand(b"witnessd-behavioral-entropy-v1", &mut derived[..])
+                    .is_ok()
+                {
+                    self.active_key = Some(SigningKey::from_bytes(&derived));
+                }
             }
         }
     }

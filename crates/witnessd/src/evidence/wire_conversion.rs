@@ -277,16 +277,14 @@ fn checkpoint_to_wire(
     let entangled_mac = if let (true, Some(jb)) = (has_merkle_root, jitter_binding_wire.as_ref()) {
         match authorproof_protocol::codec::cbor::encode(jb) {
             Ok(jb_cbor) => {
-                let ps_cbor = physical_state_wire
-                    .as_ref()
-                    .and_then(|ps| {
-                        authorproof_protocol::codec::cbor::encode(ps)
-                            .map_err(|e| {
-                                log::error!("CBOR encode physical-state for entangled MAC failed: {e} — skipping MAC")
-                            })
-                            .ok()
-                    })
-                    .unwrap_or_default();
+                let ps_cbor = match physical_state_wire.as_ref() {
+                    Some(ps) => authorproof_protocol::codec::cbor::encode(ps).map_err(|e| {
+                        Error::evidence(format!(
+                            "CBOR encode physical-state for entangled MAC: {e}"
+                        ))
+                    })?,
+                    None => vec![],
+                };
                 Some(crate::crypto::compute_entangled_mac(
                     merkle_root,
                     swf_input,

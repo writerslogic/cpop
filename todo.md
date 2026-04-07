@@ -12,7 +12,7 @@
 | Severity | Open | Fixed (prior) | Skipped (prior) |
 |----------|------|---------------|-----------------|
 | CRITICAL | 8    | 18            | 3               |
-| HIGH     | 25   | 135           | 0               |
+| HIGH     | 6    | 146           | 13              |
 | MEDIUM   | 0*   | 247           | 22              |
 
 *Medium findings deferred; ~50 files uncovered in wave 3 (see Coverage section).
@@ -137,23 +137,23 @@
 
 ## High
 
-- [ ] **H-001** `[concurrency]` `sentinel/core.rs:614`: Race condition in keystroke attribution -- read lock released then separate write lock acquired; session can change in window
+- [x] **H-001** `[concurrency]` `sentinel/core.rs:614`: Race condition in keystroke attribution -- read lock released then separate write lock acquired; session can change in window
   <!-- pid:data_race | verified:true | first:2026-04-06 -->
   Impact: Keystroke attributed to wrong session under concurrent focus change at 100+ WPM | Fix: Acquire write lock for full attribution sequence without releasing between read and update | Effort: medium
 
-- [ ] **H-002** `[security]` `sentinel/core_session.rs:208`: Relative path accepted for session creation; directory traversal via crafted app title
+- [x] **H-002** `[security]` `sentinel/core_session.rs:208`: Relative path accepted for session creation; directory traversal via crafted app title
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
   Impact: title:// sessions with ../ components bypass session isolation; evidence file written to arbitrary location | Fix: Reject relative paths; require absolute path or title:// with no traversal components | Effort: small
 
-- [ ] **H-003** `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id
+- [-] **H-003** `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id
   <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
   Impact: Two chains with same document_id produce nonce collision; GCM authentication broken; full plaintext recovery | Fix: Include unique monotonic counter in nonce derivation alongside document_id | Effort: medium
 
-- [ ] **H-004** `[security]` `sentinel/core_session.rs:36`: Path not canonicalized before session key insertion; symlink accepted as session path
+- [x] **H-004** `[security]` `sentinel/core_session.rs:36`: Path not canonicalized before session key insertion; symlink accepted as session path
   <!-- pid:toctou | verified:true | first:2026-04-06 -->
   Impact: Attacker creates symlink at target path before session start; evidence path redirected to attacker-controlled file | Fix: canonicalize() path and reject symlinks before session creation | Effort: small
 
-- [ ] **H-005** `[security]` `forensics/analysis.rs:173`: perplexity_score NaN propagates unchecked into ForensicMetrics; signed metrics contain NaN
+- [x] **H-005** `[security]` `forensics/analysis.rs:173`: perplexity_score NaN propagates unchecked into ForensicMetrics; signed metrics contain NaN
   <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-06 -->
   Impact: CBOR serialization of NaN is implementation-defined; signature over NaN metrics not reproducible; verification fails | Fix: Guard perplexity_score with is_finite(); substitute 0.0 and log::warn! on degenerate input | Effort: small
 
@@ -165,7 +165,7 @@
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
   Impact: MMR root fabricated in memory; proof verification has no ground truth; attacker controls full proof chain | Fix: Anchor MMR root in signed checkpoint or RFC3161 timestamp before accepting proofs | Effort: large
 
-- [ ] **H-008** `[error_handling]` `wal/operations.rs:97,105`: WAL state fields updated before fsync completes; power loss leaves WAL inconsistent
+- [x] **H-008** `[error_handling]` `wal/operations.rs:97,105`: WAL state fields updated before fsync completes; power loss leaves WAL inconsistent
   <!-- pid:toctou | verified:true | first:2026-04-06 -->
   Impact: WAL shows entry committed but data never persisted; evidence loss undetectable on recovery | Fix: Update state fields only after successful fsync returns; treat pre-fsync update as bug | Effort: small
 
@@ -177,27 +177,27 @@
   <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
   Impact: On Windows, file hash follows symlinks; hash of symlink target != hash of original content; content substitution undetected | Fix: On Windows, use FILE_FLAG_OPEN_REPARSE_POINT; detect and reject symlinks before hashing | Effort: medium
 
-- [ ] **H-011** `[security]` `sentinel/behavioral_key.rs:56`: add_entropy() mixes behavioral entropy directly into master key without KDF; comment says "simplified"
+- [x] **H-011** `[security]` `sentinel/behavioral_key.rs:56`: add_entropy() mixes behavioral entropy directly into master key without KDF; comment says "simplified"
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
   Impact: Direct XOR of entropy into master key reduces independence; correlated behavioral inputs create predictable key evolution | Fix: Use HKDF-Expand(master_key, entropy_bytes, "witnessd-behavioral-entropy-v1") for key update | Effort: medium
 
-- [ ] **H-012** `[security]` `apps/cpop_cli/src/cmd_daemon.rs:113`: PID file used for stop without liveness check; OS PID reuse causes wrong-process kill
+- [x] **H-012** `[security]` `apps/cpop_cli/src/cmd_daemon.rs:113`: PID file used for stop without liveness check; OS PID reuse causes wrong-process kill
   <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
   Impact: If daemon dies and OS reuses PID, `cpop stop` kills an unrelated process | Fix: Verify /proc/{pid}/comm matches expected process name before sending signal; or use socket-based stop | Effort: medium
 
-- [ ] **H-013** `[security]` `ffi/sentinel_witnessing.rs:51`: validate_path() return value discarded; original untrusted path passed to find_chain
+- [x] **H-013** `[security]` `ffi/sentinel_witnessing.rs:51`: validate_path() return value discarded; original untrusted path passed to find_chain
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
   Impact: Path validation executes but has no effect; attacker-controlled path used for chain lookup after validation | Fix: Use validated_path return value in find_chain call; assert original path is never referenced after validate_path | Effort: small
 
-- [ ] **H-014** `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states
+- [-] **H-014** `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states
   <!-- pid:business_logic | verified:true | first:2026-04-06 -->
   Impact: Evidence with provably invalid author declaration receives same verdict as valid evidence; comment creates false security assurance | Fix: Cap verdict at V2LikelyHuman when declaration_valid == false; add test case | Effort: small
 
-- [ ] **H-015** `[security]` `ipc/secure_channel.rs:26`: Unsafe pointer arithmetic in zeroize_cipher; compiler may optimize out non-volatile write
+- [-] **H-015** `[security]` `ipc/secure_channel.rs:26`: Unsafe pointer arithmetic in zeroize_cipher; compiler may optimize out non-volatile write
   <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
   Impact: Cipher key bytes persist after "zeroization"; side-channel or memory dump recovers IPC session key | Fix: Use zeroize::Zeroize trait on cipher state; replace unsafe block with safe API | Effort: medium
 
-- [ ] **H-016** `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path
+- [-] **H-016** `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path
   <!-- pid:alloc_in_loop | verified:analytical | first:2026-04-06 -->
   Impact: At 100+ WPM, synchronous send blocks tap thread; macOS disables CGEventTap if blocked >~15ms | Fix: Use try_send with ring buffer fallback; log dropped events per second | Effort: medium
 
@@ -205,15 +205,15 @@
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Impact: MITM between daemon and DID host serves arbitrary DID document; identity binding bypassed | Fix: Implement DID log verification per did:webvh spec section 6 before trusting any document | Effort: large
 
-- [ ] **H-018** `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data
+- [-] **H-018** `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
   Impact: Attacker modifies payload bytes without invalidating GCM authentication tag; sealed chain content tamperable | Fix: Include full payload bytes in AAD construction | Effort: medium
 
-- [ ] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case
+- [-] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case
   <!-- pid:nan_inf_unguarded | verified:analytical | first:2026-04-06 -->
   Impact: Negative variance from floating-point error produces NaN in IKI profile; propagates to signed metrics | Fix: Guard `variance > 0.0 && variance.is_finite()` before sqrt; return 0.0 on degenerate input | Effort: small
 
-- [ ] **H-020** `[security]` `verify/verdict.rs:71`: Verdict not capped on invalid declaration (same root cause as H-014; found in separate batch)
+- [-] **H-020** `[security]` `verify/verdict.rs:71`: Verdict not capped on invalid declaration (same root cause as H-014; found in separate batch)
   <!-- pid:business_logic | verified:true | first:2026-04-06 -->
   Same issue: verdict NOT capped at V2LikelyHuman when declaration_valid == false | Fix: See H-014 | Effort: small
 
@@ -221,19 +221,19 @@
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
   Impact: IPC client submits crafted EAT token; accepted as valid attestation by daemon | Fix: Chain with C-003 fix; require COSE_Sign1 verification at IPC boundary before any trust grant | Effort: large
 
-- [ ] **H-022** `[error_handling]` `tpm/linux.rs` (approx line 200+): TSS2 error codes wrapped without human-readable context string
+- [x] **H-022** `[error_handling]` `tpm/linux.rs` (approx line 200+): TSS2 error codes wrapped without human-readable context string
   <!-- pid:unhelpful_error_msg | verified:analytical | first:2026-04-06 -->
   Impact: TPM errors logged as opaque TSS2 integer codes; diagnosing attestation failures requires manual lookup | Fix: Map TSS2_RC codes to descriptive strings using tss-esapi error display | Effort: small
 
-- [ ] **H-023** `[error_handling]` `evidence/builder/mod.rs` (physical_state): CBOR encode failure on physical_state silently swallowed; builder continues
+- [x] **H-023** `[error_handling]` `evidence/builder/mod.rs` (physical_state): CBOR encode failure on physical_state silently swallowed; builder continues
   <!-- pid:silent_error | verified:analytical | first:2026-04-06 -->
   Impact: Physical state missing from evidence packet without any notification; attestation incomplete | Fix: Propagate CBOR error via builder Result; do not produce partial packet | Effort: small
 
-- [ ] **H-024** `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect
+- [-] **H-024** `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect
   <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
   Impact: After connection loss and reconnect, messages sent without encryption until next explicit init | Fix: Re-run key exchange on every new connection before sending any messages | Effort: medium
 
-- [ ] **H-025** `[security]` `ffi/sentinel_witnessing.rs` (stop_witnessing): Uses &path instead of &validated_path in chain lookup after validate_path call
+- [x] **H-025** `[security]` `ffi/sentinel_witnessing.rs` (stop_witnessing): Uses &path instead of &validated_path in chain lookup after validate_path call
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
   Impact: Same pattern as H-013 in stop_witnessing path; path validation cosmetic | Fix: Use &validated_path throughout stop_witnessing after validate_path call | Effort: small
 

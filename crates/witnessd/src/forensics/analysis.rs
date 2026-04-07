@@ -164,7 +164,13 @@ pub fn analyze_forensics_ext_with_focus(
     let mut metrics = ForensicMetrics::default();
 
     if let (Some(model), Some(text)) = (perplexity_model, document_text) {
-        metrics.perplexity_score = model.compute_perplexity(text);
+        let score = model.compute_perplexity(text);
+        metrics.perplexity_score = if score.is_finite() {
+            score
+        } else {
+            log::warn!("perplexity_score is non-finite ({score}); substituting 1.0");
+            1.0
+        };
         if metrics.perplexity_score > PERPLEXITY_ANOMALY_THRESHOLD {
             metrics.anomaly_count += 1;
         }

@@ -33,6 +33,14 @@ impl Sentinel {
         &self,
         file_path: &Path,
     ) -> std::result::Result<(), (IpcErrorCode, String)> {
+        // H-002: Reject relative paths to prevent directory traversal via crafted titles.
+        if !file_path.is_absolute() {
+            return Err((
+                IpcErrorCode::InvalidMessage,
+                format!("Relative path not accepted: {}", file_path.display()),
+            ));
+        }
+
         if !file_path.exists() {
             return Err((
                 IpcErrorCode::FileNotFound,
@@ -40,7 +48,17 @@ impl Sentinel {
             ));
         }
 
-        let path_str = file_path.to_string_lossy().to_string();
+        // H-004: Canonicalize to resolve symlinks before using as session key.
+        let canonical = match file_path.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                return Err((
+                    IpcErrorCode::InvalidMessage,
+                    format!("Cannot resolve path {}: {e}", file_path.display()),
+                ));
+            }
+        };
+        let path_str = canonical.to_string_lossy().to_string();
 
         // AUD-041: Acquire signing_key before sessions to maintain lock ordering.
         let key = {

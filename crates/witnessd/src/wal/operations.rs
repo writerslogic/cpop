@@ -139,7 +139,13 @@ impl Wal {
         // Force sync for checkpoint entries or when the batch threshold is reached.
         let force_sync = entry_type == EntryType::Checkpoint;
         if force_sync || state.pending_syncs >= state.sync_interval {
-            state.file.sync_data()?;
+            if let Err(e) = state.file.sync_data() {
+                // write_all succeeded but sync failed: the entry may or may not
+                // reach disk. Mark inconsistent so subsequent appends are rejected
+                // rather than building a hash chain on uncertain durability.
+                state.inconsistent = true;
+                return Err(WalError::Io(e));
+            }
             state.pending_syncs = 0;
         }
 

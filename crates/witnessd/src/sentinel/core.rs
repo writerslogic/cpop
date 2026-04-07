@@ -544,14 +544,14 @@ impl Sentinel {
                         }
 
                         // Only count keystrokes when a tracked document is focused.
-                        let focused_path = current_focus.read_recover().clone();
-                        if let Some(ref path) = focused_path {
-                            // Single write lock for both tracing and mutation
-                            // to avoid read-then-write lock thrashing.
+                        // Hold the focus read lock while acquiring the sessions write lock
+                        // so focus cannot change between the two acquisitions (H-001).
+                        let focus_guard = current_focus.read_recover();
+                        if let Some(ref path) = *focus_guard {
                             let mut map = sessions.write_recover();
                             super::trace!(
                                 "[KEYSTROKE] focus={:?} sessions={:?} kc={}",
-                                focused_path,
+                                path,
                                 map.keys().collect::<Vec<_>>(),
                                 event.keycode
                             );

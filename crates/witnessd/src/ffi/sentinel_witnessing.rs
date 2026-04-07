@@ -48,7 +48,15 @@ pub fn ffi_sentinel_stop_witnessing(path: String) -> FfiResult {
         }
     };
 
-    match sentinel.stop_witnessing(std::path::Path::new(&path)) {
+    // H-025: Validate path before passing to stop_witnessing (same as start_witnessing).
+    let validated_path = match crate::sentinel::helpers::validate_path(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            return FfiResult::err(format!("Invalid path: {e}"));
+        }
+    };
+
+    match sentinel.stop_witnessing(&validated_path) {
         Ok(()) => FfiResult::ok(format!("Stopped witnessing: {path}")),
         Err((_code, msg)) => FfiResult::err(msg),
     }

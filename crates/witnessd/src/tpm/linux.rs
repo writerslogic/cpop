@@ -135,22 +135,22 @@ impl Provider for LinuxTpmProvider {
             .context
             .quote(
                 ak_handle,
-                Data::try_from(qualifying).map_err(|_| TpmError::Quote("bad nonce".into()))?,
+                Data::try_from(qualifying).map_err(|e| TpmError::Quote(format!("bad nonce: {e}").into()))?,
                 SignatureScheme::RsaSsa {
                     hash_scheme: HashScheme::new(HashingAlgorithm::Sha256),
                 },
                 selection,
             )
-            .map_err(|_| TpmError::Quote("quote failed".into()))?;
+            .map_err(|e| TpmError::Quote(format!("quote failed: {e}").into()))?;
 
         let pcr_values = read_pcrs(&mut state, &pcr_list)?;
 
         let attest_data = attest
             .marshall()
-            .map_err(|_| TpmError::Quote("attest marshal".into()))?;
+            .map_err(|e| TpmError::Quote(format!("attest marshal: {e}").into()))?;
         let sig_data = signature
             .marshall()
-            .map_err(|_| TpmError::Quote("sig marshal".into()))?;
+            .map_err(|e| TpmError::Quote(format!("sig marshal: {e}").into()))?;
 
         // Compute device_id inline to avoid re-acquiring the lock (self.device_id() would deadlock)
         let device_id = match get_device_id(&mut state) {
@@ -195,22 +195,22 @@ impl Provider for LinuxTpmProvider {
                 buffer: [0; 64],
             },
         })
-        .map_err(|_| TpmError::Signing("ticket".into()))?;
+        .map_err(|e| TpmError::Signing(format!("ticket: {e}").into()))?;
 
         let signature = state
             .context
             .sign(
                 ak_handle,
                 TssDigest::try_from(digest.as_slice())
-                    .map_err(|_| TpmError::Signing("digest".into()))?,
+                    .map_err(|e| TpmError::Signing(format!("digest: {e}").into()))?,
                 SignatureScheme::RsaSsa {
                     hash_scheme: HashScheme::new(HashingAlgorithm::Sha256),
                 },
                 null_ticket,
             )
-            .map_err(|_| TpmError::Signing("sign failed".into()))?
+            .map_err(|e| TpmError::Signing(format!("sign failed: {e}").into()))?
             .marshall()
-            .map_err(|_| TpmError::Signing("sig marshal".into()))?;
+            .map_err(|e| TpmError::Signing(format!("sig marshal: {e}").into()))?;
 
         let counter = increment_counter(&mut state).ok();
 
