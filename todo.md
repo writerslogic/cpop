@@ -24,29 +24,27 @@
 - [ ] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001, C-002, C-003
   <!-- compound_impact: RFC3161 sig unverified + OTS block unverified + EAT CWT unsigned = all timestamp anchors can be forged; three independent evidence layers each completely bypassable -->
 
-- [ ] **CLU-002** `identity_trust_chain_failure`, CRITICAL, components: C-011, C-012, C-013
-  <!-- compound_impact: Legacy XOR recovery + SSRF via DID URI + biometric key in plaintext = identity infrastructure compromised from three independent vectors; attacker who breaks any one breaks the chain -->
+- [ ] **CLU-002** `identity_trust_chain_failure`, CRITICAL, components: C-011(-fixed), C-012(open), C-013(-fixed)
+  <!-- compound_impact: C-011 XOR recovery rejected; C-013 no plaintext key fallback; C-012 DID SSRF+sig chain deferred (architectural) -->
 
-- [ ] **CLU-003** `evidence_integrity_false_signal`, CRITICAL, components: C-005, C-006, C-008, C-009
-  <!-- compound_impact: Self-signed default + zero-edit partial score + zero jitter_seal on CBOR error + [0u8;32] VDF fallback = forged evidence packets pass all four independent integrity checks -->
+- [x] **CLU-003** `evidence_integrity_false_signal`, CRITICAL, components: C-005(-fp), C-006(fixed), C-008(fixed), C-009(fixed) -- RESOLVED 2026-04-06
+  <!-- compound_impact: C-006 zero-edit returns Inconsistent; C-008 CBOR errors propagate via Result; C-009 broken chain returns Error; C-005 architectural (external trust anchor) -->
 
-- [ ] **CLU-004** `report_exposure_cluster`, HIGH, components: C-010, C-014
-  <!-- compound_impact: XSS in HTML reports + HTTP in debug builds = complete report security failure in dev/CI; attacker-controlled file names execute scripts against any viewer -->
+- [x] **CLU-004** `report_exposure_cluster`, HIGH, components: C-010(-fp), C-014(fixed) -- RESOLVED 2026-04-06
+  <!-- compound_impact: C-014 HTTP exception removed unconditionally; C-010 false positive (HTML sections use pre-escaped data) -->
 
-- [ ] **CLU-005** `ffi_bypass_cluster`, HIGH, components: H-006, H-013, H-025, SYS-007
-  <!-- compound_impact: Unverified FFI keystrokes accepted + validate_path discarded in two FFI sites = evidence stream can be injected and path validation is cosmetic; both hardening layers bypassed from Swift/Kotlin -->
+- [x] **CLU-005** `ffi_bypass_cluster`, HIGH, components: H-006, H-013, H-025, SYS-007 -- FIXED 2026-04-06
+  <!-- compound_impact: All components fixed: H-006 raised unverified FFI confidence threshold to 0.5; H-013/H-025 both FFI sites use validated_path; SYS-007 evidence_export.rs TOCTOU fixed -->
 
 ## Systemic Issues
 
-- [ ] **SYS-001** `nan_inf_unguarded`, 8 files (new instances in re-audit), CRITICAL
+- [x] **SYS-001** `nan_inf_unguarded`, 8 files (new instances in re-audit), CRITICAL -- FIXED 2026-04-06
   <!-- pid:nan_inf_unguarded | first:2026-04-06 -->
-  New instances: `forensics/analysis.rs:173` (perplexity_score NaN in signed metrics), `cpop_jitter_bridge/session.rs` (IKI autocorrelation sqrt), plus 6 additional files in `tpm/linux.rs`, `ipc/async_client.rs`, `transcription/`, and `physics/` (uncovered wave 3).
-  Fix: Apply `is_finite()` guard before all division and sqrt; substitute 0.0 + log::warn! on failure.
+  Fixed: analysis.rs:173 (H-005), analysis.rs:549, transcription/audio.rs:145, physics/biological.rs:39. tpm/linux.rs and ipc/async_client.rs had no NaN instances. cpop_jitter_bridge/session.rs (H-019) confirmed false positive.
 
-- [ ] **SYS-002** `silent_error_swallow`, 15 files (new instances), HIGH
+- [-] **SYS-002** `silent_error_swallow`, 15 files (new instances), HIGH -- TRIAGED 2026-04-06
   <!-- pid:silent_error | first:2026-04-06 -->
-  New instances: `rats/eat.rs` (unsigned payload accepted silently), `war/profiles/vc.rs:245` (signing error → empty sig returned), `keyhierarchy/recovery.rs:68` (XOR decrypt failure silent), `ffi/sentinel_inject.rs` (injection error logged only), `trust_policy/evaluation.rs`, `declaration/verification.rs`, and 9 additional files in engine/watcher.rs, research/, collaboration.rs.
-  Fix: Upgrade warn to error where result changes security posture; return Result on all crypto failures.
+  rats/eat.rs: C-003 architectural (COSE verification). vc.rs:245: already returns error via sign_error capture. keyhierarchy/recovery.rs: fixed in C-011 (XOR path removed). ffi/sentinel_inject.rs: intentional design (caller doesn't need per-keystroke errors). trust_policy, declaration: no actionable silent swallows found. Remaining in research/collaboration are benign log::warn fallbacks.
 
 - [ ] **SYS-003** `business_logic_in_ffi`, 6 files, HIGH
   <!-- pid:logic_in_boundary | first:2026-04-06 -->
@@ -58,20 +56,17 @@
   Files: `store/integrity.rs:174` (HMAC only at open, not per-read), `sealed_chain.rs:95` (AAD partial -- only header, not payload), `cpop_jitter_bridge/session.rs` (session state loaded without HMAC).
   Fix: Add per-entry HMAC in high-integrity mode; fail hard on first HMAC failure mid-session.
 
-- [ ] **SYS-005** `toctou_file_access`, 5 files, HIGH
+- [x] **SYS-005** `toctou_file_access`, 5 files, HIGH -- FIXED 2026-04-06
   <!-- pid:toctou | first:2026-04-06 -->
-  Files: `sentinel/core_session.rs:36` (path not canonicalized before session key), `sentinel/helpers.rs:620` (non-Unix symlink gap), `identity/did_webvh.rs:402` (DID URI before validation), `fingerprint/storage.rs:363` (plaintext fallback write), `engine/watcher.rs` (file watch before hash).
-  Fix: canonicalize() + O_NOFOLLOW at every file-based trust boundary; reject symlinks.
+  Fixed: core_session.rs (H-002/H-004), helpers.rs (H-010), fingerprint/storage.rs (C-013), engine/watcher.rs (symlink_metadata check). identity/did_webvh.rs: deferred with C-012/H-017 (architectural DID validation).
 
-- [ ] **SYS-006** `magic_constants_scoring`, 12 files, MEDIUM
+- [-] **SYS-006** `magic_constants_scoring`, 12 files, MEDIUM -- FALSE POSITIVE 2026-04-06
   <!-- pid:magic_value | first:2026-04-06 -->
-  New instances in: `forensics/analysis.rs`, `war/appraisal.rs`, `rats/eat.rs`, `war/profiles/cawg.rs`, `war/profiles/c2pa/`, `war/profiles/standards.rs`, `continuation.rs`, `collaboration.rs`, and 4 additional files from wave 3.
-  Fix: Extract named constants; document source (spec reference or empirical calibration).
+  Verified: forensics/analysis.rs, war/appraisal.rs, rats/eat.rs all use named constants. continuation.rs and collaboration.rs have no bare float literals. No actionable instances found in remaining files.
 
-- [ ] **SYS-007** `ffi_path_validation_discarded`, 3 files, HIGH
+- [x] **SYS-007** `ffi_path_validation_discarded`, 3 files, HIGH -- FIXED 2026-04-06
   <!-- pid:path_traversal | first:2026-04-06 -->
-  Files: `ffi/sentinel_witnessing.rs:51` (start_witnessing uses original path after validate_path), `ffi/sentinel_witnessing.rs` (stop_witnessing uses &path not &validated_path), `ffi/evidence_export.rs:258` (TOCTOU between size check and read).
-  Fix: Use validated_path return value; never reference original path after validation call.
+  Fixed: sentinel_witnessing.rs start_witnessing and stop_witnessing both use &validated_path (H-013/H-025). evidence_export.rs:258 TOCTOU fixed in M-038 (read-once with hash verification).
 
 ---
 
