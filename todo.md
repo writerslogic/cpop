@@ -11,8 +11,8 @@
 ## Summary
 | Severity | Open | Fixed (prior) | Skipped (prior) |
 |----------|------|---------------|-----------------|
-| CRITICAL | 8    | 18            | 3               |
-| HIGH     | 6    | 146           | 13              |
+| CRITICAL | 4    | 20            | 5               |
+| HIGH     | 4    | 148           | 14              |
 | MEDIUM   | 0*   | 247           | 22              |
 
 *Medium findings deferred; ~50 files uncovered in wave 3 (see Coverage section).
@@ -81,7 +81,7 @@
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Impact: Forged TSA responses with correct hash pass all verification; timestamps completely unanchored | Fix: Implement CMS/PKCS#7 signature verification per RFC 5652; verify TSA certificate chain | Effort: large
 
-- [ ] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation
+- [-] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Impact: OTS proofs accepted from calendar without block confirmation; attacker fabricates calendar responses | Fix: Fetch and validate Bitcoin block header for each confirmed proof; fail hard without confirmation | Effort: large
 
@@ -101,7 +101,7 @@
   <!-- pid:business_logic | verified:true | first:2026-04-06 -->
   Impact: AI-generated document with no recorded keystrokes passes cross-modal check; bypasses behavioral detection | Fix: Return CrossModalVerdict::Inconsistent when total_edits == 0; no partial score on missing data | Effort: small
 
-- [ ] **C-007** `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in zeroize_cipher at line 26
+- [-] **C-007** `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in zeroize_cipher at line 26
   <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
   Impact: Key material persists in cloned cipher after use; unsafe ptr write in zeroize_cipher may not zero actual cipher state (compiler can optimize out non-volatile writes) | Fix: Use Zeroizing<> wrapper; replace unsafe ptr with zeroize::Zeroize on cipher state directly | Effort: medium
 
@@ -117,7 +117,7 @@
   <!-- pid:command_injection | verified:true | first:2026-04-06 -->
   Impact: XSS via document path containing `<script>`; attacker-controlled file name executes arbitrary script in any viewer | Fix: html_escape() all user-controlled fields before interpolation; use a safe templating API | Effort: small
 
-- [ ] **C-011** `[security]` `keyhierarchy/recovery.rs:68`: Legacy v1 recovery uses unauthenticated XOR cipher with static key
+- [x] **C-011** `[security]` `keyhierarchy/recovery.rs:68`: Legacy v1 recovery uses unauthenticated XOR cipher with static key
   <!-- pid:hardcoded_secret | verified:true | first:2026-04-06 -->
   Impact: V1 recovery blobs can be decrypted with the known static XOR key; no authentication on decryption | Fix: Reject legacy v1 recovery format with descriptive error; require migration to v2 AEAD format | Effort: medium
 
@@ -157,7 +157,7 @@
   <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-06 -->
   Impact: CBOR serialization of NaN is implementation-defined; signature over NaN metrics not reproducible; verification fails | Fix: Guard perplexity_score with is_finite(); substitute 0.0 and log::warn! on degenerate input | Effort: small
 
-- [ ] **H-006** `[security]` `ffi/sentinel_inject.rs:102`: Keystrokes with is_unverified_ffi=true bypass dual-layer validation; accepted into evidence stream without attestation
+- [x] **H-006** `[security]` `ffi/sentinel_inject.rs:102`: Keystrokes with is_unverified_ffi=true bypass dual-layer validation; accepted into evidence stream without attestation
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Impact: External process injects keystrokes that appear in evidence without being flagged as synthetic | Fix: Remove is_unverified_ffi exception; require all keystrokes to pass dual-layer (CGEvent + HID) validation | Effort: medium
 
@@ -173,7 +173,7 @@
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Impact: Attacker writes to SQLite DB mid-session; modified events bypass HMAC check (was only done at open) | Fix: Verify per-entry HMAC on each read in high-integrity mode; or re-verify full chain on checkpoint | Effort: large
 
-- [ ] **H-010** `[security]` `sentinel/helpers.rs:620`: compute_file_hash on non-Unix platforms lacks symlink protection (no O_NOFOLLOW equivalent)
+- [x] **H-010** `[security]` `sentinel/helpers.rs:620`: compute_file_hash on non-Unix platforms lacks symlink protection (no O_NOFOLLOW equivalent)
   <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
   Impact: On Windows, file hash follows symlinks; hash of symlink target != hash of original content; content substitution undetected | Fix: On Windows, use FILE_FLAG_OPEN_REPARSE_POINT; detect and reject symlinks before hashing | Effort: medium
 

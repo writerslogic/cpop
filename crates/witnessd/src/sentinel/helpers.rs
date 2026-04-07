@@ -646,6 +646,15 @@ fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
 
 #[cfg(not(unix))]
 fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
+    // H-010: Reject symlinks on non-Unix platforms before opening.
+    // symlink_metadata does not follow symlinks, so is_symlink() is reliable here.
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "symlinks are not accepted for file hashing",
+        ));
+    }
     std::fs::File::open(path)
 }
 

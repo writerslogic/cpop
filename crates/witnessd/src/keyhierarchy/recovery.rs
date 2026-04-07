@@ -51,71 +51,13 @@ fn recover_session_with_ratchet(
 
     match data[0] {
         0x02 => recover_ratchet_v2_aead(puf, recovery),
-        _ => recover_ratchet_v1_legacy(puf, recovery),
+        v => Err(KeyHierarchyError::Crypto(format!(
+            "Recovery data uses legacy format (version byte {v:#04x}) which is no longer \
+             supported due to its unauthenticated XOR cipher. \
+             Use an older release of WritersLogic to migrate your recovery state to v2 AEAD \
+             before upgrading."
+        ))),
     }
-}
-
-/// Legacy v1 ratchet recovery: XOR cipher (no version byte, backward compat).
-///
-/// WARNING: v1 uses an unauthenticated XOR cipher. The ordinal bytes (32..40) can
-/// be tampered with without detection. This path exists only for migration; callers
-/// should re-save as v2 AEAD immediately after a successful v1 recovery.
-fn recover_ratchet_v1_legacy(
-    puf: &dyn PufProvider,
-    recovery: &SessionRecoveryState,
-) -> Result<Session, KeyHierarchyError> {
-    log::warn!(
-        "Using legacy v1 recovery (unauthenticated XOR cipher). \
-         Re-export your recovery state to upgrade to v2 AEAD format."
-    );
-
-    let challenge = Sha256::digest(b"witnessd-ratchet-recovery-v1");
-    let response = puf.get_response(&challenge)?;
-    let key = hkdf_expand(&response, b"ratchet-recovery-key", &[])?;
-
-    if recovery.last_ratchet_state.len() < 40 {
-        return Err(KeyHierarchyError::SessionRecoveryFailed);
-    }
-
-    let mut ratchet_state = [0u8; 32];
-    for i in 0..32 {
-        ratchet_state[i] = recovery.last_ratchet_state[i] ^ key[i % 32];
-    }
-    let ordinal = u64::from_be_bytes(
-        recovery.last_ratchet_state[32..40]
-            .try_into()
-            .map_err(|_| KeyHierarchyError::SessionRecoveryFailed)?,
-    );
-    drop(key);
-
-    // Validate the decrypted ordinal against the signature chain to detect
-    // obvious tampering of the unauthenticated ordinal bytes.
-    let expected_ordinal = recovery
-        .signatures
-        .last()
-        .map_or(0u64, |s| s.ordinal.saturating_add(1));
-    if ordinal != expected_ordinal {
-        log::warn!(
-            "v1 recovery ordinal mismatch: decrypted {}, expected {} from signature chain. \
-             Possible tampering of unauthenticated recovery data.",
-            ordinal,
-            expected_ordinal,
-        );
-        return Err(KeyHierarchyError::SessionRecoveryFailed);
-    }
-
-    let protected = crate::crypto::ProtectedKey::new(ratchet_state);
-    ratchet_state.zeroize();
-    Ok(Session {
-        certificate: recovery.certificate.clone(),
-        ratchet: RatchetState {
-            current: protected,
-            ordinal,
-            wiped: false,
-        },
-        signatures: recovery.signatures.clone(),
-        export_count: 0,
-    })
 }
 
 /// v2 ratchet recovery: ChaCha20-Poly1305 AEAD.

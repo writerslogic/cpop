@@ -222,7 +222,11 @@ pub fn ffi_sentinel_inject_keystroke(
                 session.has_focus,
                 &mut session.event_validation,
             );
-            if validation.confidence < 0.1 {
+            // Unverified FFI events (NSEvent without CGEvent backing, all source
+            // fields zero) require a higher plausibility threshold since they
+            // cannot be validated against HID system state (H-006).
+            let min_confidence = if is_unverified_ffi { 0.5 } else { 0.1 };
+            if validation.confidence < min_confidence {
                 session.keystroke_count -= 1;
                 if pushed {
                     session.jitter_samples.pop();
