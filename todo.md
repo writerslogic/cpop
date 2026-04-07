@@ -403,7 +403,7 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:god_module | batch:6 -->
 
 ### Protocol
-- [ ] **M-056** `[architecture]` `c2pa.rs:1`: God module (1255 lines); JUMBF + JSON + COSE in single file
+- [x] **M-056** `[architecture]` `c2pa.rs:1`: God module (1255 lines); JUMBF + JSON + COSE in single file
   <!-- pid:god_module | batch:7 -->
 - [x] **M-057** `[maintainability]` `codec/cbor.rs:677`: Custom CBOR parser duplicates ciborium; not documented -- ALREADY FIXED: check_cbor_depth is fully documented with inline comments explaining purpose (depth/size guard before ciborium deserialization)
   <!-- pid:duplicated_logic | batch:7 -->
@@ -477,11 +477,11 @@ All 265 findings from prior audit (2026-03-30) and 255 from 2026-03-25 are resol
   <!-- pid:todo_fixme | batch:1 -->
 
 ### CLI
-- [ ] **M-090** `[architecture]` `native_messaging_host.rs:1`: God module (1786 lines); all NMH logic in one file
+- [x] **M-090** `[architecture]` `native_messaging_host.rs:1`: God module (1786 lines); all NMH logic in one file
   <!-- pid:god_module | batch:8 -->
-- [ ] **M-091** `[architecture]` `cmd_track.rs:1`: God module (1504 lines); mixed concerns
+- [x] **M-091** `[architecture]` `cmd_track.rs:1`: God module (1504 lines); mixed concerns
   <!-- pid:god_module | batch:8 -->
-- [ ] **M-092** `[architecture]` `cmd_export.rs:1`: God module (1384 lines); mixed concerns
+- [x] **M-092** `[architecture]` `cmd_export.rs:1`: God module (1384 lines); mixed concerns
   <!-- pid:god_module | batch:8 -->
 - [-] **M-093** `[security]` `native_messaging_host.rs:630`: handle_stop_session doesn't fsync evidence file -- FALSE POSITIVE: line ~661 has `let _ = std::fs::File::open(&session.evidence_path).and_then(|f| f.sync_all())`
   <!-- pid:no_resource_cleanup | batch:8 -->

@@ -37,15 +37,11 @@ allow = [
 ]
 confidence-threshold = 0.8
 
-# The CLI is GPL-3.0 but that's an internal workspace member
-[[licenses.exceptions]]
-allow = ["GPL-3.0-only"]
-name = "cpop_cli"
-
-# The engine is SSPL-1.0
+# The CLI is AGPL-3.0-only (already in global allow list)
+# The engine is SSPL-1.0 OR LicenseRef-Commercial; protocol+jitter stay Apache-2.0
 [[licenses.exceptions]]
 allow = ["SSPL-1.0"]
-name = "cpop_engine"
+name = "witnessd"
 
 [bans]
 multiple-versions = "warn"
