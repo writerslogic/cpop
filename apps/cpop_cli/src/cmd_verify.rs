@@ -143,6 +143,7 @@ fn verdict_str(v: &ForensicVerdict) -> &'static str {
         ForensicVerdict::V3Suspicious => "V3: Suspicious",
         ForensicVerdict::V4LikelySynthetic => "V4: Likely Synthetic",
         ForensicVerdict::V5ConfirmedForgery => "V5: Confirmed Forgery",
+        ForensicVerdict::V6InsufficientData => "V6: Insufficient Data",
     }
 }
 
@@ -827,6 +828,10 @@ mod tests {
             verdict_str(&ForensicVerdict::V5ConfirmedForgery),
             "V5: Confirmed Forgery"
         );
+        assert_eq!(
+            verdict_str(&ForensicVerdict::V6InsufficientData),
+            "V6: Insufficient Data"
+        );
     }
 
     #[test]
@@ -837,6 +842,7 @@ mod tests {
             ForensicVerdict::V3Suspicious,
             ForensicVerdict::V4LikelySynthetic,
             ForensicVerdict::V5ConfirmedForgery,
+            ForensicVerdict::V6InsufficientData,
         ];
         for (i, v) in verdicts.iter().enumerate() {
             let s = verdict_str(v);

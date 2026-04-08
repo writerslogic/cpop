@@ -15,6 +15,8 @@ pub enum ForensicVerdict {
     V4LikelySynthetic,
     /// HMAC causality lock broken — confirmed tampering.
     V5ConfirmedForgery,
+    /// Not enough data to make a determination.
+    V6InsufficientData,
 }
 
 impl ForensicVerdict {
@@ -25,6 +27,7 @@ impl ForensicVerdict {
             ForensicVerdict::V3Suspicious => "V3_Suspicious",
             ForensicVerdict::V4LikelySynthetic => "V4_LikelySynthetic",
             ForensicVerdict::V5ConfirmedForgery => "V5_ConfirmedForgery",
+            ForensicVerdict::V6InsufficientData => "V6_InsufficientData",
         }
     }
 
@@ -155,7 +158,7 @@ impl ForensicsEngine {
         }
         if self.inter_checkpoint_intervals.len() < 3 {
             return fa(
-                ForensicVerdict::V3Suspicious,
+                ForensicVerdict::V6InsufficientData,
                 0.0,
                 "Insufficient checkpoints for full forensic analysis".into(),
             );
@@ -495,15 +498,15 @@ mod tests {
     }
 
     #[test]
-    fn test_insufficient_checkpoints_returns_suspicious() {
-        // Fewer than 3 intervals should NOT return V2LikelyHuman (auto-pass)
+    fn test_insufficient_checkpoints_returns_insufficient() {
+        // Fewer than 3 intervals should return InsufficientData, not Suspicious
         let engine = ForensicsEngine {
             inter_checkpoint_intervals: vec![5.0, 10.0],
             causality_chain_valid: true,
             transcription_data: None,
         };
         let result = engine.analyze();
-        assert_eq!(result.verdict, ForensicVerdict::V3Suspicious);
+        assert_eq!(result.verdict, ForensicVerdict::V6InsufficientData);
     }
 
     #[test]
@@ -540,13 +543,13 @@ mod tests {
     fn test_single_interval_insufficient() {
         let engine = ForensicsEngine::from_timestamps(&[0, 1000], true);
         let result = engine.analyze();
-        assert_eq!(result.verdict, ForensicVerdict::V3Suspicious);
+        assert_eq!(result.verdict, ForensicVerdict::V6InsufficientData);
     }
 
     #[test]
     fn test_empty_intervals() {
         let engine = ForensicsEngine::from_timestamps(&[], true);
         let result = engine.analyze();
-        assert_eq!(result.verdict, ForensicVerdict::V3Suspicious);
+        assert_eq!(result.verdict, ForensicVerdict::V6InsufficientData);
     }
 }
