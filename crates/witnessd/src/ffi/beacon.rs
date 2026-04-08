@@ -16,6 +16,11 @@ fn read_bounded(path: &str) -> Result<Vec<u8>, String> {
 
 static BEACON_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
+/// Returns a shared tokio runtime for beacon/anchor network operations.
+/// Note: the early-return `get()` + fallback `get_or_init` pattern has a benign
+/// race where two concurrent callers may both build a runtime, but only one is
+/// stored; the other is dropped. This wastes a runtime construction but is safe.
+/// Replace with `get_or_try_init` when MSRV reaches 1.82.
 pub(crate) fn beacon_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
     if let Some(rt) = BEACON_RUNTIME.get() {
         return Ok(rt);
@@ -130,7 +135,7 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
     }
     let effective_timeout = timeout_secs.clamp(5, 120);
 
-    let client = match crate::writersproof::WritersProofClient::new("https://api.writersproof.com")
+    let client = match crate::writersproof::WritersProofClient::new(crate::writersproof::client::DEFAULT_API_URL)
     {
         Ok(c) => c.with_jwt(api_key),
         Err(e) => return err_beacon(format!("Failed to create API client: {e}")),

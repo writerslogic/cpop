@@ -165,7 +165,7 @@ impl Sentinel {
         };
 
         let writersproof_client = Arc::new(
-            crate::writersproof::WritersProofClient::new("https://api.writersproof.com")
+            crate::writersproof::WritersProofClient::new(crate::writersproof::client::DEFAULT_API_URL)
                 .map_err(|e| SentinelError::Anyhow(anyhow::anyhow!(e)))?,
         );
 
@@ -363,7 +363,13 @@ impl Sentinel {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         *self.shutdown_tx.lock_recover() = Some(shutdown_tx);
 
-        let (focus_monitor, mut focus_rx, mut change_rx) = self.setup_focus()?;
+        let (focus_monitor, mut focus_rx, mut change_rx) = match self.setup_focus() {
+            Ok(f) => f,
+            Err(e) => {
+                self.running.store(false, Ordering::SeqCst);
+                return Err(e);
+            }
+        };
 
         // Reset bridge health and stopping flag on (re-)start.
         // running is already true from the compare_exchange above.
@@ -504,8 +510,9 @@ impl Sentinel {
 
                         // Track this keyDown for dwell time (computed when keyUp arrives).
                         // Evict stale entries (keys held > 10s are likely stuck).
+                        // Also evict zero-timestamp entries that can never age out.
                         pending_downs.retain(|_, ts| {
-                            event.timestamp_ns.saturating_sub(*ts) < 10_000_000_000
+                            *ts > 0 && event.timestamp_ns.saturating_sub(*ts) < 10_000_000_000
                         });
                         // Cap at 256 entries (one per physical key is ~104; 256 is generous).
                         // A real keyboard cannot have more than ~256 simultaneous key-downs.
@@ -696,7 +703,7 @@ impl Sentinel {
                                 let cp_key = Arc::clone(&signing_key_for_cp);
                                 let cp_dir = writersproof_dir.clone();
                                 let cp_stop = Arc::clone(&stopping_flag);
-                                let _ = tokio::task::spawn_blocking(move || {
+                                if let Err(e) = tokio::task::spawn_blocking(move || {
                                     commit_checkpoint_for_path(
                                         &cp_path,
                                         "Auto-checkpoint on idle end",
@@ -706,7 +713,9 @@ impl Sentinel {
                                         &cp_stop,
                                     )
                                 })
-                                .await;
+                                .await {
+                                    log::error!("Idle-end checkpoint task panicked: {e}");
+                                }
                             }
                             end_session_sync(path, &sessions, &session_events_tx);
                         }
@@ -808,7 +817,13 @@ impl Sentinel {
                             })
                             .await
                             .unwrap_or_else(|e| {
-                                log::error!("Checkpoint task panicked: {e}");
+                                log::error!("Checkpoint task panicked for {}: {e}", path);
+                                // Mark session as needing a recovery checkpoint so the
+                                // next idle cycle retries rather than skipping silently.
+                                let mut map = sessions.write_recover();
+                                if let Some(session) = map.get_mut(path.as_str()) {
+                                    session.last_checkpoint_keystrokes = 0;
+                                }
                                 None
                             });
                             if let Some(event_hash) = committed {
@@ -1290,9 +1305,21 @@ impl Drop for Sentinel {
             let _ = cap.stop();
         }
 
-        // Join bridge threads (they check the running flag on 100ms timeout).
+        // Join bridge threads with a timeout to avoid blocking the tokio runtime.
+        // Bridge threads check the running flag on 100ms recv_timeout, so 200ms
+        // is sufficient for them to notice and exit.
         for handle in self.bridge_threads.lock_recover().drain(..) {
-            let _ = handle.join();
+            let start = std::time::Instant::now();
+            while !handle.is_finished() {
+                if start.elapsed() > std::time::Duration::from_millis(200) {
+                    log::warn!("Bridge thread did not exit within 200ms; detaching");
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
         }
 
         // Stop HID capture so the global callback doesn't leak.

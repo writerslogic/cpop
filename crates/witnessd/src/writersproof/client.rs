@@ -13,6 +13,9 @@ use super::types::{
 };
 use crate::error::{Error, Result};
 
+/// Default WritersProof API base URL.
+pub const DEFAULT_API_URL: &str = "https://api.writersproof.com";
+
 /// WritersProof API client.
 pub struct WritersProofClient {
     base_url: String,
@@ -45,8 +48,8 @@ impl WritersProofClient {
     }
 
     /// Set the JWT token for authenticated requests.
-    pub fn with_jwt(mut self, token: String) -> Self {
-        self.jwt = Some(Zeroizing::new(token));
+    pub fn with_jwt(mut self, token: Zeroizing<String>) -> Self {
+        self.jwt = Some(token);
         self
     }
 
@@ -201,17 +204,21 @@ impl WritersProofClient {
                 )));
             }
         }
-        let body = resp
-            .bytes()
+        let mut body: Vec<u8> = Vec::new();
+        let mut resp = resp;
+        while let Some(chunk) = resp
+            .chunk()
             .await
-            .map_err(|e| Error::crypto(format!("certificate response read failed: {e}")))?;
-        if body.len() as u64 > MAX_CERT_SIZE {
-            return Err(Error::crypto(format!(
-                "certificate response too large: {} bytes (max {MAX_CERT_SIZE})",
-                body.len()
-            )));
+            .map_err(|e| Error::crypto(format!("certificate response read failed: {e}")))?
+        {
+            if body.len() as u64 + chunk.len() as u64 > MAX_CERT_SIZE {
+                return Err(Error::crypto(format!(
+                    "certificate response too large (max {MAX_CERT_SIZE} bytes)"
+                )));
+            }
+            body.extend_from_slice(&chunk);
         }
-        Ok(body.to_vec())
+        Ok(body)
     }
 
     /// Get the certificate revocation list.
@@ -236,13 +243,21 @@ impl WritersProofClient {
             )));
         }
 
+        const MAX_CRL_SIZE: u64 = 50_000_000; // 50 MB
+        if let Some(cl) = resp.content_length() {
+            if cl > MAX_CRL_SIZE {
+                return Err(Error::crypto(format!(
+                    "CRL Content-Length too large: {cl} bytes (max {MAX_CRL_SIZE})"
+                )));
+            }
+        }
         let body = resp
             .bytes()
             .await
             .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))?;
-        if body.len() > 50_000_000 {
+        if body.len() as u64 > MAX_CRL_SIZE {
             return Err(Error::crypto(format!(
-                "CRL response too large: {} bytes (max 50MB)",
+                "CRL response too large: {} bytes (max {MAX_CRL_SIZE})",
                 body.len()
             )));
         }
@@ -565,7 +580,7 @@ mod tests {
     fn test_client_with_jwt() {
         let client = WritersProofClient::new("https://api.writersproof.com")
             .unwrap()
-            .with_jwt("test-token".to_string());
+            .with_jwt(zeroize::Zeroizing::new("test-token".to_string()));
         assert!(client
             .jwt
             .as_ref()

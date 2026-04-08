@@ -54,6 +54,12 @@ impl ProtectedBuf {
     }
 }
 
+impl std::fmt::Debug for ProtectedBuf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[PROTECTED BUF]")
+    }
+}
+
 impl Deref for ProtectedBuf {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
