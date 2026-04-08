@@ -130,7 +130,7 @@ fn compute_iki_surprisal_correlation(ikis: &[f64], surprisals: &[f64]) -> f64 {
     let iki_var = iki_sample.iter().map(|x| (x - iki_mean).powi(2)).sum::<f64>();
     let surp_var = surp_sample.iter().map(|x| (x - surp_mean).powi(2)).sum::<f64>();
 
-    if iki_var <= 0.0 || surp_var <= 0.0 {
+    if !iki_var.is_finite() || !surp_var.is_finite() || iki_var <= 0.0 || surp_var <= 0.0 {
         return 0.0;
     }
 
@@ -494,5 +494,13 @@ mod tests {
         assert!(p1 > 5, "phase 1 endpoint should be detected");
         assert!(p2 > p1 + 5, "phase 2 endpoint should be after phase 1");
         assert!(residual.is_finite());
+    }
+
+    #[test]
+    fn test_iki_surprisal_correlation_with_nan() {
+        let ikis = vec![100.0, 110.0, f64::NAN, 120.0, 130.0];
+        let surprisals = vec![2.0, 2.5, 3.0, 3.5, 4.0];
+        let corr = compute_iki_surprisal_correlation(&ikis, &surprisals);
+        assert_eq!(corr, 0.0, "correlation with NaN input should return 0.0, not NaN");
     }
 }
