@@ -323,7 +323,6 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                     FfiResult::ok(format!("Exported {} to {}", label, output_path.display()))
                 }
                 Err(e) => {
-                    let _ = std::fs::remove_file(&tmp_path);
                     FfiResult::err(format!("Failed to write output: {}", e))
                 }
             }

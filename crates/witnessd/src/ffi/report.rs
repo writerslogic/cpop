@@ -73,7 +73,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         }
     };
     let score = (avg_forensic * 100.0).clamp(0.0, 100.0) as u32;
-    let verdict = Verdict::from_score(score);
+    let mut verdict = Verdict::from_score(score);
     let lr = compute_likelihood_ratio(score);
     let enfsi_tier = EnfsiTier::from_lr(lr);
 
@@ -120,7 +120,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         0.0
     };
 
-    let process = ProcessEvidence {
+    let mut process = ProcessEvidence {
         paste_operations: Some(paste_count),
         swf_checkpoints: Some(events.len() as u64),
         swf_avg_compute_ms: Some(avg_compute_ms),
@@ -266,6 +266,34 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             max_bps: finite_or(metrics.velocity.max_bps, 0.0),
         }
     };
+
+    // Populate behavioral fields from forensic metrics
+    let c = &metrics.cadence;
+    if c.mean_iki_ns > 0.0 && c.mean_iki_ns.is_finite() {
+        let cv = c.std_dev_iki_ns / c.mean_iki_ns;
+        process.iki_cv = if cv.is_finite() { Some(cv) } else { None };
+        process.total_keystrokes = Some(c.burst_count as u64 + c.pause_count as u64);
+        if c.percentiles[2] > 0.0 && c.percentiles[2].is_finite() {
+            process.pause_median_sec = Some(c.percentiles[2] / 1_000_000_000.0);
+        }
+        if c.percentiles[4] > 0.0 && c.percentiles[4].is_finite() {
+            process.pause_p95_sec = Some(c.percentiles[4] / 1_000_000_000.0);
+        }
+    }
+    process.revision_intensity = if metrics.primary.monotonic_append_ratio.is_finite() {
+        Some(1.0 - metrics.primary.monotonic_append_ratio)
+    } else {
+        None
+    };
+    if c.correction_ratio.is_finite() && c.correction_ratio > 0.0 {
+        let total_events = (c.burst_count + c.pause_count) as u64;
+        process.deletion_sequences = Some((c.correction_ratio * total_events as f64) as u64);
+    }
+
+    // Override verdict to Inconclusive when behavioral data is absent
+    if process.total_keystrokes.is_none() && process.iki_cv.is_none() && score < 60 {
+        verdict = Verdict::Inconclusive;
+    }
 
     let edit_topology: Vec<EditRegion> = regions
         .values()

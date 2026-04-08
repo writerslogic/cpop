@@ -19,28 +19,9 @@ use crate::ffi::types::{
 };
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-/// Cached device identity for populating ephemeral events (EH-012).
-static DEVICE_IDENTITY: OnceLock<([u8; 16], String)> = OnceLock::new();
 
-fn device_identity() -> &'static ([u8; 16], String) {
-    DEVICE_IDENTITY.get_or_init(|| {
-        match crate::identity::secure_storage::SecureStorage::load_device_identity() {
-            Ok(Some(identity)) => identity,
-            Ok(None) | Err(_) => {
-                log::error!(
-                    "SecureStorage device identity unavailable; using random ephemeral device ID"
-                );
-                let mut fallback_id = [0u8; 16];
-                rand::RngCore::fill_bytes(&mut rand::rng(), &mut fallback_id);
-                let machine_id =
-                    sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
-                (fallback_id, machine_id)
-            }
-        }
-    })
-}
+use super::helpers::device_identity;
 
 // FFI boundary constants: these values MUST match the corresponding constants
 // in the Swift side (EphemeralSessionManager.swift / EphemeralConstants.swift).

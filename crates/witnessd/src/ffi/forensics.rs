@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::open_store;
+
 use crate::ffi::types::{FfiCalibrationResult, FfiProcessScore};
 use crate::vdf::Parameters;
 use std::sync::Mutex;
@@ -22,8 +22,8 @@ const COMPOSITE_PASS_THRESHOLD: f64 = 0.9;
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
-    let path = match crate::sentinel::helpers::validate_path(&path) {
-        Ok(p) => p.to_string_lossy().to_string(),
+    let (_path, _store, events) = match crate::ffi::helpers::load_events_for_path(&path) {
+        Ok(v) => v,
         Err(e) => {
             return FfiProcessScore {
                 success: false,
@@ -33,36 +33,6 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
                 composite: 0.0,
                 meets_threshold: false,
                 error_message: Some(e),
-            };
-        }
-    };
-
-    let store = match open_store() {
-        Ok(s) => s,
-        Err(e) => {
-            return FfiProcessScore {
-                success: false,
-                residency: 0.0,
-                sequence: 0.0,
-                behavioral: 0.0,
-                composite: 0.0,
-                meets_threshold: false,
-                error_message: Some(e),
-            };
-        }
-    };
-
-    let events = match store.get_events_for_file(&path) {
-        Ok(e) => e,
-        Err(e) => {
-            return FfiProcessScore {
-                success: false,
-                residency: 0.0,
-                sequence: 0.0,
-                behavioral: 0.0,
-                composite: 0.0,
-                meets_threshold: false,
-                error_message: Some(format!("Failed to load events: {}", e)),
             };
         }
     };

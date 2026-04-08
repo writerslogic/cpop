@@ -4,7 +4,30 @@ use crate::forensics::EventData;
 use crate::store::SecureStore;
 use authorproof_protocol::rfc::wire_types::AttestationTier;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use zeroize::Zeroizing;
+
+/// Cached device identity for populating evidence events.
+/// Shared across all FFI modules to avoid duplicate OnceLock instances.
+static DEVICE_IDENTITY: OnceLock<([u8; 16], String)> = OnceLock::new();
+
+pub fn device_identity() -> &'static ([u8; 16], String) {
+    DEVICE_IDENTITY.get_or_init(|| {
+        match crate::identity::secure_storage::SecureStorage::load_device_identity() {
+            Ok(Some(identity)) => identity,
+            Ok(None) | Err(_) => {
+                log::error!(
+                    "SecureStorage device identity unavailable; using random ephemeral device ID"
+                );
+                let mut fallback_id = [0u8; 16];
+                rand::RngCore::fill_bytes(&mut rand::rng(), &mut fallback_id);
+                let machine_id =
+                    sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
+                (fallback_id, machine_id)
+            }
+        }
+    })
+}
 
 /// Try to unwrap a COSE_Sign1 envelope to get the inner CBOR payload.
 /// If the data is not a valid COSE_Sign1, return it unchanged (raw CBOR).
@@ -113,6 +136,21 @@ pub(crate) fn load_api_key() -> Result<Zeroizing<String>, String> {
     Ok(Zeroizing::new(key))
 }
 
+/// Validate a document path, open the store, and load events in one call.
+/// Eliminates the repeated validate+open+get_events boilerplate across FFI functions.
+pub(crate) fn load_events_for_path(
+    path: &str,
+) -> Result<(String, SecureStore, Vec<crate::store::SecureEvent>), String> {
+    let validated = crate::sentinel::helpers::validate_path(path)
+        .map_err(|e| e.to_string())?;
+    let canonical = validated.to_string_lossy().to_string();
+    let store = open_store()?;
+    let events = store
+        .get_events_for_file(&canonical)
+        .map_err(|e| format!("Failed to load events: {e}"))?;
+    Ok((canonical, store, events))
+}
+
 pub(crate) fn open_store() -> Result<SecureStore, String> {
     let db_path = get_db_path()
         .filter(|p| p.exists())
@@ -126,8 +164,8 @@ pub(crate) fn open_store() -> Result<SecureStore, String> {
 /// 1. Try the signing-key-derived HMAC (handles keychain key transitions)
 /// 2. Verify a fresh key is available, THEN delete the stale DB and recreate
 pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, String> {
-    let mut hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
-    match SecureStore::open(db_path, std::mem::take(&mut *hmac_key)) {
+    let hmac_key = load_hmac_key().ok_or_else(|| "Failed to load signing key".to_string())?;
+    match SecureStore::open(db_path, hmac_key) {
         Ok(store) => Ok(store),
         Err(primary_err) => {
             let err_msg = primary_err.to_string();
@@ -135,8 +173,8 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                 err_msg.contains("HMAC mismatch") || err_msg.contains("hmac mismatch");
 
             // Strategy 1: try signing-key-derived HMAC
-            if let Some(mut key) = derive_hmac_from_signing_key() {
-                if let Ok(store) = SecureStore::open(db_path, std::mem::take(&mut *key)) {
+            if let Some(key) = derive_hmac_from_signing_key() {
+                if let Ok(store) = SecureStore::open(db_path, key) {
                     log::info!("Opened database with signing-key-derived HMAC");
                     if let Some(k) = derive_hmac_from_signing_key() {
                         if let Err(e) = crate::identity::SecureStorage::save_hmac_key(&k) {
@@ -152,7 +190,7 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                 // Reset the cache so load_hmac_key re-derives from signing_key
                 crate::identity::SecureStorage::reset_hmac_cache();
                 let fresh_key = load_hmac_key();
-                if let Some(mut k) = fresh_key {
+                if let Some(k) = fresh_key {
                     let timestamp = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs())
@@ -165,7 +203,7 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                     if let Err(e) = std::fs::rename(db_path, &backup_path) {
                         return Err(format!("HMAC mismatch; database backup failed: {e}"));
                     }
-                    match SecureStore::open(db_path, std::mem::take(&mut *k)) {
+                    match SecureStore::open(db_path, k) {
                         Ok(store) => {
                             // Persist the migrated HMAC key so future opens succeed
                             if let Some(migrated) = load_hmac_key() {
