@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::rfc::{Checkpoint, DocumentRef, HashAlgorithm, HashValue};
+use crate::rfc::{Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
+use coset::CborSerializable;
 use ed25519_dalek::SigningKey;
+use sha2::Digest;
 
 fn test_evidence_packet() -> EvidencePacket {
     EvidencePacket {
@@ -181,8 +183,8 @@ fn signature_contains_public_key_in_protected_header() {
     if let Some((_, ciborium::Value::Bytes(pk_bytes))) = pk_entry {
         let key = test_signing_key();
         assert_eq!(
-            pk_bytes,
-            &key.verifying_key().to_bytes().to_vec(),
+            pk_bytes.as_slice(),
+            key.verifying_key().to_bytes().as_slice(),
             "Embedded key must match signer"
         );
     } else {
