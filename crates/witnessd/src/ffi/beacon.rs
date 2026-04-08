@@ -3,9 +3,20 @@
 use crate::ffi::helpers::{load_api_key, load_did, load_signing_key, open_store};
 use std::sync::OnceLock;
 
+/// Maximum evidence file size for FFI reads (64 MB).
+const MAX_EVIDENCE_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
+fn read_bounded(path: &str) -> Result<Vec<u8>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("Failed to stat file: {e}"))?;
+    if meta.len() > MAX_EVIDENCE_FILE_SIZE {
+        return Err(format!("File too large ({} bytes, max {})", meta.len(), MAX_EVIDENCE_FILE_SIZE));
+    }
+    std::fs::read(path).map_err(|e| format!("Failed to read file: {e}"))
+}
+
 static BEACON_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-fn beacon_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+pub(crate) fn beacon_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
     if let Some(rt) = BEACON_RUNTIME.get() {
         return Ok(rt);
     }
@@ -108,11 +119,14 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
         Err(e) => return err_beacon(format!("Failed to create async runtime: {e}")),
     };
 
-    let effective_timeout = timeout_secs.max(5);
+    if timeout_secs < 5 {
+        log::warn!("ffi_submit_beacon: timeout_secs {timeout_secs} below minimum 5; using 5");
+    }
+    let effective_timeout = timeout_secs.clamp(5, 120);
 
     let client = match crate::writersproof::WritersProofClient::new("https://api.writersproof.com")
     {
-        Ok(c) => c.with_jwt((*api_key).clone()),
+        Ok(c) => c.with_jwt(api_key),
         Err(e) => return err_beacon(format!("Failed to create API client: {e}")),
     };
 
@@ -166,8 +180,14 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
                         .map_err(|e| log::warn!("beacon timestamp parse failed: {e}"))
                         .ok();
 
+                    let anchor_error = if anchor_id.is_none() {
+                        Some("Beacon fetched but anchor submission failed; evidence not yet in transparency log".to_string())
+                    } else {
+                        None
+                    };
+
                     FfiBeaconResult {
-                        success: true,
+                        success: anchor_id.is_some(),
                         verification_url: anchor_id
                             .as_ref()
                             .map(|id| format!("https://writerslogic.com/verify/{id}")),
@@ -176,7 +196,7 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
                         drand_round: Some(beacon.drand_round),
                         nist_pulse: Some(beacon.nist_pulse_index),
                         wp_signature_hex: Some(beacon.wp_signature),
-                        error_message: None,
+                        error_message: anchor_error,
                     }
                 }
             }
@@ -191,9 +211,9 @@ pub fn ffi_check_beacon_status(document_path: String) -> FfiBeaconResult {
         Err(e) => return err_beacon(e),
     };
 
-    let data = match std::fs::read(&canonical) {
+    let data = match read_bounded(&canonical) {
         Ok(d) => d,
-        Err(e) => return err_beacon(format!("Failed to read file: {e}")),
+        Err(e) => return err_beacon(e),
     };
     let cbor_payload = crate::ffi::helpers::unwrap_cose_or_raw(&data);
 
@@ -275,13 +295,13 @@ pub fn ffi_list_beacons(document_path: String) -> FfiBeaconListResult {
         }
     };
 
-    let data = match std::fs::read(&canonical) {
+    let data = match read_bounded(&canonical) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
             return FfiBeaconListResult {
-                success: true,
+                success: false,
                 beacons: vec![],
-                error_message: None,
+                error_message: Some(e),
             };
         }
     };

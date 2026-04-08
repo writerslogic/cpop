@@ -216,13 +216,14 @@ pub fn sign_event_lamport(
     Ok(())
 }
 
-/// Atomically write `data` to `path` via tmp-file + fsync + rename.
+/// Atomically write `data` to `path` via temp-file + fsync + rename.
+/// Uses `tempfile` for an unpredictable temp name to prevent symlink attacks.
 pub fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    let mut f = std::fs::File::create(&tmp)?;
-    std::io::Write::write_all(&mut f, data)?;
-    f.sync_all()?;
-    std::fs::rename(&tmp, path)
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::Write::write_all(&mut tmp, data)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| e.error).map(|_| ())
 }
 
 /// Owner-only permissions: Unix chmod `mode`, Windows icacls current-user-only.

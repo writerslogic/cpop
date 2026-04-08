@@ -354,7 +354,7 @@ impl Sentinel {
     /// The `running` flag is set **after** all subsystems have initialized successfully
     /// so that `is_running()` only returns `true` when the sentinel is fully operational.
     pub async fn start(&self) -> Result<()> {
-        if self.running.load(Ordering::SeqCst) {
+        if self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             return Err(SentinelError::AlreadyRunning);
         }
 
@@ -366,11 +366,9 @@ impl Sentinel {
         let (focus_monitor, mut focus_rx, mut change_rx) = self.setup_focus()?;
 
         // Reset bridge health and stopping flag on (re-)start.
+        // running is already true from the compare_exchange above.
         self.bridge_healthy.store(true, Ordering::SeqCst);
         self.stopping.store(false, Ordering::SeqCst);
-
-        // Set running=true before spawning bridge threads so they see the flag immediately.
-        self.running.store(true, Ordering::SeqCst);
 
         let sessions = Arc::clone(&self.sessions);
         let current_focus = Arc::clone(&self.current_focus);
@@ -546,6 +544,12 @@ impl Sentinel {
                         // Only count keystrokes when a tracked document is focused.
                         // Hold the focus read lock while acquiring the sessions write lock
                         // so focus cannot change between the two acquisitions (H-001).
+                        // Lock ordering note: this acquires current_focus(3).read before
+                        // sessions(2).write, which inverts the declared numeric order.
+                        // This is safe because current_focus is only ever write-locked
+                        // from the focus event branch (single-threaded event loop), and
+                        // read-read does not conflict. No path holds sessions.write then
+                        // acquires current_focus.write.
                         let focus_guard = current_focus.read_recover();
                         if let Some(ref path) = *focus_guard {
                             let mut map = sessions.write_recover();
@@ -606,21 +610,6 @@ impl Sentinel {
                                 super::trace!(
                                     "[KEYSTROKE] NO SESSION for path={:?}", path
                                 );
-                            }
-                        }
-
-                        // 3. Accumulate behavioral entropy for Chaos-Salted SE signing
-                        {
-                            let focus_guard = current_focus.read_recover();
-                            if let Some(ref path) = *focus_guard {
-                                let mut map = sessions.write_recover();
-                                if let Some(session) = map.get_mut(path) {
-                                    // Use the nanosecond micro-jitter as the entropy source
-                                    let jitter_bytes = event.timestamp_ns.to_le_bytes();
-                                    if let Some(ref mut sched) = session.hw_cosign_scheduler {
-                                        sched.record_entropy(&jitter_bytes);
-                                    }
-                                }
                             }
                         }
 
@@ -1006,17 +995,20 @@ impl Sentinel {
         // tasks bail before opening SQLite (prevents findReusableFd deadlock).
         self.stopping.store(true, Ordering::SeqCst);
 
-        // Abort the event loop task early. This cancels any pending .await on
-        // spawn_blocking and prevents new checkpoint tasks from being spawned.
-        if let Some(handle) = self.event_loop_handle.lock_recover().take() {
-            handle.abort();
-        }
-
-        // take() under lock, then await outside to avoid holding lock across .await
+        // Send shutdown signal first so the event loop can run cleanup (focus_monitor.stop()).
+        // take() under lock, then await outside to avoid holding lock across .await.
         let tx = self.shutdown_tx.lock_recover().take();
         if let Some(tx) = tx {
-            // Intentionally ignored: receiver may already be dropped during shutdown
             let _ = tx.send(()).await;
+        }
+
+        // Give the event loop a short window to exit gracefully, then force-abort.
+        let handle = self.event_loop_handle.lock_recover().take();
+        if let Some(mut handle) = handle {
+            match tokio::time::timeout(std::time::Duration::from_millis(500), &mut handle).await {
+                Ok(_) => {} // exited gracefully
+                Err(_) => handle.abort(),
+            }
         }
 
         // Stop CGEventTap threads (keystroke + mouse captures) so
@@ -1086,12 +1078,11 @@ impl Sentinel {
                 let hmac_key = crate::crypto::derive_hmac_key(&key_bytes);
                 key_bytes.zeroize();
                 drop(sk);
-                let hmac_vec = hmac_key.to_vec();
                 let db = self.config.writersproof_dir.join("events.db");
                 let save_result = tokio::time::timeout(
                     Duration::from_secs(2),
                     tokio::task::spawn_blocking(move || {
-                        if let Ok(store) = crate::store::SecureStore::open(&db, hmac_vec) {
+                        if let Ok(store) = crate::store::SecureStore::open(&db, hmac_key) {
                             for stats in &stats_list {
                                 if let Err(e) = store.save_document_stats(stats) {
                                     log::warn!("Failed to persist document stats: {e}");

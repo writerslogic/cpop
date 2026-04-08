@@ -11,7 +11,7 @@ static NONCE: AtomicU64 = AtomicU64::new(0);
 fn get_mask(n: u64) -> u64 {
     n ^ *SECRET.get_or_init(|| {
         let mut b = [0u8; 8];
-        let _ = getrandom::getrandom(&mut b);
+        getrandom::getrandom(&mut b).expect("getrandom failed; cannot initialize obfuscation secret");
         u64::from_ne_bytes(b)
     })
 }
@@ -103,9 +103,19 @@ impl PartialEq for ObfuscatedString {
 
 impl<T: Serialize + for<'de> Deserialize<'de> + PartialEq> PartialEq for Obfuscated<T> {
     fn eq(&self, other: &Self) -> bool {
-        match (self.reveal(), other.reveal()) {
-            (Some(a), Some(b)) => a == b,
-            _ => false,
-        }
+        use subtle::ConstantTimeEq;
+        // Deobfuscate both to canonical serialized bytes and compare in constant time.
+        let mut a = self.data.clone();
+        apply_mask(&mut a, get_mask(self.nonce));
+        let mut b = other.data.clone();
+        apply_mask(&mut b, get_mask(other.nonce));
+        let result = if a.len() == b.len() {
+            a.ct_eq(&b).into()
+        } else {
+            false
+        };
+        a.zeroize();
+        b.zeroize();
+        result
     }
 }

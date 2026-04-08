@@ -7,7 +7,7 @@ use crate::ffi::types::FfiResult;
 ///
 /// Uses the latest event_hash from the store (matching CLI behavior), signs
 /// the raw hash bytes with Ed25519, and submits to the WritersProof API.
-/// Requires a valid API key stored at `~/.writersproof/writersproof_api_key`.
+/// Requires a valid API key stored at `~/Library/Application Support/WritersProof/writersproof_api_key`.
 ///
 /// Note: Function named with underscore in `writers_proof` so UniFFI generates
 /// `ffiAnchorToWritersProof` (capital P) matching the Swift call site.
@@ -41,6 +41,10 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
         }
     };
 
+    if latest.content_hash.len() != 32 || latest.event_hash.len() != 32 {
+        return FfiResult::err("Corrupt checkpoint: invalid hash length".to_string());
+    }
+
     // EH-011: evidence_hash must bind to document content, not duplicate event_hash.
     let evidence_hash = hex::encode(latest.content_hash);
 
@@ -57,7 +61,13 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     };
     // signing_key implements Zeroize on Drop via ed25519-dalek
 
-    let did = load_did().unwrap_or_else(|_| "unknown".into());
+    let did = match load_did() {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("DID unavailable for anchor, using placeholder: {e}");
+            "unknown".into()
+        }
+    };
     let api_key = match load_api_key() {
         Ok(k) => k,
         Err(e) => {
@@ -70,16 +80,16 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
         .and_then(|n| n.to_str())
         .map(|s| s.to_string());
 
-    let rt = match tokio::runtime::Runtime::new() {
+    let rt = match crate::ffi::beacon::beacon_runtime() {
         Ok(rt) => rt,
         Err(e) => {
-            return FfiResult::err(format!("Failed to create async runtime: {e}"));
+            return FfiResult::err(format!("Failed to get async runtime: {e}"));
         }
     };
 
     let client = match crate::writersproof::WritersProofClient::new("https://api.writersproof.com")
     {
-        Ok(c) => c.with_jwt((*api_key).clone()),
+        Ok(c) => c.with_jwt(api_key),
         Err(e) => {
             return FfiResult::err(format!("Failed to create API client: {e}"));
         }

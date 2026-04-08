@@ -62,6 +62,9 @@ impl ChainEncryptionKey {
     /// `master_seed` is the 32-byte identity seed (from sealed identity or PUF).
     /// `document_id` is the 32-byte hash of the canonical document path.
     pub fn derive(master_seed: &[u8], document_id: &[u8; 32]) -> Result<Self> {
+        if master_seed.len() < 32 {
+            return Err(Error::crypto("master seed must be at least 32 bytes"));
+        }
         use zeroize::Zeroize;
         let hk = Hkdf::<Sha256>::new(Some(b"witnessd-chain-seal-v1"), master_seed);
         let mut key_bytes = [0u8; 32];
@@ -232,15 +235,15 @@ pub fn load_sealed_verified(
 ///
 /// Useful for deriving the correct key before loading.
 pub fn read_sealed_document_id(path: &Path) -> Result<[u8; 32]> {
-    let data = fs::read(path)?;
-    if data.len() < HEADER_SIZE {
-        return Err(Error::checkpoint("sealed file too short for header"));
-    }
-    if &data[0..4] != SEALED_MAGIC {
+    use std::io::Read;
+    let mut f = fs::File::open(path)?;
+    let mut header = [0u8; HEADER_SIZE];
+    f.read_exact(&mut header).map_err(|_| Error::checkpoint("sealed file too short for header"))?;
+    if &header[0..4] != SEALED_MAGIC {
         return Err(Error::checkpoint("invalid sealed file magic"));
     }
     let mut doc_id = [0u8; 32];
-    doc_id.copy_from_slice(&data[20..52]);
+    doc_id.copy_from_slice(&header[20..52]);
     Ok(doc_id)
 }
 
