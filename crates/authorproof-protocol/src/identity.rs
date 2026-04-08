@@ -116,8 +116,8 @@ impl FixedTag for Capability {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EnrollmentRequest {
     pub user_id: String,
-    /// COSE-encoded Ed25519 public key bytes.
-    pub public_key_cose: Vec<u8>,
+    /// Raw Ed25519 public key bytes (32 bytes).
+    pub public_key: Vec<u8>,
     /// TPM quote or Secure Enclave blob; empty for software-only.
     pub hardware_attestation: Vec<u8>,
 }
@@ -170,11 +170,11 @@ impl IdentityManager {
         user_id: &str,
         hardware_attestation: &[u8],
     ) -> Result<EnrollmentRequest> {
-        let public_key_cose = self.signer.0.verifying_key().to_bytes().to_vec();
+        let public_key = self.signer.0.verifying_key().to_bytes().to_vec();
 
         Ok(EnrollmentRequest {
             user_id: user_id.to_string(),
-            public_key_cose,
+            public_key,
             hardware_attestation: hardware_attestation.to_vec(),
         })
     }

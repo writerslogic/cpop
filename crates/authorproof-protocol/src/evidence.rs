@@ -10,6 +10,7 @@ use cpop_jitter::{EntropySource, PhysJitter};
 use ed25519_dalek::VerifyingKey;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// CPoP profile URI per IETF draft specification.
@@ -233,14 +234,22 @@ impl Verifier {
         Ok(packet)
     }
 
-    /// Verifies identity_fingerprint == SHA-256(signer pubkey) and that
-    /// digest_signature is present when digest is present.
+    /// Verifies baseline session summary fields, digest integrity,
+    /// identity_fingerprint == SHA-256(signer pubkey), and digest_signature COSE_Sign1.
     /// Behavioral similarity scoring is done at the engine layer.
     fn validate_baseline_verification(
         &self,
         bv: &crate::baseline::BaselineVerification,
     ) -> Result<()> {
+        bv.session_summary
+            .validate()
+            .map_err(|e| Error::Validation(format!("Baseline session_summary: {e}")))?;
+
         if let Some(ref digest) = bv.digest {
+            digest
+                .validate()
+                .map_err(|e| Error::Validation(format!("Baseline digest: {e}")))?;
+
             let pubkey_hash = hash_sha256(self.verifying_key.as_bytes());
             if digest.identity_fingerprint != pubkey_hash.digest {
                 return Err(Error::Validation(
@@ -249,10 +258,33 @@ impl Verifier {
                 ));
             }
 
-            if bv.digest_signature.is_none() {
-                return Err(Error::Validation(
-                    "Baseline digest present but digest_signature is missing".to_string(),
-                ));
+            match bv.digest_signature {
+                None => {
+                    return Err(Error::Validation(
+                        "Baseline digest present but digest_signature is missing".to_string(),
+                    ));
+                }
+                Some(ref sig) => {
+                    let payload = verify_evidence_cose(sig, &self.verifying_key).map_err(
+                        |e| {
+                            Error::Validation(format!(
+                                "Baseline digest_signature COSE verification failed: {e}"
+                            ))
+                        },
+                    )?;
+                    let signed_digest: crate::baseline::BaselineDigest =
+                        ciborium::from_reader(&payload[..]).map_err(|e| {
+                            Error::Validation(format!(
+                                "Baseline digest_signature payload decode failed: {e}"
+                            ))
+                        })?;
+                    if signed_digest != *digest {
+                        return Err(Error::Validation(
+                            "Baseline digest_signature payload does not match embedded digest"
+                                .to_string(),
+                        ));
+                    }
+                }
             }
         }
         Ok(())
@@ -321,12 +353,19 @@ impl Verifier {
             )));
         }
 
+        let mut seen_checkpoint_ids = HashSet::new();
         for checkpoint in &packet.checkpoints {
             if checkpoint.checkpoint_id.len() != 16 {
                 return Err(Error::Validation(format!(
                     "Invalid checkpoint_id length at sequence {}: expected 16, got {}",
                     checkpoint.sequence,
                     checkpoint.checkpoint_id.len()
+                )));
+            }
+            if !seen_checkpoint_ids.insert(&checkpoint.checkpoint_id) {
+                return Err(Error::Validation(format!(
+                    "Duplicate checkpoint_id at sequence {}",
+                    checkpoint.sequence
                 )));
             }
             if !checkpoint.content_hash.validate() {

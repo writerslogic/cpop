@@ -114,19 +114,73 @@ pub struct BaselineVerification {
 /// Neutral Hurst exponent (random walk, no long-range dependence).
 const HURST_NEUTRAL: f64 = 0.5;
 
+impl StreamingStats {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.mean.is_finite() {
+            return Err(format!("mean invalid: {}", self.mean));
+        }
+        if !self.m2.is_finite() || self.m2 < 0.0 {
+            return Err(format!("m2 invalid: {}", self.m2));
+        }
+        if !self.min.is_finite() {
+            return Err(format!("min invalid: {}", self.min));
+        }
+        if !self.max.is_finite() {
+            return Err(format!("max invalid: {}", self.max));
+        }
+        if self.count > 0 && self.min > self.max {
+            return Err(format!("min {} > max {}", self.min, self.max));
+        }
+        Ok(())
+    }
+}
+
+impl BaselineDigest {
+    pub fn validate(&self) -> Result<(), String> {
+        self.iki_stats.validate().map_err(|e| format!("iki_stats: {e}"))?;
+        self.cv_stats.validate().map_err(|e| format!("cv_stats: {e}"))?;
+        self.hurst_stats.validate().map_err(|e| format!("hurst_stats: {e}"))?;
+        self.pause_stats.validate().map_err(|e| format!("pause_stats: {e}"))?;
+        for (i, &v) in self.aggregate_iki_histogram.iter().enumerate() {
+            if !v.is_finite() || v < 0.0 {
+                return Err(format!("aggregate_iki_histogram[{i}] invalid: {v}"));
+            }
+        }
+        if self.session_merkle_root.len() != 32 {
+            return Err(format!(
+                "session_merkle_root length {}, expected 32",
+                self.session_merkle_root.len()
+            ));
+        }
+        if self.identity_fingerprint.len() != 32 {
+            return Err(format!(
+                "identity_fingerprint length {}, expected 32",
+                self.identity_fingerprint.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl SessionBehavioralSummary {
     /// Validate that all fields contain sensible values.
     pub fn validate(&self) -> Result<(), String> {
         for (i, &v) in self.iki_histogram.iter().enumerate() {
-            if v < 0.0 {
-                return Err(format!("iki_histogram[{}] is negative: {}", i, v));
+            if !v.is_finite() || v < 0.0 {
+                return Err(format!("iki_histogram[{i}] invalid: {v}"));
             }
+        }
+        if !self.iki_cv.is_finite() || self.iki_cv < 0.0 {
+            return Err(format!("iki_cv invalid: {}", self.iki_cv));
         }
         if !self.hurst.is_finite() {
             return Err("hurst is NaN or infinite".to_string());
         }
         if !(0.0..=1.0).contains(&self.hurst) {
             return Err(format!("hurst {} outside valid range [0, 1]", self.hurst));
+        }
+        if !self.pause_frequency.is_finite() || self.pause_frequency < 0.0 {
+            return Err(format!("pause_frequency invalid: {}", self.pause_frequency));
         }
         Ok(())
     }
