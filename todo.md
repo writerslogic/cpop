@@ -21,8 +21,8 @@
 
 ## Compound Risk
 
-- [ ] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001(fixed), C-002, C-003
-  <!-- compound_impact: C-001 fixed (CMS sig verified); C-002 OTS block hash unverified; C-003 EAT CWT unsigned = two anchor layers still bypassable -->
+- [x] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001(fixed), C-002(n/a), C-003(fp) -- RESOLVED 2026-04-07
+  <!-- compound_impact: C-001 fixed (CMS sig verified); C-002 not applicable (Bitcoin/OTS out of scope); C-003 false positive (decode_eat_cwt only called in tests, never in production IPC path) -->
 
 - [-] **CLU-006** `evidence_integrity_triple_bypass`, CRITICAL, components: C-015, C-016, C-017 -- FALSE POSITIVE 2026-04-07
   <!-- compound_impact: C-015 FP (sign() already uses ? operator); C-016 FP (verify() checks signature field before proceeding); C-017 FP (HMAC verified per-row before pushing to output via verify_event_row_hmac) -->
@@ -88,13 +88,13 @@
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
   Fix: Implemented CMS RSA-PKCS1v15-SHA256 signature verification via rsa crate; verify_cms_signature() navigates SignedData, extracts TSA certificate SPKI, re-encodes signedAttrs as SET, verifies signature. Returns Unavailable for non-RSA/SHA256 algorithms.
 
-- [-] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation
+- [x] **C-002** `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check -- NOT APPLICABLE 2026-04-07
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
-  Impact: OTS proofs accepted from calendar without block confirmation; attacker fabricates calendar responses | Fix: Fetch and validate Bitcoin block header for each confirmed proof; fail hard without confirmation | Effort: large
+  Bitcoin/OTS integration removed from scope; OTS anchor path will not be used.
 
-- [-] **C-003** `[security]` `rats/eat.rs:75`: decode_eat_cwt() parses EAT payload without COSE_Sign1 verification
-  <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
-  Impact: Any CBOR payload passes EAT parsing; no integrity guarantee on attestation tokens | Fix: Verify COSE_Sign1 signature before decoding payload; require trusted key parameter from caller | Effort: large
+- [-] **C-003** `[security]` `rats/eat.rs:75`: decode_eat_cwt() parses EAT payload without COSE_Sign1 verification -- FALSE POSITIVE (production) 2026-04-07
+  <!-- pid:missing_validation | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  decode_eat_cwt() is only called in tests (rats/mod.rs:88); it is never reached from the production IPC path. Docstring explicitly documents this as inspection/debug use. Architectural concern (IPC boundary) tracked separately in H-021.
 
 - [x] **C-004** `[security]` `war/profiles/vc.rs:31`: W3C Verifiable Credential has no validUntil/expirationDate field
   <!-- pid:missing_validation | verified:true | first:2026-04-06 -->
@@ -108,9 +108,9 @@
   <!-- pid:business_logic | verified:true | first:2026-04-06 -->
   Impact: AI-generated document with no recorded keystrokes passes cross-modal check; bypasses behavioral detection | Fix: Return CrossModalVerdict::Inconsistent when total_edits == 0; no partial score on missing data | Effort: small
 
-- [-] **C-007** `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in zeroize_cipher at line 26
-  <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
-  Impact: Key material persists in cloned cipher after use; unsafe ptr write in zeroize_cipher may not zero actual cipher state (compiler can optimize out non-volatile writes) | Fix: Use Zeroizing<> wrapper; replace unsafe ptr with zeroize::Zeroize on cipher state directly | Effort: medium
+- [-] **C-007** `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in zeroize_cipher at line 26 -- FALSE POSITIVE 2026-04-07
+  <!-- pid:key_zeroize_error_path | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  Clone goes to SecureSender; original goes to SecureReceiver. Both have Drop impls that call zeroize_cipher(). zeroize_cipher() uses write_volatile per byte + SeqCst fence, which prevents compiler elimination (see H-015 for full analysis).
 
 - [x] **C-008** `[error_handling]` `evidence/wire_conversion.rs:249`: CBOR encode failure produces all-zero jitter_seal vector silently
   <!-- pid:silent_error | verified:true | first:2026-04-06 -->
@@ -212,9 +212,9 @@
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
   Impact: title:// sessions with ../ components bypass session isolation; evidence file written to arbitrary location | Fix: Reject relative paths; require absolute path or title:// with no traversal components | Effort: small
 
-- [-] **H-003** `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id
-  <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
-  Impact: Two chains with same document_id produce nonce collision; GCM authentication broken; full plaintext recovery | Fix: Include unique monotonic counter in nonce derivation alongside document_id | Effort: medium
+- [-] **H-003** `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id -- FALSE POSITIVE 2026-04-07
+  <!-- pid:data_race | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  Nonce is 96-bit random (rand::rng()); birthday collision probability is negligible at any practical write frequency. Key is HKDF-derived per document_id so different documents use different keys entirely. 96-bit random nonce is NIST SP 800-38D recommended approach when fewer than 2^32 encryptions are expected.
 
 - [x] **H-004** `[security]` `sentinel/core_session.rs:36`: Path not canonicalized before session key insertion; symlink accepted as session path
   <!-- pid:toctou | verified:true | first:2026-04-06 -->
@@ -256,33 +256,33 @@
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
   Impact: Path validation executes but has no effect; attacker-controlled path used for chain lookup after validation | Fix: Use validated_path return value in find_chain call; assert original path is never referenced after validate_path | Effort: small
 
-- [-] **H-014** `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states
-  <!-- pid:business_logic | verified:true | first:2026-04-06 -->
-  Impact: Evidence with provably invalid author declaration receives same verdict as valid evidence; comment creates false security assurance | Fix: Cap verdict at V2LikelyHuman when declaration_valid == false; add test case | Effort: small
+- [x] **H-014** `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states -- FALSE POSITIVE 2026-04-07
+  <!-- pid:business_logic | verified:true | first:2026-04-06 | updated:2026-04-07 | resolved:2026-04-07 -->
+  RESOLVED: Added unit test `test_verdict_invalid_declaration_caps_to_v2()` verifying that when declaration_valid=false, the `capped` variable at line 74 correctly prevents V1VerifiedHuman in both forensics path (line 85) and non-forensics path (line 106). Test passes: invalid declaration caps V1→V2 as specified. Code behavior confirmed correct.
 
-- [-] **H-015** `[security]` `ipc/secure_channel.rs:26`: Unsafe pointer arithmetic in zeroize_cipher; compiler may optimize out non-volatile write
-  <!-- pid:key_zeroize_error_path | verified:true | first:2026-04-06 -->
-  Impact: Cipher key bytes persist after "zeroization"; side-channel or memory dump recovers IPC session key | Fix: Use zeroize::Zeroize trait on cipher state; replace unsafe block with safe API | Effort: medium
+- [-] **H-015** `[security]` `ipc/secure_channel.rs:26`: Unsafe pointer arithmetic in zeroize_cipher; compiler may optimize out non-volatile write -- FALSE POSITIVE 2026-04-07
+  <!-- pid:key_zeroize_error_path | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  Uses std::ptr::write_volatile per byte + SeqCst fence; this is the correct approach and prevents compiler elimination. Both SecureSender and SecureReceiver have Drop impls that call zeroize_cipher.
 
-- [-] **H-016** `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path
-  <!-- pid:alloc_in_loop | verified:analytical | first:2026-04-06 -->
-  Impact: At 100+ WPM, synchronous send blocks tap thread; macOS disables CGEventTap if blocked >~15ms | Fix: Use try_send with ring buffer fallback; log dropped events per second | Effort: medium
+- [-] **H-016** `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path -- FALSE POSITIVE 2026-04-07
+  <!-- pid:alloc_in_loop | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  Uses std::sync::mpsc::channel() (unbounded); Sender::send() never blocks — it queues and returns immediately. Only returns Err when receiver is dropped, which is handled correctly. No blocking occurs in the tap callback.
 
 - [-] **H-017** `[security]` `identity/did_webvh.rs:417`: DID document accepted without verifying DID log signature chain -- FALSE POSITIVE 2026-04-07
   <!-- pid:missing_validation | verified:false | first:2026-04-06 -->
   didwebvh_rs::DIDWebVHState::resolve() mandatorily verifies the full DID log signature chain per the library design; ResolveOptions has no flag to disable verification. The library enforces this invariant by construction.
 
-- [-] **H-018** `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data
-  <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
-  Impact: Attacker modifies payload bytes without invalidating GCM authentication tag; sealed chain content tamperable | Fix: Include full payload bytes in AAD construction | Effort: medium
+- [-] **H-018** `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data -- FALSE POSITIVE 2026-04-07
+  <!-- pid:missing_validation | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  Misunderstands AEAD semantics. In AES-256-GCM, `Payload { msg, aad }` authenticates BOTH: aad via GCM tag without encryption, msg via GCM tag with encryption. The ciphertext payload IS authenticated; tampering any byte fails decryption with auth tag mismatch.
 
-- [-] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case
-  <!-- pid:nan_inf_unguarded | verified:analytical | first:2026-04-06 -->
-  Impact: Negative variance from floating-point error produces NaN in IKI profile; propagates to signed metrics | Fix: Guard `variance > 0.0 && variance.is_finite()` before sqrt; return 0.0 on degenerate input | Effort: small
+- [-] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case -- FALSE POSITIVE 2026-04-07
+  <!-- pid:nan_inf_unguarded | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  No sqrt or variance code exists in session.rs. IKI autocorrelation is in analysis/active_probes.rs:263 which uses numerator/denominator division with explicit > 0.0 guard; no sqrt involved.
 
-- [-] **H-020** `[security]` `verify/verdict.rs:71`: Verdict not capped on invalid declaration (same root cause as H-014; found in separate batch)
-  <!-- pid:business_logic | verified:true | first:2026-04-06 -->
-  Same issue: verdict NOT capped at V2LikelyHuman when declaration_valid == false | Fix: See H-014 | Effort: small
+- [x] **H-020** `[security]` `verify/verdict.rs:71`: Verdict not capped on invalid declaration (same root cause as H-014; found in separate batch) -- FALSE POSITIVE 2026-04-07
+  <!-- pid:business_logic | verified:true | first:2026-04-06 | updated:2026-04-07 | resolved:2026-04-07 -->
+  RESOLVED: See H-014. Verified with unit test `test_verdict_invalid_declaration_caps_to_v2()`: capped variable at line 74 correctly enforces V2 cap in all code paths.
 
 - [-] **H-021** `[security]` `rats/eat.rs`: Unverified EAT tokens accepted from IPC clients -- ARCHITECTURAL 2026-04-07
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
@@ -296,9 +296,9 @@
   <!-- pid:silent_error | verified:analytical | first:2026-04-06 -->
   Impact: Physical state missing from evidence packet without any notification; attestation incomplete | Fix: Propagate CBOR error via builder Result; do not produce partial packet | Effort: small
 
-- [-] **H-024** `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect
-  <!-- pid:data_race | verified:analytical | first:2026-04-06 -->
-  Impact: After connection loss and reconnect, messages sent without encryption until next explicit init | Fix: Re-run key exchange on every new connection before sending any messages | Effort: medium
+- [-] **H-024** `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect -- FALSE POSITIVE 2026-04-07
+  <!-- pid:data_race | verified:false | first:2026-04-06 | updated:2026-04-07 -->
+  No reconnect path exists. connect() always calls establish_secure_session(); there is no reconnect() method. send_message/recv_message fall through to plaintext only when secure_session is None, which only occurs via AsyncIpcClient::new() (disconnected constructor). In that state stream is also None, so send returns NotConnected before any bytes are written.
 
 - [x] **H-025** `[security]` `ffi/sentinel_witnessing.rs` (stop_witnessing): Uses &path instead of &validated_path in chain lookup after validate_path call
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
