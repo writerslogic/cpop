@@ -157,7 +157,7 @@ fn test_load_or_create_hmac_key() {
     let key = load_or_create_hmac_key(dir.path()).expect("create HMAC key");
 
     assert_eq!(key.len(), 32, "HMAC key should be 32 bytes");
-    assert_ne!(key, vec![0u8; 32], "HMAC key should be random, not zeros");
+    assert_ne!(*key, vec![0u8; 32], "HMAC key should be random, not zeros");
 
     // Reload should return the same key (via file fallback)
     let key2 = load_or_create_hmac_key(dir.path()).expect("reload HMAC key");

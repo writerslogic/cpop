@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::open_store;
+
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -49,19 +49,9 @@ pub fn ffi_get_checkpoint_chain(path: String) -> FfiChainSummary {
         error_message: Some(msg),
     };
 
-    let canonical = match crate::sentinel::helpers::validate_path(&path) {
-        Ok(p) => p.to_string_lossy().to_string(),
+    let (canonical, _store, events) = match crate::ffi::helpers::load_events_for_path(&path) {
+        Ok(v) => v,
         Err(e) => return err(e),
-    };
-
-    let store = match open_store() {
-        Ok(s) => s,
-        Err(e) => return err(e),
-    };
-
-    let events = match store.get_events_for_file(&canonical) {
-        Ok(e) => e,
-        Err(e) => return err(format!("Failed to load events: {e}")),
     };
 
     if events.is_empty() {

@@ -27,18 +27,12 @@ fn forensic_cache() -> &'static dashmap::DashMap<String, ForensicCacheEntry> {
 ///
 /// Returns `(WarReport, guilloche_seed_hex)` on success.
 pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String), String> {
-    let file_path = crate::sentinel::helpers::validate_path(path)
-        .map_err(|e| format!("Invalid source path: {e}"))?;
+    let (file_path_str, _store, events) = crate::ffi::helpers::load_events_for_path(path)?;
+    let file_path = std::path::PathBuf::from(&file_path_str);
 
     if !file_path.exists() {
         return Err(format!("File not found: {}", file_path.display()));
     }
-
-    let store = open_store()?;
-    let file_path_str = file_path.to_string_lossy();
-    let events = store
-        .get_events_for_file(&file_path_str)
-        .map_err(|e| format!("Failed to load events: {e}"))?;
 
     if events.is_empty() {
         return Err("No events found for this file".to_string());
