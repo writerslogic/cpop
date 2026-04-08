@@ -36,6 +36,9 @@ pub fn ffi_sentinel_inject_keystroke(
     source_pid: i64,
     char_value: String,
 ) -> bool {
+    if char_value.len() > 16 {
+        return false;
+    }
     let is_key_up = char_value == "UP";
 
     let sentinel_opt = get_sentinel();

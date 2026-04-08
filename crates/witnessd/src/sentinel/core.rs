@@ -631,7 +631,7 @@ impl Sentinel {
                     }
 
                     Some(event) = mouse_rx.recv() => {
-                        let _mouse_duration_ns: u64 = if last_mouse_ts_ns > 0 {
+                        let mouse_duration_ns: u64 = if last_mouse_ts_ns > 0 {
                             event.timestamp_ns.saturating_sub(last_mouse_ts_ns).max(0) as u64
                         } else {
                             0
@@ -644,7 +644,7 @@ impl Sentinel {
                         }
 
                         // Throttle stego jitter to ~20 Hz to reduce write lock contention
-                        if _mouse_duration_ns >= 50_000_000 {
+                        if mouse_duration_ns >= 50_000_000 {
                             mouse_stego_engine.write_recover().next_jitter();
                         }
                     }
@@ -799,7 +799,7 @@ impl Sentinel {
                         let challenge_nonce = pending_taken.as_ref().map(|(n, _)| n.clone());
                         let nonce_id = pending_taken.and_then(|(_, id)| id);
 
-                        for path in &candidates {
+                        'candidates: for path in &candidates {
                             let cp_path = path.clone();
                             let cp_key = Arc::clone(&signing_key_for_cp);
                             let cp_dir = writersproof_dir.clone();
@@ -955,7 +955,7 @@ impl Sentinel {
                                                              for {}: {e}",
                                                             path
                                                         );
-                                                        continue;
+                                                        continue 'candidates;
                                                     }
                                                 }
                                             };
