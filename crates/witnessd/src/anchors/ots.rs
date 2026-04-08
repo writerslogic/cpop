@@ -15,10 +15,32 @@ const OTS_CALENDAR_URLS: &[&str] = &[
 
 const OTS_MAGIC: &[u8] = b"\x00OpenTimestamps\x00\x00Proof\x00\xbf\x89\xe2\xe8\x84\xe8\x92\x94";
 
+/// 8-byte tag identifying a Bitcoin attestation in the OTS binary format.
+const OTS_BITCOIN_ATTESTATION_TAG: [u8; 8] =
+    [0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01];
+
+/// Public Bitcoin block explorer API base URLs, tried in order for fallback.
+const BITCOIN_BLOCK_APIS: &[&str] = &[
+    "https://blockstream.info/api",
+    "https://mempool.space/api",
+];
+
+/// Size of a serialized Bitcoin block header in bytes.
+const BITCOIN_BLOCK_HEADER_SIZE: usize = 80;
+
+/// Byte offset of the 32-byte merkle root within a Bitcoin block header.
+const HEADER_MERKLE_ROOT_OFFSET: usize = 36;
+
+/// Byte offset of the 4-byte difficulty bits field within a Bitcoin block header.
+const HEADER_BITS_OFFSET: usize = 72;
+
 /// Anchor provider using OpenTimestamps calendar servers for Bitcoin attestation.
 pub struct OpenTimestampsProvider {
     calendar_urls: Vec<String>,
     client: reqwest::Client,
+    /// Cache of verified Bitcoin block headers, keyed by block height.
+    header_cache:
+        std::sync::Mutex<std::collections::HashMap<u64, [u8; BITCOIN_BLOCK_HEADER_SIZE]>>,
 }
 
 impl OpenTimestampsProvider {
@@ -27,6 +49,7 @@ impl OpenTimestampsProvider {
         Ok(Self {
             calendar_urls: OTS_CALENDAR_URLS.iter().map(|s| s.to_string()).collect(),
             client: super::http::build_http_client(None)?,
+            header_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -36,6 +59,7 @@ impl OpenTimestampsProvider {
         Ok(Self {
             calendar_urls: urls,
             client: super::http::build_http_client(None)?,
+            header_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -372,10 +396,15 @@ impl OpenTimestampsProvider {
                         data,
                     }
                 }
-                0x00 => AttestationStep {
-                    operation: AttestationOp::Verify,
-                    data: Vec::new(),
-                },
+                0x00 => {
+                    // Attestation marker is terminal in OTS; remaining bytes
+                    // are attestation metadata (type tag + payload).
+                    steps.push(AttestationStep {
+                        operation: AttestationOp::Verify,
+                        data: Vec::new(),
+                    });
+                    break;
+                }
                 unknown => {
                     return Err(AnchorError::InvalidFormat(format!(
                         "Unknown OTS opcode: 0x{:02x}",
@@ -423,15 +452,260 @@ impl OpenTimestampsProvider {
 
         Ok(current)
     }
+
+    /// Extract the Bitcoin block height from an OTS proof's attestation data.
+    ///
+    /// Scans the raw proof bytes for the 8-byte Bitcoin attestation tag and
+    /// reads the block height from the little-endian payload that follows.
+    fn extract_bitcoin_block_height(
+        proof_data: &[u8],
+    ) -> Result<Option<u64>, AnchorError> {
+        if proof_data.len() < OTS_MAGIC.len() {
+            return Err(AnchorError::InvalidFormat("Proof too short".into()));
+        }
+        if &proof_data[..OTS_MAGIC.len()] != OTS_MAGIC {
+            return Err(AnchorError::InvalidFormat("Invalid OTS magic".into()));
+        }
+
+        let mut pos = OTS_MAGIC.len();
+        while pos < proof_data.len() {
+            let op = proof_data[pos];
+            pos += 1;
+
+            match op {
+                0x08 | 0x02 => {}
+                0xf0 | 0xf1 => {
+                    let _ = Self::read_data(proof_data, &mut pos)?;
+                }
+                0x00 => {
+                    if pos + 8 > proof_data.len() {
+                        break;
+                    }
+                    let mut tag = [0u8; 8];
+                    tag.copy_from_slice(&proof_data[pos..pos + 8]);
+                    pos += 8;
+                    let payload = Self::read_data(proof_data, &mut pos)?;
+
+                    if tag == OTS_BITCOIN_ATTESTATION_TAG {
+                        let height =
+                            payload.iter().enumerate().fold(0u64, |acc, (i, &b)| {
+                                acc | ((b as u64) << (8 * i))
+                            });
+                        return Ok(Some(height));
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Fetch the raw 80-byte block header for a Bitcoin block at the given
+    /// height. Tries multiple block explorer APIs and caches results.
+    async fn fetch_block_header(
+        &self,
+        height: u64,
+    ) -> Result<[u8; BITCOIN_BLOCK_HEADER_SIZE], AnchorError> {
+        if let Ok(cache) = self.header_cache.lock() {
+            if let Some(header) = cache.get(&height) {
+                return Ok(*header);
+            }
+        }
+
+        let mut last_error = None;
+
+        for base_url in BITCOIN_BLOCK_APIS {
+            match self.fetch_block_header_from(base_url, height).await {
+                Ok(header) => {
+                    if !Self::verify_block_pow(&header) {
+                        log::warn!(
+                            "Block header at height {} from {} fails PoW; \
+                             trying next API",
+                            height,
+                            base_url
+                        );
+                        last_error = Some(AnchorError::Verification(format!(
+                            "Block header at height {height} fails proof-of-work"
+                        )));
+                        continue;
+                    }
+
+                    if let Ok(mut cache) = self.header_cache.lock() {
+                        cache.insert(height, header);
+                    }
+
+                    return Ok(header);
+                }
+                Err(e) => {
+                    log::debug!("Block explorer {} failed: {e}", base_url);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            AnchorError::Unavailable("All block explorer APIs failed".into())
+        }))
+    }
+
+    async fn fetch_block_header_from(
+        &self,
+        base_url: &str,
+        height: u64,
+    ) -> Result<[u8; BITCOIN_BLOCK_HEADER_SIZE], AnchorError> {
+        // GET /block-height/{h} -> block hash (64 hex chars)
+        let hash_url = format!("{}/block-height/{}", base_url, height);
+        let hash_resp = self
+            .client
+            .get(&hash_url)
+            .send()
+            .await
+            .map_err(|e| AnchorError::Network(e.to_string()))?;
+
+        if !hash_resp.status().is_success() {
+            return Err(AnchorError::Network(format!(
+                "Block height lookup returned {}",
+                hash_resp.status()
+            )));
+        }
+
+        let block_hash = hash_resp
+            .text()
+            .await
+            .map_err(|e| AnchorError::Network(e.to_string()))?;
+        let block_hash = block_hash.trim();
+
+        if block_hash.len() != 64
+            || !block_hash.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            return Err(AnchorError::InvalidFormat(format!(
+                "Invalid block hash: {}",
+                &block_hash[..block_hash.len().min(80)]
+            )));
+        }
+
+        // GET /block/{hash}/header -> hex-encoded 80-byte header
+        let header_url =
+            format!("{}/block/{}/header", base_url, block_hash);
+        let header_resp = self
+            .client
+            .get(&header_url)
+            .send()
+            .await
+            .map_err(|e| AnchorError::Network(e.to_string()))?;
+
+        if !header_resp.status().is_success() {
+            return Err(AnchorError::Network(format!(
+                "Block header lookup returned {}",
+                header_resp.status()
+            )));
+        }
+
+        let header_hex = header_resp
+            .text()
+            .await
+            .map_err(|e| AnchorError::Network(e.to_string()))?;
+        let header_bytes = hex::decode(header_hex.trim())
+            .map_err(|e| AnchorError::InvalidFormat(format!(
+                "Invalid header hex: {e}"
+            )))?;
+
+        if header_bytes.len() != BITCOIN_BLOCK_HEADER_SIZE {
+            return Err(AnchorError::InvalidFormat(format!(
+                "Block header is {} bytes, expected {}",
+                header_bytes.len(),
+                BITCOIN_BLOCK_HEADER_SIZE
+            )));
+        }
+
+        let mut header = [0u8; BITCOIN_BLOCK_HEADER_SIZE];
+        header.copy_from_slice(&header_bytes);
+        Ok(header)
+    }
+
+    /// Extract the 32-byte merkle root from a raw Bitcoin block header.
+    fn parse_merkle_root(
+        header: &[u8; BITCOIN_BLOCK_HEADER_SIZE],
+    ) -> [u8; 32] {
+        let mut root = [0u8; 32];
+        root.copy_from_slice(
+            &header[HEADER_MERKLE_ROOT_OFFSET..HEADER_MERKLE_ROOT_OFFSET + 32],
+        );
+        root
+    }
+
+    /// Verify a Bitcoin block header's proof-of-work by checking that
+    /// double-SHA256(header), as a LE 256-bit integer, is below the
+    /// target derived from the compact `bits` field.
+    fn verify_block_pow(header: &[u8; BITCOIN_BLOCK_HEADER_SIZE]) -> bool {
+        let hash1 = Sha256::digest(header);
+        let hash2 = Sha256::digest(hash1);
+
+        let mut block_hash = [0u8; 32];
+        block_hash.copy_from_slice(&hash2);
+
+        let bits = u32::from_le_bytes([
+            header[HEADER_BITS_OFFSET],
+            header[HEADER_BITS_OFFSET + 1],
+            header[HEADER_BITS_OFFSET + 2],
+            header[HEADER_BITS_OFFSET + 3],
+        ]);
+
+        let target = Self::compact_to_target(bits);
+        Self::le_u256_lte(&block_hash, &target)
+    }
+
+    /// Convert Bitcoin compact target (nBits) to a 32-byte LE representation.
+    fn compact_to_target(bits: u32) -> [u8; 32] {
+        let mut target = [0u8; 32];
+        let size = (bits >> 24) as usize;
+        let mut word = bits & 0x007F_FFFF;
+
+        if word == 0 {
+            return target;
+        }
+
+        if size <= 3 {
+            word >>= 8 * (3 - size);
+            target[0] = (word & 0xFF) as u8;
+            target[1] = ((word >> 8) & 0xFF) as u8;
+            target[2] = ((word >> 16) & 0xFF) as u8;
+        } else {
+            let pos = size - 3;
+            if pos < 32 {
+                target[pos] = (word & 0xFF) as u8;
+            }
+            if pos + 1 < 32 {
+                target[pos + 1] = ((word >> 8) & 0xFF) as u8;
+            }
+            if pos + 2 < 32 {
+                target[pos + 2] = ((word >> 16) & 0xFF) as u8;
+            }
+        }
+
+        target
+    }
+
+    /// Compare two 32-byte values as LE 256-bit unsigned integers.
+    /// Returns true if a <= b.
+    fn le_u256_lte(a: &[u8; 32], b: &[u8; 32]) -> bool {
+        for i in (0..32).rev() {
+            if a[i] < b[i] {
+                return true;
+            }
+            if a[i] > b[i] {
+                return false;
+            }
+        }
+        true // equal
+    }
 }
 
-/// # Security
-///
-/// Bitcoin block header cross-checking is **not yet implemented**. The
-/// `verify` method only confirms that the attestation path contains a
-/// `Verify` step and yields a 32-byte candidate hash; it does not fetch
-/// or validate the actual block header from a trusted source. Results
-/// should be treated as structural-only until full cross-check is added.
+/// The `verify` method performs a full Bitcoin block header cross-check when
+/// a block explorer is reachable, and falls back to `AnchorError::Unavailable`
+/// when offline. Structural sanity (Verify step present, 32-byte result) is
+/// always checked first.
 #[async_trait]
 impl AnchorProvider for OpenTimestampsProvider {
     fn provider_type(&self) -> ProviderType {
@@ -509,24 +783,14 @@ impl AnchorProvider for OpenTimestampsProvider {
     }
 
     async fn verify(&self, proof: &Proof) -> Result<bool, AnchorError> {
-        // NOTE: Full OTS verification requires fetching the Bitcoin block header
-        // from a trusted source and checking that the final hash in the
-        // attestation path matches it. That network check is not yet implemented.
-        // We parse the path and confirm structural sanity (Verify step present,
-        // 32-byte result) but return an error so callers know actual verification
-        // cannot be performed yet.
-        log::warn!(
-            "ots verify: Bitcoin block header cross-check not implemented; \
-             performing structural check only"
-        );
         let path = if let Some(ref path) = proof.attestation_path {
             path.clone()
         } else {
             self.parse_attestation_path(&proof.proof_data)?
         };
 
-        let has_bitcoin = path.iter().any(|s| s.operation == AttestationOp::Verify);
-        if !has_bitcoin {
+        let has_verify = path.iter().any(|s| s.operation == AttestationOp::Verify);
+        if !has_verify {
             return Ok(false);
         }
 
@@ -535,9 +799,52 @@ impl AnchorProvider for OpenTimestampsProvider {
             return Ok(false);
         }
 
-        Err(AnchorError::Unavailable(
-            "Bitcoin block header cross-check not yet implemented; structural check passed".into(),
-        ))
+        // Attempt Bitcoin block header cross-check
+        let height = match Self::extract_bitcoin_block_height(&proof.proof_data) {
+            Ok(Some(h)) => h,
+            Ok(None) => {
+                log::warn!(
+                    "No Bitcoin attestation tag in proof; structural check only"
+                );
+                return Err(AnchorError::Unavailable(
+                    "No Bitcoin block height in attestation; \
+                     structural check passed"
+                        .into(),
+                ));
+            }
+            Err(e) => return Err(e),
+        };
+
+        let header = match self.fetch_block_header(height).await {
+            Ok(h) => h,
+            Err(AnchorError::Network(_) | AnchorError::Unavailable(_)) => {
+                log::warn!(
+                    "Block explorer unreachable for height {}; \
+                     structural check passed",
+                    height
+                );
+                return Err(AnchorError::Unavailable(format!(
+                    "Block explorer unreachable for height {height}; \
+                     structural check passed"
+                )));
+            }
+            Err(e) => return Err(e),
+        };
+
+        let merkle_root = Self::parse_merkle_root(&header);
+        if result.as_slice() == merkle_root.as_slice() {
+            log::info!(
+                "OTS proof verified against Bitcoin block {} merkle root",
+                height
+            );
+            Ok(true)
+        } else {
+            log::warn!(
+                "OTS proof REJECTED: hash mismatch with block {} merkle root",
+                height
+            );
+            Ok(false)
+        }
     }
 
     async fn upgrade(&self, proof: &Proof) -> Result<Option<Proof>, AnchorError> {
@@ -564,5 +871,213 @@ impl AnchorProvider for OpenTimestampsProvider {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ots_proof_with_bitcoin(height: u64) -> Vec<u8> {
+        let mut proof = OTS_MAGIC.to_vec();
+        proof.push(0x08); // SHA256 op
+        // Bitcoin attestation: marker + tag + varint-len + height LE bytes
+        proof.push(0x00);
+        proof.extend_from_slice(&OTS_BITCOIN_ATTESTATION_TAG);
+        let mut height_bytes = Vec::new();
+        let mut h = height;
+        if h == 0 {
+            height_bytes.push(0);
+        } else {
+            while h > 0 {
+                height_bytes.push((h & 0xFF) as u8);
+                h >>= 8;
+            }
+        }
+        proof.push(height_bytes.len() as u8);
+        proof.extend_from_slice(&height_bytes);
+        proof
+    }
+
+    fn genesis_block_header() -> [u8; BITCOIN_BLOCK_HEADER_SIZE] {
+        let hex_str = "\
+            01000000\
+            0000000000000000000000000000000000000000000000000000000000000000\
+            3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a\
+            29ab5f49\
+            ffff001d\
+            1dac2b7c";
+        let bytes = hex::decode(hex_str).unwrap();
+        let mut header = [0u8; BITCOIN_BLOCK_HEADER_SIZE];
+        header.copy_from_slice(&bytes);
+        header
+    }
+
+    #[test]
+    fn extract_bitcoin_height_valid() {
+        let proof = make_ots_proof_with_bitcoin(100_000);
+        let height = OpenTimestampsProvider::extract_bitcoin_block_height(&proof)
+            .unwrap()
+            .unwrap();
+        assert_eq!(height, 100_000);
+    }
+
+    #[test]
+    fn extract_bitcoin_height_zero() {
+        let proof = make_ots_proof_with_bitcoin(0);
+        let height = OpenTimestampsProvider::extract_bitcoin_block_height(&proof)
+            .unwrap()
+            .unwrap();
+        assert_eq!(height, 0);
+    }
+
+    #[test]
+    fn extract_bitcoin_height_large() {
+        let proof = make_ots_proof_with_bitcoin(800_000);
+        let height = OpenTimestampsProvider::extract_bitcoin_block_height(&proof)
+            .unwrap()
+            .unwrap();
+        assert_eq!(height, 800_000);
+    }
+
+    #[test]
+    fn extract_bitcoin_height_none_when_no_attestation() {
+        let mut proof = OTS_MAGIC.to_vec();
+        proof.push(0x08);
+        let result =
+            OpenTimestampsProvider::extract_bitcoin_block_height(&proof).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_bitcoin_height_rejects_bad_magic() {
+        let proof = vec![0x00; 32];
+        let err =
+            OpenTimestampsProvider::extract_bitcoin_block_height(&proof).unwrap_err();
+        assert!(matches!(err, AnchorError::InvalidFormat(_)));
+    }
+
+    #[test]
+    fn parse_merkle_root_genesis() {
+        let header = genesis_block_header();
+        let root = OpenTimestampsProvider::parse_merkle_root(&header);
+        let expected = hex::decode(
+            "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a",
+        )
+        .unwrap();
+        assert_eq!(root.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn compact_to_target_genesis() {
+        let target = OpenTimestampsProvider::compact_to_target(0x1d00ffff);
+        assert_eq!(target[26], 0xff);
+        assert_eq!(target[27], 0xff);
+        for i in 0..26 {
+            assert_eq!(target[i], 0, "target[{i}] should be 0");
+        }
+        for i in 28..32 {
+            assert_eq!(target[i], 0, "target[{i}] should be 0");
+        }
+    }
+
+    #[test]
+    fn compact_to_target_zero_mantissa() {
+        let target = OpenTimestampsProvider::compact_to_target(0x1d000000);
+        assert_eq!(target, [0u8; 32]);
+    }
+
+    #[test]
+    fn compact_to_target_zero_size() {
+        let target = OpenTimestampsProvider::compact_to_target(0x00ffffff);
+        assert_eq!(target, [0u8; 32]);
+    }
+
+    #[test]
+    fn compact_to_target_block_100000() {
+        // Block 100000 bits: 0x1b04864c
+        let target = OpenTimestampsProvider::compact_to_target(0x1b04864c);
+        assert_eq!(target[24], 0x4c);
+        assert_eq!(target[25], 0x86);
+        assert_eq!(target[26], 0x04);
+        for i in 0..24 {
+            assert_eq!(target[i], 0, "target[{i}] should be 0");
+        }
+        for i in 27..32 {
+            assert_eq!(target[i], 0, "target[{i}] should be 0");
+        }
+    }
+
+    #[test]
+    fn verify_block_pow_genesis() {
+        let header = genesis_block_header();
+        assert!(OpenTimestampsProvider::verify_block_pow(&header));
+    }
+
+    #[test]
+    fn verify_block_pow_rejects_tampered_header() {
+        let mut header = genesis_block_header();
+        header[79] ^= 0x01; // flip nonce bit
+        assert!(!OpenTimestampsProvider::verify_block_pow(&header));
+    }
+
+    #[test]
+    fn le_u256_lte_equal() {
+        let a = [0u8; 32];
+        assert!(OpenTimestampsProvider::le_u256_lte(&a, &a));
+    }
+
+    #[test]
+    fn le_u256_lte_less() {
+        let a = [0u8; 32];
+        let mut b = [0u8; 32];
+        b[31] = 1;
+        assert!(OpenTimestampsProvider::le_u256_lte(&a, &b));
+    }
+
+    #[test]
+    fn le_u256_lte_greater() {
+        let mut a = [0u8; 32];
+        a[31] = 1;
+        let b = [0u8; 32];
+        assert!(!OpenTimestampsProvider::le_u256_lte(&a, &b));
+    }
+
+    #[test]
+    fn le_u256_lte_low_byte_difference() {
+        let mut a = [0u8; 32];
+        a[0] = 0xff;
+        let mut b = [0u8; 32];
+        b[1] = 0x01;
+        // a = 0x00..00ff, b = 0x00..0100 => a < b
+        assert!(OpenTimestampsProvider::le_u256_lte(&a, &b));
+    }
+
+    #[test]
+    fn parse_attestation_path_handles_bitcoin_attestation() {
+        let proof = make_ots_proof_with_bitcoin(100_000);
+        let provider = OpenTimestampsProvider::new().unwrap();
+        let steps = provider.parse_attestation_path(&proof).unwrap();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].operation, AttestationOp::Sha256);
+        assert_eq!(steps[1].operation, AttestationOp::Verify);
+    }
+
+    #[test]
+    fn parse_attestation_path_no_error_on_trailing_attestation_data() {
+        // Previously, bytes after 0x00 would error as unknown opcodes.
+        // Now 0x00 is terminal and parsing stops cleanly.
+        let mut proof = OTS_MAGIC.to_vec();
+        proof.push(0xf0); // append
+        proof.push(0x02); // varint len=2
+        proof.extend_from_slice(&[0xAA, 0xBB]);
+        proof.push(0x08); // sha256
+        proof.push(0x00); // attestation marker
+        proof.extend_from_slice(&[0x99; 20]); // trailing metadata
+
+        let provider = OpenTimestampsProvider::new().unwrap();
+        let steps = provider.parse_attestation_path(&proof).unwrap();
+        assert_eq!(steps.len(), 3); // Append, Sha256, Verify
+        assert_eq!(steps[2].operation, AttestationOp::Verify);
     }
 }
