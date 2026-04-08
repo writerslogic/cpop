@@ -58,7 +58,7 @@ impl Default for WritersProofConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            base_url: "https://api.writersproof.com".to_string(),
+            base_url: crate::writersproof::client::DEFAULT_API_URL.to_string(),
             auto_attest: false,
             offline_queue: true,
         }

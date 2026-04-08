@@ -329,41 +329,18 @@ impl Session {
             fs::create_dir_all(parent).map_err(|e| Error::validation(e.to_string()))?;
         }
 
-        // Atomic write: write to .tmp then rename for crash safety
-        let tmp_path = path.as_ref().with_extension("tmp");
-
-        // Create file with restrictive permissions from the start (unix).
-        // On non-unix platforms, permissions are set after write which leaves a brief
-        // window where the file may be world-readable (OS limitation).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut f = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&tmp_path)
-                .or_else(|_| {
-                    // If file already exists (e.g. leftover from crash), remove and retry
-                    let _ = fs::remove_file(&tmp_path);
-                    fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .mode(0o600)
-                        .open(&tmp_path)
-                })
-                .map_err(|e| Error::validation(e.to_string()))?;
-            std::io::Write::write_all(&mut f, &bytes)
-                .map_err(|e| Error::validation(e.to_string()))?;
-        }
-        #[cfg(not(unix))]
-        {
-            fs::write(&tmp_path, &*bytes).map_err(|e| Error::validation(e.to_string()))?;
-            crate::crypto::restrict_permissions(&tmp_path, 0o600)
-                .map_err(|e| Error::validation(e.to_string()))?;
-        }
-
-        fs::rename(&tmp_path, path.as_ref()).map_err(|e| Error::validation(e.to_string()))?;
+        // Atomic write via tempfile (unpredictable name, auto-cleanup on error)
+        let parent = path.as_ref().parent().unwrap_or(Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .map_err(|e| Error::validation(e.to_string()))?;
+        std::io::Write::write_all(&mut tmp, &bytes)
+            .map_err(|e| Error::validation(e.to_string()))?;
+        tmp.as_file().sync_all()
+            .map_err(|e| Error::validation(e.to_string()))?;
+        crate::crypto::restrict_permissions(tmp.path(), 0o600)
+            .map_err(|e| Error::validation(e.to_string()))?;
+        tmp.persist(path.as_ref())
+            .map_err(|e| Error::validation(e.error.to_string()))?;
         Ok(())
     }
 

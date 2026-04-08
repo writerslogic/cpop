@@ -342,7 +342,7 @@ impl SentinelIpcHandler {
         };
 
         let db_path = self.sentinel.config.writersproof_dir.join("events.db");
-        let store_opt = crate::store::SecureStore::open(&db_path, hmac_key.to_vec()).ok();
+        let store_opt = crate::store::SecureStore::open(&db_path, hmac_key).ok();
 
         if let Some(ref store) = store_opt {
             if let Ok(Some((cbor, sig))) = store.get_baseline_digest(&identity_fingerprint) {
@@ -480,15 +480,14 @@ impl SentinelIpcHandler {
 
         {
             use std::io::Write;
-            let tmp_path = validated_output.with_extension("tmp");
-            let mut f = std::fs::File::create(&tmp_path)
+            let parent = validated_output.parent().unwrap_or(std::path::Path::new("."));
+            let mut tmp = tempfile::NamedTempFile::new_in(parent)
                 .map_err(|e| format!("Failed to create temp file: {e}"))?;
-            f.write_all(&encoded)
+            tmp.write_all(&encoded)
                 .map_err(|e| format!("Failed to write temp file: {e}"))?;
-            f.sync_all()
+            tmp.as_file().sync_all()
                 .map_err(|e| format!("Failed to sync temp file: {e}"))?;
-            drop(f);
-            std::fs::rename(&tmp_path, &validated_output)
+            tmp.persist(&validated_output)
                 .map_err(|e| format!("Failed to rename output: {e}"))?;
         }
 

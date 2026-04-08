@@ -81,14 +81,15 @@ pub(super) fn save_counter(state: &SecureEnclaveState) {
     buf.extend_from_slice(&counter_bytes);
     buf.extend_from_slice(&hmac);
 
-    // Atomic write: write to tmp, fsync, rename to avoid partial writes on crash.
-    let tmp_path = state.counter_file.with_extension("tmp");
+    // Atomic write: write to temp, fsync, rename to avoid partial writes on crash.
+    let parent = state.counter_file.parent().unwrap_or(std::path::Path::new("."));
     let write_result = (|| -> std::io::Result<()> {
         use std::io::Write;
-        let mut f = fs::File::create(&tmp_path)?;
-        f.write_all(&buf)?;
-        f.sync_all()?;
-        fs::rename(&tmp_path, &state.counter_file)?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(&buf)?;
+        tmp.as_file().sync_all()?;
+        crate::crypto::restrict_permissions(tmp.path(), 0o600)?;
+        tmp.persist(&state.counter_file).map_err(|e| e.error)?;
         Ok(())
     })();
     if let Err(e) = write_result {
@@ -97,9 +98,5 @@ pub(super) fn save_counter(state: &SecureEnclaveState) {
             state.counter_file,
             e
         );
-        let _ = fs::remove_file(&tmp_path);
-    }
-    if let Err(e) = crate::crypto::restrict_permissions(&state.counter_file, 0o600) {
-        log::warn!("Failed to set counter file permissions: {}", e);
     }
 }

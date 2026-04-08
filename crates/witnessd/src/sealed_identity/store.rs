@@ -388,12 +388,12 @@ impl SealedIdentityStore {
         }
         let data = serde_json::to_vec_pretty(&blob_with_hmac)
             .map_err(|e| SealedIdentityError::Serialization(e.to_string()))?;
-        let tmp_path = self.store_path.with_extension("tmp");
-        fs::write(&tmp_path, data)?;
-        fs::rename(&tmp_path, &self.store_path)?;
-        if let Err(e) = crate::crypto::restrict_permissions(&self.store_path, 0o600) {
-            log::warn!("Failed to set sealed identity permissions: {}", e);
-        }
+        let parent = self.store_path.parent().unwrap_or(std::path::Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        std::io::Write::write_all(&mut tmp, &data)?;
+        tmp.as_file().sync_all()?;
+        crate::crypto::restrict_permissions(tmp.path(), 0o600).ok();
+        tmp.persist(&self.store_path).map_err(|e| e.error)?;
         Ok(())
     }
 

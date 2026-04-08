@@ -36,16 +36,21 @@ pub fn ffi_init() -> FfiResult {
         let key_bytes = zeroize::Zeroizing::new(signing_key.to_bytes());
 
         // Write to temp file first, restrict permissions, then atomic rename
-        let tmp_path = key_path.with_extension("tmp");
-        if let Err(e) = std::fs::write(&tmp_path, key_bytes.as_ref()) {
+        let parent = key_path.parent().unwrap_or(std::path::Path::new("."));
+        let mut tmp = match tempfile::NamedTempFile::new_in(parent) {
+            Ok(t) => t,
+            Err(e) => return FfiResult::err(format!("Failed to create temp file: {}", e)),
+        };
+        if let Err(e) = std::io::Write::write_all(&mut tmp, key_bytes.as_ref()) {
             return FfiResult::err(format!("Failed to write signing key: {}", e));
         }
-        if let Err(e) = crate::crypto::restrict_permissions(&tmp_path, 0o600) {
-            let _ = std::fs::remove_file(&tmp_path);
+        if let Err(e) = tmp.as_file().sync_all() {
+            return FfiResult::err(format!("Failed to sync signing key: {}", e));
+        }
+        if let Err(e) = crate::crypto::restrict_permissions(tmp.path(), 0o600) {
             return FfiResult::err(format!("Failed to set key file permissions: {}", e));
         }
-        if let Err(e) = std::fs::rename(&tmp_path, &key_path) {
-            let _ = std::fs::remove_file(&tmp_path);
+        if let Err(e) = tmp.persist(&key_path) {
             return FfiResult::err(format!("Failed to finalize signing key: {}", e));
         }
         // H-016: Verify permissions on final path after atomic rename;

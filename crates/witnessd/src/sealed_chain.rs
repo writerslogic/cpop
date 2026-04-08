@@ -109,7 +109,7 @@ pub fn save_sealed(
     // well below 2^-32 per document lifetime.
     let save_ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
+        .map_err(|_| Error::crypto("system clock before UNIX epoch; cannot generate safe nonce"))?
         .as_nanos() as u64;
     let mut nonce_bytes = [0u8; 12];
     nonce_bytes[..8].copy_from_slice(&save_ts.to_le_bytes());
@@ -139,17 +139,15 @@ pub fn save_sealed(
     output.extend_from_slice(&header);
     output.extend_from_slice(&ciphertext);
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let tmp_path = path.with_extension("tmp");
+    let parent = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
     {
         use std::io::Write;
-        let mut f = fs::File::create(&tmp_path)?;
-        f.write_all(&output)?;
-        f.sync_all()?;
+        tmp.write_all(&output)?;
+        tmp.as_file().sync_all()?;
     }
-    fs::rename(&tmp_path, path)?;
+    tmp.persist(path).map_err(|e| e.error)?;
 
     Ok(())
 }
@@ -322,17 +320,15 @@ fn save_sealed_v1(
     let mut output = Vec::with_capacity(HEADER_SIZE + ciphertext.len());
     output.extend_from_slice(&header);
     output.extend_from_slice(&ciphertext);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let tmp_path = path.with_extension("tmp");
+    let parent = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
     {
         use std::io::Write;
-        let mut f = fs::File::create(&tmp_path)?;
-        f.write_all(&output)?;
-        f.sync_all()?;
+        tmp.write_all(&output)?;
+        tmp.as_file().sync_all()?;
     }
-    fs::rename(&tmp_path, path)?;
+    tmp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
 

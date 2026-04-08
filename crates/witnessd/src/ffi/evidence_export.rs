@@ -305,12 +305,12 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 }
             };
 
-            let tmp_path = output_path.with_extension("tmp");
+            let parent = output_path.parent().unwrap_or(std::path::Path::new("."));
             let write_result = (|| -> std::io::Result<()> {
-                let mut f = std::fs::File::create(&tmp_path)?;
-                std::io::Write::write_all(&mut f, &signed_bytes)?;
-                f.sync_all()?;
-                std::fs::rename(&tmp_path, &output_path)?;
+                let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+                std::io::Write::write_all(&mut tmp, &signed_bytes)?;
+                tmp.as_file().sync_all()?;
+                tmp.persist(&output_path).map_err(|e| e.error)?;
                 Ok(())
             })();
             match write_result {

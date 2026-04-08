@@ -94,13 +94,13 @@ impl SoftwarePUF {
 
         // Always write to file to ensure persistence when keychain is
         // disabled or unavailable. SecureStorage is an additional copy.
-        if let Some(parent) = self.seed_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let tmp_path = self.seed_path.with_extension("tmp");
-        fs::write(&tmp_path, &seed)?;
-        crate::crypto::restrict_permissions(&tmp_path, 0o600)?;
-        fs::rename(tmp_path, &self.seed_path)?;
+        let parent = self.seed_path.parent().unwrap_or(std::path::Path::new("."));
+        fs::create_dir_all(parent)?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        std::io::Write::write_all(&mut tmp, &seed)?;
+        tmp.as_file().sync_all()?;
+        crate::crypto::restrict_permissions(tmp.path(), 0o600)?;
+        tmp.persist(&self.seed_path).map_err(|e| e.error)?;
 
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
             log::warn!("Secure storage unavailable ({e}), using file-based storage");
@@ -239,13 +239,13 @@ impl SoftwarePUF {
 
         // Always write to the file to ensure recovery survives even when
         // SecureStorage silently no-ops (e.g., CPOP_NO_KEYCHAIN=1).
-        if let Some(parent) = seed_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let tmp_path = seed_path.with_extension("tmp");
-        fs::write(&tmp_path, &seed)?;
-        crate::crypto::restrict_permissions(&tmp_path, 0o600)?;
-        fs::rename(&tmp_path, seed_path)?;
+        let parent = seed_path.parent().unwrap_or(std::path::Path::new("."));
+        fs::create_dir_all(parent)?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        std::io::Write::write_all(&mut tmp, &seed)?;
+        tmp.as_file().sync_all()?;
+        crate::crypto::restrict_permissions(tmp.path(), 0o600)?;
+        tmp.persist(seed_path).map_err(|e| e.error)?;
 
         // Also persist to SecureStorage if available (additional copy).
         if let Err(e) = crate::identity::SecureStorage::save_seed(&seed) {
