@@ -26,9 +26,8 @@ pub struct WritersProofClient {
 impl WritersProofClient {
     /// Create a client targeting the given API base URL.
     ///
-    /// In production, `base_url` must use HTTPS to protect JWT tokens and
-    /// evidence data in transit. HTTP is only allowed in debug builds for
-    /// local development.
+    /// `base_url` must use HTTPS to protect JWT tokens and evidence data
+    /// in transit. Non-HTTPS URLs are unconditionally rejected.
     pub fn new(base_url: &str) -> Result<Self> {
         let url = base_url.trim_end_matches('/').to_string();
         if !url.starts_with("https://") {
@@ -245,17 +244,21 @@ impl WritersProofClient {
                 )));
             }
         }
-        let body = resp
-            .bytes()
+        let mut body: Vec<u8> = Vec::new();
+        let mut resp = resp;
+        while let Some(chunk) = resp
+            .chunk()
             .await
-            .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))?;
-        if body.len() as u64 > MAX_CRL_SIZE {
-            return Err(Error::crypto(format!(
-                "CRL response too large: {} bytes (max {MAX_CRL_SIZE})",
-                body.len()
-            )));
+            .map_err(|e| Error::crypto(format!("CRL response read failed: {e}")))?
+        {
+            if body.len() as u64 + chunk.len() as u64 > MAX_CRL_SIZE {
+                return Err(Error::crypto(format!(
+                    "CRL response too large (max {MAX_CRL_SIZE} bytes)"
+                )));
+            }
+            body.extend_from_slice(&chunk);
         }
-        Ok(body.to_vec())
+        Ok(body)
     }
 
     /// Anchor an evidence packet hash in the transparency log.
@@ -327,8 +330,20 @@ impl WritersProofClient {
         Self::json_response::<BeaconResponse>(resp).await
     }
 
+    /// Validate that a session ID is a 64-character hex string.
+    fn validate_session_id(session_id: &str) -> Result<()> {
+        if session_id.len() != 64 || !session_id.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(Error::crypto(format!(
+                "invalid session_id: must be 64-char hex, got: {}",
+                &session_id[..session_id.len().min(32)]
+            )));
+        }
+        Ok(())
+    }
+
     /// Start a tracking session on the server with an initial hash.
     pub async fn start_session(&self, session_id: &str, initial_hash: &str) -> Result<()> {
+        Self::validate_session_id(session_id)?;
         let url = format!("{}/v1/sessions/{}", self.base_url, session_id);
         let req = serde_json::json!({
             "action": "start",
@@ -339,6 +354,7 @@ impl WritersProofClient {
 
     /// Update the server with the current document hash for real-time comparison.
     pub async fn update_session_hash(&self, session_id: &str, current_hash: &str) -> Result<()> {
+        Self::validate_session_id(session_id)?;
         let url = format!("{}/v1/sessions/{}", self.base_url, session_id);
         let req = serde_json::json!({
             "action": "update",
@@ -349,6 +365,7 @@ impl WritersProofClient {
 
     /// Signal the end of tracking and request the server to wipe the session hashes.
     pub async fn end_session(&self, session_id: &str, final_hash: &str) -> Result<()> {
+        Self::validate_session_id(session_id)?;
         let url = format!("{}/v1/sessions/{}", self.base_url, session_id);
         let req = serde_json::json!({
             "action": "end",
@@ -384,6 +401,7 @@ impl WritersProofClient {
     /// Returns a 30-second TTL nonce that must be bound into the next
     /// checkpoint hash to prove the checkpoint was built in real time.
     pub async fn request_challenge(&self, session_id: &str) -> Result<ChallengeResponse> {
+        Self::validate_session_id(session_id)?;
         let url = format!("{}/v1/sessions/{}/challenge", self.base_url, session_id);
         let mut req = self.client.post(&url);
         if let Some(ref jwt) = self.jwt {
@@ -422,12 +440,7 @@ impl WritersProofClient {
     ///
     /// A `PulseResponse` containing the fresh nonce, its ID, and TTL.
     pub async fn pulse(&self, session_id: &str, current_hash: &str) -> Result<PulseResponse> {
-        if session_id.len() != 64 || !session_id.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(Error::crypto(format!(
-                "invalid session_id: must be 64-char hex, got: {}",
-                &session_id[..session_id.len().min(32)]
-            )));
-        }
+        Self::validate_session_id(session_id)?;
         if current_hash.len() != 64 || !current_hash.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(Error::crypto(format!(
                 "invalid current_hash: must be 64-char hex SHA-256, got: {}",
@@ -505,6 +518,7 @@ impl WritersProofClient {
         nonce_id: &str,
         checkpoint_hash: &str,
     ) -> Result<()> {
+        Self::validate_session_id(session_id)?;
         let url = format!("{}/v1/sessions/{}/confirm", self.base_url, session_id);
         let body = ConfirmNonceRequest {
             nonce_id: nonce_id.to_string(),

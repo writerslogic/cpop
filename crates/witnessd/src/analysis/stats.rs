@@ -142,12 +142,13 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     dot / (norm_a.sqrt() * norm_b.sqrt())
 }
 
-/// Relative similarity: 1.0 when both zero, else `1 - |a-b|/(a+b+ε)`.
+/// Relative similarity: 1.0 when both zero, else `1 - |a-b|/(|a|+|b|+ε)`.
 pub fn relative_similarity(a: f64, b: f64) -> f64 {
     if a == 0.0 && b == 0.0 {
         1.0
     } else {
-        1.0 - (a - b).abs() / (a + b + 0.001)
+        let denom = a.abs() + b.abs() + 0.001;
+        (1.0 - (a - b).abs() / denom).clamp(0.0, 1.0)
     }
 }
 

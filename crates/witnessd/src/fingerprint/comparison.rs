@@ -269,10 +269,10 @@ impl BatchComparator {
         self
     }
 
-    /// Greedy single-pass clustering. O(n^2) pairwise comparisons.
+    /// Greedy leader-based clustering. O(n^2) pairwise comparisons.
     ///
-    /// Returns an error if `fingerprints.len() > 500` to prevent excessive
-    /// computation. Callers with large datasets should sample first.
+    /// Truncates to 500 fingerprints with a warning if the input exceeds
+    /// that limit. Callers with large datasets should sample first.
     pub fn find_clusters(&self, fingerprints: &[AuthorFingerprint]) -> Vec<Cluster> {
         let n = fingerprints.len();
         if n == 0 {

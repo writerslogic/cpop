@@ -80,17 +80,24 @@ pub fn compare_profiles(
     // dimensions' weights are implicitly rescaled by dividing by
     // total_weight, which excludes the NaN dimension's weight. This avoids
     // penalizing or rewarding comparisons that lack a particular signal.
-    let (interval_contrib, interval_weight) = if scores.interval_similarity.is_nan() {
-        (0.0, 0.0)
+    fn guarded(raw: f64, weight: f64) -> (f64, f64) {
+        if raw.is_nan() {
+            (0.0, 0.0)
+        } else {
+            (weight * raw, weight)
+        }
+    }
+    let (mono_c, mono_w) = guarded(scores.monotonic_append_similarity, 0.25);
+    let (ent_c, ent_w) = guarded(scores.entropy_similarity, 0.20);
+    let (int_c, int_w) = guarded(scores.interval_similarity, 0.15);
+    let (pnr_c, pnr_w) = guarded(scores.pos_neg_ratio_similarity, 0.20);
+    let (del_c, del_w) = guarded(scores.deletion_clustering_similarity, 0.20);
+    let total_weight = mono_w + ent_w + int_w + pnr_w + del_w;
+    let similarity_score = if total_weight > 0.0 {
+        (mono_c + ent_c + int_c + pnr_c + del_c) / total_weight
     } else {
-        (0.15 * scores.interval_similarity, 0.15)
+        0.0
     };
-    let other = 0.25 * scores.monotonic_append_similarity
-        + 0.20 * scores.entropy_similarity
-        + 0.20 * scores.pos_neg_ratio_similarity
-        + 0.20 * scores.deletion_clustering_similarity;
-    let total_weight = 0.85 + interval_weight;
-    let similarity_score = (other + interval_contrib) / total_weight;
 
     let is_consistent = similarity_score >= CONSISTENCY_THRESHOLD;
 
