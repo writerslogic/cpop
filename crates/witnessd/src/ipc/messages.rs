@@ -361,8 +361,15 @@ impl IpcMessage {
             IpcMessage::ComputeProcessScore { path } => {
                 validate_ipc_path(path)?;
             }
-            IpcMessage::CreateFileCheckpoint { path, .. } => {
+            IpcMessage::CreateFileCheckpoint { path, message } => {
                 validate_ipc_path(path)?;
+                if message.len() > MAX_ALERT_MESSAGE {
+                    return Err(format!(
+                        "CreateFileCheckpoint message too long: {} bytes (max {})",
+                        message.len(),
+                        MAX_ALERT_MESSAGE
+                    ));
+                }
             }
             IpcMessage::Pulse(sample) => {
                 if sample.timestamp_ns < 0 || sample.timestamp_ns > MAX_TIMESTAMP_NS {

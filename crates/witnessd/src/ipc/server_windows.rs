@@ -37,6 +37,8 @@ pub(super) fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Re
     impl Drop for OwnedHandle {
         fn drop(&mut self) {
             if !self.0.is_invalid() {
+                // SAFETY: Handle was obtained from a Win32 API that returns valid
+                // handles on success, and OwnedHandle is only constructed with such.
                 unsafe {
                     // Intentionally ignored: CloseHandle in Drop; nothing to do on failure
                     let _ = CloseHandle(self.0);
@@ -45,11 +47,20 @@ pub(super) fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Re
         }
     }
 
+    // SAFETY: All HANDLE values are obtained from Win32 APIs that guarantee
+    // valid handles on success. OwnedHandle ensures CloseHandle on all paths.
+    // pipe_handle is a non-owning copy; the caller retains ownership.
     unsafe {
         let pipe_handle = HANDLE(pipe.as_raw_handle());
         let mut client_pid: u32 = 0;
         GetNamedPipeClientProcessId(pipe_handle, &mut client_pid)
             .map_err(|e| anyhow!("GetNamedPipeClientProcessId failed: {}", e))?;
+
+        if client_pid == 0 {
+            return Err(anyhow!(
+                "IPC peer has PID 0 (System Idle Process); rejecting"
+            ));
+        }
 
         let mut server_token_raw = HANDLE::default();
         OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut server_token_raw)
@@ -79,43 +90,93 @@ pub(super) fn verify_windows_pipe_peer(pipe: &named_pipe::NamedPipeServer) -> Re
     }
 }
 
+/// RAII wrapper for memory allocated by `LocalAlloc` (or Win32 APIs that
+/// require `LocalFree`). Guarantees cleanup on all paths including panics.
+#[cfg(target_os = "windows")]
+struct LocalAllocGuard(windows::Win32::Foundation::HLOCAL);
+
+#[cfg(target_os = "windows")]
+impl Drop for LocalAllocGuard {
+    fn drop(&mut self) {
+        // SAFETY: The pointer was returned by a Win32 API that documents
+        // LocalFree as the correct deallocation function.
+        unsafe {
+            windows::Win32::Foundation::LocalFree(Some(self.0));
+        }
+    }
+}
+
 /// Extract user SID string from a process token.
 #[cfg(target_os = "windows")]
-unsafe fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Result<String> {
+fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Result<String> {
     use anyhow::anyhow;
     use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
     use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_USER};
 
     let mut size: u32 = 0;
-    // Intentionally ignored: first call with null buffer retrieves required size
-    let _ = GetTokenInformation(token, TokenUser, None, 0, &mut size);
+    // SAFETY: First call with null buffer retrieves the required size.
+    // GetTokenInformation is safe to call with None/0; it writes only to `size`.
+    unsafe {
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &mut size);
+    }
 
-    let mut buffer = vec![0u8; size as usize];
-    GetTokenInformation(
-        token,
-        TokenUser,
-        Some(buffer.as_mut_ptr() as *mut _),
-        size,
-        &mut size,
-    )
-    .map_err(|e| anyhow!("GetTokenInformation failed: {}", e))?;
+    if size == 0 {
+        return Err(anyhow!(
+            "GetTokenInformation returned zero size; token may be invalid"
+        ));
+    }
 
-    let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
-    let sid = token_user.User.Sid;
+    // Allocate with alignment suitable for TOKEN_USER (contains pointer-sized
+    // fields) to avoid undefined behavior from misaligned pointer casts.
+    let align = std::mem::align_of::<TOKEN_USER>().max(std::mem::align_of::<usize>());
+    let alloc_size = (size as usize + align - 1) & !(align - 1);
+    let layout = std::alloc::Layout::from_size_align(alloc_size, align)
+        .map_err(|_| anyhow!("Invalid layout for TOKEN_USER buffer"))?;
+    // SAFETY: layout has non-zero size (checked above) and valid alignment.
+    let buffer_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+    if buffer_ptr.is_null() {
+        std::alloc::handle_alloc_error(layout);
+    }
+    let _buf_guard = scopeguard::defer(|| {
+        // SAFETY: buffer_ptr was allocated with this exact layout above.
+        unsafe { std::alloc::dealloc(buffer_ptr, layout) }
+    });
 
-    let mut sid_string = windows::core::PWSTR::null();
-    ConvertSidToStringSidW(sid, &mut sid_string)
-        .map_err(|e| anyhow!("ConvertSidToStringSid failed: {}", e))?;
+    // SAFETY: buffer_ptr is non-null, properly aligned, and sized to `size`
+    // bytes as requested by the first GetTokenInformation call.
+    unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            Some(buffer_ptr as *mut _),
+            size,
+            &mut size,
+        )
+        .map_err(|e| anyhow!("GetTokenInformation failed: {}", e))?;
+    }
 
-    let result = sid_string
-        .to_string()
-        .map_err(|e| anyhow!("SID string conversion failed: {}", e));
+    // SAFETY: buffer_ptr has alignment >= align_of::<TOKEN_USER>() and was
+    // filled by GetTokenInformation(TokenUser) which writes a valid TOKEN_USER.
+    let sid = unsafe {
+        let token_user = &*(buffer_ptr as *const TOKEN_USER);
+        token_user.User.Sid
+    };
 
-    windows::Win32::Foundation::LocalFree(Some(windows::Win32::Foundation::HLOCAL(
+    let sid_string = unsafe {
+        let mut raw_ptr = windows::core::PWSTR::null();
+        ConvertSidToStringSidW(sid, &mut raw_ptr)
+            .map_err(|e| anyhow!("ConvertSidToStringSid failed: {}", e))?;
+        raw_ptr
+    };
+
+    // Ensure LocalFree runs even if to_string() panics on malformed UTF-16.
+    let _sid_guard = LocalAllocGuard(windows::Win32::Foundation::HLOCAL(
         sid_string.as_ptr() as *mut _,
-    )));
+    ));
 
-    result
+    sid_string
+        .to_string()
+        .map_err(|e| anyhow!("SID string conversion failed: {}", e))
 }
 
 #[cfg(target_os = "windows")]

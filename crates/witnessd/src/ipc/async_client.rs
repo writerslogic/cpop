@@ -223,7 +223,13 @@ impl AsyncIpcClient {
                 ))
             })?;
 
-            if server_confirm_plaintext != KEY_CONFIRM_PLAINTEXT {
+            if subtle::ConstantTimeEq::ct_eq(
+                server_confirm_plaintext.as_slice(),
+                KEY_CONFIRM_PLAINTEXT,
+            )
+            .unwrap_u8()
+                == 0
+            {
                 return Err(AsyncIpcClientError::ProtocolError(
                     "Server confirmation mismatch".into(),
                 ));
