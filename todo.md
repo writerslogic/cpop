@@ -1,17 +1,17 @@
 # CPOP Project Audit -- Consolidated Findings
 
-<!-- suggest | Updated: 2026-04-08 | Domain: code | Languages: rust | Files: 42 new + 677 prior | Issues: 328 -->
+<!-- suggest | Updated: 2026-04-09 | Domain: code | Languages: rust | Files: 27 delta + 677 prior | Issues: 340 -->
 
-**Updated**: 2026-04-08 (session 6 -- medium sweep of 42 previously uncovered files + changed files; 8 batches, 2 waves)
-**Previous audit**: 2026-04-08 session 5 (targeted macOS+FFI); 2026-04-07 session 4 (677 files)
+**Updated**: 2026-04-09 (session 7 -- delta scan of 27 changed files since session 6; 4 batches, 1 wave)
+**Previous audit**: 2026-04-08 session 6 (42 files medium sweep); 2026-04-07 session 4 (677 files)
 **Baseline**: 1097 pass, 0 fail, 1 ignored (witnessd --lib)
 
 ## Summary
 | Severity | Open | Fixed (this+prior) | Skipped/FP (this+prior) |
 |----------|------|--------------------|--------------------------|
 | CRITICAL | 0    | 25                 | 17+                      |
-| HIGH     | 20   | 150                | 31+                      |
-| MEDIUM   | 48   | 247                | 22                       |
+| HIGH     | 10   | 162                | 32+                      |
+| MEDIUM   | 58   | 247                | 22                       |
 | SYSTEMIC | 2    | 8                  | 1                        |
 
 ---
@@ -387,9 +387,9 @@
 
 ## High (session 6 -- medium sweep)
 
-- [ ] **H-044** `[security]` `anchors/notary.rs:40`: Endpoint URL constructed via format! without URL validation or HTTPS enforcement
-  <!-- pid:missing_validation | verified:true | first:2026-04-08 -->
-  Impact: Malicious/misconfigured NOTARY_ENDPOINT env var can redirect requests; api_key sent over plaintext HTTP | Fix: Parse as Url, validate scheme is https | Effort: small
+- [x] **H-044** `[security]` `anchors/notary.rs:40`: Endpoint URL constructed via format! without URL validation or HTTPS enforcement -- ALREADY FIXED
+  <!-- pid:missing_validation | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Constructor already validates URL and enforces HTTPS (lines 17-23): url::Url::parse + scheme != "https" check.
 
 - [ ] **H-045** `[concurrency]` `engine/watcher.rs:105`: TOCTOU in rename detection; lock released before !old_path.exists() filesystem check
   <!-- pid:toctou | verified:true | first:2026-04-08 | systemic:SYS-010 -->
@@ -399,13 +399,13 @@
   <!-- pid:toctou | verified:true | first:2026-04-08 | systemic:SYS-010 -->
   Impact: Symlink swap attack between metadata check and hash could misattribute edits | Fix: Use file-descriptor-based hashing after open | Effort: medium
 
-- [ ] **H-047** `[concurrency]` `platform/windows.rs:549`: Mutex::lock() in mouse hook callback can block; should use try_lock or AtomicI64
-  <!-- pid:lock_held_await | verified:true | first:2026-04-08 -->
-  Impact: Mutex in WH_MOUSE_LL callback causes thread starvation if contended | Fix: Replace with AtomicI64 pair or use try_lock with fallback | Effort: small
+- [x] **H-047** `[concurrency]` `platform/windows.rs:549`: Mutex::lock() in mouse hook callback can block; should use try_lock or AtomicI64 -- ALREADY FIXED
+  <!-- pid:lock_held_await | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Now uses AtomicI64 for MOUSE_LAST_X/Y (lines 551-552) and try_lock with poison recovery for idle stats (lines 747-753).
 
-- [ ] **H-048** `[concurrency]` `platform/windows.rs:742`: Mouse hook uses lock() without lock_recover(); keyboard hook uses it correctly
-  <!-- pid:lock_held_await | verified:true | first:2026-04-08 -->
-  Impact: Poisoned MOUSE_GLOBAL_IDLE_STATS mutex panics in hook callback | Fix: Use lock_recover() consistent with keyboard hook pattern | Effort: small
+- [x] **H-048** `[concurrency]` `platform/windows.rs:742`: Mouse hook uses lock() without lock_recover(); keyboard hook uses it correctly -- ALREADY FIXED
+  <!-- pid:lock_held_await | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Mouse hook now uses try_lock with Poisoned/WouldBlock recovery matching keyboard hook pattern (lines 747-753).
 
 - [ ] **H-049** `[security]` `tpm/linux.rs:145`: PCR read after quote creates temporal inconsistency; quote has old PCR state, read returns new
   <!-- pid:toctou | verified:true | first:2026-04-08 -->
@@ -423,21 +423,21 @@
   <!-- pid:missing_validation | verified:true | first:2026-04-08 -->
   Impact: C2PA consumers will fail signature validation on unsigned assertions | Fix: Sign before return, or mark as unsigned type | Effort: medium
 
-- [ ] **H-053** `[error_handling]` `cpop_jitter_bridge/session.rs:375`: persist() error loses path context; debugging blind
-  <!-- pid:unhelpful_error_msg | verified:true | first:2026-04-08 -->
-  Impact: Cross-filesystem persist failures have no path in error message | Fix: Include path in error: format!("persist to {}: {}", path, e.error) | Effort: small
+- [x] **H-053** `[error_handling]` `cpop_jitter_bridge/session.rs:375`: persist() error loses path context; debugging blind -- ALREADY FIXED
+  <!-- pid:unhelpful_error_msg | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  persist error now includes path context: format!("failed to persist session file to {}: {}", path.as_ref().display(), e.error) at line 386.
 
-- [ ] **H-054** `[error_handling]` `declaration/verification.rs:16`: Signature verify returns bool, not Result; no diagnostic info on failure
-  <!-- pid:silent_error | verified:true | first:2026-04-08 -->
-  Impact: Callers cannot distinguish invalid signatures from malformed keys | Fix: Return Result with specific error variants | Effort: small
+- [x] **H-054** `[error_handling]` `declaration/verification.rs:16`: Signature verify returns bool, not Result; no diagnostic info on failure -- ALREADY FIXED
+  <!-- pid:silent_error | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  verify() returns Result<(), String> with specific errors for key length, signature length, and verification failure (lines 16-40).
 
-- [ ] **H-055** `[security]` `declaration/verification.rs:170`: Keystroke count zero edge case; potential underflow in avg_interval_ms calculation
-  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 -->
-  Impact: Zero-keystroke samples underestimate jitter entropy | Fix: Add explicit check if keystroke_count == 0 { return error } | Effort: small
+- [x] **H-055** `[security]` `declaration/verification.rs:170`: Keystroke count zero edge case; potential underflow in avg_interval_ms calculation -- ALREADY FIXED
+  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Zero check at line 167: if keystroke_count == 0 { return Err("zero keystroke count"); }. Division safe at line 179 due to guard.
 
-- [ ] **H-056** `[concurrency]` `presence/verifier.rs:33`: Race condition on session.active check-then-use without lock
-  <!-- pid:toctou | verified:true | first:2026-04-08 -->
-  Impact: Concurrent sessions possible, violating mutual exclusion invariant | Fix: Check and mutate in single critical section | Effort: medium
+- [-] **H-056** `[concurrency]` `presence/verifier.rs:33`: Race condition on session.active check-then-use without lock -- FALSE POSITIVE
+  <!-- pid:toctou | verified:false | first:2026-04-08 | resolved:2026-04-09 -->
+  start_session() takes &mut self; PresenceVerifier is not Sync. Exclusive mutable access prevents concurrent calls by construction.
 
 - [ ] **H-057** `[error_handling]` `presence/verifier.rs:129`: Chrono Duration conversion failure silently defaults to 60s; no config validation
   <!-- pid:silent_error | verified:true | first:2026-04-08 -->
@@ -447,25 +447,79 @@
   <!-- pid:missing_validation | verified:analytical | first:2026-04-08 -->
   Impact: Collaboration attestations lack cryptographic proof until multi-party flow implemented | Fix: Implement verify or use UnverifiedCollaborator type | Effort: large
 
-- [ ] **H-059** `[security]` `collaboration.rs:258`: Checkpoint range with (0, u32::MAX) iterates 2^32 times; DoS vector
-  <!-- pid:no_backpressure | verified:analytical | first:2026-04-08 -->
-  Impact: Stack/CPU exhaustion on pathological range input | Fix: Validate end < total_checkpoints at parse time | Effort: small
+- [x] **H-059** `[security]` `collaboration.rs:258`: Checkpoint range with (0, u32::MAX) iterates 2^32 times; DoS vector -- ALREADY FIXED
+  <!-- pid:no_backpressure | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Range validation at lines 250-256: if *end >= total_checkpoints { return Err(...) }. Prevents oversized iteration.
 
 - [ ] **H-060** `[architecture]` `trust_policy/evaluation.rs:42`: CustomFormula silently falls back to WeightedAverage without error
   <!-- pid:silent_error | verified:true | first:2026-04-08 -->
   Impact: Policy intent violated; auditors cannot detect degraded mode | Fix: Return Result indicating formula unavailability | Effort: medium
 
-- [ ] **H-061** `[security]` `fingerprint/activity_analysis.rs:52-105`: NaN/Inf from skewness/kurtosis propagates into IkiDistribution
-  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | systemic:SYS-009 -->
-  Impact: NaN in biometric analysis corrupts similarity scores | Fix: is_finite() guard after stats calls; filter NaN during from_intervals() | Effort: small
+- [x] **H-061** `[security]` `fingerprint/activity_analysis.rs:52-105`: NaN/Inf from skewness/kurtosis propagates into IkiDistribution -- ALREADY FIXED
+  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | systemic:SYS-009 | resolved:2026-04-09 -->
+  Lines 57-59: intervals.retain(|x| x.is_finite()); Lines 74-91: skewness/kurtosis guarded with is_finite() + log::warn fallback to 0.0.
 
-- [ ] **H-062** `[security]` `fingerprint/activity_analysis.rs:123-128`: NaN in similarity components propagates to weighted sum
-  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | systemic:SYS-009 -->
-  Impact: NaN similarity = fingerprint matching fails silently | Fix: Return 0.5 (inconclusive) if any component is NaN | Effort: small
+- [x] **H-062** `[security]` `fingerprint/activity_analysis.rs:123-128`: NaN in similarity components propagates to weighted sum -- ALREADY FIXED
+  <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | systemic:SYS-009 | resolved:2026-04-09 -->
+  Lines 152-154: NaN guard returns 0.5 (inconclusive) if any of hist_sim, mean_sim, std_sim is non-finite.
 
-- [ ] **H-063** `[security]` `fingerprint/consent.rs:184-192`: Consent file written without atomic rename; crash = corrupt consent state
-  <!-- pid:toctou | verified:analytical | first:2026-04-08 -->
-  Impact: Corrupted consent file could silently enable/disable biometric collection | Fix: Write to temp + sync + rename | Effort: small
+- [x] **H-063** `[security]` `fingerprint/consent.rs:184-192`: Consent file written without atomic rename; crash = corrupt consent state -- ALREADY FIXED
+  <!-- pid:toctou | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
+  Lines 190-195: Writes to .json.tmp, sync_all, then fs::rename for atomic replacement.
+
+## High (session 7 -- delta scan)
+
+- [x] **H-064** `[error_handling]` `ffi/ephemeral.rs:254`: open_store() failure silently drops evidence to RAM-only; user sees checkpoint success -- FIXED 2026-04-09
+  <!-- pid:silent_error | verified:true | first:2026-04-09 | resolved:2026-04-09 -->
+  Fix: Store open and write errors now logged and propagated via FfiResult.error_message (success=true, checkpoint in memory, but caller sees degradation signal). Both open_store() and add_secure_event() failures surfaced.
+
+- [x] **H-065** `[error_handling]` `ffi/sentinel_witnessing.rs:229`: unwrap_or_default() swallows store.get_events_for_file() DB error at FFI trust boundary -- FIXED 2026-04-09
+  <!-- pid:silent_error | verified:true | first:2026-04-09 | resolved:2026-04-09 -->
+  Fix: Replaced unwrap_or_default() with explicit match on get_events_for_file(). DB errors now logged via log::warn and propagated to FfiWitnessingStatus.error_message so Swift caller can distinguish "no events" from "DB failure". Store open errors also surfaced.
+
+---
+
+## Medium (session 7 -- delta scan)
+
+- [ ] **M-049** `[maintainability]` `war/verification.rs:511`: CA_KEY_RING hardcoded with not_after 2036-03-18; no config-based key rotation
+  <!-- pid:hardcoded_config | verified:true | first:2026-04-09 -->
+  Impact: Key rotation requires code change and redeploy; no runtime key update mechanism | Fix: Load CA keys from config file or embed rotation logic | Effort: large
+
+- [ ] **M-050** `[error_handling]` `ffi/ephemeral.rs:268`: store.add_secure_event() error logged but checkpoint returns success to caller
+  <!-- pid:silent_error | verified:true | first:2026-04-09 -->
+  Impact: Logged but caller unaware; user sees "checkpoint #N" success even when persistence failed | Fix: Return partial success or error when store write fails | Effort: medium
+
+- [ ] **M-051** `[security]` `fingerprint/storage.rs:39`: encryption_key field is bare [u8; 32], not Zeroizing<[u8; 32]>
+  <!-- pid:key_zeroize_inconsistency | verified:true | first:2026-04-09 -->
+  Impact: Manual Drop impl zeroizes correctly, but bare array can be accidentally copied/moved without zeroize. Zeroizing<> prevents this by construction | Fix: Change field to Zeroizing<[u8; KEY_SIZE]> and remove manual Drop impl | Effort: small
+
+- [ ] **M-052** `[performance]` `ffi/ephemeral.rs:150`: evict_stale_sessions() called on every FFI checkpoint/finalize; O(n) iteration over all sessions
+  <!-- pid:alloc_in_loop | verified:true | first:2026-04-09 -->
+  Impact: Under burst load with many concurrent sessions, eviction becomes bottleneck on every API call | Fix: Evict on timer or only when session count exceeds threshold | Effort: medium
+
+- [ ] **M-053** `[performance]` `evidence/packet.rs:400`: Full Packet clone (30+ fields, checkpoints Vec) to zero 3 fields before content_hash
+  <!-- pid:clone_in_loop | verified:true | first:2026-04-09 -->
+  Impact: O(n) where n = checkpoint count; called once per sign but expensive for large evidence packets | Fix: Compute hash with selective serialization or field override instead of full clone | Effort: large
+
+- [ ] **M-054** `[code_quality]` `ffi/sentinel_witnessing.rs:121`: ffi_sentinel_witnessing_status() spans 166 lines with nested if-else chains
+  <!-- pid:high_complexity | verified:true | first:2026-04-09 -->
+  Impact: Difficult to audit; hidden bugs more likely in complex control flow | Fix: Extract session selection and forensics computation to helper functions | Effort: medium
+
+- [ ] **M-055** `[error_handling]` `anchors/notary.rs:191`: verify response missing 'valid' field defaults to false via unwrap_or(false)
+  <!-- pid:silent_error | verified:true | first:2026-04-09 -->
+  Impact: Malformed API response indistinguishable from "not verified"; caller cannot detect API errors | Fix: Return Result distinguishing verification failure from API malformation | Effort: small
+
+- [ ] **M-056** `[architecture]` `anchors/notary.rs:48`: URL parsed in both constructor and post_json(); redundant validation
+  <!-- pid:duplicated_logic | verified:true | first:2026-04-09 -->
+  Impact: Code duplication; URL scheme change requires two-place update | Fix: Store parsed Url in struct, parse once at construction | Effort: small
+
+- [ ] **M-057** `[performance]` `ffi/sentinel_witnessing.rs:97`: format!() allocations in GUI status polling hot path
+  <!-- pid:alloc_in_loop | verified:true | first:2026-04-09 -->
+  Impact: GUI calls status frequently; unnecessary string allocations per call | Fix: Return struct instead of formatted string; let Swift format | Effort: small
+
+- [ ] **M-058** `[concurrency]` `sentinel/core_session.rs:262`: RwLock read-then-write race; session can be modified between read check and write acquisition
+  <!-- pid:toctou | verified:true | first:2026-04-09 -->
+  Impact: Concurrent checkpoint commits could corrupt session state | Fix: Combine check and modify into single write lock scope, or use CAS pattern | Effort: medium
 
 ---
 
@@ -574,8 +628,17 @@
 | H-061 | HIGH | activity_analysis.rs:52 | NaN from skewness/kurtosis | small |
 | H-062 | HIGH | activity_analysis.rs:123 | NaN propagation in similarity | small |
 | H-063 | HIGH | consent.rs:184 | Non-atomic consent write | small |
+| H-065 | HIGH | sentinel_witnessing.rs:229 | DB error swallowed at FFI boundary | small |
+| M-051 | MEDIUM | fingerprint/storage.rs:39 | encryption_key not Zeroizing<> | small |
+| M-055 | MEDIUM | anchors/notary.rs:191 | verify response defaults to false | small |
+| M-056 | MEDIUM | anchors/notary.rs:48 | URL parsed twice | small |
+| M-057 | MEDIUM | sentinel_witnessing.rs:97 | format!() in GUI polling path | small |
 
 ## Coverage
+<!-- session 7: 27 changed files across 4 batches, 1 wave (2026-04-09) -->
+<!-- session 7 reviewed: platform/windows.rs, war/verification.rs, ffi/ephemeral.rs, evidence/packet.rs, sealed_chain.rs, evidence/builder/setters.rs, store/access_log.rs, fingerprint/activity_analysis.rs, cpop_jitter_bridge/session.rs, fingerprint/storage.rs, analysis/labyrinth.rs, collaboration.rs, sentinel/core_session.rs, engine/watcher.rs, fingerprint/consent.rs, continuation.rs, ffi/sentinel_witnessing.rs, analysis/lyapunov.rs, trust_policy/evaluation.rs, declaration/verification.rs, verify/mod.rs, anchors/notary.rs, store/mod.rs -->
+<!-- session 7 confirmed_clean: sealed_chain.rs (AES-GCM correct, nonce design sound, version migration handled) -->
+<!-- session 7 false_positives: setters.rs:292 (expect after ensured Some), setters.rs:532 (HKDF 32-byte infallible), windows.rs:395 (standard Drop pattern), storage.rs:174 (dup of M-043), jitter_bridge:331 (dup of M-026, logs warning) -->
 <!-- session 6: 42 files across 8 batches, 2 waves (2026-04-08) -->
 <!-- reviewed:engine/watcher.rs:2026-04-08 -->
 <!-- reviewed:anchors/notary.rs:2026-04-08 -->

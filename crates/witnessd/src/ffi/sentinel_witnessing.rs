@@ -224,43 +224,57 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
     );
     let focus_penalty = crate::forensics::compute_focus_penalty(&focus);
 
-    let (event_count, forensic_score, store_paste_chars) = match crate::ffi::helpers::open_store() {
-        Ok(store) => {
-            let events = store.get_events_for_file(&session.path).unwrap_or_default();
-            let count = events.len() as u64;
-            let store_score = if events.len() >= 2 {
-                let profile =
-                    crate::forensics::ForensicEngine::evaluate_authorship(&session.path, &events);
-                profile.metrics.edit_entropy / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
-            } else {
-                0.0
-            };
-            // Clear priority: store score (if meaningful) > cadence score > 0.
-            const MIN_MEANINGFUL_SCORE: f64 = 0.01;
-            let score = if store_score >= MIN_MEANINGFUL_SCORE {
-                (store_score - focus_penalty).clamp(0.0, 1.0)
-            } else if cadence_score > 0.0 {
-                (cadence_score - focus_penalty).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            let paste = events
-                .last()
-                .filter(|e| e.is_paste)
-                .map(|e| e.size_delta as i64)
-                .unwrap_or(0);
-            (count, score, paste)
-        }
-        Err(_) => {
-            // No store; use cadence score if available.
-            let score = if cadence_score > 0.0 {
-                (cadence_score - focus_penalty).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            (0, score, 0)
-        }
-    };
+    let (event_count, forensic_score, store_paste_chars, store_error) =
+        match crate::ffi::helpers::open_store() {
+            Ok(store) => match store.get_events_for_file(&session.path) {
+                Ok(events) => {
+                    let count = events.len() as u64;
+                    let store_score = if events.len() >= 2 {
+                        let profile =
+                            crate::forensics::ForensicEngine::evaluate_authorship(
+                                &session.path,
+                                &events,
+                            );
+                        profile.metrics.edit_entropy
+                            / crate::ffi::helpers::ENTROPY_NORMALIZATION_FACTOR
+                    } else {
+                        0.0
+                    };
+                    const MIN_MEANINGFUL_SCORE: f64 = 0.01;
+                    let score = if store_score >= MIN_MEANINGFUL_SCORE {
+                        (store_score - focus_penalty).clamp(0.0, 1.0)
+                    } else if cadence_score > 0.0 {
+                        (cadence_score - focus_penalty).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let paste = events
+                        .last()
+                        .filter(|e| e.is_paste)
+                        .map(|e| e.size_delta as i64)
+                        .unwrap_or(0);
+                    (count, score, paste, None)
+                }
+                Err(e) => {
+                    log::warn!("failed to load events for {}: {e}", session.path);
+                    let score = if cadence_score > 0.0 {
+                        (cadence_score - focus_penalty).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (0, score, 0, Some(format!("event query failed: {e}")))
+                }
+            },
+            Err(e) => {
+                log::warn!("failed to open store for witnessing status: {e}");
+                let score = if cadence_score > 0.0 {
+                    (cadence_score - focus_penalty).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (0, score, 0, Some(format!("store unavailable: {e}")))
+            }
+        };
 
     // Prefer host-reported paste (real-time) over store-derived (checkpoint-time)
     let last_paste_chars = if host_paste_chars > 0 {
@@ -281,6 +295,6 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
         last_paste_chars,
         event_confidence: session.average_event_confidence(),
         keystroke_capture_active: capture_active,
-        error_message: None,
+        error_message: store_error,
     }
 }

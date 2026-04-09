@@ -251,33 +251,47 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     entry.last_checkpoint_at = Some(Instant::now());
 
     let ephemeral_path = format!("ephemeral://{session_id}");
-    if let Ok(mut store) = open_store() {
-        let mut event = crate::store::SecureEvent::new(
-            ephemeral_path,
-            content_hash,
-            char_count as i64,
-            entry
-                .content_snapshots
-                .last()
-                .and_then(|s| s.message.clone()),
-        );
-        event.device_id = device_identity().0;
-        event.machine_id = device_identity().1.clone();
-        event.size_delta = size_delta;
-        event.context_type = Some("ephemeral".to_string());
-        if let Err(e) = store.add_secure_event(&mut event) {
-            log::error!("Failed to persist checkpoint: {e}");
+    let persist_error = match open_store() {
+        Ok(mut store) => {
+            let mut event = crate::store::SecureEvent::new(
+                ephemeral_path,
+                content_hash,
+                char_count as i64,
+                entry
+                    .content_snapshots
+                    .last()
+                    .and_then(|s| s.message.clone()),
+            );
+            event.device_id = device_identity().0;
+            event.machine_id = device_identity().1.clone();
+            event.size_delta = size_delta;
+            event.context_type = Some("ephemeral".to_string());
+            if let Err(e) = store.add_secure_event(&mut event) {
+                log::error!("Failed to persist checkpoint: {e}");
+                Some(format!("persist failed: {e}"))
+            } else {
+                None
+            }
         }
-    }
+        Err(e) => {
+            log::error!("Failed to open store for ephemeral checkpoint: {e}");
+            Some(format!("store unavailable: {e}"))
+        }
+    };
 
     entry.last_activity = Instant::now();
     flush_session_state(&session_id, &entry);
 
-    FfiResult::ok(format!(
+    let msg = format!(
         "Ephemeral checkpoint #{}: {}",
         entry.checkpoint_count,
         hex::encode(&content_hash[..8])
-    ))
+    );
+    FfiResult {
+        success: true,
+        message: Some(msg),
+        error_message: persist_error,
+    }
 }
 
 /// Accumulate keystroke timing intervals for jitter analysis.
