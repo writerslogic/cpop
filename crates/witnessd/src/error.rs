@@ -5,213 +5,125 @@
 
 use thiserror::Error;
 
-/// Top-level error type for cpop_engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    System,
+    Security,
+    Logic,
+    Protocol,
+    Analysis,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Anchor/timestamping subsystem error
     #[error("anchor: {0}")]
     Anchor(#[from] crate::anchors::AnchorError),
 
-    /// Codec serialization/deserialization error
     #[error("codec: {0}")]
     Codec(#[from] authorproof_protocol::codec::CodecError),
 
-    /// Compact reference error
     #[error("compact ref: {0}")]
     CompactRef(#[from] authorproof_protocol::compact_ref::CompactRefError),
 
-    /// Forensics analysis error
     #[error("forensics: {0}")]
     Forensics(#[from] crate::forensics::ForensicsError),
 
-    /// IPC communication error (Unix domain socket)
     #[cfg(unix)]
     #[error("ipc unix: {0}")]
     IpcUnix(#[from] crate::ipc::unix_socket::IpcError),
 
-    /// IPC communication error (platform-agnostic)
     #[error("ipc: {0}")]
     Ipc(String),
 
-    /// Key hierarchy error
     #[error("key hierarchy: {0}")]
     KeyHierarchy(#[from] crate::keyhierarchy::KeyHierarchyError),
 
-    /// Merkle Mountain Range error
     #[error("mmr: {0}")]
     Mmr(#[from] crate::mmr::errors::MmrError),
 
-    /// Sentinel (daemon) error
     #[error("sentinel: {0}")]
     Sentinel(#[from] crate::sentinel::SentinelError),
 
-    /// TPM error
     #[error("tpm: {0}")]
     Tpm(#[from] crate::tpm::TpmError),
 
-    /// VDF aggregation error
     #[error("vdf aggregate: {0}")]
     VdfAggregate(#[from] crate::vdf::AggregateError),
 
-    /// Write-ahead log error
     #[error("wal: {0}")]
     Wal(#[from] crate::wal::WalError),
 
-    /// I/O error
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Cryptographic operation failed
     #[error("crypto: {0}")]
     Crypto(String),
 
-    /// Signature verification failed
     #[error("signature: {0}")]
     Signature(String),
 
-    /// Hash verification failed
     #[error("hash mismatch: expected {expected}, got {actual}")]
     HashMismatch { expected: String, actual: String },
 
-    /// Data validation failed
     #[error("validation: {0}")]
     Validation(String),
 
-    /// Configuration error
     #[error("config: {0}")]
     Config(String),
 
-    /// Resource not found
     #[error("not found: {0}")]
     NotFound(String),
 
-    /// Invalid state for operation
     #[error("invalid state: {0}")]
     InvalidState(String),
 
-    /// Operation timed out
     #[error("timeout: {0}")]
     Timeout(String),
 
-    /// Checkpoint chain error
     #[error("checkpoint: {0}")]
     Checkpoint(String),
 
-    /// Evidence generation/verification error
     #[error("evidence: {0}")]
     Evidence(String),
 
-    /// VDF computation/verification error
     #[error("vdf: {0}")]
     Vdf(String),
 
-    /// Identity/key management error
     #[error("identity: {0}")]
     Identity(String),
 
-    /// Platform-specific error
     #[error("platform: {0}")]
     Platform(String),
 
-    /// Physics/entropy error
     #[error("physics: {0}")]
     Physics(String),
 
-    /// RFC structure error
     #[error("rfc: {0}")]
     Rfc(String),
 
-    /// Internal error (should not occur in normal operation)
     #[error("internal: {0}")]
     Internal(String),
 
-    /// Legacy error for migration from Result<T, String>
     #[error("{0}")]
     Legacy(String),
 }
 
-/// Crate-wide `Result` alias.
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
-    /// Create a checkpoint chain error.
-    pub fn checkpoint(msg: impl Into<String>) -> Self {
-        Error::Checkpoint(msg.into())
+    pub fn category(&self) -> ErrorCategory {
+        match self {
+            Error::Io(_) | Error::Timeout(_) | Error::Ipc(_) | Error::Sentinel(_) | Error::Wal(_) | Error::Platform(_) => ErrorCategory::System,
+            #[cfg(unix)]
+            Error::IpcUnix(_) => ErrorCategory::System,
+            Error::Crypto(_) | Error::Signature(_) | Error::HashMismatch { .. } | Error::Tpm(_) | Error::KeyHierarchy(_) => ErrorCategory::Security,
+            Error::Validation(_) | Error::Config(_) | Error::NotFound(_) | Error::InvalidState(_) | Error::Internal(_) | Error::Identity(_) | Error::Legacy(_) => ErrorCategory::Logic,
+            Error::Codec(_) | Error::CompactRef(_) | Error::Rfc(_) | Error::Anchor(_) | Error::Mmr(_) => ErrorCategory::Protocol,
+            Error::VdfAggregate(_) | Error::Forensics(_) | Error::Checkpoint(_) | Error::Evidence(_) | Error::Vdf(_) | Error::Physics(_) => ErrorCategory::Analysis,
+        }
     }
 
-    /// Create an evidence generation/verification error.
-    pub fn evidence(msg: impl Into<String>) -> Self {
-        Error::Evidence(msg.into())
-    }
-
-    /// Create a VDF computation/verification error.
-    pub fn vdf(msg: impl Into<String>) -> Self {
-        Error::Vdf(msg.into())
-    }
-
-    /// Create a data validation error.
-    pub fn validation(msg: impl Into<String>) -> Self {
-        Error::Validation(msg.into())
-    }
-
-    /// Create a cryptographic operation error.
-    pub fn crypto(msg: impl Into<String>) -> Self {
-        Error::Crypto(msg.into())
-    }
-
-    /// Create a configuration error.
-    pub fn config(msg: impl Into<String>) -> Self {
-        Error::Config(msg.into())
-    }
-
-    /// Create a resource-not-found error.
-    pub fn not_found(msg: impl Into<String>) -> Self {
-        Error::NotFound(msg.into())
-    }
-
-    /// Create an invalid-state error.
-    pub fn invalid_state(msg: impl Into<String>) -> Self {
-        Error::InvalidState(msg.into())
-    }
-
-    /// Create a platform-specific error.
-    pub fn platform(msg: impl Into<String>) -> Self {
-        Error::Platform(msg.into())
-    }
-
-    /// Create an identity/key management error.
-    pub fn identity(msg: impl Into<String>) -> Self {
-        Error::Identity(msg.into())
-    }
-
-    /// Create a physics/entropy error.
-    pub fn physics(msg: impl Into<String>) -> Self {
-        Error::Physics(msg.into())
-    }
-
-    /// Create an RFC structure error.
-    pub fn rfc(msg: impl Into<String>) -> Self {
-        Error::Rfc(msg.into())
-    }
-
-    /// Create a signature verification error.
-    pub fn signature(msg: impl Into<String>) -> Self {
-        Error::Signature(msg.into())
-    }
-
-    /// Create an internal error (should not occur in normal operation).
-    pub fn internal(msg: impl Into<String>) -> Self {
-        Error::Internal(msg.into())
-    }
-
-    /// Create a platform-agnostic IPC error.
-    pub fn ipc(msg: impl Into<String>) -> Self {
-        Error::Ipc(msg.into())
-    }
-
-    /// Returns `true` for errors that may succeed on retry (I/O, timeout, anchor, IPC).
-    #[allow(dead_code)]
-    pub(crate) fn is_transient(&self) -> bool {
+    pub fn is_transient(&self) -> bool {
         matches!(
             self,
             Error::Io(_) | Error::Timeout(_) | Error::Anchor(_) | Error::Ipc(_)
@@ -227,17 +139,39 @@ impl Error {
         }
     }
 
-    /// Returns `true` for validation/input errors (bad data, hash mismatch, bad sig).
-    #[allow(dead_code)]
-    pub(crate) fn is_validation(&self) -> bool {
+    pub fn is_validation(&self) -> bool {
         matches!(
             self,
             Error::Validation(_) | Error::HashMismatch { .. } | Error::Signature(_)
         )
     }
+
+    pub fn checkpoint(m: impl Into<String>) -> Self { Error::Checkpoint(m.into()) }
+    pub fn evidence(m: impl Into<String>) -> Self { Error::Evidence(m.into()) }
+    pub fn vdf(m: impl Into<String>) -> Self { Error::Vdf(m.into()) }
+    pub fn validation(m: impl Into<String>) -> Self { Error::Validation(m.into()) }
+    pub fn crypto(m: impl Into<String>) -> Self { Error::Crypto(m.into()) }
+    pub fn config(m: impl Into<String>) -> Self { Error::Config(m.into()) }
+    pub fn not_found(m: impl Into<String>) -> Self { Error::NotFound(m.into()) }
+    pub fn invalid_state(m: impl Into<String>) -> Self { Error::InvalidState(m.into()) }
+    pub fn platform(m: impl Into<String>) -> Self { Error::Platform(m.into()) }
+    pub fn identity(m: impl Into<String>) -> Self { Error::Identity(m.into()) }
+    pub fn physics(m: impl Into<String>) -> Self { Error::Physics(m.into()) }
+    pub fn rfc(m: impl Into<String>) -> Self { Error::Rfc(m.into()) }
+    pub fn signature(m: impl Into<String>) -> Self { Error::Signature(m.into()) }
+    pub fn internal(m: impl Into<String>) -> Self { Error::Internal(m.into()) }
+    pub fn ipc(m: impl Into<String>) -> Self { Error::Ipc(m.into()) }
+    pub fn io(m: impl Into<String>) -> Self { Error::Io(std::io::Error::other(m.into())) }
+
+    /// Specialized constructor for hex-formatted hash mismatches.
+    pub fn hash_mismatch(expected: &[u8], actual: &[u8]) -> Self {
+        Error::HashMismatch {
+            expected: hex::encode(expected),
+            actual: hex::encode(actual),
+        }
+    }
 }
 
-// NOTE: these From impls are legacy; prefer specific error variants.
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Error::Legacy(s)
@@ -323,5 +257,24 @@ mod tests {
         assert!(matches!(Error::rfc("test"), Error::Rfc(_)));
         assert!(matches!(Error::signature("test"), Error::Signature(_)));
         assert!(matches!(Error::internal("test"), Error::Internal(_)));
+    }
+
+    #[test]
+    fn test_error_categorization() {
+        let err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "disk full"));
+        assert_eq!(err.category(), ErrorCategory::System);
+        let err = Error::signature("invalid curve point");
+        assert_eq!(err.category(), ErrorCategory::Security);
+    }
+
+    #[test]
+    fn test_hash_mismatch_formatting() {
+        let err = Error::hash_mismatch(&[0xAA; 4], &[0xBB; 4]);
+        if let Error::HashMismatch { expected, actual } = err {
+            assert_eq!(expected, "aaaaaaaa");
+            assert_eq!(actual, "bbbbbbbb");
+        } else {
+            panic!("Wrong variant");
+        }
     }
 }

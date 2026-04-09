@@ -2,93 +2,102 @@
 
 //! AES-256-GCM encrypted chain file storage (anti-tamper).
 //!
-//! Chains are stored in a binary sealed format:
-//!
-//! ```text
-//! [4B: magic "WCSF"]
-//! [4B: version = 2]
-//! [12B: AES-GCM nonce = save_counter(8B LE) || random(4B)]
-//! [32B: document_id hash (cleartext, for key derivation)]
-//! [NB: AES-256-GCM(JSON chain)]
-//! [16B: GCM auth tag (appended to ciphertext by aes-gcm)]
-//! ```
-//!
-//! The encryption key is derived via HKDF from a master seed and
-//! the document ID, preventing key reuse across chains.
-//!
-//! **Nonce construction (v2):** the first 8 bytes are the wall-clock save
-//! timestamp (nanoseconds since UNIX epoch, little-endian u64); the
-//! remaining 4 bytes are random.  The timestamp changes on every save
-//! regardless of chain state, and the random suffix covers the rare case
-//! of two saves in the same nanosecond.  This keeps nonce-reuse
-//! probability well below 2^-32 per document lifetime.  Version 1 used a
-//! fully random 12-byte nonce; v1 files are still accepted on load.
+//! Refactored Version: Uses structured headers and atomic write primitives.
+//! Optimizes for readability, safety, and performance.
 
 use std::fs;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use hkdf::Hkdf;
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 use crate::checkpoint::Chain;
 use crate::crypto::ProtectedKey;
 use crate::error::{Error, Result};
 
-/// Magic bytes identifying a sealed chain file.
+// ---------------------------------------------------------------------------
+// Constants & Structured Header
+// ---------------------------------------------------------------------------
+
 const SEALED_MAGIC: &[u8; 4] = b"WCSF";
-
-/// Legacy sealed file format version (fully random nonce).
 const SEALED_VERSION_V1: u32 = 1;
+const SEALED_VERSION_V2: u32 = 2;
+const HEADER_SIZE: usize = 52;
 
-/// Current sealed file format version (counter-mixed nonce).
-const SEALED_VERSION: u32 = 2;
+/// A formal structure for the file header to prevent manual slicing errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SealedHeader {
+    version: u32,
+    nonce: [u8; 12],
+    document_id: [u8; 32],
+}
 
-/// Fixed header size: magic(4) + version(4) + nonce(12) + document_id(32) = 52 bytes.
-const HEADER_SIZE: usize = 4 + 4 + 12 + 32;
+impl SealedHeader {
+    fn to_bytes(&self) -> [u8; HEADER_SIZE] {
+        let mut buf = [0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(SEALED_MAGIC);
+        buf[4..8].copy_from_slice(&self.version.to_le_bytes());
+        buf[8..20].copy_from_slice(&self.nonce);
+        buf[20..52].copy_from_slice(&self.document_id);
+        buf
+    }
 
-/// Encryption key for sealed chain files.
-///
-/// Derived from a master seed and the document's path hash
-/// via HKDF-SHA256.
+    fn from_bytes(data: &[u8]) -> Result<Self> {
+        if data.len() < HEADER_SIZE {
+            return Err(Error::checkpoint("sealed file header truncated"));
+        }
+        if &data[0..4] != SEALED_MAGIC {
+            return Err(Error::checkpoint("invalid sealed file magic"));
+        }
+        let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+        if version != SEALED_VERSION_V1 && version != SEALED_VERSION_V2 {
+            return Err(Error::checkpoint(format!("unsupported version: {version}")));
+        }
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&data[8..20]);
+        let mut document_id = [0u8; 32];
+        document_id.copy_from_slice(&data[20..52]);
+
+        Ok(Self { version, nonce, document_id })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Encryption Key Management
+// ---------------------------------------------------------------------------
+
 pub struct ChainEncryptionKey {
     key: ProtectedKey<32>,
 }
 
 impl ChainEncryptionKey {
-    /// Derive a chain encryption key from a master seed and document ID.
-    ///
-    /// `master_seed` is the 32-byte identity seed (from sealed identity or PUF).
-    /// `document_id` is the 32-byte hash of the canonical document path.
     pub fn derive(master_seed: &[u8], document_id: &[u8; 32]) -> Result<Self> {
         if master_seed.len() < 32 {
             return Err(Error::crypto("master seed must be at least 32 bytes"));
         }
-        use zeroize::Zeroize;
         let hk = Hkdf::<Sha256>::new(Some(b"witnessd-chain-seal-v1"), master_seed);
         let mut key_bytes = [0u8; 32];
         hk.expand(document_id, &mut key_bytes)
-            .map_err(|_| Error::crypto("HKDF expand failed for chain encryption key"))?;
+            .map_err(|_| Error::crypto("HKDF expand failed"))?;
         let p_key = ProtectedKey::new(key_bytes);
         key_bytes.zeroize();
         Ok(Self { key: p_key })
     }
 
-    /// Create a key from raw bytes (for testing).
     #[cfg(test)]
     pub fn from_bytes(key_bytes: [u8; 32]) -> Self {
-        Self {
-            key: ProtectedKey::new(key_bytes),
-        }
+        Self { key: ProtectedKey::new(key_bytes) }
     }
 }
 
-/// Save a chain to a sealed (encrypted) file.
-///
-/// The chain is serialized to JSON, then encrypted with AES-256-GCM.
-/// The `document_id` is stored in cleartext in the header so the correct
-/// key can be derived during loading.
+// ---------------------------------------------------------------------------
+// Core Storage API
+// ---------------------------------------------------------------------------
+
 pub fn save_sealed(
     chain: &Chain,
     path: &Path,
@@ -96,197 +105,93 @@ pub fn save_sealed(
     document_id: &[u8; 32],
 ) -> Result<()> {
     let plaintext = serde_json::to_vec(chain)
-        .map_err(|e| Error::checkpoint(format!("failed to serialize chain: {e}")))?;
+        .map_err(|e| Error::checkpoint(format!("serialization failed: {e}")))?;
 
-    let cipher = Aes256Gcm::new_from_slice(key.key.as_bytes())
-        .map_err(|_| Error::crypto("AES-GCM key init failed"))?;
-
-    // Nonce = wall-clock nanoseconds (8 bytes LE) || random (4 bytes).
-    // The timestamp changes on every save regardless of chain state, so
-    // two saves with an identical checkpoint count still produce distinct
-    // nonces. The 4 random bytes guard the rare case of two saves landing
-    // in the same nanosecond. Together this keeps nonce-reuse probability
-    // well below 2^-32 per document lifetime.
-    let save_ts = std::time::SystemTime::now()
+    // Nonce V2: [8B Timestamp | 4B Random]
+    let mut nonce_bytes = [0u8; 12];
+    let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| Error::crypto("system clock before UNIX epoch; cannot generate safe nonce"))?
         .as_nanos() as u64;
-    let mut nonce_bytes = [0u8; 12];
-    nonce_bytes[..8].copy_from_slice(&save_ts.to_le_bytes());
+    nonce_bytes[..8].copy_from_slice(&ts.to_le_bytes());
     rand::Fill::fill(&mut nonce_bytes[8..], &mut rand::rng());
-    let nonce = Nonce::from_slice(&nonce_bytes);
 
-    // Build the header first so it can serve as AAD (associated data).
-    // This authenticates magic, version, nonce, and document_id during
-    // decryption, preventing header tampering.
-    let mut header = Vec::with_capacity(HEADER_SIZE);
-    header.extend_from_slice(SEALED_MAGIC);
-    header.extend_from_slice(&SEALED_VERSION.to_le_bytes());
-    header.extend_from_slice(&nonce_bytes);
-    header.extend_from_slice(document_id);
+    let header = SealedHeader {
+        version: SEALED_VERSION_V2,
+        nonce: nonce_bytes,
+        document_id: *document_id,
+    };
+    let header_bytes = header.to_bytes();
 
-    let ciphertext = cipher
-        .encrypt(
-            nonce,
-            Payload {
-                msg: &plaintext,
-                aad: &header,
-            },
-        )
-        .map_err(|_| Error::crypto("AES-GCM encryption failed"))?;
+    let cipher = Aes256Gcm::new_from_slice(key.key.as_bytes())
+        .map_err(|_| Error::crypto("cipher init failed"))?;
 
-    let mut output = Vec::with_capacity(HEADER_SIZE + ciphertext.len());
-    output.extend_from_slice(&header);
-    output.extend_from_slice(&ciphertext);
+    let ciphertext = cipher.encrypt(
+        Nonce::from_slice(&header.nonce),
+        Payload { msg: &plaintext, aad: &header_bytes },
+    ).map_err(|_| Error::crypto("encryption failed"))?;
 
-    let parent = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        use std::io::Write;
-        tmp.write_all(&output)?;
-        tmp.as_file().sync_all()?;
-    }
-    tmp.persist(path).map_err(|e| e.error)?;
-
-    Ok(())
+    atomic_write(path, &header_bytes, &ciphertext)
 }
 
-/// Validate sealed file header: magic bytes, version, and return version + remaining data.
-fn validate_sealed_header(data: &[u8]) -> Result<(u32, &[u8])> {
-    if data.len() < HEADER_SIZE + 16 {
-        // Minimum: header + 16-byte GCM tag
-        return Err(Error::checkpoint("sealed file too short"));
-    }
-
-    if &data[0..4] != SEALED_MAGIC {
-        return Err(Error::checkpoint("invalid sealed file magic"));
-    }
-
-    let version = u32::from_le_bytes(
-        data[4..8]
-            .try_into()
-            .map_err(|_| Error::checkpoint("sealed file header truncated"))?,
-    );
-    if version != SEALED_VERSION_V1 && version != SEALED_VERSION {
-        return Err(Error::checkpoint(format!(
-            "unsupported sealed file version: {version}"
-        )));
-    }
-
-    Ok((version, &data[HEADER_SIZE..]))
-}
-
-/// Load a chain from a sealed (encrypted) file.
-///
-/// Reads the document_id from the header, decrypts the chain JSON,
-/// and deserializes it. Returns an error if the file is tampered,
-/// the wrong key is used, or the format is invalid.
-pub fn load_sealed(path: &Path, key: &ChainEncryptionKey) -> Result<Chain> {
-    load_sealed_verified(path, key, None)
-}
-
-/// Load a sealed chain, verifying the embedded document_id matches `expected_id`.
-///
-/// Eliminates the TOCTOU gap between `read_sealed_document_id` and `load_sealed`
-/// by performing header read and decryption in a single atomic file read.
 pub fn load_sealed_verified(
     path: &Path,
     key: &ChainEncryptionKey,
     expected_id: Option<&[u8; 32]>,
 ) -> Result<Chain> {
     let data = fs::read(path)?;
-
-    let (_version, _) = validate_sealed_header(&data)?;
-
-    let nonce_bytes = &data[8..20];
-    let header_doc_id = &data[20..52];
+    let header = SealedHeader::from_bytes(&data)?;
 
     if let Some(expected) = expected_id {
-        if header_doc_id != expected.as_slice() {
-            return Err(Error::checkpoint(
-                "sealed file document_id does not match expected value",
-            ));
+        if &header.document_id != expected {
+            return Err(Error::checkpoint("document_id mismatch"));
         }
     }
 
-    let header = &data[..HEADER_SIZE];
-    let ciphertext = &data[HEADER_SIZE..];
-
     let cipher = Aes256Gcm::new_from_slice(key.key.as_bytes())
-        .map_err(|_| Error::crypto("AES-GCM key init failed"))?;
+        .map_err(|_| Error::crypto("cipher init failed"))?;
 
-    let nonce = Nonce::from_slice(nonce_bytes);
-    // Use the header as AAD so that any tampering of magic, version, nonce,
-    // or document_id causes decryption to fail with an auth tag mismatch.
-    let plaintext = cipher
-        .decrypt(
-            nonce,
-            Payload {
-                msg: ciphertext,
-                aad: header,
-            },
-        )
-        .map_err(|_| Error::crypto("AES-GCM decryption failed (tampered or wrong key)"))?;
+    let plaintext = cipher.decrypt(
+        Nonce::from_slice(&header.nonce),
+        Payload { msg: &data[HEADER_SIZE..], aad: &data[..HEADER_SIZE] },
+    ).map_err(|_| Error::crypto("decryption failed (tampered or wrong key)"))?;
 
     let mut chain: Chain = serde_json::from_slice(&plaintext)
-        .map_err(|e| Error::checkpoint(format!("failed to deserialize sealed chain: {e}")))?;
+        .map_err(|e| Error::checkpoint(format!("deserialization failed: {e}")))?;
     chain.set_storage_path(path.to_path_buf());
-
     Ok(chain)
 }
 
-/// Read the document_id from a sealed file header without decrypting.
-///
-/// Useful for deriving the correct key before loading.
-pub fn read_sealed_document_id(path: &Path) -> Result<[u8; 32]> {
-    use std::io::Read;
-    let mut f = fs::File::open(path)?;
-    let mut header = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header).map_err(|_| Error::checkpoint("sealed file too short for header"))?;
-
-    // Validate header magic and version (without requiring full encrypted data)
-    if &header[0..4] != SEALED_MAGIC {
-        return Err(Error::checkpoint("invalid sealed file magic"));
-    }
-    let version = u32::from_le_bytes(
-        header[4..8]
-            .try_into()
-            .map_err(|_| Error::checkpoint("sealed file header truncated"))?,
-    );
-    if version != SEALED_VERSION_V1 && version != SEALED_VERSION {
-        return Err(Error::checkpoint(format!(
-            "unsupported sealed file version: {version}"
-        )));
-    }
-
-    let mut doc_id = [0u8; 32];
-    doc_id.copy_from_slice(&header[20..52]);
-    Ok(doc_id)
+pub fn load_sealed(path: &Path, key: &ChainEncryptionKey) -> Result<Chain> {
+    load_sealed_verified(path, key, None)
 }
 
-/// Check if a file is a sealed chain file (by magic bytes).
+pub fn read_sealed_document_id(path: &Path) -> Result<[u8; 32]> {
+    let mut f = fs::File::open(path)?;
+    let mut buf = [0u8; HEADER_SIZE];
+    f.read_exact(&mut buf)?;
+    let header = SealedHeader::from_bytes(&buf)?;
+    Ok(header.document_id)
+}
+
 pub fn is_sealed_file(path: &Path) -> bool {
-    use std::io::Read;
-    let mut magic = [0u8; 4];
-    std::fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut magic))
-        .map(|()| &magic == SEALED_MAGIC)
+    fs::File::open(path)
+        .and_then(|mut f| {
+            let mut magic = [0u8; 4];
+            f.read_exact(&mut magic).map(|_| &magic == SEALED_MAGIC)
+        })
         .unwrap_or(false)
 }
 
-/// Migrate a plaintext JSON chain file to sealed format.
-///
-/// 1. Loads the plaintext `.json` chain
-/// 2. Saves it as a `.sealed` file
-/// 3. Renames the original to `.json.bak`
-///
-/// Returns the path to the new sealed file.
+// ---------------------------------------------------------------------------
+// Migration & Atomic Helpers
+// ---------------------------------------------------------------------------
+
 pub fn migrate_to_sealed(
     json_path: &Path,
     key: &ChainEncryptionKey,
     document_id: &[u8; 32],
-) -> Result<std::path::PathBuf> {
+) -> Result<PathBuf> {
     let chain = Chain::load(json_path)?;
 
     let sealed_path = json_path.with_extension("sealed");
@@ -298,8 +203,6 @@ pub fn migrate_to_sealed(
     }
     save_sealed(&chain, &sealed_path, key, document_id)?;
 
-    // Rename original to .bak — clean up sealed file on failure to avoid
-    // leaving both plaintext and encrypted copies.
     let bak_path = json_path.with_extension("json.bak");
     if let Err(e) = fs::rename(json_path, &bak_path) {
         let _ = fs::remove_file(&sealed_path);
@@ -309,7 +212,21 @@ pub fn migrate_to_sealed(
     Ok(sealed_path)
 }
 
-/// Write a v1-format sealed file (fully random nonce) for backward-compat tests.
+fn atomic_write(path: &Path, header: &[u8], body: &[u8]) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(header)?;
+    tmp.write_all(body)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 fn save_sealed_v1(
     chain: &Chain,
@@ -339,11 +256,8 @@ fn save_sealed_v1(
     let parent = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent)?;
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        use std::io::Write;
-        tmp.write_all(&output)?;
-        tmp.as_file().sync_all()?;
-    }
+    tmp.write_all(&output)?;
+    tmp.as_file().sync_all()?;
     tmp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
@@ -370,6 +284,18 @@ mod tests {
 
     fn test_document_id() -> [u8; 32] {
         [0xBB; 32]
+    }
+
+    #[test]
+    fn test_header_roundtrip() {
+        let header = SealedHeader {
+            version: SEALED_VERSION_V2,
+            nonce: [1u8; 12],
+            document_id: [2u8; 32],
+        };
+        let bytes = header.to_bytes();
+        let decoded = SealedHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(header, decoded);
     }
 
     #[test]
@@ -464,7 +390,7 @@ mod tests {
         let sealed_path = canonical_dir.join("test.sealed");
         let mut data = Vec::new();
         data.extend_from_slice(SEALED_MAGIC);
-        data.extend_from_slice(&SEALED_VERSION.to_le_bytes());
+        data.extend_from_slice(&SEALED_VERSION_V2.to_le_bytes());
         data.extend_from_slice(&[0u8; 12]); // nonce
         data.extend_from_slice(&[0u8; 32]); // doc_id
         data.extend_from_slice(&[0u8; 32]); // fake ciphertext
@@ -500,6 +426,57 @@ mod tests {
 
         let read_id = read_sealed_document_id(&sealed_path).unwrap();
         assert_eq!(read_id, doc_id);
+    }
+
+    #[test]
+    fn test_load_sealed_verified_correct_id() {
+        let dir = TempDir::new().unwrap();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let doc_path = canonical_dir.join("test.txt");
+        fs::write(&doc_path, b"data").unwrap();
+
+        let mut chain = Chain::new(&doc_path, test_vdf_params())
+            .unwrap()
+            .with_signature_policy(SignaturePolicy::Optional);
+        chain
+            .commit_with_vdf_duration(None, Duration::from_millis(10))
+            .unwrap();
+
+        let key = test_key();
+        let doc_id = test_document_id();
+        let sealed_path = canonical_dir.join("chain.sealed");
+        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
+
+        let loaded = load_sealed_verified(&sealed_path, &key, Some(&doc_id)).unwrap();
+        assert_eq!(loaded.checkpoints.len(), chain.checkpoints.len());
+    }
+
+    #[test]
+    fn test_load_sealed_verified_wrong_id() {
+        let dir = TempDir::new().unwrap();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let doc_path = canonical_dir.join("test.txt");
+        fs::write(&doc_path, b"data").unwrap();
+
+        let mut chain = Chain::new(&doc_path, test_vdf_params())
+            .unwrap()
+            .with_signature_policy(SignaturePolicy::Optional);
+        chain
+            .commit_with_vdf_duration(None, Duration::from_millis(10))
+            .unwrap();
+
+        let key = test_key();
+        let doc_id = test_document_id();
+        let sealed_path = canonical_dir.join("chain.sealed");
+        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
+
+        let wrong_id = [0xCC; 32];
+        let result = load_sealed_verified(&sealed_path, &key, Some(&wrong_id));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("document_id mismatch"));
     }
 
     #[test]
@@ -551,7 +528,7 @@ mod tests {
     fn test_short_file_fails() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("short.sealed");
-        fs::write(&path, b"WCS").unwrap(); // Too short
+        fs::write(&path, b"WCS").unwrap();
 
         assert!(load_sealed(&path, &test_key()).is_err());
     }
@@ -561,61 +538,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("bad.sealed");
         let mut data = vec![0u8; 100];
-        data[0..4].copy_from_slice(b"XXXX"); // Wrong magic
+        data[0..4].copy_from_slice(b"XXXX");
         fs::write(&path, &data).unwrap();
 
         assert!(load_sealed(&path, &test_key()).is_err());
-    }
-
-    #[test]
-    fn test_load_sealed_verified_correct_id() {
-        let dir = TempDir::new().unwrap();
-        let canonical_dir = dir.path().canonicalize().unwrap();
-        let doc_path = canonical_dir.join("test.txt");
-        fs::write(&doc_path, b"data").unwrap();
-
-        let mut chain = Chain::new(&doc_path, test_vdf_params())
-            .unwrap()
-            .with_signature_policy(SignaturePolicy::Optional);
-        chain
-            .commit_with_vdf_duration(None, Duration::from_millis(10))
-            .unwrap();
-
-        let key = test_key();
-        let doc_id = test_document_id();
-        let sealed_path = canonical_dir.join("chain.sealed");
-        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
-
-        let loaded = load_sealed_verified(&sealed_path, &key, Some(&doc_id)).unwrap();
-        assert_eq!(loaded.checkpoints.len(), chain.checkpoints.len());
-    }
-
-    #[test]
-    fn test_load_sealed_verified_wrong_id() {
-        let dir = TempDir::new().unwrap();
-        let canonical_dir = dir.path().canonicalize().unwrap();
-        let doc_path = canonical_dir.join("test.txt");
-        fs::write(&doc_path, b"data").unwrap();
-
-        let mut chain = Chain::new(&doc_path, test_vdf_params())
-            .unwrap()
-            .with_signature_policy(SignaturePolicy::Optional);
-        chain
-            .commit_with_vdf_duration(None, Duration::from_millis(10))
-            .unwrap();
-
-        let key = test_key();
-        let doc_id = test_document_id();
-        let sealed_path = canonical_dir.join("chain.sealed");
-        save_sealed(&chain, &sealed_path, &key, &doc_id).unwrap();
-
-        let wrong_id = [0xCC; 32];
-        let result = load_sealed_verified(&sealed_path, &key, Some(&wrong_id));
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("does not match expected value"));
     }
 
     #[test]

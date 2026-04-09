@@ -5,75 +5,220 @@
 //! Use these modules with `#[serde(with = "...")]` on struct fields, or import
 //! the `optional_hex_*` functions directly for `serialize_with`/`deserialize_with`.
 
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::{de, Deserialize, Deserializer, Serializer};
+use std::fmt;
 
 // ---------------------------------------------------------------------------
-// Hex encoding for fixed-size byte arrays
+// 1. Fixed-Size Arrays [u8; N] (Hex Encoding, format-aware)
 // ---------------------------------------------------------------------------
 
-/// Hex serde for `[u8; 32]` fields: `#[serde(with = "crate::serde_utils::hex_bytes_32")]`
+pub mod hex_array {
+    use super::*;
+
+    pub fn serialize<S, const N: usize>(bytes: &[u8; N], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.collect_str(&format_args!("{}", hex::encode(bytes)))
+        } else {
+            serializer.serialize_bytes(bytes)
+        }
+    }
+
+    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            struct HexVisitor<const N: usize>;
+            impl<'de, const N: usize> de::Visitor<'de> for HexVisitor<N> {
+                type Value = [u8; N];
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "a hex string of length {}", N * 2)
+                }
+                fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                    let mut arr = [0u8; N];
+                    if v.len() != N * 2 {
+                        return Err(E::custom(format!("expected {} hex chars, got {}", N * 2, v.len())));
+                    }
+                    hex::decode_to_slice(v, &mut arr).map_err(E::custom)?;
+                    Ok(arr)
+                }
+            }
+            deserializer.deserialize_str(HexVisitor::<N>)
+        } else {
+            struct BytesVisitor<const N: usize>;
+            impl<'de, const N: usize> de::Visitor<'de> for BytesVisitor<N> {
+                type Value = [u8; N];
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "{} bytes", N)
+                }
+                fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                    v.try_into().map_err(|_| E::custom(format!("expected {} bytes, got {}", N, v.len())))
+                }
+                fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                    let mut arr = [0u8; N];
+                    for (i, byte) in arr.iter_mut().enumerate() {
+                        *byte = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                    }
+                    Ok(arr)
+                }
+            }
+            deserializer.deserialize_any(BytesVisitor::<N>)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. Optional Fixed-Size Arrays Option<[u8; N]> (Hex Encoding, format-aware)
+// ---------------------------------------------------------------------------
+
+pub mod hex_array_opt {
+    use super::*;
+
+    pub fn serialize<S, const N: usize>(opt: &Option<[u8; N]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match opt {
+            Some(bytes) => super::hex_array::serialize(bytes, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<Option<[u8; N]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            Option::<String>::deserialize(deserializer)?
+                .map(|s| {
+                    let mut arr = [0u8; N];
+                    if s.len() != N * 2 {
+                        return Err(de::Error::custom(format!("expected {} hex chars", N * 2)));
+                    }
+                    hex::decode_to_slice(&s, &mut arr).map_err(de::Error::custom)?;
+                    Ok(arr)
+                })
+                .transpose()
+        } else {
+            Option::<Vec<u8>>::deserialize(deserializer)?
+                .map(|v| {
+                    v.try_into()
+                        .map_err(|_| de::Error::custom(format!("expected {} bytes", N)))
+                })
+                .transpose()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3. Byte Vectors Vec<u8> (Hex & Base64, format-aware)
+// ---------------------------------------------------------------------------
+
+pub mod hex_vec {
+    use super::*;
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&hex::encode(bytes))
+        } else {
+            serializer.serialize_bytes(bytes)
+        }
+    }
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: Deserializer<'de> {
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            hex::decode(s).map_err(de::Error::custom)
+        } else {
+            Vec::<u8>::deserialize(deserializer)
+        }
+    }
+}
+
+pub mod base64_vec {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use super::*;
+
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&STANDARD.encode(bytes))
+        } else {
+            serializer.serialize_bytes(bytes)
+        }
+    }
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: Deserializer<'de> {
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            STANDARD.decode(s).map_err(de::Error::custom)
+        } else {
+            Vec::<u8>::deserialize(deserializer)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. Raw Bytes (No Encoding)
+// ---------------------------------------------------------------------------
+
+pub mod raw_array {
+    use super::*;
+    pub fn serialize<S, const N: usize>(bytes: &[u8; N], serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_bytes(bytes)
+    }
+    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error>
+    where D: Deserializer<'de> {
+        struct BytesVisitor<const N: usize>;
+        impl<'de, const N: usize> de::Visitor<'de> for BytesVisitor<N> {
+            type Value = [u8; N];
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{} bytes", N)
+            }
+            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                v.try_into().map_err(|_| E::custom(format!("expected {} bytes, got {}", N, v.len())))
+            }
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut arr = [0u8; N];
+                for (i, byte) in arr.iter_mut().enumerate() {
+                    *byte = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                }
+                Ok(arr)
+            }
+        }
+        deserializer.deserialize_any(BytesVisitor::<N>)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Backward-compatible aliases
+// ---------------------------------------------------------------------------
+
+/// Hex serde for `[u8; 32]` fields.
 pub mod hex_bytes_32 {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(bytes))
+    use serde::{Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(bytes: &[u8; 32], s: S) -> Result<S::Ok, S::Error> {
+        super::hex_array::serialize(bytes, s)
     }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        if bytes.len() != 32 {
-            return Err(serde::de::Error::custom(format!(
-                "expected 32 bytes, got {}",
-                bytes.len()
-            )));
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
+        super::hex_array::deserialize(d)
     }
 }
 
-/// Hex serde for `[u8; 64]` fields: `#[serde(with = "crate::serde_utils::hex_bytes_64")]`
+/// Hex serde for `[u8; 64]` fields.
 pub mod hex_bytes_64 {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(bytes))
+    use serde::{Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(bytes: &[u8; 64], s: S) -> Result<S::Ok, S::Error> {
+        super::hex_array::serialize(bytes, s)
     }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        if bytes.len() != 64 {
-            return Err(serde::de::Error::custom(format!(
-                "expected 64 bytes, got {}",
-                bytes.len()
-            )));
-        }
-        let mut arr = [0u8; 64];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 64], D::Error> {
+        super::hex_array::deserialize(d)
     }
 }
 
-/// Generic hex serde for any `[u8; N]` via const generics:
-/// `#[serde(with = "crate::serde_utils::hex_serde")]`
+/// Generic hex serde for any `[u8; N]`.
 pub mod hex_serde {
-    use serde::{Deserialize, Deserializer, Serializer};
-
+    use serde::{Deserializer, Serializer};
     pub fn serialize<S, T>(data: T, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -81,84 +226,43 @@ pub mod hex_serde {
     {
         serializer.serialize_str(&hex::encode(data.as_ref()))
     }
-
     pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<[u8; N], D::Error>
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        bytes
-            .try_into()
-            .map_err(|_| serde::de::Error::custom("wrong length"))
+        super::hex_array::deserialize(deserializer)
     }
 }
 
-/// Hex serde for `Vec<u8>` fields: `#[serde(with = "crate::serde_utils::hex_vec_serde")]`
+/// Hex serde for `Vec<u8>` fields.
 pub mod hex_vec_serde {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(data: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(data))
+    use serde::{Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(data: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        super::hex_vec::serialize(data, s)
     }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        hex::decode(&s).map_err(serde::de::Error::custom)
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        super::hex_vec::deserialize(d)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Base64 encoding for byte vectors
-// ---------------------------------------------------------------------------
-
-/// Base64 serde for `Vec<u8>` fields: `#[serde(with = "crate::serde_utils::base64_serde")]`
+/// Base64 serde for `Vec<u8>` fields.
 pub mod base64_serde {
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(data: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&STANDARD.encode(data))
+    use serde::{Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(data: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        super::base64_vec::serialize(data, s)
     }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        STANDARD.decode(&s).map_err(serde::de::Error::custom)
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        super::base64_vec::deserialize(d)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Raw byte array serde (not hex-encoded)
-// ---------------------------------------------------------------------------
-
-/// Raw-bytes serde for `[u8; 64]` fields (serializes as byte sequence, not hex):
-/// `#[serde(with = "crate::serde_utils::serde_array_64")]`
+/// Raw-bytes serde for `[u8; 64]` fields.
 pub mod serde_array_64 {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(value: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    pub fn serialize<S: Serializer>(value: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error> {
         value.as_slice().serialize(serializer)
     }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 64], D::Error> {
         let values = Vec::<u8>::deserialize(deserializer)?;
         if values.len() != 64 {
             return Err(serde::de::Error::custom(format!(
@@ -173,7 +277,7 @@ pub mod serde_array_64 {
 }
 
 // ---------------------------------------------------------------------------
-// Optional hex serde (for serialize_with / deserialize_with on Option fields)
+// 6. Optional hex serde (for serialize_with / deserialize_with on Option fields)
 // ---------------------------------------------------------------------------
 
 macro_rules! optional_hex_serde {
