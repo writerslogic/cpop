@@ -7,6 +7,33 @@
 //! suggests LLM-like replay; incompressible (high entropy) suggests random noise.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for IKI Compression analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IkiCompressionError {
+    InsufficientSamples { found: usize, required: usize },
+    InvalidInputExceedsBounds,
+    NonFiniteValues,
+    EmptyByteStream,
+}
+
+impl fmt::Display for IkiCompressionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientSamples { found, required } => write!(
+                f,
+                "Insufficient IKI samples: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InvalidInputExceedsBounds => write!(f, "IKI values exceed 10^12 ns (>1000s); likely invalid input"),
+            Self::NonFiniteValues => write!(f, "Input contains non-finite values"),
+            Self::EmptyByteStream => write!(f, "No valid positive intervals to compress"),
+        }
+    }
+}
+
+impl std::error::Error for IkiCompressionError {}
 
 /// Compression ratio below this suggests generated/replay data (too structured).
 const LOW_RATIO_THRESHOLD: f64 = 0.2;
@@ -29,21 +56,27 @@ pub struct IkiCompressionAnalysis {
 /// Analyze IKI compression ratio using byte-level Shannon entropy as a proxy
 /// for compressibility (avoids external compression library dependency).
 ///
-/// Quantizes IKI intervals to millisecond precision, serializes as a byte
-/// stream, and computes normalized Shannon entropy.
-pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Option<IkiCompressionAnalysis> {
-    debug_assert!(
-        !iki_intervals_ns.iter().any(|&v| v > 1_000_000_000_000.0),
-        "IKI values exceed 10^12 ns (>1000s); likely invalid input"
-    );
-    if iki_intervals_ns.len() < MIN_SAMPLES {
-        return None;
+/// Quantizes IKI intervals to millisecond precision and computes normalized 
+/// Shannon entropy on the fly with zero heap allocations.
+pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Result<IkiCompressionAnalysis, IkiCompressionError> {
+    if iki_intervals_ns.iter().any(|&v| v > 1_000_000_000_000.0) {
+        return Err(IkiCompressionError::InvalidInputExceedsBounds);
     }
-    crate::utils::require_all_finite(iki_intervals_ns, "iki_compression").ok()?;
+    if iki_intervals_ns.len() < MIN_SAMPLES {
+        return Err(IkiCompressionError::InsufficientSamples {
+            found: iki_intervals_ns.len(),
+            required: MIN_SAMPLES,
+        });
+    }
+    if crate::utils::require_all_finite(iki_intervals_ns, "iki_compression").is_err() {
+        return Err(IkiCompressionError::NonFiniteValues);
+    }
 
-    // Quantize to milliseconds and serialize to bytes (little-endian u16, clamped)
-    let mut bytes = Vec::with_capacity(iki_intervals_ns.len() * 2);
+    // Compute frequencies directly without allocating a Vec<u8> byte stream
+    let mut freq = [0u64; 256];
     let mut negative_count = 0usize;
+    let mut total_bytes = 0.0;
+
     for &iki_ns in iki_intervals_ns {
         let ms_f = (iki_ns / 1_000_000.0).round();
         if ms_f < 0.0 {
@@ -51,37 +84,35 @@ pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Option<IkiCompressio
             continue;
         }
         let clamped = (ms_f as u64).min(u16::MAX as u64) as u16;
-        bytes.extend_from_slice(&clamped.to_le_bytes());
+        let bytes = clamped.to_le_bytes();
+        
+        freq[bytes[0] as usize] += 1;
+        freq[bytes[1] as usize] += 1;
+        total_bytes += 2.0;
     }
+
     if negative_count > 0 {
         log::warn!("IKI compression: skipped {negative_count} negative IKI value(s)");
     }
 
-    if bytes.is_empty() {
-        return None;
+    if total_bytes == 0.0 {
+        return Err(IkiCompressionError::EmptyByteStream);
     }
 
     // Compute byte-level Shannon entropy
-    let mut freq = [0u64; 256];
-    for &b in &bytes {
-        freq[b as usize] += 1;
-    }
-
-    let total = bytes.len() as f64;
     let mut entropy = 0.0;
     for &count in &freq {
         if count > 0 {
-            let p = count as f64 / total;
+            let p = count as f64 / total_bytes;
             entropy -= p * p.log2();
         }
     }
 
     // Normalize to [0, 1] where 8 bits = maximum entropy
     let ratio = entropy / 8.0;
-
     let flagged = !(LOW_RATIO_THRESHOLD..=HIGH_RATIO_THRESHOLD).contains(&ratio);
 
-    Some(IkiCompressionAnalysis { ratio, flagged })
+    Ok(IkiCompressionAnalysis { ratio, flagged })
 }
 
 #[cfg(test)]
@@ -91,7 +122,10 @@ mod tests {
     #[test]
     fn test_compression_insufficient_data() {
         let data: Vec<f64> = (0..20).map(|i| i as f64 * 1_000_000.0).collect();
-        assert!(analyze_iki_compression(&data).is_none());
+        assert!(matches!(
+            analyze_iki_compression(&data),
+            Err(IkiCompressionError::InsufficientSamples { .. })
+        ));
     }
 
     #[test]

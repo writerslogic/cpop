@@ -15,8 +15,28 @@
 //! score. Consider wiring `analysis/hurst.rs` here for a future improvement.
 
 use std::collections::HashSet;
-
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for Error Topology analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorTopologyError {
+    InsufficientEvents { found: usize, required: usize },
+}
+
+impl fmt::Display for ErrorTopologyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientEvents { found, required } => write!(
+                f,
+                "Insufficient events for error topology analysis: found {}, minimum {}",
+                found, required
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ErrorTopologyError {}
 
 /// Error topology analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,9 +117,12 @@ pub struct TopologyEvent {
 }
 
 /// Analyze error topology from a sequence of events. Requires >= 20 events.
-pub fn analyze_error_topology(events: &[TopologyEvent]) -> Result<ErrorTopology, String> {
+pub fn analyze_error_topology(events: &[TopologyEvent]) -> Result<ErrorTopology, ErrorTopologyError> {
     if events.len() < 20 {
-        return Err("Insufficient events for error topology analysis (minimum 20)".to_string());
+        return Err(ErrorTopologyError::InsufficientEvents {
+            found: events.len(),
+            required: 20,
+        });
     }
 
     let error_indices: Vec<usize> = events
@@ -157,30 +180,40 @@ fn compute_gap_correlation(events: &[TopologyEvent], error_indices: &[usize]) ->
 
     let error_set: HashSet<usize> = error_indices.iter().copied().collect();
 
-    let mut pre_error_gaps = Vec::new();
-    let mut post_error_gaps = Vec::new();
-    let mut normal_gaps = Vec::new();
+    // Replaced three separate Vec allocations with inline accumulators
+    let mut pre_error_sum = 0.0;
+    let mut pre_error_count = 0;
+    
+    let mut post_error_sum = 0.0;
+    let mut post_error_count = 0;
+    
+    let mut normal_sum = 0.0;
+    let mut normal_count = 0;
 
     for (i, event) in events.iter().enumerate() {
         let gap_ms = event.gap_ns as f64 / 1_000_000.0;
 
         if error_set.contains(&i) {
-            pre_error_gaps.push(gap_ms);
+            pre_error_sum += gap_ms;
+            pre_error_count += 1;
         } else if i > 0 && error_set.contains(&(i - 1)) {
-            post_error_gaps.push(gap_ms);
+            post_error_sum += gap_ms;
+            post_error_count += 1;
         } else {
-            normal_gaps.push(gap_ms);
+            normal_sum += gap_ms;
+            normal_count += 1;
         }
     }
 
-    if normal_gaps.is_empty() || pre_error_gaps.is_empty() {
+    if normal_count == 0 || pre_error_count == 0 {
         return 0.0;
     }
 
-    let normal_mean: f64 = normal_gaps.iter().sum::<f64>() / normal_gaps.len() as f64;
-    let pre_error_mean: f64 = pre_error_gaps.iter().sum::<f64>() / pre_error_gaps.len() as f64;
-    let post_error_mean: f64 = if !post_error_gaps.is_empty() {
-        post_error_gaps.iter().sum::<f64>() / post_error_gaps.len() as f64
+    let normal_mean = normal_sum / normal_count as f64;
+    let pre_error_mean = pre_error_sum / pre_error_count as f64;
+    
+    let post_error_mean = if post_error_count > 0 {
+        post_error_sum / post_error_count as f64
     } else {
         normal_mean
     };
@@ -441,7 +474,10 @@ mod tests {
         let events = create_test_events(&pattern);
         let result = analyze_error_topology(&events);
 
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ErrorTopologyError::InsufficientEvents { .. })
+        ));
     }
 
     #[test]

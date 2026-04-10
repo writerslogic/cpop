@@ -70,6 +70,8 @@ impl BehavioralFingerprint {
             samples
         };
 
+        // Note: We collect the main intervals once because they are reused 
+        // heavily across multiple statistical passes.
         let intervals: Vec<f64> = samples
             .windows(2)
             .map(|w| interval_ms(&w[0], &w[1]))
@@ -137,45 +139,52 @@ impl BehavioralFingerprint {
             }
         }
 
-        let sentence_pauses: Vec<f64> = intervals
+        // Avoid allocating a new Vec just to get the mean
+        let (sentence_sum, sentence_count) = intervals
             .iter()
             .copied()
             .filter(|&i| i > BURST_SEPARATOR_MS)
-            .collect();
-        let sentence_pause_mean = if !sentence_pauses.is_empty() {
-            sentence_pauses.iter().sum::<f64>() / sentence_pauses.len() as f64
+            .fold((0.0, 0usize), |(sum, count), i| (sum + i, count + 1));
+            
+        let sentence_pause_mean = if sentence_count > 0 {
+            sentence_sum / sentence_count as f64
         } else {
             0.0
         };
 
-        let paragraph_pauses: Vec<f64> = intervals
+        // Avoid allocating a new Vec just to get the mean
+        let (para_sum, para_count) = intervals
             .iter()
             .copied()
             .filter(|&i| i > PARAGRAPH_PAUSE_MS)
-            .collect();
-        let paragraph_pause_mean = if !paragraph_pauses.is_empty() {
-            paragraph_pauses.iter().sum::<f64>() / paragraph_pauses.len() as f64
+            .fold((0.0, 0usize), |(sum, count), i| (sum + i, count + 1));
+            
+        let paragraph_pause_mean = if para_count > 0 {
+            para_sum / para_count as f64
         } else {
             0.0
         };
 
-        let burst_intervals: Vec<f64> = intervals
-            .iter()
-            .copied()
-            .filter(|&i| i < BURST_INTERVAL_MS)
-            .collect();
-        let burst_speed_variance = if burst_intervals.len() >= 2 {
-            let burst_mean_val = burst_intervals.iter().sum::<f64>() / burst_intervals.len() as f64;
-            let v = burst_intervals
-                .iter()
-                .map(|&x| (x - burst_mean_val).powi(2))
-                .sum::<f64>()
-                / (burst_intervals.len() - 1) as f64;
-            if v.is_finite() {
-                v
-            } else {
-                0.0
+        // Two-pass burst variance calculation without intermediate allocation
+        let mut burst_int_sum = 0.0;
+        let mut burst_int_count = 0usize;
+        for &i in &intervals {
+            if i < BURST_INTERVAL_MS {
+                burst_int_sum += i;
+                burst_int_count += 1;
             }
+        }
+        
+        let burst_speed_variance = if burst_int_count >= 2 {
+            let burst_mean_val = burst_int_sum / burst_int_count as f64;
+            let mut var_sum = 0.0;
+            for &i in &intervals {
+                if i < BURST_INTERVAL_MS {
+                    var_sum += (i - burst_mean_val).powi(2);
+                }
+            }
+            let v = var_sum / (burst_int_count - 1) as f64;
+            if v.is_finite() { v } else { 0.0 }
         } else {
             0.0
         };
@@ -252,6 +261,7 @@ impl BehavioralFingerprint {
 
         if intervals.len() >= MIN_FATIGUE_SAMPLES {
             let quarter = intervals.len() / 4;
+            // Slicing doesn't allocate, this remains extremely fast
             let first_q = &intervals[..quarter];
             let last_q = &intervals[intervals.len() - quarter..];
             let first_mean = first_q.iter().sum::<f64>() / first_q.len() as f64;

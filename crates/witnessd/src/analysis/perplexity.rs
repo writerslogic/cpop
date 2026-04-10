@@ -27,36 +27,36 @@ impl PerplexityModel {
 
     /// Ingest text, updating n-gram frequency tables.
     pub fn train(&mut self, text: &str) {
-        let chars: Vec<char> = text.chars().collect();
-        if chars.len() <= self.n {
+        // Collect byte indices to safely slice character boundaries without re-allocating strings
+        let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+        if char_indices.len() <= self.n {
             return;
         }
 
-        let mut buf = String::with_capacity(self.n * 4);
-        for i in 0..(chars.len() - self.n) {
-            buf.clear();
-            buf.extend(&chars[i..(i + self.n)]);
-            let next_char = chars[i + self.n];
+        for i in 0..(char_indices.len() - self.n) {
+            let start_byte = char_indices[i].0;
+            let end_byte = char_indices[i + self.n].0;
+            let context = &text[start_byte..end_byte];
+            let next_char = char_indices[i + self.n].1;
 
-            // Lookup by &str avoids allocation for existing contexts (the common case).
-            if let Some(total) = self.totals.get_mut(buf.as_str()) {
+            if let Some(total) = self.totals.get_mut(context) {
                 *total += 1;
-                if let Some(char_map) = self.counts.get_mut(buf.as_str()) {
+                if let Some(char_map) = self.counts.get_mut(context) {
                     *char_map.entry(next_char).or_default() += 1;
                 } else {
                     let mut char_map = HashMap::new();
                     char_map.insert(next_char, 1);
-                    self.counts.insert(buf.clone(), char_map);
+                    self.counts.insert(context.to_string(), char_map);
                 }
             } else {
-                let key = buf.clone();
+                let key = context.to_string();
                 self.totals.insert(key.clone(), 1);
                 let mut char_map = HashMap::new();
                 char_map.insert(next_char, 1);
                 self.counts.insert(key, char_map);
             }
         }
-        self.sample_count += text.chars().count();
+        self.sample_count += char_indices.len();
     }
 
     /// Perplexity of `text` under the trained model.
@@ -66,23 +66,23 @@ impl PerplexityModel {
             return 1.0;
         }
 
-        let chars: Vec<char> = text.chars().collect();
-        if chars.len() <= self.n {
+        let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+        if char_indices.len() <= self.n {
             return 1.0;
         }
 
         let mut log_prob_sum = 0.0;
         let mut count = 0;
-        let mut buf = String::with_capacity(self.n * 4);
 
-        for i in 0..(chars.len() - self.n) {
-            buf.clear();
-            buf.extend(&chars[i..(i + self.n)]);
-            let next_char = chars[i + self.n];
+        for i in 0..(char_indices.len() - self.n) {
+            let start_byte = char_indices[i].0;
+            let end_byte = char_indices[i + self.n].0;
+            let context = &text[start_byte..end_byte];
+            let next_char = char_indices[i + self.n].1;
 
-            let prob = if let Some(context_counts) = self.counts.get(buf.as_str()) {
+            let prob = if let Some(context_counts) = self.counts.get(context) {
                 let char_count = *context_counts.get(&next_char).unwrap_or(&0);
-                let total = *self.totals.get(buf.as_str()).unwrap_or(&1);
+                let total = *self.totals.get(context).unwrap_or(&1);
 
                 // Lidstone smoothing with alpha=0.1 (not standard Laplace alpha=1.0).
                 // A smaller alpha keeps the distribution sharper, making the

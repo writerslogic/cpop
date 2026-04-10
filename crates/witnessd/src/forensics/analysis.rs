@@ -250,27 +250,42 @@ pub fn analyze_forensics_ext_with_focus(
         }
 
         // SNR analysis
-        if let Some(snr) = analyze_snr(&iki_intervals) {
-            if snr.flagged {
-                metrics.anomaly_count += 1;
+        match analyze_snr(&iki_intervals) {
+            Ok(snr) => {
+                if snr.flagged {
+                    metrics.anomaly_count += 1;
+                }
+                metrics.snr = Some(snr);
             }
-            metrics.snr = Some(snr);
+            Err(e) => {
+                log::debug!("SNR analysis skipped: {}", e);
+            }
         }
 
         // Lyapunov exponent analysis
-        if let Some(lyap) = analyze_lyapunov(&iki_intervals) {
-            if lyap.flagged {
-                metrics.anomaly_count += 1;
+        match analyze_lyapunov(&iki_intervals) {
+            Ok(lyap) => {
+                if lyap.flagged {
+                    metrics.anomaly_count += 1;
+                }
+                metrics.lyapunov = Some(lyap);
             }
-            metrics.lyapunov = Some(lyap);
+            Err(e) => {
+                log::debug!("Lyapunov analysis skipped: {}", e);
+            }
         }
 
         // IKI compression ratio analysis
-        if let Some(comp) = analyze_iki_compression(&iki_intervals) {
-            if comp.flagged {
-                metrics.anomaly_count += 1;
+        match analyze_iki_compression(&iki_intervals) {
+            Ok(comp) => {
+                if comp.flagged {
+                    metrics.anomaly_count += 1;
+                }
+                metrics.iki_compression = Some(comp);
             }
-            metrics.iki_compression = Some(comp);
+            Err(e) => {
+                log::debug!("IKI compression analysis skipped: {}", e);
+            }
         }
 
         // Labyrinth (Takens' embedding) analysis

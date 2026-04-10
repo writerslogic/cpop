@@ -7,6 +7,37 @@
 //! An anomalously high exponent indicates random noise (no deterministic structure).
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for Lyapunov analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LyapunovError {
+    InsufficientDataPoints { found: usize, required: usize },
+    InsufficientEmbeddingLength { found: usize, required: usize },
+    InsufficientIterations,
+    NonFiniteValues,
+}
+
+impl fmt::Display for LyapunovError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientDataPoints { found, required } => write!(
+                f,
+                "Insufficient data points: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InsufficientEmbeddingLength { found, required } => write!(
+                f,
+                "Embedding length too short after delay: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InsufficientIterations => write!(f, "Insufficient iterations for regression"),
+            Self::NonFiniteValues => write!(f, "Input contains non-finite values"),
+        }
+    }
+}
+
+impl std::error::Error for LyapunovError {}
 
 /// Minimum data points for Lyapunov analysis.
 const MIN_DATA_POINTS: usize = 100;
@@ -37,15 +68,26 @@ pub struct LyapunovAnalysis {
     pub confidence: f64,
 }
 
+#[inline(always)]
+fn sq_dist(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum()
+}
+
 /// Estimate the largest Lyapunov exponent using Rosenstein's method.
 ///
 /// Rosenstein, Collins & De Luca (1993), "A practical method for
 /// calculating largest Lyapunov exponents from small data sets."
-pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
+pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, LyapunovError> {
     if iki_intervals_ns.len() < MIN_DATA_POINTS {
-        return None;
+        return Err(LyapunovError::InsufficientDataPoints {
+            found: iki_intervals_ns.len(),
+            required: MIN_DATA_POINTS,
+        });
     }
-    crate::utils::require_all_finite(iki_intervals_ns, "lyapunov").ok()?;
+    
+    if crate::utils::require_all_finite(iki_intervals_ns, "lyapunov").is_err() {
+        return Err(LyapunovError::NonFiniteValues);
+    }
 
     // Normalize data
     let mean = iki_intervals_ns.iter().sum::<f64>() / iki_intervals_ns.len() as f64;
@@ -58,7 +100,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
 
     if std_dev < 1e-10 {
         // Zero variance → perfectly periodic → flagged
-        return Some(LyapunovAnalysis {
+        return Ok(LyapunovAnalysis {
             exponent: f64::NEG_INFINITY,
             flagged: true,
             confidence: 1.0,
@@ -70,48 +112,51 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
         .map(|&x| (x - mean) / std_dev)
         .collect();
 
-    // Construct delay embedding
+    // Construct delay embedding (Flattened for cache locality)
     let embed_len = normalized
         .len()
         .saturating_sub((EMBED_DIM - 1) * EMBED_DELAY);
+        
     if embed_len < 20 {
-        return None;
+        return Err(LyapunovError::InsufficientEmbeddingLength {
+            found: embed_len,
+            required: 20,
+        });
     }
 
-    let embedding: Vec<Vec<f64>> = (0..embed_len)
-        .map(|i| {
-            (0..EMBED_DIM)
-                .map(|d| normalized[i + d * EMBED_DELAY])
-                .collect()
-        })
-        .collect();
+    let mut embedding = Vec::with_capacity(embed_len * EMBED_DIM);
+    for i in 0..embed_len {
+        for d in 0..EMBED_DIM {
+            embedding.push(normalized[i + d * EMBED_DELAY]);
+        }
+    }
+
+    let get_point = |idx: usize| -> &[f64] {
+        &embedding[idx * EMBED_DIM..(idx + 1) * EMBED_DIM]
+    };
 
     let min_sep = MEAN_PERIOD_MULTIPLIER;
     let max_iter = embed_len / 4;
     if max_iter < 5 {
-        return None;
+        return Err(LyapunovError::InsufficientIterations);
     }
 
     // For each point, find nearest neighbor with temporal separation
     let mut divergence_sum = vec![0.0f64; max_iter];
     let mut divergence_count = vec![0usize; max_iter];
 
-    for i in 0..embedding.len() {
+    for i in 0..embed_len {
         let mut min_dist = f64::INFINITY;
         let mut nn_idx = 0;
+        let p_i = get_point(i);
 
-        for j in 0..embedding.len() {
+        for j in 0..embed_len {
             let temporal_sep = i.abs_diff(j);
             if temporal_sep < min_sep {
                 continue;
             }
 
-            let dist: f64 = embedding[i]
-                .iter()
-                .zip(embedding[j].iter())
-                .map(|(&a, &b)| (a - b).powi(2))
-                .sum::<f64>()
-                .sqrt();
+            let dist = sq_dist(p_i, get_point(j)).sqrt();
 
             if dist < min_dist && dist > 0.0 {
                 min_dist = dist;
@@ -127,13 +172,8 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
         for k in 0..max_iter {
             let i_k = i + k;
             let j_k = nn_idx + k;
-            if i_k < embedding.len() && j_k < embedding.len() {
-                let dist_k: f64 = embedding[i_k]
-                    .iter()
-                    .zip(embedding[j_k].iter())
-                    .map(|(&a, &b)| (a - b).powi(2))
-                    .sum::<f64>()
-                    .sqrt();
+            if i_k < embed_len && j_k < embed_len {
+                let dist_k = sq_dist(get_point(i_k), get_point(j_k)).sqrt();
 
                 if dist_k > 0.0 {
                     divergence_sum[k] += dist_k.ln();
@@ -157,7 +197,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
         .collect();
 
     if log_divergence.len() < 5 {
-        return None;
+        return Err(LyapunovError::InsufficientIterations);
     }
 
     // Estimate slope of the linear region (first quarter)
@@ -167,7 +207,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Option<LyapunovAnalysis> {
     let confidence = (iki_intervals_ns.len() as f64 / 500.0).min(1.0);
     let flagged = slope <= PERIODIC_THRESHOLD || slope > NOISE_THRESHOLD;
 
-    Some(LyapunovAnalysis {
+    Ok(LyapunovAnalysis {
         exponent: slope,
         flagged,
         confidence,
@@ -202,42 +242,39 @@ mod tests {
     #[test]
     fn test_lyapunov_insufficient_data() {
         let data: Vec<f64> = (0..50).map(|i| i as f64).collect();
-        assert!(analyze_lyapunov(&data).is_none());
+        assert!(matches!(
+            analyze_lyapunov(&data),
+            Err(LyapunovError::InsufficientDataPoints { .. })
+        ));
     }
 
     #[test]
     fn test_lyapunov_periodic_data() {
-        // Perfectly periodic data should have exponent ≤ 0
         let data: Vec<f64> = (0..300)
             .map(|i| (i as f64 * 0.1).sin() * 100_000_000.0 + 150_000_000.0)
             .collect();
-        let result = analyze_lyapunov(&data);
-        if let Some(r) = result {
-            assert!(
-                r.exponent <= 0.5,
-                "Periodic data should have low exponent, got {}",
-                r.exponent
-            );
-        }
+        let result = analyze_lyapunov(&data).unwrap();
+        assert!(
+            result.exponent <= 0.5,
+            "Periodic data should have low exponent, got {}",
+            result.exponent
+        );
     }
 
     #[test]
     fn test_lyapunov_chaotic_data() {
-        // Logistic map at r=3.9 — known chaotic
         let mut data = Vec::new();
         let mut x = 0.1;
         for _ in 0..300 {
             x = 3.9 * x * (1.0 - x);
             data.push(x * 200_000_000.0 + 50_000_000.0);
         }
-        let result = analyze_lyapunov(&data);
-        if let Some(r) = result {
-            assert!(
-                r.exponent > 0.0,
-                "Chaotic data should have positive exponent, got {}",
-                r.exponent
-            );
-        }
+        let result = analyze_lyapunov(&data).unwrap();
+        assert!(
+            result.exponent > 0.0,
+            "Chaotic data should have positive exponent, got {}",
+            result.exponent
+        );
     }
 
     #[test]

@@ -7,6 +7,31 @@
 //! will have an abnormally high SNR across all windows.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for SNR analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SnrError {
+    InsufficientSamples { found: usize, required: usize },
+    InsufficientWindows,
+    NonFiniteValues,
+}
+
+impl fmt::Display for SnrError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientSamples { found, required } => write!(
+                f,
+                "Insufficient IKI samples: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InsufficientWindows => write!(f, "Insufficient sliding windows for SNR analysis"),
+            Self::NonFiniteValues => write!(f, "Input contains non-finite values"),
+        }
+    }
+}
+
+impl std::error::Error for SnrError {}
 
 /// SNR above this threshold across all windows indicates synthetic input.
 const SNR_SYNTHETIC_THRESHOLD_DB: f64 = 20.0;
@@ -35,44 +60,49 @@ pub struct SnrAnalysis {
 ///
 /// Signal power = variance of window means (low-frequency cadence).
 /// Noise power = mean of window variances (high-frequency jitter).
-pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
+pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Result<SnrAnalysis, SnrError> {
     if iki_intervals_ns.len() < MIN_SAMPLES {
-        return None;
+        return Err(SnrError::InsufficientSamples {
+            found: iki_intervals_ns.len(),
+            required: MIN_SAMPLES,
+        });
     }
-    crate::utils::require_all_finite(iki_intervals_ns, "snr").ok()?;
+    if crate::utils::require_all_finite(iki_intervals_ns, "snr").is_err() {
+        return Err(SnrError::NonFiniteValues);
+    }
 
     // 50% overlapping windows (step = WINDOW_SIZE/2). Overlap inflates the
     // reported SNR by approximately 3 dB compared to non-overlapping windows
     // because adjacent windows share half their samples, reducing variance.
-    let windows: Vec<&[f64]> = iki_intervals_ns
-        .windows(WINDOW_SIZE)
-        .step_by(WINDOW_SIZE / 2)
-        .collect();
-    if windows.len() < 2 {
-        return None;
+    let mut window_stats = Vec::new();
+    let mut sum_of_means = 0.0;
+    let mut sum_of_variances = 0.0;
+
+    // Single pass to collect means and variances, avoiding separate allocations
+    for w in iki_intervals_ns.windows(WINDOW_SIZE).step_by(WINDOW_SIZE / 2) {
+        let mean = w.iter().sum::<f64>() / w.len() as f64;
+        let variance = w.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / w.len() as f64;
+        
+        window_stats.push((mean, variance));
+        sum_of_means += mean;
+        sum_of_variances += variance;
     }
 
-    let window_means: Vec<f64> = windows
-        .iter()
-        .map(|w| w.iter().sum::<f64>() / w.len() as f64)
-        .collect();
-
-    let window_variances: Vec<f64> = windows
-        .iter()
-        .zip(window_means.iter())
-        .map(|(w, &mean)| w.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / w.len() as f64)
-        .collect();
+    let num_windows = window_stats.len();
+    if num_windows < 2 {
+        return Err(SnrError::InsufficientWindows);
+    }
 
     // Signal power: variance of the window means (low-frequency component)
-    let grand_mean = window_means.iter().sum::<f64>() / window_means.len() as f64;
-    let signal_power = window_means
+    let grand_mean = sum_of_means / num_windows as f64;
+    let signal_power = window_stats
         .iter()
-        .map(|&m| (m - grand_mean).powi(2))
+        .map(|&(m, _)| (m - grand_mean).powi(2))
         .sum::<f64>()
-        / window_means.len() as f64;
+        / num_windows as f64;
 
     // Noise power: mean of the window variances (high-frequency component)
-    let noise_power = window_variances.iter().sum::<f64>() / window_variances.len() as f64;
+    let noise_power = sum_of_variances / num_windows as f64;
 
     let snr_db = if signal_power <= 0.0 || noise_power <= 0.0 {
         if noise_power <= 0.0 {
@@ -84,10 +114,10 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
         (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
     };
 
-    // Per-window SNR
-    let windowed_snr: Vec<f64> = window_variances
+    // Second pass to compute per-window SNR and build the return vector
+    let windowed_snr: Vec<f64> = window_stats
         .iter()
-        .map(|&var| {
+        .map(|&(_, var)| {
             if signal_power <= 0.0 || var <= 0.0 {
                 if var <= 0.0 {
                     MAX_SNR_DB
@@ -103,7 +133,7 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Option<SnrAnalysis> {
     let all_high = windowed_snr.iter().all(|&s| s > SNR_SYNTHETIC_THRESHOLD_DB);
     let flagged = all_high && snr_db > SNR_SYNTHETIC_THRESHOLD_DB;
 
-    Some(SnrAnalysis {
+    Ok(SnrAnalysis {
         snr_db,
         windowed_snr,
         flagged,
@@ -116,16 +146,14 @@ mod tests {
 
     #[test]
     fn test_snr_human_like_data() {
-        // Simulate human typing: mean ~150ms with significant jitter
         let mut data = Vec::new();
         for i in 0..200 {
-            let base = 150_000_000.0; // 150ms in ns
+            let base = 150_000_000.0;
             let jitter =
                 ((i as f64 * 0.7).sin() * 50_000_000.0) + ((i as f64 * 2.3).cos() * 30_000_000.0);
             data.push(base + jitter);
         }
         let result = analyze_snr(&data).unwrap();
-        // Human data should NOT be flagged
         assert!(
             !result.flagged,
             "Human-like data should not be flagged, SNR={:.1}",
@@ -136,12 +164,14 @@ mod tests {
     #[test]
     fn test_snr_too_few_samples() {
         let data: Vec<f64> = (0..30).map(|i| i as f64 * 1000.0).collect();
-        assert!(analyze_snr(&data).is_none());
+        assert!(matches!(
+            analyze_snr(&data),
+            Err(SnrError::InsufficientSamples { .. })
+        ));
     }
 
     #[test]
     fn test_snr_robotic_constant() {
-        // Perfectly constant intervals — noise ≈ 0, SNR → ∞ → flagged
         let data: Vec<f64> = vec![100_000_000.0; 200];
         let result = analyze_snr(&data).unwrap();
         assert!(result.flagged, "Constant intervals should be flagged");

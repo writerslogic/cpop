@@ -1,5 +1,39 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+//! Statistical utility functions.
+
+use std::fmt;
+
+/// Comprehensive error type for statistical operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatsError {
+    InsufficientData { found: usize, required: usize },
+    LengthMismatch { x_len: usize, y_len: usize },
+    NoVariance,
+    DegenerateRegression,
+}
+
+impl fmt::Display for StatsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientData { found, required } => write!(
+                f,
+                "Insufficient data points: found {}, minimum {} required",
+                found, required
+            ),
+            Self::LengthMismatch { x_len, y_len } => write!(
+                f,
+                "Data length mismatch: X has {}, Y has {}",
+                x_len, y_len
+            ),
+            Self::NoVariance => write!(f, "No variance in independent variable (X data)"),
+            Self::DegenerateRegression => write!(f, "Degenerate regression: slope is NaN/Inf"),
+        }
+    }
+}
+
+impl std::error::Error for StatsError {}
+
 /// Divide `a / b`, returning `fallback` when `b` is zero or the result is
 /// not finite (NaN / Infinity).
 #[inline]
@@ -20,19 +54,30 @@ pub fn safe_div(a: f64, b: f64, fallback: f64) -> f64 {
 /// Returns `(0.0, 0.0)` for empty input and `(mean, 0.0)` for `data.len() < 2`
 /// (sample std dev is undefined with fewer than two observations).
 ///
-/// For population std dev (divides by n), use `crate::utils::stats::mean_and_std_dev`.
+/// Uses Welford's online algorithm for optimal single-pass performance and 
+/// numeric stability against catastrophic cancellation.
 pub fn mean_and_sample_std_dev(data: &[f64]) -> (f64, f64) {
-    let n = data.len() as f64;
-    if n < 1.0 {
+    let n = data.len();
+    if n == 0 {
         return (0.0, 0.0);
     }
-    let sum: f64 = data.iter().sum();
-    let mean = sum / n;
-    if n < 2.0 {
-        return (mean, 0.0);
+    if n == 1 {
+        return (data[0], 0.0);
     }
-    let sum_sq: f64 = data.iter().map(|&x| (x - mean).powi(2)).sum();
-    let std_dev = (sum_sq / (n - 1.0)).sqrt();
+
+    let mut count = 0.0;
+    let mut mean = 0.0;
+    let mut m2 = 0.0;
+
+    for &x in data {
+        count += 1.0;
+        let delta = x - mean;
+        mean += delta / count;
+        let delta2 = x - mean;
+        m2 += delta * delta2;
+    }
+
+    let std_dev = (m2 / (count - 1.0)).sqrt();
     (mean, std_dev)
 }
 
@@ -161,10 +206,16 @@ pub fn relative_similarity(a: f64, b: f64) -> f64 {
 }
 
 /// Linear regression returning (slope, intercept, r_squared, std_error).
-pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), String> {
+pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), StatsError> {
     let n = x.len();
-    if n < 2 || n != y.len() {
-        return Err("Regression requires at least 2 matching data points".to_string());
+    if n < 2 {
+        return Err(StatsError::InsufficientData { found: n, required: 2 });
+    }
+    if n != y.len() {
+        return Err(StatsError::LengthMismatch {
+            x_len: n,
+            y_len: y.len(),
+        });
     }
 
     let x_mean: f64 = x.iter().sum::<f64>() / n as f64;
@@ -183,12 +234,12 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
     }
 
     if ss_xx.abs() < f64::EPSILON {
-        return Err("No variance in x data".to_string());
+        return Err(StatsError::NoVariance);
     }
 
     let slope = ss_xy / ss_xx;
     if !slope.is_finite() {
-        return Err("Degenerate regression: slope is NaN/Inf".to_string());
+        return Err(StatsError::DegenerateRegression);
     }
     let intercept = y_mean - slope * x_mean;
 
@@ -217,4 +268,45 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
     };
 
     Ok((slope, intercept, r_squared, std_error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mean_and_sample_std_dev() {
+        let data = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+        let (mean, std) = mean_and_sample_std_dev(&data);
+        assert!((mean - 5.0).abs() < 1e-6);
+        assert!((std - 2.138089935299395).abs() < 1e-6); // Approx std dev
+    }
+
+    #[test]
+    fn test_linear_regression() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        let (slope, intercept, r_squared, _) = linear_regression(&x, &y).unwrap();
+        
+        assert!((slope - 2.0).abs() < 1e-6);
+        assert!(intercept.abs() < 1e-6);
+        assert!((r_squared - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_regression_errors() {
+        let x = vec![1.0, 1.0, 1.0];
+        let y = vec![2.0, 3.0, 4.0];
+        assert!(matches!(
+            linear_regression(&x, &y),
+            Err(StatsError::NoVariance)
+        ));
+
+        let x2 = vec![1.0, 2.0];
+        let y2 = vec![1.0];
+        assert!(matches!(
+            linear_regression(&x2, &y2),
+            Err(StatsError::LengthMismatch { .. })
+        ));
+    }
 }

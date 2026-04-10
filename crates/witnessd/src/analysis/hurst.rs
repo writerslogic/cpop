@@ -16,6 +16,40 @@
 //! - Accept H ∈ [0.55, 0.85] as biologically plausible
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for Hurst analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HurstError {
+    InsufficientDataPoints { found: usize, required: usize },
+    InsufficientWindows,
+    InsufficientScales,
+    RegressionFailed(String),
+    RegressionProducedNaN,
+    NonFiniteValues,
+}
+
+impl fmt::Display for HurstError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientDataPoints { found, required } => write!(
+                f,
+                "Insufficient data points: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InsufficientWindows => write!(f, "Insufficient window sizes for reliable estimation"),
+            Self::InsufficientScales => write!(f, "Insufficient scales for reliable DFA estimation"),
+            Self::RegressionFailed(msg) => write!(f, "Linear regression failed: {}", msg),
+            Self::RegressionProducedNaN => write!(
+                f,
+                "Regression produced NaN/Inf; likely caused by constant variance or zero fluctuation"
+            ),
+            Self::NonFiniteValues => write!(f, "Input contains non-finite values"),
+        }
+    }
+}
+
+impl std::error::Error for HurstError {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HurstAnalysis {
@@ -38,6 +72,7 @@ impl HurstAnalysis {
     pub const MIN_VALID: f64 = 0.55;
     pub const MAX_VALID: f64 = 0.85;
     pub const WHITE_NOISE_TOLERANCE: f64 = 0.05;
+    pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
 
     pub fn is_biologically_plausible(&self) -> bool {
         self.exponent >= Self::MIN_VALID && self.exponent <= Self::MAX_VALID
@@ -46,8 +81,6 @@ impl HurstAnalysis {
     pub fn is_white_noise(&self) -> bool {
         (self.exponent - 0.5).abs() < Self::WHITE_NOISE_TOLERANCE
     }
-
-    pub const SUSPICIOUSLY_PREDICTABLE: f64 = 0.95;
 
     pub fn is_suspiciously_predictable(&self) -> bool {
         self.exponent > Self::SUSPICIOUSLY_PREDICTABLE
@@ -59,10 +92,13 @@ const RS_MIN_WINDOW: usize = 8;
 const DFA_MIN_DATA_POINTS: usize = 32;
 const DFA_MIN_SCALE: usize = 8;
 
-pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
+pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
     let n = data.len();
     if n < RS_MIN_DATA_POINTS {
-        return Err("Insufficient data points (minimum 20 required)".to_string());
+        return Err(HurstError::InsufficientDataPoints {
+            found: n,
+            required: RS_MIN_DATA_POINTS,
+        });
     }
 
     let mut log_n_vec = Vec::new();
@@ -82,17 +118,14 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, String> {
     }
 
     if log_n_vec.len() < 3 {
-        return Err("Insufficient window sizes for reliable estimation".to_string());
+        return Err(HurstError::InsufficientWindows);
     }
 
-    let (slope, _intercept, r_squared, std_error) = linear_regression(&log_n_vec, &log_rs_vec)?;
+    let (slope, _intercept, r_squared, std_error) =
+        linear_regression(&log_n_vec, &log_rs_vec).map_err(|e| HurstError::RegressionFailed(e.to_string()))?;
 
     if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
-        return Err(
-            "R/S regression produced NaN/Inf; likely caused by constant variance \
-             across all windows or zero denominator in rescaled-range calculation"
-                .to_string(),
-        );
+        return Err(HurstError::RegressionProducedNaN);
     }
 
     let exponent = slope.clamp(0.0, 1.0);
@@ -139,20 +172,23 @@ fn compute_rs_for_window(data: &[f64], window_size: usize) -> f64 {
 
         let mean: f64 = window.iter().sum::<f64>() / window_size as f64;
 
-        let mut cumulative = Vec::with_capacity(window_size);
+        let mut min_cumsum = f64::INFINITY;
+        let mut max_cumsum = f64::NEG_INFINITY;
         let mut cumsum = 0.0;
+        let mut variance_sum = 0.0;
+
+        // Compute min/max of cumulative sum and variance in a single pass.
+        // Eliminates O(N) allocation of intermediate cumulative vector.
         for &x in window {
-            cumsum += x - mean;
-            cumulative.push(cumsum);
+            let diff = x - mean;
+            cumsum += diff;
+            min_cumsum = min_cumsum.min(cumsum);
+            max_cumsum = max_cumsum.max(cumsum);
+            variance_sum += diff * diff;
         }
 
-        let max_cumsum = cumulative.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min_cumsum = cumulative.iter().cloned().fold(f64::INFINITY, f64::min);
         let range = max_cumsum - min_cumsum;
-
-        let variance: f64 =
-            window.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (window_size - 1) as f64;
-        let std_dev = variance.sqrt();
+        let std_dev = (variance_sum / (window_size - 1) as f64).sqrt();
 
         if std_dev > 0.0 {
             let rs = range / std_dev;
@@ -170,16 +206,20 @@ fn compute_rs_for_window(data: &[f64], window_size: usize) -> f64 {
     }
 }
 
-pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
+pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
     let n = data.len();
     if n < DFA_MIN_DATA_POINTS {
-        return Err("Insufficient data points for DFA (minimum 32 required)".to_string());
+        return Err(HurstError::InsufficientDataPoints {
+            found: n,
+            required: DFA_MIN_DATA_POINTS,
+        });
     }
 
     let mean: f64 = data.iter().sum::<f64>() / n as f64;
     if !mean.is_finite() {
-        return Err("DFA input contains non-finite values".to_string());
+        return Err(HurstError::NonFiniteValues);
     }
+    
     let mut profile = Vec::with_capacity(n);
     let mut cumsum = 0.0;
     for &x in data {
@@ -204,17 +244,14 @@ pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, String> {
     }
 
     if log_scales.len() < 3 {
-        return Err("Insufficient scales for reliable DFA estimation".to_string());
+        return Err(HurstError::InsufficientScales);
     }
 
-    let (slope, _intercept, r_squared, std_error) = linear_regression(&log_scales, &log_fluct)?;
+    let (slope, _intercept, r_squared, std_error) =
+        linear_regression(&log_scales, &log_fluct).map_err(|e| HurstError::RegressionFailed(e.to_string()))?;
 
     if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
-        return Err(
-            "DFA regression produced NaN/Inf; likely caused by zero fluctuation \
-             at all scales or insufficient variation in the integrated series"
-                .to_string(),
-        );
+        return Err(HurstError::RegressionProducedNaN);
     }
 
     // DFA alpha can reach 2.0 (Brownian ~1.5, ballistic ~2.0)
@@ -272,26 +309,26 @@ fn detrend_variance(segment: &[f64]) -> f64 {
         return 0.0;
     }
 
-    let x: Vec<f64> = (0..n).map(|i| i as f64).collect();
-    let y = segment;
-
-    let x_mean: f64 = x.iter().sum::<f64>() / n as f64;
-    let y_mean: f64 = y.iter().sum::<f64>() / n as f64;
+    // Use mathematical identity for the mean of indices [0, 1, ..., n-1] 
+    // to completely avoid O(N) allocation of an x-axis vector.
+    let x_mean = (n - 1) as f64 / 2.0;
+    let y_mean: f64 = segment.iter().sum::<f64>() / n as f64;
 
     let mut num = 0.0;
     let mut denom = 0.0;
-    for i in 0..n {
-        num += (x[i] - x_mean) * (y[i] - y_mean);
-        denom += (x[i] - x_mean).powi(2);
+    for (i, &y) in segment.iter().enumerate() {
+        let x_diff = i as f64 - x_mean;
+        num += x_diff * (y - y_mean);
+        denom += x_diff * x_diff;
     }
 
     let a = if denom > 0.0 { num / denom } else { 0.0 };
     let b = y_mean - a * x_mean;
 
     let mut variance = 0.0;
-    for i in 0..n {
-        let predicted = a * x[i] + b;
-        variance += (y[i] - predicted).powi(2);
+    for (i, &y) in segment.iter().enumerate() {
+        let predicted = a * i as f64 + b;
+        variance += (y - predicted).powi(2);
     }
 
     variance / n as f64
@@ -361,7 +398,6 @@ mod tests {
 
     #[test]
     fn test_dfa_basic() {
-        // Simple test with synthetic data
         let data: Vec<f64> = (0..100)
             .map(|i| (i as f64).sin() + 0.1 * i as f64)
             .collect();

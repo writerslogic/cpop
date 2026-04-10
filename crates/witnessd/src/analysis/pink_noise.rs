@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
+use std::fmt;
 
 const MIN_SPECTRAL_SAMPLES: usize = 32;
 const MIN_POWER_THRESHOLD: f64 = 1e-20;
@@ -29,6 +30,36 @@ const SLOPE_PINKISH_BROWN_MAX: f64 = 1.8;
 const SLOPE_BROWN_MAX: f64 = 2.2;
 
 const PEAK_DETECTION_MULTIPLIER: f64 = 3.0;
+
+/// Comprehensive error type for Pink Noise analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinkNoiseError {
+    InsufficientDataPoints { found: usize, required: usize },
+    InsufficientFrequencyBins { found: usize, required: usize },
+    RegressionFailed(String),
+    RegressionProducedNaN,
+}
+
+impl fmt::Display for PinkNoiseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientDataPoints { found, required } => write!(
+                f,
+                "Insufficient data for spectral analysis: found {}, minimum {} required",
+                found, required
+            ),
+            Self::InsufficientFrequencyBins { found, required } => write!(
+                f,
+                "Insufficient valid frequency bins for analysis: found {}, minimum {} required",
+                found, required
+            ),
+            Self::RegressionFailed(msg) => write!(f, "PSD regression failed: {}", msg),
+            Self::RegressionProducedNaN => write!(f, "PSD regression produced NaN/Inf"),
+        }
+    }
+}
+
+impl std::error::Error for PinkNoiseError {}
 
 /// Result of spectral slope analysis on a time series.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,10 +118,13 @@ impl PinkNoiseAnalysis {
 }
 
 /// Compute spectral slope via FFT-based PSD and classify the noise type.
-pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAnalysis, String> {
+pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAnalysis, PinkNoiseError> {
     let n = data.len();
     if n < MIN_SPECTRAL_SAMPLES {
-        return Err("Insufficient data for spectral analysis (minimum 32 points)".to_string());
+        return Err(PinkNoiseError::InsufficientDataPoints {
+            found: n,
+            required: MIN_SPECTRAL_SAMPLES,
+        });
     }
 
     let psd = compute_psd(data)?;
@@ -110,14 +144,20 @@ pub fn analyze_pink_noise(data: &[f64], sample_rate: f64) -> Result<PinkNoiseAna
     }
 
     if log_freq.len() < MIN_FREQ_BINS {
-        return Err("Insufficient valid frequency bins for analysis".to_string());
+        return Err(PinkNoiseError::InsufficientFrequencyBins {
+            found: log_freq.len(),
+            required: MIN_FREQ_BINS,
+        });
     }
 
     // log(P) = -α * log(f) + c, so spectral slope = -regression slope
-    let (slope, _intercept, r_squared, std_error) = linear_regression(&log_freq, &log_power)?;
+    let (slope, _intercept, r_squared, std_error) = linear_regression(&log_freq, &log_power)
+        .map_err(|e| PinkNoiseError::RegressionFailed(e.to_string()))?;
+        
     if !slope.is_finite() || !r_squared.is_finite() || !std_error.is_finite() {
-        return Err("PSD regression produced NaN/Inf".to_string());
+        return Err(PinkNoiseError::RegressionProducedNaN);
     }
+    
     let spectral_slope = -slope;
 
     let noise_type = classify_noise_type(spectral_slope);
@@ -192,32 +232,29 @@ fn fft_radix2(real: &mut [f64], imag: &mut [f64]) {
     }
 }
 
-fn compute_psd(data: &[f64]) -> Result<Vec<f64>, String> {
+fn compute_psd(data: &[f64]) -> Result<Vec<f64>, PinkNoiseError> {
     let n = data.len();
-
     let fft_size = n.next_power_of_two();
 
-    // Hann window to reduce spectral leakage
-    let mut windowed: Vec<f64> = data
-        .iter()
-        .enumerate()
-        .map(|(i, &x)| {
-            let window = 0.5 * (1.0 - (2.0 * PI * i as f64 / (n - 1) as f64).cos());
-            x * window
-        })
-        .collect();
+    let mut real = vec![0.0; fft_size];
+    let mut imag = vec![0.0; fft_size];
+    let mut window_energy = 0.0;
 
-    windowed.resize(fft_size, 0.0);
+    // Fused loop: Hann window application, power normalizer, and zero-padded transfer 
+    // all without intermediate Vec allocations
+    for (i, &x) in data.iter().enumerate() {
+        let window = 0.5 * (1.0 - (2.0 * PI * i as f64 / (n - 1) as f64).cos());
+        let val = x * window;
+        real[i] = val;
+        window_energy += val * val;
+    }
 
-    let window_energy: f64 = windowed.iter().take(n).map(|&w| w * w).sum();
     let normalizer = if window_energy > 0.0 {
         window_energy
     } else {
         fft_size as f64
     };
 
-    let mut real: Vec<f64> = windowed;
-    let mut imag = vec![0.0; fft_size];
     fft_radix2(&mut real, &mut imag);
 
     let psd: Vec<f64> = real
@@ -353,6 +390,9 @@ mod tests {
     fn test_insufficient_data() {
         let data = vec![1.0, 2.0, 3.0];
         let result = analyze_pink_noise(&data, 100.0);
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(PinkNoiseError::InsufficientDataPoints { .. })
+        ));
     }
 }

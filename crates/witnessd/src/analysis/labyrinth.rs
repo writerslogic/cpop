@@ -5,6 +5,27 @@
 //! RFC draft-condrey-rats-pop §5.4.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Comprehensive error type for Labyrinth analysis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LabyrinthError {
+    InsufficientDataPoints { found: usize, required: usize },
+}
+
+impl fmt::Display for LabyrinthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientDataPoints { found, required } => write!(
+                f,
+                "Insufficient data: found {} points, minimum {} required",
+                found, required
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LabyrinthError {}
 
 /// Result of labyrinth structure analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,13 +89,12 @@ pub fn analyze_labyrinth(
     keystroke_deltas: &[f64],
     mouse_coords: &[(f64, f64)],
     params: &LabyrinthParams,
-) -> Result<LabyrinthAnalysis, String> {
+) -> Result<LabyrinthAnalysis, LabyrinthError> {
     if keystroke_deltas.len() < MIN_LABYRINTH_DATA_POINTS {
-        return Err(format!(
-            "Insufficient data: {} points (minimum {})",
-            keystroke_deltas.len(),
-            MIN_LABYRINTH_DATA_POINTS
-        ));
+        return Err(LabyrinthError::InsufficientDataPoints {
+            found: keystroke_deltas.len(),
+            required: MIN_LABYRINTH_DATA_POINTS,
+        });
     }
 
     let dim = params.max_embedding_dim.clamp(2, 10);
@@ -459,7 +479,10 @@ mod tests {
     fn insufficient_data() {
         let data = vec![1.0; 10];
         let params = LabyrinthParams::default();
-        assert!(analyze_labyrinth(&data, &[], &params).is_err());
+        assert!(matches!(
+            analyze_labyrinth(&data, &[], &params),
+            Err(LabyrinthError::InsufficientDataPoints { .. })
+        ));
     }
 
     #[test]
