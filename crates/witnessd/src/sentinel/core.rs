@@ -598,7 +598,7 @@ impl Sentinel {
                             super::trace!(
                                 "[KEYSTROKE] focus={:?} sessions={:?} kc={}",
                                 path,
-                                map.keys().collect::<Vec<_>>(),
+                                map.keys(),
                                 event.keycode
                             );
                             if let Some(session) = map.get_mut(path) {

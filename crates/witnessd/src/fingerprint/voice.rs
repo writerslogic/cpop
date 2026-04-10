@@ -534,10 +534,10 @@ mod tests {
         let mut sig2 = NgramSignature::default();
 
         for word in ["the", "quick", "brown", "fox", "jumps"] {
-            for ngram in word.chars().collect::<Vec<_>>().windows(3) {
-                let s: String = ngram.iter().collect();
-                sig1.add_ngram(&s);
-                sig2.add_ngram(&s);
+            for ngram in word.as_bytes().windows(3) {
+                let s = std::str::from_utf8(ngram).expect("ascii input");
+                sig1.add_ngram(s);
+                sig2.add_ngram(s);
             }
         }
 

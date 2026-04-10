@@ -71,7 +71,7 @@ impl Builder {
     }
 
     /// Attach keystroke timing evidence.
-    pub fn with_keystroke(mut self, evidence: &jitter::Evidence) -> Self {
+    pub fn with_keystroke(mut self, evidence: jitter::Evidence) -> Self {
         if evidence.statistics.total_keystrokes == 0 {
             return self;
         }
@@ -80,8 +80,10 @@ impl Builder {
             return self;
         }
 
+        let plausible_human_rate = evidence.is_plausible_human_typing();
+
         let keystroke = KeystrokeEvidence {
-            session_id: evidence.session_id.clone(),
+            session_id: evidence.session_id,
             started_at: evidence.started_at,
             ended_at: evidence.ended_at,
             duration: evidence.statistics.duration,
@@ -90,8 +92,8 @@ impl Builder {
             keystrokes_per_minute: evidence.statistics.keystrokes_per_min,
             unique_doc_states: evidence.statistics.unique_doc_hashes,
             chain_valid: evidence.statistics.chain_valid,
-            plausible_human_rate: evidence.is_plausible_human_typing(),
-            samples: evidence.samples.clone(),
+            plausible_human_rate,
+            samples: evidence.samples,
             typing_samples: Vec::new(),
             phys_ratio: None,
         };
@@ -123,7 +125,7 @@ impl Builder {
     #[cfg(feature = "cpop_jitter")]
     pub fn with_hybrid_keystroke(
         mut self,
-        evidence: &crate::cpop_jitter_bridge::HybridEvidence,
+        evidence: crate::cpop_jitter_bridge::HybridEvidence,
     ) -> Self {
         if evidence.statistics.total_keystrokes == 0 {
             return self;
@@ -134,9 +136,12 @@ impl Builder {
             return self;
         }
 
+        let plausible_human_rate = evidence.is_plausible_human_typing();
+        let phys_ratio = evidence.entropy_quality.phys_ratio;
+
         let samples: Vec<jitter::Sample> = evidence
             .samples
-            .iter()
+            .into_iter()
             .map(|hs| jitter::Sample {
                 timestamp: hs.timestamp,
                 keystroke_count: hs.keystroke_count,
@@ -148,7 +153,7 @@ impl Builder {
             .collect();
 
         let keystroke = KeystrokeEvidence {
-            session_id: evidence.session_id.clone(),
+            session_id: evidence.session_id,
             started_at: evidence.started_at,
             ended_at: evidence.ended_at,
             duration: evidence.statistics.duration,
@@ -157,15 +162,14 @@ impl Builder {
             keystrokes_per_minute: evidence.statistics.keystrokes_per_min,
             unique_doc_states: evidence.statistics.unique_doc_hashes,
             chain_valid: evidence.statistics.chain_valid,
-            plausible_human_rate: evidence.is_plausible_human_typing(),
+            plausible_human_rate,
             samples,
             typing_samples: Vec::new(),
-            phys_ratio: Some(evidence.entropy_quality.phys_ratio),
+            phys_ratio: Some(phys_ratio),
         };
 
         self.packet.keystroke = Some(keystroke);
 
-        let phys_ratio = evidence.entropy_quality.phys_ratio;
         if phys_ratio.is_finite() && phys_ratio > HARDWARE_ENTROPY_RATIO_THRESHOLD {
             self.add_claim(
                 ClaimType::KeystrokesVerified,
@@ -300,47 +304,54 @@ impl Builder {
     /// Attach key hierarchy evidence (master key, ratchet chain, checkpoint sigs).
     pub fn with_key_hierarchy(
         mut self,
-        evidence: &keyhierarchy::KeyHierarchyEvidence,
+        evidence: keyhierarchy::KeyHierarchyEvidence,
     ) -> crate::error::Result<Self> {
+        let master_public_key = hex::encode(&evidence.master_public_key);
+        let session_public_key = hex::encode(&evidence.session_public_key);
+        let session_certificate =
+            general_purpose::STANDARD.encode(&evidence.session_certificate_raw);
+        let ratchet_public_keys: Vec<String> = evidence
+            .ratchet_public_keys
+            .iter()
+            .map(hex::encode)
+            .collect();
+        let checkpoint_signatures = evidence
+            .checkpoint_signatures
+            .iter()
+            .enumerate()
+            .map(|(idx, sig)| {
+                Ok(CheckpointSignature {
+                    ordinal: sig.ordinal,
+                    checkpoint_hash: hex::encode(sig.checkpoint_hash),
+                    // Source keyhierarchy::CheckpointSignature has no ratchet_index field;
+                    // enumerate position matches ratchet chain order by construction.
+                    ratchet_index: i32::try_from(idx).map_err(|_| {
+                        crate::error::Error::evidence(format!(
+                            "ratchet index {idx} exceeds i32::MAX"
+                        ))
+                    })?,
+                    signature: general_purpose::STANDARD.encode(sig.signature),
+                })
+            })
+            .collect::<crate::error::Result<Vec<_>>>()?;
+        let session_document_hash = evidence
+            .session_certificate
+            .as_ref()
+            .map(|cert| hex::encode(cert.document_hash));
+
         let packet = KeyHierarchyEvidencePacket {
             version: evidence.version,
-            master_fingerprint: evidence.master_fingerprint.clone(),
-            master_public_key: hex::encode(&evidence.master_public_key),
-            device_id: evidence.device_id.clone(),
-            session_id: evidence.session_id.clone(),
-            session_public_key: hex::encode(&evidence.session_public_key),
+            master_fingerprint: evidence.master_fingerprint,
+            master_public_key,
+            device_id: evidence.device_id,
+            session_id: evidence.session_id,
+            session_public_key,
             session_started: evidence.session_started,
-            session_certificate: general_purpose::STANDARD
-                .encode(&evidence.session_certificate_raw),
+            session_certificate,
             ratchet_count: evidence.ratchet_count,
-            ratchet_public_keys: evidence
-                .ratchet_public_keys
-                .iter()
-                .map(hex::encode)
-                .collect(),
-            checkpoint_signatures: evidence
-                .checkpoint_signatures
-                .iter()
-                .enumerate()
-                .map(|(idx, sig)| {
-                    Ok(CheckpointSignature {
-                        ordinal: sig.ordinal,
-                        checkpoint_hash: hex::encode(sig.checkpoint_hash),
-                        // Source keyhierarchy::CheckpointSignature has no ratchet_index field;
-                        // enumerate position matches ratchet chain order by construction.
-                        ratchet_index: i32::try_from(idx).map_err(|_| {
-                            crate::error::Error::evidence(format!(
-                                "ratchet index {idx} exceeds i32::MAX"
-                            ))
-                        })?,
-                        signature: general_purpose::STANDARD.encode(sig.signature),
-                    })
-                })
-                .collect::<crate::error::Result<Vec<_>>>()?,
-            session_document_hash: evidence
-                .session_certificate
-                .as_ref()
-                .map(|cert| hex::encode(cert.document_hash)),
+            ratchet_public_keys,
+            checkpoint_signatures,
+            session_document_hash,
         };
 
         self.packet.key_hierarchy = Some(packet);

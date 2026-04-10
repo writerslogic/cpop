@@ -8,7 +8,7 @@ use crate::war::ear::{
     Ar4siStatus, EarAppraisal, EarToken, SealClaims, TrustworthinessVector, VerifierId,
 };
 use chrono::DateTime;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use zeroize::Zeroize;
 
 const PERCENTILE_IDX_MEDIAN: usize = 2;
@@ -16,9 +16,9 @@ const PERCENTILE_IDX_P95: usize = 4;
 
 struct ForensicCacheEntry {
     event_count: usize,
-    profile: crate::forensics::AuthorshipProfile,
-    metrics: crate::forensics::ForensicMetrics,
-    regions: std::collections::HashMap<i64, Vec<crate::forensics::RegionData>>,
+    profile: Arc<crate::forensics::AuthorshipProfile>,
+    metrics: Arc<crate::forensics::ForensicMetrics>,
+    regions: Arc<std::collections::HashMap<i64, Vec<crate::forensics::RegionData>>>,
 }
 
 fn forensic_cache() -> &'static dashmap::DashMap<String, ForensicCacheEntry> {
@@ -209,15 +209,17 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         let hit = forensic_cache()
             .get(&cache_key)
             .filter(|e| e.event_count == events.len())
-            .map(|e| (e.profile.clone(), e.metrics.clone(), e.regions.clone()));
+            .map(|e| (Arc::clone(&e.profile), Arc::clone(&e.metrics), Arc::clone(&e.regions)));
         match hit {
             Some(cached) => cached,
             None => {
-                let p = crate::forensics::ForensicEngine::evaluate_authorship(
+                let p = Arc::new(crate::forensics::ForensicEngine::evaluate_authorship(
                     &file_path_str,
                     &events,
-                );
-                let (m, r) = crate::ffi::helpers::run_full_forensics(&events);
+                ));
+                let (m_raw, r_raw) = crate::ffi::helpers::run_full_forensics(&events);
+                let m = Arc::new(m_raw);
+                let r = Arc::new(r_raw);
                 const MAX_FORENSIC_CACHE: usize = 10;
                 if forensic_cache().len() >= MAX_FORENSIC_CACHE {
                     forensic_cache().clear();
@@ -226,9 +228,9 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
                     cache_key,
                     ForensicCacheEntry {
                         event_count: events.len(),
-                        profile: p.clone(),
-                        metrics: m.clone(),
-                        regions: r.clone(),
+                        profile: Arc::clone(&p),
+                        metrics: Arc::clone(&m),
+                        regions: Arc::clone(&r),
                     },
                 );
                 (p, m, r)

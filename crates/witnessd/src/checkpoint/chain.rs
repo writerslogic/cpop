@@ -168,9 +168,8 @@ impl Chain {
         } else {
             checkpoint.hash = checkpoint.compute_hash();
         }
-        let result = checkpoint.clone();
-        self.checkpoints.push(checkpoint);
-        Ok(result)
+        self.checkpoints.push(checkpoint.clone());
+        Ok(checkpoint)
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<()> {
