@@ -249,3 +249,64 @@ fn test_verdict_invalid_declaration_prevents_final_v1() {
     assert_eq!(v, ForensicVerdict::V2LikelyHuman,
                "Invalid declaration (capped) must prevent V1 in final branch");
 }
+
+#[test]
+fn test_verdict_overlapping_caps_both_apply() {
+    // Integration test: both capped (invalid declaration) AND no_vdf apply simultaneously.
+    // Verifies the (no_vdf || capped) disjunction in the forensics path (line 85).
+    let forensics = ForensicMetrics {
+        primary: Default::default(),
+        cadence: Default::default(),
+        behavioral: None,
+        forgery_analysis: None,
+        velocity: Default::default(),
+        session_stats: Default::default(),
+        assessment_score: 0.95,
+        perplexity_score: 0.0,
+        steg_confidence: 0.0,
+        anomaly_count: 0,
+        risk_level: crate::forensics::types::RiskLevel::Low,
+        biological_cadence_score: 0.8,
+        cross_modal: None,
+        forgery_cost: None,
+        checkpoint_count: 2,
+        hurst_exponent: None,
+        snr: None,
+        lyapunov: None,
+        iki_compression: None,
+        labyrinth: None,
+        focus: Default::default(),
+        writing_mode: None,
+        cross_window_matches: vec![],
+        clc_metrics: None,
+        repair_locality: None,
+        fatigue_trajectory: None,
+    };
+
+    let v = verdict::compute_verdict(
+        true,
+        Some(true),
+        false,  // declaration_valid = false → capped = true
+        &SealVerification {
+            jitter_tag_present: Some(true),
+            entangled_binding_valid: Some(true),
+            checkpoints_checked: 2,
+        },
+        &DurationCheck {
+            computed_min_seconds: 0.0,  // no_vdf = true
+            claimed_seconds: 0.0,
+            ratio: 1.0,
+            plausible: true,
+        },
+        &KeyProvenanceCheck {
+            hierarchy_consistent: None,
+            signing_key_consistent: true,
+            ratchet_monotonic: true,
+        },
+        Some(&forensics),
+        None,
+    );
+
+    assert_eq!(v, ForensicVerdict::V2LikelyHuman,
+               "Both caps applied simultaneously must still produce V2LikelyHuman");
+}

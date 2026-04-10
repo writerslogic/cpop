@@ -50,10 +50,26 @@ const MIN_SAMPLES: usize = 64;
 pub struct SnrAnalysis {
     /// Overall SNR in decibels.
     pub snr_db: f64,
-    /// Per-window SNR values.
+    /// Per-window SNR values: global_signal_power / window_variance.
+    ///
+    /// High values indicate low jitter relative to the overall cadence trend.
+    /// Note: Not independent per-window measurements, but rather comparisons
+    /// of each window's noise to the global signal trend (low-frequency component).
     pub windowed_snr: Vec<f64>,
     /// Whether SNR is flagged as anomalous (too clean = synthetic).
     pub flagged: bool,
+}
+
+/// Convert signal/noise powers to dB, clamped to ±MAX_SNR_DB.
+/// Handles zero/negative edge cases: zero noise → +MAX_SNR_DB, zero signal → -MAX_SNR_DB.
+fn snr_db_capped(signal_power: f64, noise_power: f64) -> f64 {
+    if noise_power <= 0.0 {
+        MAX_SNR_DB
+    } else if signal_power <= 0.0 {
+        -MAX_SNR_DB
+    } else {
+        (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
+    }
 }
 
 /// Compute SNR across sliding windows of IKI data.
@@ -104,34 +120,18 @@ pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Result<SnrAnalysis, SnrError> {
     // Noise power: mean of the window variances (high-frequency component)
     let noise_power = sum_of_variances / num_windows as f64;
 
-    let snr_db = if signal_power <= 0.0 || noise_power <= 0.0 {
-        if noise_power <= 0.0 {
-            MAX_SNR_DB
-        } else {
-            -MAX_SNR_DB
-        }
-    } else {
-        (10.0 * (signal_power / noise_power).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
-    };
+    let snr_db = snr_db_capped(signal_power, noise_power);
 
     // Second pass to compute per-window SNR and build the return vector
     let windowed_snr: Vec<f64> = window_stats
         .iter()
-        .map(|&(_, var)| {
-            if signal_power <= 0.0 || var <= 0.0 {
-                if var <= 0.0 {
-                    MAX_SNR_DB
-                } else {
-                    -MAX_SNR_DB
-                }
-            } else {
-                (10.0 * (signal_power / var).log10()).clamp(-MAX_SNR_DB, MAX_SNR_DB)
-            }
-        })
+        .map(|&(_, var)| snr_db_capped(signal_power, var))
         .collect();
 
-    let all_high = windowed_snr.iter().all(|&s| s > SNR_SYNTHETIC_THRESHOLD_DB);
-    let flagged = all_high && snr_db > SNR_SYNTHETIC_THRESHOLD_DB;
+    // If all windows exceed threshold, the overall SNR is mathematically guaranteed to exceed it
+    // (since snr_db is the ratio of signal_power to mean(window_variances)).
+    // Flagging occurs only when all windows show the "too clean" pattern consistently.
+    let flagged = windowed_snr.iter().all(|&s| s > SNR_SYNTHETIC_THRESHOLD_DB);
 
     Ok(SnrAnalysis {
         snr_db,

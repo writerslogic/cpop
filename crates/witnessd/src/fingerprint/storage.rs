@@ -125,11 +125,6 @@ impl FingerprintStorage {
         Ok(())
     }
 
-    /// Build the canonical file path for a profile ID (used by cache bookkeeping).
-    fn profile_path_for_id(&self, id: &ProfileId) -> PathBuf {
-        self.profile_path(id)
-    }
-
     /// Encrypt and persist a profile, updating the in-memory index.
     pub fn save(&mut self, fingerprint: &AuthorFingerprint) -> Result<()> {
         let path = self.profile_path(&fingerprint.id);
