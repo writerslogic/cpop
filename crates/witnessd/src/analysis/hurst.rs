@@ -92,6 +92,22 @@ const RS_MIN_WINDOW: usize = 8;
 const DFA_MIN_DATA_POINTS: usize = 32;
 const DFA_MIN_SCALE: usize = 8;
 
+fn classify_hurst_exponent(exponent: f64) -> (HurstInterpretation, bool) {
+    let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
+        HurstInterpretation::WhiteNoise
+    } else if exponent < 0.5 {
+        HurstInterpretation::AntiPersistent
+    } else if exponent <= HurstAnalysis::MAX_VALID {
+        HurstInterpretation::Persistent
+    } else {
+        HurstInterpretation::HighlyPredictable
+    };
+
+    let is_valid = (HurstAnalysis::MIN_VALID..=HurstAnalysis::MAX_VALID).contains(&exponent);
+
+    (interpretation, is_valid)
+}
+
 pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
     let n = data.len();
     if n < RS_MIN_DATA_POINTS {
@@ -130,17 +146,7 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
 
     let exponent = slope.clamp(0.0, 1.0);
 
-    let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
-        HurstInterpretation::WhiteNoise
-    } else if exponent < 0.5 {
-        HurstInterpretation::AntiPersistent
-    } else if exponent <= HurstAnalysis::MAX_VALID {
-        HurstInterpretation::Persistent
-    } else {
-        HurstInterpretation::HighlyPredictable
-    };
-
-    let is_valid = (HurstAnalysis::MIN_VALID..=HurstAnalysis::MAX_VALID).contains(&exponent);
+    let (interpretation, is_valid) = classify_hurst_exponent(exponent);
 
     Ok(HurstAnalysis {
         exponent,
@@ -257,17 +263,7 @@ pub fn compute_hurst_dfa(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
     // DFA alpha can reach 2.0 (Brownian ~1.5, ballistic ~2.0)
     let exponent = slope.clamp(0.0, 2.0);
 
-    let interpretation = if (exponent - 0.5).abs() < HurstAnalysis::WHITE_NOISE_TOLERANCE {
-        HurstInterpretation::WhiteNoise
-    } else if exponent < 0.5 {
-        HurstInterpretation::AntiPersistent
-    } else if exponent <= HurstAnalysis::MAX_VALID {
-        HurstInterpretation::Persistent
-    } else {
-        HurstInterpretation::HighlyPredictable
-    };
-
-    let is_valid = (HurstAnalysis::MIN_VALID..=HurstAnalysis::MAX_VALID).contains(&exponent);
+    let (interpretation, is_valid) = classify_hurst_exponent(exponent);
 
     Ok(HurstAnalysis {
         exponent,
