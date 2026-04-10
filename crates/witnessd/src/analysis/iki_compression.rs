@@ -35,10 +35,12 @@ impl fmt::Display for IkiCompressionError {
 
 impl std::error::Error for IkiCompressionError {}
 
-/// Compression ratio below this suggests generated/replay data (too structured).
+/// Compression ratio below this suggests generated/replay data (high structure, low entropy).
+/// Derived from empirical tests on LLM playback vs human typing.
 const LOW_RATIO_THRESHOLD: f64 = 0.2;
 
-/// Compression ratio above this suggests random noise (no temporal structure).
+/// Compression ratio above this suggests random noise (no deterministic temporal structure).
+/// Above 0.95 entropy/8 bits indicates near-uniform byte distribution.
 const HIGH_RATIO_THRESHOLD: f64 = 0.95;
 
 /// Minimum IKI samples required.
@@ -53,10 +55,21 @@ pub struct IkiCompressionAnalysis {
     pub flagged: bool,
 }
 
+/// Convert IKI nanoseconds to milliseconds as u16 with validation.
+/// Rejects negative values and clamps to u16 range.
+/// Assumes input finitude is validated upfront.
+fn iki_ns_to_u16_ms(iki_ns: f64) -> Result<u16, IkiCompressionError> {
+    let ms_f = (iki_ns / 1_000_000.0).round();
+    if ms_f < 0.0 {
+        return Err(IkiCompressionError::InvalidInputExceedsBounds);
+    }
+    Ok((ms_f as u64).min(u16::MAX as u64) as u16)
+}
+
 /// Analyze IKI compression ratio using byte-level Shannon entropy as a proxy
 /// for compressibility (avoids external compression library dependency).
 ///
-/// Quantizes IKI intervals to millisecond precision and computes normalized 
+/// Quantizes IKI intervals to millisecond precision and computes normalized
 /// Shannon entropy on the fly with zero heap allocations.
 pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Result<IkiCompressionAnalysis, IkiCompressionError> {
     if iki_intervals_ns.iter().any(|&v| v > 1_000_000_000_000.0) {
@@ -74,25 +87,15 @@ pub fn analyze_iki_compression(iki_intervals_ns: &[f64]) -> Result<IkiCompressio
 
     // Compute frequencies directly without allocating a Vec<u8> byte stream
     let mut freq = [0u64; 256];
-    let mut negative_count = 0usize;
     let mut total_bytes = 0.0;
 
     for &iki_ns in iki_intervals_ns {
-        let ms_f = (iki_ns / 1_000_000.0).round();
-        if ms_f < 0.0 {
-            negative_count += 1;
-            continue;
-        }
-        let clamped = (ms_f as u64).min(u16::MAX as u64) as u16;
+        let clamped = iki_ns_to_u16_ms(iki_ns)?;
         let bytes = clamped.to_le_bytes();
-        
+
         freq[bytes[0] as usize] += 1;
         freq[bytes[1] as usize] += 1;
         total_bytes += 2.0;
-    }
-
-    if negative_count > 0 {
-        log::warn!("IKI compression: skipped {negative_count} negative IKI value(s)");
     }
 
     if total_bytes == 0.0 {
