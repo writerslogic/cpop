@@ -55,13 +55,14 @@ fn encode_multibase_ed25519(public_key: &[u8]) -> String {
     format!("z{}", bs58::encode(&prefixed).into_string())
 }
 
-/// Derive a `did:key` URI from raw Ed25519 public key bytes (must be 32 bytes).
+/// Derive a `did:key` URI from raw Ed25519 public key bytes.
 ///
-/// Returns an empty `did:key:z` with a truncated/padded key if the input is not
-/// exactly 32 bytes. Callers should validate key length before calling.
-pub fn did_key_from_public(public_key: &[u8]) -> String {
-    assert_eq!(public_key.len(), 32, "Ed25519 public key must be 32 bytes");
-    format!("did:key:{}", encode_multibase_ed25519(public_key))
+/// Returns `None` if `public_key` is not exactly 32 bytes.
+pub fn did_key_from_public(public_key: &[u8]) -> Option<String> {
+    if public_key.len() != 32 {
+        return None;
+    }
+    Some(format!("did:key:{}", encode_multibase_ed25519(public_key)))
 }
 
 /// Generate a DID Document for a `did:key` or `did:web` identifier.

@@ -41,11 +41,11 @@ impl MnemonicHandler {
         let puf = SiliconPUF::generate_fingerprint();
 
         let hk = Hkdf::<Sha256>::new(Some(&puf), raw_seed.as_ref());
-        let mut out = [0u8; 64];
-        hk.expand(b"witnessd-silicon-seed-v1", &mut out)
+        let mut out = Zeroizing::new([0u8; 64]);
+        hk.expand(b"witnessd-silicon-seed-v1", out.as_mut())
             .map_err(|_| anyhow!("HKDF expand failed for silicon seed"))?;
 
-        Ok(SensitiveSeed(out))
+        Ok(SensitiveSeed(*out))
     }
 
     /// Compute a short hex fingerprint binding the mnemonic to this machine.

@@ -385,7 +385,8 @@ pub fn load_active_did() -> Result<String, Error> {
     }
     let sk = load_signing_key()
         .map_err(|e| Error::identity(format!("load signing key for active DID fallback: {e}")))?;
-    Ok(did_key_from_public(sk.verifying_key().as_bytes()))
+    did_key_from_public(sk.verifying_key().as_bytes())
+        .ok_or_else(|| Error::identity("invalid public key length for did:key"))
 }
 
 // ---------------------------------------------------------------------------

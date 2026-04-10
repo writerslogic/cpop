@@ -44,8 +44,14 @@ pub struct Field {
 
 const TIER_ORDER: &[&str] = &["bronze", "silver", "gold", "platinum"];
 
-fn tiers_at_or_above(min_tier: &str) -> Vec<&str> {
-    let start = TIER_ORDER.iter().position(|&t| t == min_tier).unwrap_or(0);
+fn tiers_at_or_above(min_tier: &str) -> Vec<&'static str> {
+    let start = TIER_ORDER
+        .iter()
+        .position(|&t| t == min_tier)
+        .unwrap_or_else(|| {
+            log::warn!("unknown forensic tier '{min_tier}', defaulting to bronze");
+            0
+        });
     TIER_ORDER[start..].to_vec()
 }
 

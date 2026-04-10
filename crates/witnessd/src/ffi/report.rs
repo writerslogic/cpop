@@ -376,7 +376,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             {
                 crate::ffi::helpers::load_signing_key()
                     .ok()
-                    .map(|sk| crate::identity::did_key_from_public(sk.verifying_key().as_bytes()))
+                    .and_then(|sk| crate::identity::did_key_from_public(sk.verifying_key().as_bytes()))
             }
         },
     };
@@ -727,7 +727,7 @@ fn build_vc_json(report: &WarReport) -> Option<String> {
 
     let signing_key = crate::ffi::helpers::load_signing_key().ok()?;
     let pub_key = signing_key.verifying_key();
-    let author_did = crate::identity::did_key_from_public(pub_key.as_bytes());
+    let author_did = crate::identity::did_key_from_public(pub_key.as_bytes())?;
 
     let (_, tier_num, _) = crate::ffi::helpers::detect_attestation_tier_info();
     let tv = build_trust_vector(report, tier_num);
