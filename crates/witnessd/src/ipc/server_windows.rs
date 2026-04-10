@@ -126,24 +126,15 @@ fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Result<Strin
         ));
     }
 
-    // Allocate with alignment suitable for TOKEN_USER (contains pointer-sized
-    // fields) to avoid undefined behavior from misaligned pointer casts.
-    let align = std::mem::align_of::<TOKEN_USER>().max(std::mem::align_of::<usize>());
-    let alloc_size = (size as usize + align - 1) & !(align - 1);
-    let layout = std::alloc::Layout::from_size_align(alloc_size, align)
-        .map_err(|_| anyhow!("Invalid layout for TOKEN_USER buffer"))?;
-    // SAFETY: layout has non-zero size (checked above) and valid alignment.
-    let buffer_ptr = unsafe { std::alloc::alloc_zeroed(layout) };
-    if buffer_ptr.is_null() {
-        std::alloc::handle_alloc_error(layout);
-    }
-    let _buf_guard = scopeguard::defer(|| {
-        // SAFETY: buffer_ptr was allocated with this exact layout above.
-        unsafe { std::alloc::dealloc(buffer_ptr, layout) }
-    });
+    // `Vec<u64>` backing storage is 8-byte aligned by the allocator, which
+    // satisfies TOKEN_USER's alignment requirement on both 32-bit and 64-bit
+    // Windows (TOKEN_USER contains pointer-sized fields, max align = pointer
+    // size ≤ 8). Vec's Drop frees memory automatically, including on panic.
+    let num_u64s = (size as usize).div_ceil(std::mem::size_of::<u64>());
+    let mut buffer: Vec<u64> = vec![0; num_u64s];
+    let buffer_ptr = buffer.as_mut_ptr() as *mut u8;
 
-    // SAFETY: buffer_ptr is non-null, properly aligned, and sized to `size`
-    // bytes as requested by the first GetTokenInformation call.
+    // SAFETY: buffer_ptr points to `size` writable bytes with 8-byte alignment.
     unsafe {
         GetTokenInformation(
             token,
@@ -155,8 +146,9 @@ fn get_token_user_sid(token: windows::Win32::Foundation::HANDLE) -> Result<Strin
         .map_err(|e| anyhow!("GetTokenInformation failed: {}", e))?;
     }
 
-    // SAFETY: buffer_ptr has alignment >= align_of::<TOKEN_USER>() and was
-    // filled by GetTokenInformation(TokenUser) which writes a valid TOKEN_USER.
+    // SAFETY: buffer_ptr is 8-byte aligned (Vec<u64> guarantee) and was just
+    // filled by GetTokenInformation(TokenUser) with a valid TOKEN_USER layout.
+    // `buffer` is kept alive through the ConvertSidToStringSidW call below.
     let sid = unsafe {
         let token_user = &*(buffer_ptr as *const TOKEN_USER);
         token_user.User.Sid

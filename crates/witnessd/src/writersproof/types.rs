@@ -4,6 +4,66 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A validated 64-character ASCII hex string (session ID or SHA-256 hash).
+///
+/// The only way to construct a `Hex64` is through `Hex64::new`, which enforces
+/// the length and character-set invariants. This makes it impossible to pass
+/// an unvalidated hash to `WritersProofClient` methods at compile time.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Hex64(String);
+
+impl Hex64 {
+    /// Construct a `Hex64` from a string, validating length and charset.
+    pub fn new(s: impl Into<String>) -> Result<Self, String> {
+        let s = s.into();
+        if s.len() != 64 {
+            return Err(format!(
+                "Hex64 must be exactly 64 chars, got {}: {}",
+                s.len(),
+                &s[..s.len().min(32)]
+            ));
+        }
+        if !s.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!(
+                "Hex64 must contain only hex digits, got: {}",
+                &s[..s.len().min(32)]
+            ));
+        }
+        Ok(Self(s))
+    }
+
+    /// Return the validated hex string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Hex64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for Hex64 {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for Hex64 {
+    type Error = String;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
+    }
+}
+
+impl TryFrom<String> for Hex64 {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::new(s)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NonceResponse {

@@ -84,6 +84,7 @@ pub enum AsyncIpcClientError {
 /// }
 /// ```
 pub struct AsyncIpcClient {
+    path: Option<PathBuf>,
     stream: Option<PlatformStream>,
     secure_session: Option<SecureSession>,
 }
@@ -92,6 +93,7 @@ impl AsyncIpcClient {
     /// Create a disconnected client instance.
     pub fn new() -> Self {
         Self {
+            path: None,
             stream: None,
             secure_session: None,
         }
@@ -102,11 +104,13 @@ impl AsyncIpcClient {
     pub async fn connect<P: AsRef<std::path::Path>>(
         path: P,
     ) -> std::result::Result<Self, AsyncIpcClientError> {
-        let stream = tokio::net::UnixStream::connect(path.as_ref())
+        let path_buf = path.as_ref().to_path_buf();
+        let stream = tokio::net::UnixStream::connect(&path_buf)
             .await
             .map_err(AsyncIpcClientError::ConnectionFailed)?;
 
         let mut client = Self {
+            path: Some(path_buf),
             stream: Some(stream),
             secure_session: None,
         };
@@ -121,11 +125,13 @@ impl AsyncIpcClient {
     pub async fn connect<P: AsRef<std::path::Path>>(
         path: P,
     ) -> std::result::Result<Self, AsyncIpcClientError> {
+        let path_buf = path.as_ref().to_path_buf();
         let stream = tokio::net::windows::named_pipe::ClientOptions::new()
-            .open(path.as_ref())
+            .open(&path_buf)
             .map_err(AsyncIpcClientError::ConnectionFailed)?;
 
         let mut client = Self {
+            path: Some(path_buf),
             stream: Some(stream),
             secure_session: None,
         };
@@ -272,7 +278,7 @@ impl AsyncIpcClient {
     ///
     /// On timeout, the connection is poisoned (dropped) because a partial write
     /// leaves the framing protocol in an unrecoverable state. The caller must
-    /// reconnect after a `Timeout` error.
+    /// call `reconnect()` after a `Timeout` error before attempting further sends.
     pub async fn send_message(
         &mut self,
         msg: &IpcMessage,
@@ -342,7 +348,8 @@ impl AsyncIpcClient {
     /// A secure session must be established via `connect()` before calling this method.
     ///
     /// On timeout, the connection is poisoned (dropped) because a partial read
-    /// leaves the framing protocol desynchronized. The caller must reconnect.
+    /// leaves the framing protocol desynchronized. The caller must call
+    /// `reconnect()` before attempting further reads.
     pub async fn recv_message(&mut self) -> std::result::Result<IpcMessage, AsyncIpcClientError> {
         use tokio::io::AsyncReadExt;
 
@@ -428,6 +435,35 @@ impl AsyncIpcClient {
     pub async fn disconnect(&mut self) {
         self.stream = None;
         self.secure_session = None;
+    }
+
+    /// Reconnect to the same path used in the original `connect()` call.
+    ///
+    /// Any existing stream and secure session are dropped. A new transport
+    /// connection is established and a fresh ECDH handshake is performed.
+    /// Returns `NotConnected` if this client was never connected (i.e.,
+    /// constructed via `new()` without a subsequent `connect()`).
+    pub async fn reconnect(&mut self) -> std::result::Result<(), AsyncIpcClientError> {
+        let path = self
+            .path
+            .clone()
+            .ok_or(AsyncIpcClientError::NotConnected)?;
+
+        self.disconnect().await;
+
+        #[cfg(unix)]
+        let stream = tokio::net::UnixStream::connect(&path)
+            .await
+            .map_err(AsyncIpcClientError::ConnectionFailed)?;
+
+        #[cfg(target_os = "windows")]
+        let stream = tokio::net::windows::named_pipe::ClientOptions::new()
+            .open(&path)
+            .map_err(AsyncIpcClientError::ConnectionFailed)?;
+
+        self.stream = Some(stream);
+        self.establish_secure_session().await?;
+        Ok(())
     }
 
     /// Perform a handshake with the daemon

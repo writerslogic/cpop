@@ -460,8 +460,22 @@ impl Sentinel {
                             SessionEventType::Started => {
                                 if let Some(hash) = event.hash {
                                     let sid = event.session_id;
+                                    let sid_hex = match crate::writersproof::Hex64::new(sid.clone()) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("WritersProof start_session: invalid session_id: {}", e);
+                                            continue;
+                                        }
+                                    };
+                                    let hash_hex = match crate::writersproof::Hex64::new(hash) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("WritersProof start_session: invalid initial_hash: {}", e);
+                                            continue;
+                                        }
+                                    };
                                     tokio::spawn(async move {
-                                        if let Err(e) = client.start_session(&sid, &hash).await {
+                                        if let Err(e) = client.start_session(&sid_hex, &hash_hex).await {
                                             log::debug!("WritersProof start_session failed for {}: {}", sid, e);
                                         }
                                     });
@@ -470,8 +484,22 @@ impl Sentinel {
                             SessionEventType::Ended => {
                                 if let Some(hash) = event.hash {
                                     let sid = event.session_id;
+                                    let sid_hex = match crate::writersproof::Hex64::new(sid.clone()) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("WritersProof end_session: invalid session_id: {}", e);
+                                            continue;
+                                        }
+                                    };
+                                    let hash_hex = match crate::writersproof::Hex64::new(hash) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("WritersProof end_session: invalid final_hash: {}", e);
+                                            continue;
+                                        }
+                                    };
                                     tokio::spawn(async move {
-                                        if let Err(e) = client.end_session(&sid, &hash).await {
+                                        if let Err(e) = client.end_session(&sid_hex, &hash_hex).await {
                                             log::debug!("WritersProof end_session failed for {}: {}", sid, e);
                                         }
                                     });
@@ -766,8 +794,22 @@ impl Sentinel {
                             let pending = Arc::clone(&pending_challenge);
                             tokio::spawn(async move {
                                 if let Some(h) = hash_opt {
+                                    let sid_hex = match crate::writersproof::Hex64::new(sid.clone()) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("Pulse: invalid session_id: {}", e);
+                                            return;
+                                        }
+                                    };
+                                    let hash_hex = match crate::writersproof::Hex64::new(h) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            log::debug!("Pulse: invalid current_hash: {}", e);
+                                            return;
+                                        }
+                                    };
                                     // Send pulse: atomically log hash and fetch fresh nonce
-                                    match client.pulse(&sid, &h).await {
+                                    match client.pulse(&sid_hex, &hash_hex).await {
                                         Ok(resp) => {
                                             *pending.write_recover() = Some((resp.nonce, Some(resp.nonce_id.clone())));
                                             log::debug!("Pulse sent for session {}: nonce_id={}", sid, resp.nonce_id);
@@ -839,13 +881,29 @@ impl Sentinel {
                                     if let Some(sid) = session_id {
                                         let nid = nid.clone();
                                         let cp_hash = hex::encode(event_hash);
-                                        tokio::spawn(async move {
-                                            if let Err(e) =
-                                                confirm_client.confirm_nonce(&sid, &nid, &cp_hash).await
-                                            {
-                                                log::debug!("confirm_nonce failed for session {sid}: {e}");
+                                        let sid_hex = match crate::writersproof::Hex64::new(sid.clone()) {
+                                            Ok(h) => Some(h),
+                                            Err(e) => {
+                                                log::debug!("confirm_nonce: invalid session_id: {}", e);
+                                                None
                                             }
-                                        });
+                                        };
+                                        let cp_hex = match crate::writersproof::Hex64::new(cp_hash) {
+                                            Ok(h) => Some(h),
+                                            Err(e) => {
+                                                log::debug!("confirm_nonce: invalid checkpoint_hash: {}", e);
+                                                None
+                                            }
+                                        };
+                                        if let (Some(sid_hex), Some(cp_hex)) = (sid_hex, cp_hex) {
+                                            tokio::spawn(async move {
+                                                if let Err(e) =
+                                                    confirm_client.confirm_nonce(&sid_hex, &nid, &cp_hex).await
+                                                {
+                                                    log::debug!("confirm_nonce failed for session {sid}: {e}");
+                                                }
+                                            });
+                                        }
                                     }
                                 }
                             }
