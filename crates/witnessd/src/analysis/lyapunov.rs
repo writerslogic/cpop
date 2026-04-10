@@ -173,10 +173,10 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
             let i_k = i + k;
             let j_k = nn_idx + k;
             if i_k < embed_len && j_k < embed_len {
-                let dist_k = sq_dist(get_point(i_k), get_point(j_k)).sqrt();
+                let sq_dist_k = sq_dist(get_point(i_k), get_point(j_k));
 
-                if dist_k > 0.0 {
-                    divergence_sum[k] += dist_k.ln();
+                if sq_dist_k > 0.0 {
+                    divergence_sum[k] += sq_dist_k.ln();
                     divergence_count[k] += 1;
                 }
             }
@@ -204,11 +204,14 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
     let fit_len = (log_divergence.len() / 4).max(5).min(log_divergence.len());
     let (slope, _) = linear_regression(&log_divergence[..fit_len]);
 
+    // Correct for using ln(sq_dist) instead of ln(dist): ln(d²) = 2*ln(d), so divide slope by 2
+    let exponent = slope / 2.0;
+
     let confidence = (iki_intervals_ns.len() as f64 / 500.0).min(1.0);
-    let flagged = slope <= PERIODIC_THRESHOLD || slope > NOISE_THRESHOLD;
+    let flagged = exponent <= PERIODIC_THRESHOLD || exponent > NOISE_THRESHOLD;
 
     Ok(LyapunovAnalysis {
-        exponent: slope,
+        exponent,
         flagged,
         confidence,
     })
