@@ -214,3 +214,38 @@ fn test_verdict_invalid_declaration_caps_to_v2() {
     assert_eq!(v, ForensicVerdict::V2LikelyHuman,
                "Invalid declaration should cap V1 verdict to V2");
 }
+
+#[test]
+fn test_verdict_invalid_declaration_prevents_final_v1() {
+    // Test that capped prevents V1VerifiedHuman in the final branch
+    // (lines 105-112) when declaration_valid = false and forensics is None.
+    // This directly tests the final if-block's !capped condition.
+    let v = verdict::compute_verdict(
+        true,                          // structural
+        Some(true),                    // signature valid
+        false,                         // declaration_valid = false (capped = true)
+        &SealVerification {
+            jitter_tag_present: Some(true),
+            entangled_binding_valid: Some(true),  // seals_structural_only = false
+            checkpoints_checked: 2,
+        },
+        &DurationCheck {
+            computed_min_seconds: 60.0,  // no_vdf = false (VDF data present)
+            claimed_seconds: 60.0,
+            ratio: 1.0,
+            plausible: true,
+        },
+        &KeyProvenanceCheck {
+            hierarchy_consistent: None,
+            signing_key_consistent: true,
+            ratchet_monotonic: true,
+        },
+        None,  // No forensics: forces path through final branch (line 105)
+        None,
+    );
+
+    // The final branch checks (!no_vdf && !capped && ... signature == Some(true) ...)
+    // With capped = true, V1VerifiedHuman is unreachable; must fall through to V2LikelyHuman
+    assert_eq!(v, ForensicVerdict::V2LikelyHuman,
+               "Invalid declaration (capped) must prevent V1 in final branch");
+}

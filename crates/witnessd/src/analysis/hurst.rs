@@ -117,6 +117,10 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
         });
     }
 
+    if !data.iter().all(|v| v.is_finite()) {
+        return Err(HurstError::NonFiniteValues);
+    }
+
     let mut log_n_vec = Vec::new();
     let mut log_rs_vec = Vec::new();
 
