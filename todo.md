@@ -483,7 +483,7 @@ reason = "blocks reactor; use verify_async from async fn"
 
 - **Model:** Sonnet | **Scope:** errors
 - **Files:** `crates/witnessd/src/forensics/forgery_cost.rs:315`, `crates/witnessd/src/forensics/topology.rs:28`, `crates/witnessd/src/utils/stats.rs:127`
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (added finite(), total_cmp in median/weakest_link, log::warn on NaN clamp in forgery_cost and topology)
 - **Priority:** 22/240 | **Estimated time:** 4h
 - **Description:** NaN/Inf silently coerced to defaults (0.0, 0.5, f64::MAX) or fall back to `Ordering::Equal`. No logging or error propagation.
 - **Root cause:** No explicit policy for finiteness validation.

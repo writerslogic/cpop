@@ -90,8 +90,7 @@ pub fn median(values: &[f64]) -> f64 {
         return 0.0;
     }
     let mut sorted = values.to_vec();
-    // Use partial_cmp to handle NaNs by sorting them to the end.
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let len = sorted.len();
     if len % 2 == 1 {
         sorted[len / 2]
@@ -152,6 +151,17 @@ mod tests {
         let data = [42.0; 10];
         assert_eq!(mean_and_variance(&data), (42.0, 0.0));
         assert_eq!(mean_and_sample_variance(&data), (42.0, 0.0));
+    }
+
+    #[test]
+    fn median_total_cmp_nan_sorted_last() {
+        // NaN must sort after all finite values (total_cmp puts NaN at the end).
+        let mut data = [f64::NAN, 1.0, 3.0, 2.0];
+        data.sort_by(|a, b| a.total_cmp(b));
+        assert_eq!(data[0], 1.0);
+        assert_eq!(data[1], 2.0);
+        assert_eq!(data[2], 3.0);
+        assert!(data[3].is_nan());
     }
 
     #[test]

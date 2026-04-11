@@ -32,20 +32,25 @@ pub fn compute_primary_metrics(
         deletion_clustering: deletion_clustering_coef(&all_regions),
     };
 
-    // Sanitize non-finite values
+    // Sanitize non-finite values and log when clamping occurs.
     if !pm.monotonic_append_ratio.is_finite() {
+        log::warn!("topology: monotonic_append_ratio non-finite ({}), using 0.0", pm.monotonic_append_ratio);
         pm.monotonic_append_ratio = 0.0;
     }
     if !pm.edit_entropy.is_finite() {
+        log::warn!("topology: edit_entropy non-finite ({}), using 0.0", pm.edit_entropy);
         pm.edit_entropy = 0.0;
     }
     if !pm.median_interval.is_finite() {
+        log::warn!("topology: median_interval non-finite ({}), using 0.0", pm.median_interval);
         pm.median_interval = 0.0;
     }
     if !pm.positive_negative_ratio.is_finite() {
+        log::warn!("topology: positive_negative_ratio non-finite ({}), using 0.5", pm.positive_negative_ratio);
         pm.positive_negative_ratio = 0.5;
     }
     if !pm.deletion_clustering.is_finite() {
+        log::warn!("topology: deletion_clustering non-finite ({}), using 0.0", pm.deletion_clustering);
         pm.deletion_clustering = 0.0;
     }
 

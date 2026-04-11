@@ -312,7 +312,12 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
         // against NaN from an empty log_sum (len==0 prevented above) or
         // platform quirks.
         let raw = (log_sum / finite_costs.len() as f64).exp();
-        let geo_mean = if raw.is_finite() { raw } else { f64::MAX };
+        let geo_mean = if raw.is_finite() {
+            raw
+        } else {
+            log::warn!("forgery_cost: geometric mean is non-finite ({raw}), clamping to f64::MAX");
+            f64::MAX
+        };
         if has_infinite {
             geo_mean * HARDWARE_DIFFICULTY_BOOST
         } else {
@@ -322,12 +327,8 @@ pub fn estimate_forgery_cost(input: &ForgeryCostInput) -> ForgeryCostEstimate {
 
     let weakest_link = components
         .iter()
-        .filter(|c| c.present && !c.cost_cpu_sec.is_nan())
-        .min_by(|a, b| {
-            a.cost_cpu_sec
-                .partial_cmp(&b.cost_cpu_sec)
-                .unwrap_or(std::cmp::Ordering::Greater)
-        })
+        .filter(|c| c.present && c.cost_cpu_sec.is_finite())
+        .min_by(|a, b| a.cost_cpu_sec.total_cmp(&b.cost_cpu_sec))
         .map(|c| c.name.clone());
 
     let estimated_forge_time_sec = if has_infinite {

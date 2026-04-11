@@ -37,6 +37,15 @@ pub fn finite_or(v: f64, fallback: f64) -> f64 {
     }
 }
 
+/// Return `Ok(x)` when `x` is finite, or a validation error when it is NaN or infinite.
+pub fn finite(x: f64) -> crate::error::Result<f64> {
+    if x.is_finite() {
+        Ok(x)
+    } else {
+        Err(crate::error::Error::validation(format!("non-finite value: {x}")))
+    }
+}
+
 /// Return a short hex string from the first 8 bytes (or fewer) of `hash`.
 pub fn short_hex_id(hash: &[u8]) -> String {
     hex::encode(&hash[..hash.len().min(8)])
@@ -58,6 +67,20 @@ mod tests {
         assert_eq!(finite_or(f64::NAN, 42.0), 42.0);
         assert_eq!(finite_or(f64::INFINITY, -1.0), -1.0);
         assert_eq!(finite_or(f64::NEG_INFINITY, 0.0), 0.0);
+    }
+
+    #[test]
+    fn finite_ok_for_finite_values() {
+        assert_eq!(finite(1.5).unwrap(), 1.5);
+        assert_eq!(finite(-3.0).unwrap(), -3.0);
+        assert_eq!(finite(0.0).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn finite_err_for_nan_and_inf() {
+        assert!(finite(f64::NAN).is_err());
+        assert!(finite(f64::INFINITY).is_err());
+        assert!(finite(f64::NEG_INFINITY).is_err());
     }
 
     #[test]
