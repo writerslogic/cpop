@@ -168,7 +168,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Sonnet | **Scope:** idiomatic
 - **Files:** `crates/witnessd/src/crypto/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/fingerprint/` (multiple)
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (to_array_16/32/64 helpers added; two manual copy_from_slice patterns in evidence/packet.rs replaced)
 - **Priority:** 6/240 | **Estimated time:** 6h
 - **Description:** Functions take `Vec<u8>` by value when they only read. Wastes ownership transfer in every call.
 - **Root cause:** Legacy API design before slice-friendly patterns.
@@ -188,7 +188,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Sonnet | **Scope:** idiomatic
 - **Files:** `apps/cpop_cli/src/cmd_*.rs`, `crates/witnessd/src/wal/operations.rs:22-27`, checkpoint, store modules
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (store load_document_stats/get_events_for_file/update_file_path changed to impl AsRef<Path>; WAL/checkpoint were already fixed)
 - **Priority:** 7/240 | **Estimated time:** 4h
 - **Description:** Functions take `String` or `&str` for file paths. Should accept `impl AsRef<Path>` for flexibility (works with Path, &str, String, OsStr).
 - **Root cause:** Pre-Path API era code.

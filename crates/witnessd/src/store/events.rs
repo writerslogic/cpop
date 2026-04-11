@@ -5,6 +5,7 @@ use crate::store::{SecureEvent, SecureStore};
 use crate::DateTimeNanosExt;
 use anyhow::anyhow;
 use rusqlite::params;
+use std::path::Path;
 use subtle::ConstantTimeEq;
 
 impl SecureStore {
@@ -129,16 +130,17 @@ impl SecureStore {
     }
 
     /// Retrieve all events for a file path, ordered by insertion.
-    pub fn get_events_for_file(&self, path: &str) -> anyhow::Result<Vec<SecureEvent>> {
+    pub fn get_events_for_file(&self, path: impl AsRef<Path>) -> anyhow::Result<Vec<SecureEvent>> {
         self.get_events_for_file_limited(path, None)
     }
 
     /// Retrieve events for a file path, ordered by insertion, with an optional limit.
     pub fn get_events_for_file_limited(
         &self,
-        path: &str,
+        path: impl AsRef<Path>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<SecureEvent>> {
+        let path = path.as_ref().to_string_lossy();
         let base_query = "SELECT id, device_id, machine_id, timestamp_ns, file_path, \
                 content_hash, file_size, size_delta, previous_hash, event_hash, hmac, \
                 context_type, context_note, vdf_input, vdf_output, vdf_iterations, \
@@ -156,8 +158,8 @@ impl SecureStore {
 
         let mut events = Vec::new();
         let rows: Box<dyn Iterator<Item = rusqlite::Result<(SecureEvent, Vec<u8>)>>> = match limit {
-            Some(n) => Box::new(stmt.query_map(params![path, n], Self::row_to_event_with_hmac)?),
-            None => Box::new(stmt.query_map(params![path], Self::row_to_event_with_hmac)?),
+            Some(n) => Box::new(stmt.query_map(params![path.as_ref(), n], Self::row_to_event_with_hmac)?),
+            None => Box::new(stmt.query_map(params![path.as_ref()], Self::row_to_event_with_hmac)?),
         };
         for row in rows {
             let (event, stored_hmac) = row?;
@@ -365,7 +367,9 @@ impl SecureStore {
     /// HMAC verification, because `verify_integrity()` will fail afterwards.
     /// The function checks whether the store has any verified events and returns
     /// an error if so.
-    pub fn update_file_path(&mut self, old_path: &str, new_path: &str) -> anyhow::Result<usize> {
+    pub fn update_file_path(&mut self, old_path: impl AsRef<Path>, new_path: impl AsRef<Path>) -> anyhow::Result<usize> {
+        let old_path = old_path.as_ref().to_string_lossy();
+        let new_path = new_path.as_ref().to_string_lossy();
         let tx = self.conn.transaction()?;
         let has_integrity: bool = tx
             .query_row(
@@ -383,7 +387,7 @@ impl SecureStore {
         }
         let count = tx.execute(
             "UPDATE secure_events SET file_path = ? WHERE file_path = ?",
-            params![new_path, old_path],
+            params![new_path.as_ref(), old_path.as_ref()],
         )?;
         tx.commit()?;
         Ok(count)

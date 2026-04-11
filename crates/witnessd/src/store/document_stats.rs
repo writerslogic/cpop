@@ -4,6 +4,7 @@
 
 use crate::store::SecureStore;
 use rusqlite::params;
+use std::path::Path;
 
 /// Cumulative statistics for a tracked document across all sessions.
 pub struct DocumentStats {
@@ -18,14 +19,15 @@ pub struct DocumentStats {
 
 impl SecureStore {
     /// Load cumulative stats for a document, or None if never tracked.
-    pub fn load_document_stats(&self, file_path: &str) -> anyhow::Result<Option<DocumentStats>> {
+    pub fn load_document_stats(&self, file_path: impl AsRef<Path>) -> anyhow::Result<Option<DocumentStats>> {
+        let file_path = file_path.as_ref().to_string_lossy();
         let mut stmt = self.conn.prepare(
             "SELECT file_path, total_keystrokes, total_focus_ms, session_count,
                     total_duration_secs, first_tracked_at, last_tracked_at
              FROM document_stats WHERE file_path = ?1",
         )?;
 
-        let result = stmt.query_row(params![file_path], |row| {
+        let result = stmt.query_row(params![file_path.as_ref()], |row| {
             Ok(DocumentStats {
                 file_path: row.get(0)?,
                 total_keystrokes: row.get(1)?,

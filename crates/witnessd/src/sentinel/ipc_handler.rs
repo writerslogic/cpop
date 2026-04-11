@@ -43,7 +43,7 @@ impl SentinelIpcHandler {
         path: &std::path::Path,
     ) -> Result<Vec<crate::store::SecureEvent>, String> {
         let db = self.open_db()?;
-        db.get_events_for_file(&path.to_string_lossy())
+        db.get_events_for_file(path)
             .map_err(|e| format!("Failed to load events: {e}"))
     }
 
@@ -90,7 +90,7 @@ impl SentinelIpcHandler {
         let file_path = super::helpers::validate_path(&file_path)?;
         let db = self.open_db()?;
         let events = db
-            .get_events_for_file(&file_path.to_string_lossy())
+            .get_events_for_file(&file_path)
             .map_err(|e| format!("Failed to load events: {e}"))?;
 
         let evidence_hash = crate::evidence::compute_events_binding_hash(&events);
