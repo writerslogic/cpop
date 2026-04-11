@@ -11,7 +11,8 @@ use std::fmt::Write;
 pub fn render_html(r: &WarReport) -> String {
     let mut html = String::new();
     html.reserve(48_000);
-    let _ = render_html_inner(&mut html, r);
+    // String::write_fmt is infallible; the expect documents that invariant.
+    render_html_inner(&mut html, r).expect("infallible: String::Write");
     html
 }
 

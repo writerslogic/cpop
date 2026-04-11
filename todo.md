@@ -383,7 +383,7 @@ reason = "blocks reactor; use verify_async from async fn"
 
 - **Model:** Opus | **Scope:** async | **Leverage:** CRITICAL
 - **Files:** `apps/cpop_cli/src/cmd_*.rs`, IPC handler, beacon paths, checkpoint operations
-- **Severity:** HIGH | **Status:** open
+- **Severity:** HIGH | **Status:** fixed 2026-04-11 (spawn_blocking for file/DB/crypto in cmd_commit/anchor/export; tokio::time::sleep in daemon; VDF calibrate)
 - **Priority:** 17/240 | **Estimated time:** 12h
 - **Description:** Broader async issues beyond VDF. Extends SYS-003 logic to file I/O, store access, signature operations in async context. Depends on SYS-021 (lock scope fixes).
 - **Root cause:** No systematic audit for blocking operations in async paths.
@@ -444,7 +444,7 @@ reason = "blocks reactor; use verify_async from async fn"
 
 - **Model:** Sonnet | **Scope:** errors
 - **Files:** `crates/witnessd/src/report/html/mod.rs:16`, `crates/witnessd/src/report/html/css.rs:8`, `crates/witnessd/src/report/pdf/` (entire)
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-11 (only one let _ site; PDF already propagates; .expect("infallible: String::Write") applied)
 - **Priority:** 20/240 | **Estimated time:** 5h
 - **Description:** Renderers discard `fmt::Result` via `let _ = ...`, return partial/corrupted output on error. (Note: String writes are infallible; PDF writes are not. Distinguish via testing.)
 - **Root cause:** Legacy error handling pattern before Result propagation.
@@ -464,7 +464,7 @@ reason = "blocks reactor; use verify_async from async fn"
 
 - **Model:** Sonnet | **Scope:** performance
 - **Files:** `crates/witnessd/src/forensics/velocity.rs:29,86`, `crates/witnessd/src/forensics/writing_mode.rs:206`, analysis modules
-- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (SortedEvents newtype; sort once in pipeline; 5 per-analyzer sorts removed; 1171 tests pass)
 - **Priority:** 21/240 | **Estimated time:** 5h
 - **Description:** Every forensics analyzer defensively sorts its input via `.to_vec() + .sort()`. No pipeline-level guarantee.
 - **Root cause:** Defensive programming; no coordination at pipeline level.
