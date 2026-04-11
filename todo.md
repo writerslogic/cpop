@@ -1,92 +1,679 @@
-# CPOP Project Audit -- Consolidated Findings
+# Audit Todo
 
-<!-- suggest | Updated: 2026-04-09 | Domain: code | Languages: rust | Files: 27 delta + 677 prior + 14 audit-file | Issues: 354 -->
+**Last updated:** 2026-04-10 18:30:00 (7 new SYS tasks added for patterns with 3+ instances; 132 duplicate findings marked as closed)
+**Scopes:** memory, async, performance, errors, security, concurrency, idiomatic, duplicates
+**Total findings:** 1206 | **Systemic tasks:** 31 (2 CRITICAL + 29 SYS) | **Per-site findings remaining:** ~574 (after SYS closes)
 
-**Updated**: 2026-04-09 (audit-file pass on 14 IPC/client/stats/comparison files; 10 fixed, 2 FP, 1 open)
-**Previous audit**: 2026-04-09 session 7 (delta scan); 2026-04-08 session 6; 2026-04-07 session 4
-**Baseline**: 1132 pass, 0 fail, 1 ignored (witnessd --lib)
+## Execution Strategy
 
-## Summary
-| Severity | Open | Fixed (this+prior) | Skipped/FP (this+prior) |
-|----------|------|--------------------|--------------------------|
-| CRITICAL | 0    | 25                 | 17+                      |
-| HIGH     | 0    | 173                | 32+                      |
-| MEDIUM   | 45   | 265                | 24                       |
-| SYSTEMIC | 1    | 9                  | 1                        |
+Execute by criticality and dependency order:
+1. **CRITICAL** (2 tasks, ~2h) - Foundation before SYS work
+2. **SYS Concurrency** (SYS-027, SYS-028, ~12h) - Races + deadlock risk; prerequisite for async
+3. **SYS Security** (SYS-023, SYS-024, ~18h) - TOCTOU + I/O crashes (closes 72 HIGH findings)
+4. **SYS Foundation** (SYS-001..SYS-022, ~65h) - Types, errors, allocation, async patterns
+5. **SYS Maintenance** (SYS-025, SYS-026, SYS-029, ~18h) - Dedup, performance, cleanup
+6. **Per-site HIGH/MEDIUM/LOW** (~80-100h) - Parallel per SYS closes list, residual fixes
+
+**Model key:** Haiku (simple fixes), Sonnet (medium complexity), Opus (large scope/refactoring)
+
+---
+
+## CRITICAL Issues (Priority Order)
+
+### CRITICAL-002: HKDF expand failure silently leaves behavioral key unset
+
+- **Model:** Sonnet | **Scope:** errors
+- **File:** `crates/witnessd/src/sentinel/behavioral_key.rs:63-68`
+- **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** open
+- **Priority:** 1/240 | **Estimated time:** 1.5h
+- **Description:** `add_entropy` method lines 63-68: `if hk.expand(...).is_ok()` discards errors. Failure leaves `active_key` as None. Sentinel keeps running but produces no signatures indefinitely with zero logging. Worst-case failure mode for a signing component.
+- **Root cause:** Error swallowed by `.is_ok()` check; no error propagation to callers.
+- **Fix:**
+  1. Change `add_entropy(&mut self, data: &[u8])` to return `Result<(), Error>`
+  2. Replace `.is_ok()` guard with `?` operator on HKDF expand
+  3. Update all call sites in `sentinel/` to handle `Result`; log at WARN if error
+  4. Add periodic check: if `is_locked() && master_key.is_some()` for >5s, escalate to hard error
+  5. Add test: mock HKDF failure, verify error propagates
+
+```rust
+pub fn add_entropy(&mut self, data: &[u8]) -> Result<(), Error> {
+    let mut hasher = Sha256::new();
+    hasher.update(&self.entropy_pool[..]);
+    hasher.update(data);
+    self.entropy_pool.copy_from_slice(&hasher.finalize());
+    self.last_activity = Instant::now();
+
+    if self.active_key.is_none() {
+        if let Some(ref mk) = self.master_key {
+            let hk = Hkdf::<Sha256>::new(Some(&self.entropy_pool[..]), mk.as_bytes());
+            let mut derived = Zeroizing::new([0u8; 32]);
+            hk.expand(b"witnessd-behavioral-entropy-v1", &mut derived[..])
+                .map_err(|e| Error::crypto(format!("HKDF expand failed: {e}")))?;
+            self.active_key = Some(SigningKey::from_bytes(&derived));
+        }
+    }
+    Ok(())
+}
+```
+
+- **Tests:** sentinel/tests/behavioral_key.rs already exists; add test for HKDF failure path
+- **Closes:** no per-site findings (unique to sentinel)
 
 ---
 
-## Compound Risk
+### CRITICAL-006: Redundant zeroization calls in load_legacy_private_key
 
-- [x] **CLU-001** `timestamp_anchor_bypass`, CRITICAL, components: C-001(fixed), C-002(n/a), C-003(fp) -- RESOLVED 2026-04-07
-  <!-- compound_impact: C-001 fixed (CMS sig verified); C-002 not applicable (Bitcoin/OTS out of scope); C-003 false positive (decode_eat_cwt only called in tests, never in production IPC path) -->
+- **Model:** Sonnet | **Scope:** performance
+- **File:** `crates/witnessd/src/keyhierarchy/migration.rs` (multiple manual `zeroize()` calls)
+- **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 2/240 | **Estimated time:** 1h
+- **Description:** Multiple manual `seed.zeroize()` and `data.zeroize()` calls across error/success branches. Correct but fragile; adding new code paths risks leaving material unwiped.
+- **Root cause:** Manual RAII pattern instead of using Zeroizing<T> wrapper.
+- **Fix:**
+  1. Audit `load_legacy_private_key()` for all `zeroize()` calls
+  2. Replace with `Zeroizing<[u8; N]>` wrappers (already in deps)
+  3. Remove all manual `.zeroize()` calls
+  4. Run `cargo expand` to confirm Drop impl is not optimized out
+  5. Add comment: "RAII cleanup on all paths via Zeroizing<T>"
 
-- [-] **CLU-006** `evidence_integrity_triple_bypass`, CRITICAL, components: C-015, C-016, C-017 -- FALSE POSITIVE 2026-04-07
-  <!-- compound_impact: C-015 FP (sign() already uses ? operator); C-016 FP (verify() checks signature field before proceeding); C-017 FP (HMAC verified per-row before pushing to output via verify_event_row_hmac) -->
+```rust
+use zeroize::Zeroizing;
 
-- [x] **CLU-007** `checkpoint_rollback_surface`, CRITICAL, components: C-019(-fp), C-020(-fp), H-007(fixed) -- RESOLVED 2026-04-07
-  <!-- compound_impact: C-019 FP (at() is an index accessor, not a sequential read API; monotonicity is enforced at commit layer); C-020 FP (verify() receives root from caller, not self-validated peaks); H-007 fixed (MMR root anchored in signed checkpoint; cross-checkpoint proof verification in verify_detailed) -->
+let mut seed: Zeroizing<[u8; 32]> = Zeroizing::new([0u8; 32]);
+seed.copy_from_slice(&data[..32]);
+// Drop handles zeroization on all paths—no manual .zeroize() needed
+```
 
-- [x] **CLU-002** `identity_trust_chain_failure`, CRITICAL, components: C-011(-fixed), C-012(fixed), C-013(-fixed) -- RESOLVED 2026-04-07
-  <!-- compound_impact: C-011 XOR recovery rejected; C-013 no plaintext key fallback; C-012 DID SSRF fixed (hostname blocklist+IP rejection) + H-017 false positive (didwebvh_rs enforces log sig chain by construction) -->
-
-- [x] **CLU-003** `evidence_integrity_false_signal`, CRITICAL, components: C-005(-fp), C-006(fixed), C-008(fixed), C-009(fixed) -- RESOLVED 2026-04-06
-  <!-- compound_impact: C-006 zero-edit returns Inconsistent; C-008 CBOR errors propagate via Result; C-009 broken chain returns Error; C-005 architectural (external trust anchor) -->
-
-- [x] **CLU-004** `report_exposure_cluster`, HIGH, components: C-010(-fp), C-014(fixed) -- RESOLVED 2026-04-06
-  <!-- compound_impact: C-014 HTTP exception removed unconditionally; C-010 false positive (HTML sections use pre-escaped data) -->
-
-- [x] **CLU-005** `ffi_bypass_cluster`, HIGH, components: H-006, H-013, H-025, SYS-007 -- FIXED 2026-04-06
-  <!-- compound_impact: All components fixed: H-006 raised unverified FFI confidence threshold to 0.5; H-013/H-025 both FFI sites use validated_path; SYS-007 evidence_export.rs TOCTOU fixed -->
-
-## Systemic Issues
-
-- [x] **SYS-001** `nan_inf_unguarded`, 8 files (new instances in re-audit), CRITICAL -- FIXED 2026-04-06
-  <!-- pid:nan_inf_unguarded | first:2026-04-06 -->
-  Fixed: analysis.rs:173 (H-005), analysis.rs:549, transcription/audio.rs:145, physics/biological.rs:39. tpm/linux.rs and ipc/async_client.rs had no NaN instances. cpop_jitter_bridge/session.rs (H-019) confirmed false positive.
-
-- [-] **SYS-002** `silent_error_swallow`, 15 files (new instances), HIGH -- TRIAGED 2026-04-06
-  <!-- pid:silent_error | first:2026-04-06 -->
-  rats/eat.rs: C-003 architectural (COSE verification). vc.rs:245: already returns error via sign_error capture. keyhierarchy/recovery.rs: fixed in C-011 (XOR path removed). ffi/sentinel_inject.rs: intentional design (caller doesn't need per-keystroke errors). trust_policy, declaration: no actionable silent swallows found. Remaining in research/collaboration are benign log::warn fallbacks.
-
-- [x] **SYS-003** `business_logic_in_ffi`, 8 files, HIGH -- FIXED 2026-04-07
-  <!-- pid:logic_in_boundary | first:2026-04-06 | updated:2026-04-07 -->
-  Files (session 3): `ffi/sentinel_inject.rs:102`, `ffi/sentinel_witnessing.rs:51`, `ffi/sentinel_witnessing.rs` (chain lookup), `ffi/evidence_export.rs`, `ffi/beacon.rs`, `ffi/attestation.rs`.
-  New instances (session 4): `ffi/ephemeral.rs:565` (C-027 -- WAR proof signing), `ffi/report.rs:198` (C-028 -- full forensic analysis per call).
-  Fix: Move to crate modules; FFI layer should only marshal types and forward to engine.
-
-- [x] **SYS-008** `debug_output_regression`, 1 file, CRITICAL -- FIXED 2026-04-07
-  <!-- pid:no_structured_logging | first:2026-04-07 -->
-  Regression of SYS-004 (fixed 2026-04-02). Instance: `ffi/system.rs:228-255` -- removed `#[cfg(debug_assertions)]` block writing to `/tmp/cpop_list_debug.txt`; replaced with `log::debug!()` calls. See C-025.
-
-- [-] **SYS-004** `hmac_not_verified_on_read`, 3 files, HIGH -- TRIAGED 2026-04-07
-  <!-- pid:missing_validation | first:2026-04-06 -->
-  store/integrity.rs: FALSE POSITIVE -- get_events_for_file/get_all_events_grouped/export_all_events_for_identity all call verify_event_row_hmac before returning events; per-row HMAC IS verified pre-output.
-  sealed_chain.rs:95: FALSE POSITIVE -- AES-GCM AEAD authenticates full payload via auth tag; the "AAD partial" claim misunderstands AEAD; ciphertext is authenticated by the tag, not just the AAD.
-  cpop_jitter_bridge/session.rs: ARCHITECTURAL -- save() has no key parameter; adding file HMAC requires API refactoring across all callers. Deferred.
-
-- [x] **SYS-005** `toctou_file_access`, 5 files, HIGH -- FIXED 2026-04-06
-  <!-- pid:toctou | first:2026-04-06 -->
-  Fixed: core_session.rs (H-002/H-004), helpers.rs (H-010), fingerprint/storage.rs (C-013), engine/watcher.rs (symlink_metadata check). identity/did_webvh.rs: deferred with C-012/H-017 (architectural DID validation).
-
-- [-] **SYS-006** `magic_constants_scoring`, 12 files, MEDIUM -- FALSE POSITIVE 2026-04-06
-  <!-- pid:magic_value | first:2026-04-06 -->
-  Verified: forensics/analysis.rs, war/appraisal.rs, rats/eat.rs all use named constants. continuation.rs and collaboration.rs have no bare float literals. No actionable instances found in remaining files.
-
-- [x] **SYS-007** `ffi_path_validation_discarded`, 3 files, HIGH -- FIXED 2026-04-06
-  <!-- pid:path_traversal | first:2026-04-06 -->
-  Fixed: sentinel_witnessing.rs start_witnessing and stop_witnessing both use &validated_path (H-013/H-025). evidence_export.rs:258 TOCTOU fixed in M-038 (read-once with hash verification).
-
-- [ ] **SYS-009** `nan_in_biometric_analysis`, 3+ files, HIGH
-  <!-- pid:nan_inf_unguarded | first:2026-04-08 -->
-  Files: `fingerprint/activity_analysis.rs:52` (skewness/kurtosis unguarded), `analysis/labyrinth.rs:392` (sort with NaN=Equal), `analysis/lyapunov.rs:193` (regression returns 0.0 on degenerate input)
-  Fix: Filter NaN before statistical operations; return Option from degenerate paths; add is_finite() guards after stats::skewness/kurtosis calls
-
-- [x] **SYS-010** `toctou_in_file_operations`, 2 files, HIGH -- FIXED 2026-04-09
-  <!-- pid:toctou | first:2026-04-08 -->
-  Fix: H-046 (open-then-fstat-then-hash_file_handle) and H-045 (hash_map lock held through exists check) both resolved.
+- **Tests:** keyhierarchy/tests/ — verify key material is zeroed after function exit
+- **Closes:** no per-site findings (specific to migration)
 
 ---
+
+## Systemic Patterns (22 Umbrellas, Priorities 3-24)
+
+### SYS-002: Fixed-size crypto fields as Vec<u8>
+
+- **Model:** Sonnet | **Scope:** idiomatic
+- **File:** `crates/witnessd/src/keyhierarchy/types.rs:13,24,46`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 3/240 | **Estimated time:** 4h
+- **Description:** `MasterIdentity`, `SessionCertificate`, `CheckpointSignature` structs store Ed25519 keys as `Vec<u8>` despite fixed lengths (32 bytes public, 64 bytes signature).
+- **Root cause:** Legacy code before [u8; N] convention adoption.
+- **Fix:**
+  1. Identify all affected field types in keyhierarchy/types.rs
+  2. Change to `[u8; 32]` public keys, `[u8; 64]` signatures
+  3. Update CBOR (de)serialization for each type
+  4. Update DB column types (if applicable)
+  5. Update all verification call sites to use fixed-size arrays
+  6. Add CBOR roundtrip test: serialize → deserialize → byte-equal
+
+- **Closes:** HIGH-062, HIGH-063, HIGH-064, HIGH-065
+
+---
+
+### SYS-001: Shared borrowed hex/base64 serde visitors
+
+- **Model:** Sonnet | **Scope:** idiomatic
+- **Files:** `crates/authorproof-protocol/src/rfc/serde_helpers.rs:27,62,93,124`, `crates/authorproof-protocol/src/rfc/wire_types/serde_helpers.rs`, `crates/witnessd/src/serde_utils.rs:97,140`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 4/240 | **Estimated time:** 5h
+- **Description:** Six deserializers (3 pairs) allocate intermediate `String` before hex/base64 decoding. Copy-pasted across two files in authorproof-protocol + witnessd.
+- **Root cause:** No shared visitor pattern; each site reimplements allocation.
+- **Fix:**
+  1. Create single-source-of-truth: `crates/authorproof-protocol/src/rfc/serde_helpers.rs`
+  2. Implement `BorrowedHexVisitor` and `BorrowedB64Visitor` (zero-copy on valid input)
+  3. Update `wire_types/serde_helpers.rs` to re-export (not duplicate)
+  4. Update witnessd to import from authorproof-protocol if exported, else accept small duplication
+  5. Add `#[test] fn hex_visitor_zero_alloc()` and `b64_visitor_zero_alloc()` using dhat or manual counting
+  6. Verify CBOR roundtrip: hex string → deserialize → bytes → serialize → identical hex
+
+- **Closes:** HIGH-032, HIGH-033, HIGH-034, HIGH-035, HIGH-222, HIGH-223
+
+---
+
+### SYS-006: IpcOperation enum replaces stringly-typed operation keys
+
+- **Model:** Sonnet | **Scope:** memory
+- **Files:** `crates/witnessd/src/ipc/crypto.rs:234`, `crates/witnessd/src/ipc/server_handler.rs` (multiple call sites)
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 5/240 | **Estimated time:** 3h
+- **Description:** Operation identifiers stored as `&str`/`String` keys in HashMaps. Fixed set of ~8 values. Every rate-limit check and log allocates.
+- **Root cause:** String-based enums instead of Rust enums.
+- **Fix:**
+  1. Define `enum IpcOperation { Attest, Sign, Verify, ... }` (8 variants)
+  2. Replace RateLimiter key type from String to IpcOperation
+  3. Update all rate-limit check call sites
+  4. Replace format!(operation: {}) with Debug derive (no allocation)
+  5. Update access-info structs to store IpcOperation instead of String
+  6. Add tests: verify no allocations in hot path via criterion or custom bench
+
+- **Closes:** HIGH-009, HIGH-228, HIGH-229, HIGH-230, HIGH-231
+
+---
+
+### SYS-012: Byte-slice parameters should be &[u8]; fixed-array conversion helper
+
+- **Model:** Sonnet | **Scope:** idiomatic
+- **Files:** `crates/witnessd/src/crypto/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/fingerprint/` (multiple)
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 6/240 | **Estimated time:** 6h
+- **Description:** Functions take `Vec<u8>` by value when they only read. Wastes ownership transfer in every call.
+- **Root cause:** Legacy API design before slice-friendly patterns.
+- **Fix:**
+  1. Audit all function signatures taking `Vec<u8>` parameter
+  2. Change to `&[u8]` (no ownership transfer)
+  3. Update call sites to pass `&vec` or `&slice`
+  4. Add helper in utils: `fn to_array_32(slice: &[u8]) -> Result<[u8; 32], LengthError>` and variants for 16, 64
+  5. Use helper at conversion boundaries
+  6. Run clippy to catch remaining pattern matches
+
+- **Closes:** HIGH-044, HIGH-528, and 8+ related parameter-type issues
+
+---
+
+### SYS-011: Path parameters should accept &Path / impl AsRef<Path>
+
+- **Model:** Sonnet | **Scope:** idiomatic
+- **Files:** `apps/cpop_cli/src/cmd_*.rs`, `crates/witnessd/src/wal/operations.rs:22-27`, checkpoint, store modules
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 7/240 | **Estimated time:** 4h
+- **Description:** Functions take `String` or `&str` for file paths. Should accept `impl AsRef<Path>` for flexibility (works with Path, &str, String, OsStr).
+- **Root cause:** Pre-Path API era code.
+- **Fix:**
+  1. Identify all functions taking path as String or &str
+  2. Change to `path: impl AsRef<Path>`
+  3. Use `.as_ref()` internally where needed
+  4. Test with `Path::new()`, `"literal"`, `String::from()` variants
+  5. Verify error messages still include path info
+
+- **Closes:** Multiple HIGH path-parameter findings
+
+---
+
+### SYS-014: Constant identifier strings as &'static str / Cow<'static, str>
+
+- **Model:** Sonnet | **Scope:** memory
+- **Files:** Domain-separation constants across `crates/witnessd/src/crypto/`, `crates/witnessd/src/checkpoint/`, `crates/witnessd/src/utils/`, `crates/witnessd/src/evidence/`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 8/240 | **Estimated time:** 2h
+- **Description:** String literals allocated on each reference via `.to_string()` or `String::from()`. Examples: `"witnessd-checkpoint-v3"`, `"wld-engine/"`. Should use static `&str`.
+- **Root cause:** Habit of creating String instead of using &'static str.
+- **Fix:**
+  1. Find all `const` strings that get `.to_string()` wrapped
+  2. Define as `const DOMAIN_SEP: &str = "witnessd-checkpoint-v3";` at module level
+  3. Use directly in hash/DST calls (no allocation)
+  4. Run `grep -r "to_string\|String::from" crates/witnessd/src/crypto/ crates/witnessd/src/checkpoint/` to catch stragglers
+
+- **Closes:** HIGH-271, HIGH-323, related allocation findings
+
+---
+
+### SYS-015: Use hex crate; consolidate decode-and-length-check
+
+- **Model:** Sonnet | **Scope:** idiomatic
+- **Files:** `crates/witnessd/src/utils/`, `crates/authorproof-protocol/src/rfc/`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 9/240 | **Estimated time:** 3h
+- **Description:** Repeated hex decoding patterns with manual length validation. No single point of validation.
+- **Root cause:** Reinventing the wheel instead of using hex crate helpers.
+- **Fix:**
+  1. Consolidate hex decoding helpers using `hex` crate (already in Cargo.toml)
+  2. Use `hex::FromHex` trait or `hex::decode()` for central validation
+  3. Test edge cases: empty string, odd-length string, invalid characters
+  4. Replace all manual validation loops with single helper
+
+- **Closes:** HIGH-339, HIGH-340, codec validation findings
+
+---
+
+### SYS-009: Allocation discipline sweep (to_string on literals, Vec of static strs)
+
+- **Model:** Haiku | **Scope:** memory
+- **Files:** Widespread across `apps/cpop_cli/`, `crates/witnessd/src/sentinel/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/analysis/`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 10/240 | **Estimated time:** 2h
+- **Description:** `.to_string()` on string literals ("auto", "default"), `vec![]` of constants. Each allocates unnecessarily.
+- **Root cause:** Lazy allocation pattern; no thought to hot-path overhead.
+- **Fix:**
+  1. One-pass grep sweep: `grep -r '"\w\+".to_string()' crates/`
+  2. Replace each with `"literal"` directly (let type inference work)
+  3. For Vec of constants: use `&[CONST1, CONST2]` instead of `vec![CONST1, CONST2]`
+  4. Static arrays: `const DEFAULTS: &[&str] = &["auto", "default"];`
+
+- **Closes:** HIGH-023, HIGH-277, HIGH-281, and ~30 memory findings
+
+---
+
+### SYS-010: Missing derive completeness via clippy lint
+
+- **Model:** Haiku | **Scope:** idiomatic
+- **Files:** Project-wide (crates/witnessd/src/lib.rs, Cargo.toml clippy config)
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 11/240 | **Estimated time:** 1h
+- **Description:** Public types missing `Debug` derive. Clippy can enforce with lint.
+- **Root cause:** No linting requirement for derived traits.
+- **Fix:**
+  1. Add to crates/witnessd/src/lib.rs: `#![warn(missing_debug_implementations)]`
+  2. Run `cargo clippy --workspace -- -W missing_debug_implementations`
+  3. For each flagged type: add `derive(Debug)` or `#[automatically_derived]` comment
+  4. Some types may need custom Debug (e.g., crypto keys that should redact content)
+
+- **Closes:** MEDIUM-741, MEDIUM-742, related derive issues
+
+---
+
+### SYS-018: Linear search over small fixed sets → match / matches! / const lookup
+
+- **Model:** Haiku | **Scope:** performance
+- **Files:** `crates/witnessd/src/mmr/mmr.rs:139`, `crates/witnessd/src/anchors/mod.rs:113`, `crates/witnessd/src/ipc/crypto.rs:234`
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 12/240 | **Estimated time:** 2h
+- **Description:** `iter().find()` or `Vec::contains` over constant slices. ~8 values or fewer each.
+- **Root cause:** Habit of linear search; no consideration of set size.
+- **Fix:**
+  1. Identify all linear searches on constant data
+  2. If ≤8 values: use `matches!(x, A | B | C | D)`
+  3. If 8-20 values: use const array with binary search or perfect hash
+  4. If >20: switch to `HashSet` (with lazy_static or once_cell)
+  5. Benchmark before/after to quantify improvement
+
+- **Closes:** HIGH-241, HIGH-286, HIGH-293, HIGH-294, HIGH-335, HIGH-340, ~7 MEDIUM sites
+
+---
+
+### SYS-017: Single-pass Welford accumulator for forensic statistics
+
+- **Model:** Haiku | **Scope:** performance
+- **Files:** `crates/witnessd/src/utils/stats.rs` (helper already exists), call sites in `crates/witnessd/src/forensics/`
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 13/240 | **Estimated time:** 1.5h
+- **Description:** Forensic analyzers compute variance with repeated passes over events. Single-pass Welford helper already exists in utils/stats.rs but not used consistently.
+- **Root cause:** Multiple implementations instead of consolidation.
+- **Fix:**
+  1. Audit utils/stats.rs: confirm `mean_and_variance()` exists and works
+  2. Identify all variance/stddev computation sites in forensics/
+  3. Replace two-pass loops with calls to `mean_and_variance()`
+  4. Remove per-analyzer allocations for temporary Vec copies
+
+- **Closes:** HIGH-190, HIGH-191, related variance-calculation findings
+
+---
+
+### SYS-013: Clone-on-read accessor audit (return &T or Arc<T>)
+
+- **Model:** Sonnet | **Scope:** memory
+- **Files:** `crates/witnessd/src/fingerprint/manager.rs`, `crates/witnessd/src/identity/keychain.rs`, analysis modules
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 14/240 | **Estimated time:** 5h
+- **Description:** Getter functions return owned clone of read-only data (e.g., `fn get_profile(&self) -> Profile` where callers only read). Clone is wasteful.
+- **Root cause:** Ownership-safety habit; not considering borrowing or shared pointers.
+- **Fix:**
+  1. Audit manager and accessor modules for getter patterns
+  2. For each: determine if interior mutability allows &T return
+  3. If not: change to return `Arc<T>` or store reference in caller
+  4. Add borrowing examples in tests to demonstrate zero-copy access
+  5. Profile before/after to confirm reduction in heap allocations
+
+- **Closes:** HIGH-093, HIGH-094, HIGH-202, clone-on-read findings
+
+---
+
+### SYS-021: Lock scope must not span blocking I/O (snapshot-and-release)
+
+- **Model:** Opus | **Scope:** async | **Leverage:** HIGH
+- **Files:** `crates/witnessd/src/wal/operations.rs`, `crates/witnessd/src/wal/types.rs:167`, `crates/witnessd/src/mmr/mmr.rs:9`, `crates/witnessd/src/sentinel/shadow.rs:155`
+- **Severity:** HIGH | **Status:** open
+- **Priority:** 15/240 | **Estimated time:** 10h
+- **Description:** Mutex/RwLock guards held across multi-step I/O (fdatasync, fs::rename, store loops). All readers/writers block on entire I/O duration instead of just critical section.
+- **Root cause:** Lock acquired too early; not released before I/O.
+- **Fix:**
+  1. Identify all Mutex/RwLock guards spanning fs:: or store:: I/O in listed files
+  2. Adopt "snapshot-and-release" pattern: acquire lock → copy needed fields → drop lock → do I/O → reacquire if needed
+  3. Example WAL two-phase: compute offsets under lock → release → write+fsync → re-acquire briefly to commit index
+  4. Add CLAUDE.md invariant: "Mutex/RwLock guards must never span fs:: or store:: I/O"
+  5. Add clippy-like custom lint (or use `await_holding_lock` pattern for sync)
+
+- **Closes:** HIGH-112, HIGH-117, HIGH-118, HIGH-119, HIGH-120, MEDIUM-496, MEDIUM-497, MEDIUM-498, MEDIUM-501, MEDIUM-503
+
+---
+
+### SYS-003: Async-blocking VDF and hash chain operations
+
+- **Model:** Sonnet | **Scope:** async
+- **Files:** `crates/witnessd/src/vdf/proof.rs` (compute, verify methods), `apps/cpop_cli/src/cmd_commit.rs:83`
+- **Severity:** HIGH | **Leverage:** CRITICAL | **Status:** open
+- **Priority:** 16/240 | **Estimated time:** 4h
+- **Description:** VDF and hash-chain loops are CPU-bound (seconds) with no enforcement against being called from Tokio task. Fixing one call site leaves others exposed. Callers live in cpop_cli, not witnessd; wrappers in witnessd, config in cpop_cli.
+- **Root cause:** No async wrappers; sync functions directly called from async code.
+- **Fix:**
+  1. Add `compute_async()` and `verify_async()` wrappers in `crates/witnessd/src/vdf/proof.rs`
+  2. Wrappers use `tokio::task::spawn_blocking(|| self.compute_sync())`
+  3. Mark sync versions `#[deprecated(since = "0.4", note = "use *_async from async fn")]`
+  4. Update cpop_cli call sites to use async versions and `.await`
+  5. Add to `apps/cpop_cli/clippy.toml`:
+
+```toml
+[[disallowed-methods]]
+path = "witnessd::vdf::proof::VdfProof::compute"
+reason = "blocks reactor; use compute_async from async fn"
+
+[[disallowed-methods]]
+path = "witnessd::vdf::proof::VdfProof::verify"
+reason = "blocks reactor; use verify_async from async fn"
+```
+
+- **Closes:** HIGH-011, HIGH-012, VDF async-blocking findings
+
+---
+
+### SYS-016: Blocking I/O and CPU work on the Tokio reactor (broader than VDF)
+
+- **Model:** Opus | **Scope:** async | **Leverage:** CRITICAL
+- **Files:** `apps/cpop_cli/src/cmd_*.rs`, IPC handler, beacon paths, checkpoint operations
+- **Severity:** HIGH | **Status:** open
+- **Priority:** 17/240 | **Estimated time:** 12h
+- **Description:** Broader async issues beyond VDF. Extends SYS-003 logic to file I/O, store access, signature operations in async context. Depends on SYS-021 (lock scope fixes).
+- **Root cause:** No systematic audit for blocking operations in async paths.
+- **Fix:**
+  1. Audit all async contexts in cpop_cli for blocking operations
+  2. File I/O: wrap fs:: calls in `spawn_blocking`
+  3. Store access: wrap store.get/append in `spawn_blocking`
+  4. Crypto: wrap ed25519 signing in `spawn_blocking`
+  5. Profile with perf/flame to identify hot paths
+  6. Consider caching commonly-accessed data to reduce spawn_blocking frequency
+  7. Depends on SYS-021 for lock correctness before spawning
+
+- **Closes:** HIGH-226, HIGH-227, async-blocking findings across CLI/IPC
+
+---
+
+### SYS-004: Silent error swallowing (Result<_, String>, log-and-continue)
+
+- **Model:** Opus | **Scope:** errors | **Leverage:** CRITICAL
+- **Files:** `crates/witnessd/src/trust_policy/evaluation.rs:79`, `crates/witnessd/src/fingerprint/manager.rs:80`, report, rfc_conversion modules
+- **Severity:** HIGH | **Status:** open
+- **Priority:** 18/240 | **Estimated time:** 16h
+- **Description:** Library functions return non-Result types, log on failure, lose error context. ~109 grep hits on `Result<_, String>` across crate.
+- **Root cause:** Early API design with stringly-typed errors; no unified error type.
+- **Fix:**
+  1. Enumerate all functions returning non-Result that should: trust_policy, fingerprint, report, rfc_conversion modules
+  2. Module-by-module conversion plan (start with trust_policy, then fingerprint)
+  3. Replace `Result<T, String>` with `Result<T, Error>` using `crate::error::Error` enum
+  4. Add new error variants where existing ones don't fit: `Error::TrustPolicy(TpErr)`, `Error::Fingerprint(FpErr)`
+  5. Ban `let _ = result;` on fallible calls via clippy lint `let_underscore_must_use`
+  6. Add tests: verify errors propagate correctly
+
+- **Closes:** HIGH-016, HIGH-037, HIGH-191, HIGH-192, HIGH-200, error-swallowing findings
+
+---
+
+### SYS-005: Silent default-fallback on malformed input (rfc_conversion)
+
+- **Model:** Sonnet | **Scope:** errors
+- **File:** `crates/witnessd/src/evidence/rfc_conversion.rs` (not `rfc_conversions.rs`)
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 19/240 | **Estimated time:** 4h
+- **Description:** `From<&Packet> for rfc::PacketRfc` is infallible, emits zero-defaults ("en-US", zero hashes) on missing fields. Forensically dangerous: produces valid-looking output from corrupt input.
+- **Root cause:** Infallible trait and silent defaults instead of errors.
+- **Fix:**
+  1. Introduce `RfcConversionError` enum: `MissingField(field_name)`, `InvalidValue(reason)`
+  2. Change to `impl TryFrom<&Packet> for rfc::PacketRfc` with error return
+  3. Audit every branch: either propagate error or document default with rationale comment
+  4. No more silent "en-US" or zero-hash fallbacks
+  5. Update callers to handle `TryFrom` error (propagate or log/fail gracefully)
+  6. Depends on SYS-004 error enum foundation
+
+- **Closes:** HIGH-015, HIGH-226, rfc conversion findings
+
+---
+
+### SYS-007: Renderer modules must return Result (html + pdf)
+
+- **Model:** Sonnet | **Scope:** errors
+- **Files:** `crates/witnessd/src/report/html/mod.rs:16`, `crates/witnessd/src/report/html/css.rs:8`, `crates/witnessd/src/report/pdf/` (entire)
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 20/240 | **Estimated time:** 5h
+- **Description:** Renderers discard `fmt::Result` via `let _ = ...`, return partial/corrupted output on error. (Note: String writes are infallible; PDF writes are not. Distinguish via testing.)
+- **Root cause:** Legacy error handling pattern before Result propagation.
+- **Fix:**
+  1. Add `Report(String)` variant to `crate::error::Error` (or dedicated `ReportError` in report/mod.rs)
+  2. Identify all `render_*` functions and helpers discarding fmt::Result
+  3. For PDF: real errors → propagate with `?`
+  4. For String writes (infallible): use `.expect("infallible: String::Write")` with comment
+  5. Test: verify partial output never occurs on write failure
+  6. Depends on SYS-004 error enum foundation
+
+- **Closes:** HIGH-018, HIGH-185, HIGH-206
+
+---
+
+### SYS-008: Sorted-events invariant for forensics pipeline
+
+- **Model:** Sonnet | **Scope:** performance
+- **Files:** `crates/witnessd/src/forensics/velocity.rs:29,86`, `crates/witnessd/src/forensics/writing_mode.rs:206`, analysis modules
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 21/240 | **Estimated time:** 5h
+- **Description:** Every forensics analyzer defensively sorts its input via `.to_vec() + .sort()`. No pipeline-level guarantee.
+- **Root cause:** Defensive programming; no coordination at pipeline level.
+- **Fix:**
+  1. Introduce `SortedEvents<'a>(&'a [EventData])` newtype in `crates/witnessd/src/forensics/mod.rs`
+  2. Sort once at pipeline entry (forensics_engine.rs analyze_forensics())
+  3. Update all analyzer signatures: `analyze_velocity(sorted: SortedEvents<'_>)` instead of `analyze_velocity(events: &[EventData])`
+  4. Remove per-analyzer `.to_vec() + .sort()` calls
+  5. Add invariant check: audit downstream to ensure no re-sorting
+
+- **Closes:** HIGH-045, HIGH-046, HIGH-047, clone-to-sort findings
+
+---
+
+### SYS-020: Reject-or-propagate policy for non-finite (NaN/Inf) values
+
+- **Model:** Sonnet | **Scope:** errors
+- **Files:** `crates/witnessd/src/forensics/forgery_cost.rs:315`, `crates/witnessd/src/forensics/topology.rs:28`, `crates/witnessd/src/utils/stats.rs:127`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 22/240 | **Estimated time:** 4h
+- **Description:** NaN/Inf silently coerced to defaults (0.0, 0.5, f64::MAX) or fall back to `Ordering::Equal`. No logging or error propagation.
+- **Root cause:** No explicit policy for finiteness validation.
+- **Fix:**
+  1. Project-wide policy: validate finite at trust boundary, reject or log explicitly
+  2. Add `fn finite(x: f64) -> Result<f64, NotFinite>` to `crates/witnessd/src/utils/stats.rs`
+  3. Use `f64::total_cmp` (stable since Rust 1.62, within MSRV 1.75) instead of `partial_cmp().unwrap_or(Equal)`
+  4. Audit sites: HIGH-310 (geometric mean NaN at :315) is highest priority (silent exclusion from hash input)
+  5. Add tests: verify NaN/Inf rejection at all boundaries
+
+- **Closes:** HIGH-310, MEDIUM-366, MEDIUM-644, NaN-handling findings
+
+---
+
+### SYS-019: Probability(f64) newtype for [0,1]-bounded fields
+
+- **Model:** Opus | **Scope:** idiomatic | **Leverage:** CRITICAL
+- **Files:** 40+ sites across forensics, fingerprint, analysis, evidence, ffi, war modules
+- **Severity:** HIGH | **Status:** open
+- **Priority:** 23/240 | **Estimated time:** 20h
+- **Description:** ~40 struct fields mathematically bounded to [0.0, 1.0] (probability, rate, ratio, score, confidence, similarity, weight) stored as raw `f64`. No type-level enforcement. Defensive `.clamp()` calls everywhere (~34 sites).
+- **Root cause:** No newtype wrapper; raw f64 allows any value.
+- **Fix:** (Incremental, staged by module)
+  1. Create `struct Probability(f64)` in `crates/witnessd/src/utils/probability.rs`
+  2. Implement `new(f64) -> Result<Self, ProbabilityError>` with validation
+  3. Constants: `Probability::ZERO`, `Probability::ONE`
+  4. `Deref` to f64 for math compatibility during transition
+  5. Stage migration by dependency: utils → forensics → fingerprint → analysis → ffi (last, public ABI)
+  6. For each module: (a) add field types, (b) update constructors, (c) update consumers, (d) delete clamps, (e) test
+  7. Final cleanup: remove `Deref`, require explicit `.get()` on boundaries
+
+- **Closes:** HIGH-312, supersedes nan_biometric pattern
+
+---
+
+### SYS-022: Typed secure-channel error enums (eliminate dummy EncryptedMessage placeholders)
+
+- **Model:** Sonnet | **Scope:** errors | **Leverage:** CRITICAL
+- **Files:** `crates/witnessd/src/ipc/secure_channel.rs:71,84,98,122,128,145,160`, sentinel IPC sites
+- **Severity:** HIGH | **Status:** open
+- **Priority:** 24/240 | **Estimated time:** 5h
+- **Description:** `SecureSender::send` returns `Result<(), SendError<EncryptedMessage>>`. Errors construct fake `{ nonce: [0; 12], ciphertext: vec![] }`. Erases distinctions, fabricates invalid crypto. Security-relevant.
+- **Root cause:** Generic SendError forces dummy construction; no typed error variants.
+- **Fix:**
+  1. Define `SecureChannelSendError` enum: Serialization, Encryption, NonceExhausted, Channel
+  2. Define `SecureChannelRecvError` enum: Decryption, PayloadTooLarge, Deserialization, Channel
+  3. Change return type from `Result<(), SendError<EncryptedMessage>>` to `Result<(), SecureChannelSendError>`
+  4. Replace all dummy constructions with typed variants
+  5. Log `SecureChannelRecvError::Decryption` at WARN with caller context (pid/uid) for audit trail
+  6. Update IPC server/client to match on new variants
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum SecureChannelSendError {
+    #[error("serialization failed: {0}")]
+    Serialization(#[from] bincode::error::EncodeError),
+    #[error("AEAD encryption failed")]
+    Encryption,
+    #[error("nonce counter exhausted; channel must be re-keyed")]
+    NonceExhausted,
+    #[error("channel closed")]
+    Channel,
+}
+```
+
+- **Closes:** HIGH-174, HIGH-175, HIGH-176, MEDIUM-371, MEDIUM-431, MEDIUM-432, MEDIUM-433, MEDIUM-706, MEDIUM-898
+
+---
+
+
+### SYS-023: TOCTOU and symlink attacks (file/path race conditions)
+
+- **Model:** Opus | **Scope:** security
+- **Files:** `crates/witnessd/src/sentinel/core_session.rs:36`, `crates/witnessd/src/sentinel/helpers.rs:620`, `crates/witnessd/src/wal/operations.rs:97,105,393,682`, `crates/witnessd/src/platform/windows.rs`, `crates/witnessd/src/engine/watcher.rs:78-97,105`
+- **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** open
+- **Priority:** 25/240 | **Estimated time:** 12h
+- **Description:** 28 instances across filesystem operations where file/path checks performed separately from subsequent I/O. Attacker can substitute files via symlinks, renames, or deletes between check and use. Examples: H-004 (symlink in session path), H-008 (WAL state before fsync), H-010 (symlink hash), H-045/H-046 (TOCTOU in rename detection).
+- **Root cause:** Check-then-use pattern without atomic operations or file identity validation at I/O time.
+- **Fix:**
+  1. Audit all filepath checks followed by I/O operations
+  2. Replace with atomic operations where possible: O_NOFOLLOW, O_EXCL, O_CREAT|O_EXCL on Unix; symlink rejection on Windows
+  3. Use canonicalize() before session operations; reject symlinks explicitly
+  4. Validate file identity at I/O time: fstat after open, compare inodes
+  5. For WAL: update state fields AFTER fsync returns, not before
+  6. Add tests: symbolic link injection, file rename during operation, file delete during operation
+  
+- **Closes:** HIGH-004, HIGH-008, HIGH-010, HIGH-012, HIGH-035(fp→real), HIGH-045, HIGH-046, and ~21 MEDIUM/LOW TOCTOU findings
+
+---
+
+### SYS-024: Unwrap/expect on fallible I/O operations (crash on recoverable errors)
+
+- **Model:** Sonnet | **Scope:** errors
+- **Files:** `crates/witnessd/src/sentinel/helpers.rs:517,620`, `crates/witnessd/src/war/verification.rs:512`, `crates/witnessd/src/wal/operations.rs:682`, `crates/witnessd/src/crypto.rs:125,89`, and 4+ others
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 26/240 | **Estimated time:** 6h
+- **Description:** 9 instances where expect/unwrap called on I/O results that can legitimately fail (file reads, copy_from_slice on mismatched length, arithmetic underflow). Examples: H-032 (CA key unwrap), H-038 (arithmetic underflow), H-006 (copy_from_slice panic).
+- **Root cause:** Assumption that I/O will succeed; no error propagation path.
+- **Fix:**
+  1. Replace all expect/unwrap on I/O with Result propagation via ?
+  2. Use checked_sub, checked_div for arithmetic on untrusted data
+  3. Add length validation before copy_from_slice: if data.len() != expected { return Err }
+  4. Wrap file I/O in Results; propagate errors up the stack
+  5. Add integration tests: truncated files, invalid lengths, arithmetic edge cases
+  
+- **Closes:** HIGH-006, HIGH-032, HIGH-038, MEDIUM-024, MEDIUM-025, and 4+ related findings
+
+---
+
+### SYS-025: Duplicated logic across modules (inconsistency risk)
+
+- **Model:** Sonnet | **Scope:** maintenance
+- **Files:** `crates/witnessd/src/forensics/` (analysis.rs, comparison.rs, cross_modal.rs), `crates/witnessd/src/ffi/` (multiple), `crates/witnessd/src/report/`
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 27/240 | **Estimated time:** 8h
+- **Description:** 9 instances of same operation/calculation reimplemented in 3+ places: confidence scoring, variance calculation, similarity normalization, validation patterns. Risk: changes to one instance miss others; bugs replicated across modules.
+- **Root cause:** No shared utility; each module solves problem independently.
+- **Fix:**
+  1. Audit forensics modules for repeated patterns: variance, confidence, similarity
+  2. Extract shared implementations to `utils/forensic_helpers.rs` or submodule
+  3. Update all call sites to use single implementation
+  4. Add integration tests verifying consistency across all callers
+  5. Document canonical implementation in module docstring
+  
+- **Closes:** 9 duplicated_logic findings (exact issue IDs to be mapped from analysis)
+
+---
+
+### SYS-026: Clone in loops / hot-path allocations (performance regression)
+
+- **Model:** Sonnet | **Scope:** performance
+- **Files:** `crates/witnessd/src/forensics/` (loop-based analyzers), `crates/witnessd/src/ffi/` (polling loops), `crates/witnessd/src/report/` (rendering loops)
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 28/240 | **Estimated time:** 6h
+- **Description:** 9-16 instances of .clone() called repeatedly in loops or hot paths. At 1KB per clone × 100 iterations = 100KB per second; on moderate dataset (1000 events) = 100MB+ temporary allocation per analysis pass.
+- **Root cause:** Lazy allocation pattern; no optimization for loop performance.
+- **Fix:**
+  1. Profile identified loops: use valgrind/heaptrack to measure allocations
+  2. Replace clone with references where lifetime permits
+  3. Pre-allocate buffers before loops; reuse across iterations
+  4. Convert nested vecs to iterator chains
+  5. Benchmark before/after: verify improvement >= 20% for hot paths
+  6. Add criterion benchmarks to prevent regression
+  
+- **Closes:** 9-16 clone_in_loop/alloc_in_loop findings
+
+---
+
+### SYS-027: Data race and concurrent access issues (undefined behavior)
+
+- **Model:** Opus | **Scope:** concurrency
+- **Files:** `crates/witnessd/src/sentinel/core.rs:614`, `crates/witnessd/src/ipc/crypto.rs` (rate limit), `crates/witnessd/src/ffi/sentinel_inject.rs:74`
+- **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** open
+- **Priority:** 29/240 | **Estimated time:** 8h
+- **Description:** 6 instances of non-atomic operations on shared state or check-then-act races without holding lock across both steps. H-001: session state changes between read release and write acquire. H-017: rate_limit fetch_add race allows burst > limit.
+- **Root cause:** Lock released before action; state assumption becomes invalid.
+- **Fix:**
+  1. Identify all check-then-act patterns in shared state access
+  2. Convert to atomic acquire-then-check: hold lock from read through modification
+  3. Use AtomicU64/AtomicUsize for counters; avoid fetch_add races
+  4. Keep lock scope minimal; don't hold across I/O
+  5. Add concurrent stress tests (tokio::spawn 100 tasks, race on same state)
+  6. Document lock scope invariants per module
+  
+- **Closes:** HIGH-001, HIGH-017, and 4+ data_race findings
+
+---
+
+### SYS-028: Lock ordering violations and deadlock risk (circular wait)
+
+- **Model:** Sonnet | **Scope:** concurrency
+- **Files:** `crates/witnessd/src/sentinel/core.rs`, `crates/witnessd/src/keyhierarchy/`, `crates/witnessd/src/wal/`, `crates/witnessd/src/mmr/`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Priority:** 30/240 | **Estimated time:** 4h
+- **Description:** 5 instances where Mutex/RwLock pairs acquired in inconsistent order across code. Some paths acquire `signing_key` then `sessions`; others reverse. Risk: circular wait deadlock under concurrent load.
+- **Root cause:** No enforced global lock ordering invariant.
+- **Fix:**
+  1. Document lock ordering in CLAUDE.md: "signing_key < sessions < store < wal" (example ordering)
+  2. Audit all Mutex/RwLock sites to conform to invariant
+  3. Consider adding enforce_lock_ordering macro/module to detect violations at compile time
+  4. Refactor to minimize nested locks; prefer flat structures
+  5. Add test: concurrent tasks that would deadlock with wrong ordering
+  
+- **Closes:** 5 lock_ordering findings
+
+---
+
+### SYS-029: Resource cleanup / RAII violations (leak and handle exhaustion)
+
+- **Model:** Sonnet | **Scope:** resource management
+- **Files:** `crates/witnessd/src/tpm/linux.rs:327`, `crates/witnessd/src/wal/operations.rs`, `crates/witnessd/src/store/`, `crates/witnessd/src/ipc/`
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Priority:** 31/240 | **Estimated time:** 4h
+- **Description:** 5 instances where file handles, TPM handles, or database connections not properly released on all code paths. H-050: TPM flush_context() error logged but ignored; accumulates unflushed handles. Risk: handle exhaustion, leaked file descriptors.
+- **Root cause:** Manual cleanup instead of RAII; error paths miss cleanup.
+- **Fix:**
+  1. Audit all open/acquire operations for corresponding close/release
+  2. Implement Drop trait for all resource types; call cleanup in Drop
+  3. Use scoped guards (parking_lot::Once, RAII pattern) instead of manual close
+  4. Test error paths: mock I/O failures, verify cleanup occurs
+  5. Use strace/lsof to confirm no leaked file descriptors after test suite
+  
+- **Closes:** 5 no_resource_cleanup findings
 
 ## Critical
 
@@ -438,9 +1025,9 @@
   <!-- pid:toctou | verified:false | first:2026-04-08 | resolved:2026-04-09 -->
   start_session() takes &mut self; PresenceVerifier is not Sync. Exclusive mutable access prevents concurrent calls by construction.
 
-- [ ] **H-057** `[error_handling]` `presence/verifier.rs:129`: Chrono Duration conversion failure silently defaults to 60s; no config validation
+- [ ] **H-057** `[error_handling]` `presence/verifier.rs:129`: Chrono Duration conversion failure silently defaults to 60s; no config validation | **Model:** Haiku
   <!-- pid:silent_error | verified:true | first:2026-04-08 -->
-  Impact: Misconfigured response_window silently degrades challenge timing | Fix: Return Result on conversion failure; validate interval_variance bounds | Effort: small
+  Impact: Misconfigured response_window silently degrades challenge timing | Fix: Return Result on conversion failure; validate interval_variance bounds
 
 - [x] **H-058** `[architecture]` `collaboration.rs:126`: Attestation signatures stored but never verified; deferred indefinitely -- FIXED 2026-04-09
   <!-- pid:missing_validation | verified:analytical | first:2026-04-08 -->
@@ -450,9 +1037,9 @@
   <!-- pid:no_backpressure | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
   Range validation at lines 250-256: if *end >= total_checkpoints { return Err(...) }. Prevents oversized iteration.
 
-- [ ] **H-060** `[architecture]` `trust_policy/evaluation.rs:42`: CustomFormula silently falls back to WeightedAverage without error
+- [ ] **H-060** `[architecture]` `trust_policy/evaluation.rs:42`: CustomFormula silently falls back to WeightedAverage without error | **Model:** Sonnet
   <!-- pid:silent_error | verified:true | first:2026-04-08 -->
-  Impact: Policy intent violated; auditors cannot detect degraded mode | Fix: Return Result indicating formula unavailability | Effort: medium
+  Impact: Policy intent violated; auditors cannot detect degraded mode | Fix: Return Result indicating formula unavailability
 
 - [x] **H-061** `[security]` `fingerprint/activity_analysis.rs:52-105`: NaN/Inf from skewness/kurtosis propagates into IkiDistribution -- ALREADY FIXED
   <!-- pid:nan_inf_unguarded | verified:true | first:2026-04-08 | systemic:SYS-009 | resolved:2026-04-09 -->
@@ -480,45 +1067,45 @@
 
 ## Medium (session 7 -- delta scan)
 
-- [ ] **M-049** `[maintainability]` `war/verification.rs:511`: CA_KEY_RING hardcoded with not_after 2036-03-18; no config-based key rotation
+- [ ] **M-049** `[maintainability]` `war/verification.rs:511`: CA_KEY_RING hardcoded with not_after 2036-03-18; no config-based key rotation | **Model:** Haiku
   <!-- pid:hardcoded_config | verified:true | first:2026-04-09 -->
-  Impact: Key rotation requires code change and redeploy; no runtime key update mechanism | Fix: Load CA keys from config file or embed rotation logic | Effort: large
+  Impact: Key rotation requires code change and redeploy; no runtime key update mechanism | Fix: Load CA keys from config file or embed rotation logic
 
 - [x] **M-050** `[error_handling]` `ffi/ephemeral.rs:268`: store.add_secure_event() error logged but checkpoint returns success to caller -- FIXED 2026-04-09
   <!-- pid:silent_error | verified:true | first:2026-04-09 -->
   Fix: Store errors now surfaced in FfiResult.error_message for both checkpoint and checkpoint_hash paths.
 
-- [ ] **M-051** `[security]` `fingerprint/storage.rs:39`: encryption_key field is bare [u8; 32], not Zeroizing<[u8; 32]>
+- [ ] **M-051** `[security]` `fingerprint/storage.rs:39`: encryption_key field is bare [u8; 32], not Zeroizing<[u8; 32]> | **Model:** Haiku
   <!-- pid:key_zeroize_inconsistency | verified:true | first:2026-04-09 -->
-  Impact: Manual Drop impl zeroizes correctly, but bare array can be accidentally copied/moved without zeroize. Zeroizing<> prevents this by construction | Fix: Change field to Zeroizing<[u8; KEY_SIZE]> and remove manual Drop impl | Effort: small
+  Impact: Manual Drop impl zeroizes correctly, but bare array can be accidentally copied/moved without zeroize. Zeroizing<> prevents this by construction | Fix: Change field to Zeroizing<[u8; KEY_SIZE]> and remove manual Drop impl
 
 - [x] **M-052** `[performance]` `ffi/ephemeral.rs:150`: evict_stale_sessions() called on every FFI checkpoint/finalize; O(n) iteration over all sessions -- FIXED 2026-04-09
   <!-- pid:alloc_in_loop | verified:true | first:2026-04-09 -->
   Fix: Throttled via AtomicU64 last-eviction timestamp; runs at most once per 60 seconds.
 
-- [ ] **M-053** `[performance]` `evidence/packet.rs:400`: Full Packet clone (30+ fields, checkpoints Vec) to zero 3 fields before content_hash
+- [ ] **M-053** `[performance]` `evidence/packet.rs:400`: Full Packet clone (30+ fields, checkpoints Vec) to zero 3 fields before content_hash | **Model:** Sonnet
   <!-- pid:clone_in_loop | verified:true | first:2026-04-09 -->
-  Impact: O(n) where n = checkpoint count; called once per sign but expensive for large evidence packets | Fix: Compute hash with selective serialization or field override instead of full clone | Effort: large
+  Impact: O(n) where n = checkpoint count; called once per sign but expensive for large evidence packets | Fix: Compute hash with selective serialization or field override instead of full clone
 
 - [x] **M-054** `[code_quality]` `ffi/sentinel_witnessing.rs:121`: ffi_sentinel_witnessing_status() spans 166 lines with nested if-else chains -- FIXED 2026-04-09
   <!-- pid:high_complexity | verified:true | first:2026-04-09 -->
   Fix: Extracted query_store_metrics(), fallback_score(), not_tracking(), format_duration() helpers. Main function reduced to ~70 lines.
 
-- [ ] **M-055** `[error_handling]` `anchors/notary.rs:191`: verify response missing 'valid' field defaults to false via unwrap_or(false)
+- [ ] **M-055** `[error_handling]` `anchors/notary.rs:191`: verify response missing 'valid' field defaults to false via unwrap_or(false) | **Model:** Haiku
   <!-- pid:silent_error | verified:true | first:2026-04-09 -->
-  Impact: Malformed API response indistinguishable from "not verified"; caller cannot detect API errors | Fix: Return Result distinguishing verification failure from API malformation | Effort: small
+  Impact: Malformed API response indistinguishable from "not verified"; caller cannot detect API errors | Fix: Return Result distinguishing verification failure from API malformation
 
-- [ ] **M-056** `[architecture]` `anchors/notary.rs:48`: URL parsed in both constructor and post_json(); redundant validation
+- [ ] **M-056** `[architecture]` `anchors/notary.rs:48`: URL parsed in both constructor and post_json(); redundant validation | **Model:** Haiku
   <!-- pid:duplicated_logic | verified:true | first:2026-04-09 -->
-  Impact: Code duplication; URL scheme change requires two-place update | Fix: Store parsed Url in struct, parse once at construction | Effort: small
+  Impact: Code duplication; URL scheme change requires two-place update | Fix: Store parsed Url in struct, parse once at construction
 
 - [x] **M-057** `[performance]` `ffi/sentinel_witnessing.rs:97`: format!() allocations in GUI status polling hot path -- FIXED 2026-04-09
   <!-- pid:alloc_in_loop | verified:true | first:2026-04-09 -->
   Fix: format_duration() extracted and shared; repeated FfiWitnessingStatus construction deduplicated via not_tracking() helper.
 
-- [ ] **M-058** `[concurrency]` `sentinel/core_session.rs:262`: RwLock read-then-write race; session can be modified between read check and write acquisition
+- [ ] **M-058** `[concurrency]` `sentinel/core_session.rs:262`: RwLock read-then-write race; session can be modified between read check and write acquisition | **Model:** Sonnet
   <!-- pid:toctou | verified:true | first:2026-04-09 -->
-  Impact: Concurrent checkpoint commits could corrupt session state | Fix: Combine check and modify into single write lock scope, or use CAS pattern | Effort: medium
+  Impact: Concurrent checkpoint commits could corrupt session state | Fix: Combine check and modify into single write lock scope, or use CAS pattern
 
 ## Audit-file session (2026-04-09)
 
@@ -569,27 +1156,27 @@
   Fix: Added inline comment documenting constant values at the import site.
 
 ### anchors/notary.rs
-- [ ] **M-004** `[error_handling]` `anchors/notary.rs:23`: reqwest::Client::builder().build() failure uses unwrap_or_default | Effort: small
-- [ ] **M-005** `[error_handling]` `anchors/notary.rs:109`: Response "id" field defaults to empty string on missing | Effort: small
+- [ ] **M-004** `[error_handling]` `anchors/notary.rs:23`: reqwest::Client::builder().build() failure uses unwrap_or_default | **Model:** Haiku
+- [ ] **M-005** `[error_handling]` `anchors/notary.rs:109`: Response "id" field defaults to empty string on missing | **Model:** Haiku
 
 ### sentinel/core_session.rs
-- [ ] **M-006** `[error_handling]` `sentinel/core_session.rs:140`: hex::decode_to_slice() result discarded; session may lack WAL | Effort: small
-- [ ] **M-007** `[error_handling]` `sentinel/core_session.rs:238`: i64::try_from(raw_size).unwrap_or(i64::MAX) silent cap | Effort: small
+- [ ] **M-006** `[error_handling]` `sentinel/core_session.rs:140`: hex::decode_to_slice() result discarded; session may lack WAL | **Model:** Haiku
+- [ ] **M-007** `[error_handling]` `sentinel/core_session.rs:238`: i64::try_from(raw_size).unwrap_or(i64::MAX) silent cap | **Model:** Haiku
 
 ### analysis modules
-- [ ] **M-008** `[code_quality]` `analysis/labyrinth.rs:392`: sort_by partial_cmp().unwrap_or(Equal) hides NaN | Effort: small
-- [ ] **M-009** `[code_quality]` `analysis/lyapunov.rs:193`: linear_regression returns (0.0, _) on degenerate; no failure signal | Effort: small
+- [ ] **M-008** `[code_quality]` `analysis/labyrinth.rs:392`: sort_by partial_cmp().unwrap_or(Equal) hides NaN | **Model:** Haiku
+- [ ] **M-009** `[code_quality]` `analysis/lyapunov.rs:193`: linear_regression returns (0.0, _) on degenerate; no failure signal | **Model:** Haiku
 
 ### store/access_log.rs
-- [ ] **M-010** `[error_handling]` `store/access_log.rs:363`: HMAC .expect() relies on library invariant | Effort: small
-- [ ] **M-011** `[architecture]` `store/access_log.rs:97`: AccessLog wraps Connection directly; no Send/Sync enforcement | Effort: medium
+- [ ] **M-010** `[error_handling]` `store/access_log.rs:363`: HMAC .expect() relies on library invariant | **Model:** Haiku
+- [ ] **M-011** `[architecture]` `store/access_log.rs:97`: AccessLog wraps Connection directly; no Send/Sync enforcement | **Model:** Sonnet
 
 ### platform/windows.rs
-- [ ] **M-012** `[concurrency]` `platform/windows.rs:192`: 5-second spinlock with 1ms sleep for thread ID; use Condvar | Effort: small
-- [ ] **M-013** `[error_handling]` `platform/windows.rs:359`: PostThreadMessageW return unchecked; pump thread join may hang | Effort: small
-- [ ] **M-014** `[security]` `platform/windows.rs:99`: bundle_id = full exe path; leaks paths in evidence | Effort: medium
-- [ ] **M-015** `[security]` `platform/windows.rs:451`: keycode_to_zone u8 cast may truncate | Effort: small
-- [ ] **M-016** `[error_handling]` `platform/windows.rs:80`: GetWindowThreadProcessId return unchecked | Effort: small
+- [ ] **M-012** `[concurrency]` `platform/windows.rs:192`: 5-second spinlock with 1ms sleep for thread ID; use Condvar | **Model:** Sonnet
+- [ ] **M-013** `[error_handling]` `platform/windows.rs:359`: PostThreadMessageW return unchecked; pump thread join may hang | **Model:** Haiku
+- [ ] **M-014** `[security]` `platform/windows.rs:99`: bundle_id = full exe path; leaks paths in evidence | **Model:** Sonnet
+- [ ] **M-015** `[security]` `platform/windows.rs:451`: keycode_to_zone u8 cast may truncate | **Model:** Haiku
+- [ ] **M-016** `[error_handling]` `platform/windows.rs:80`: GetWindowThreadProcessId return unchecked | **Model:** Haiku
 
 ### tpm/linux.rs
 - [x] **M-017** `[error_handling]` `tpm/linux.rs:269`: TPM errors converted to String; structured error lost -- ADDRESSED 2026-04-09
@@ -614,15 +1201,15 @@
   <!-- fix: send_message and recv_message now poison (drop) the stream on timeout; caller must reconnect -->
 
 ### cpop_jitter_bridge/session.rs
-- [ ] **M-026** `[error_handling]` `cpop_jitter_bridge/session.rs:333-336`: try_from().unwrap_or(i32::MAX) silent truncation | Effort: small
-- [ ] **M-027** `[error_handling]` `cpop_jitter_bridge/session.rs:369-376`: tempfile not synced before persist | Effort: small
-- [ ] **M-028** `[performance]` `cpop_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | Effort: medium
+- [ ] **M-026** `[error_handling]` `cpop_jitter_bridge/session.rs:333-336`: try_from().unwrap_or(i32::MAX) silent truncation | **Model:** Haiku
+- [ ] **M-027** `[error_handling]` `cpop_jitter_bridge/session.rs:369-376`: tempfile not synced before persist | **Model:** Haiku
+- [ ] **M-028** `[performance]` `cpop_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | **Model:** Sonnet
 
 ### sealed_chain.rs
-- [ ] **M-029** `[maintainability]` `sealed_chain.rs:180-182`: Header validation duplicated in read_sealed_document_id vs load_sealed_verified | Effort: medium
+- [ ] **M-029** `[maintainability]` `sealed_chain.rs:180-182`: Header validation duplicated in read_sealed_document_id vs load_sealed_verified | **Model:** Haiku
 
 ### report/pdf/layout_sections.rs
-- [ ] **M-030** `[architecture]` `report/pdf/layout_sections.rs:1`: God module at 994 lines; should split into section files | Effort: medium
+- [x] **M-030** `[architecture]` `report/pdf/layout_sections.rs:1`: God module at 994 lines; should split into section files | **Model:** Opus
 
 ### ffi modules
 - [x] **M-031** `[code_quality]` `ffi/sentinel_witnessing.rs:35,60`: Success messages display original path, not validated path -- ALREADY FIXED
@@ -635,32 +1222,32 @@
   Fix: Added sign()/verify() methods making the API complete. serde_bytes_vec no-op replaced with serde_bytes for correct CBOR encoding. Types are public API for C2PA/CAWG integration.
 
 ### trust_policy/evaluation.rs
-- [ ] **M-034** `[performance]` `trust_policy/evaluation.rs:55`: MinimumOfFactors fold with Inf start; NaN factors produce Inf->1.0 | Effort: small
-- [ ] **M-035** `[error_handling]` `trust_policy/evaluation.rs:171`: Threshold name not validated at construction time | Effort: small
+- [ ] **M-034** `[performance]` `trust_policy/evaluation.rs:55`: MinimumOfFactors fold with Inf start; NaN factors produce Inf->1.0 | **Model:** Haiku
+- [ ] **M-035** `[error_handling]` `trust_policy/evaluation.rs:171`: Threshold name not validated at construction time | **Model:** Haiku
 
 ### presence/verifier.rs
-- [ ] **M-036** `[error_handling]` `presence/verifier.rs:73`: challenges_issued cast to i32 without overflow check | Effort: small
+- [ ] **M-036** `[error_handling]` `presence/verifier.rs:73`: challenges_issued cast to i32 without overflow check | **Model:** Haiku
 
 ### collaboration.rs
 - [x] **M-037** `[maintainability]` `collaboration.rs:243`: Error messages lack valid range info; AUD-187/188 refs incomplete -- FIXED 2026-04-09
   Fix: Error messages now include valid range bounds; AUD refs removed from user-facing strings.
 
 ### declaration/verification.rs
-- [ ] **M-038** `[maintainability]` `declaration/verification.rs:82`: v3 payload format undocumented; no v1/v2 migration record | Effort: small
-- [ ] **M-039** `[architecture]` `declaration/verification.rs:127`: Jitter None vs failed measurement indistinguishable | Effort: medium
+- [ ] **M-038** `[maintainability]` `declaration/verification.rs:82`: v3 payload format undocumented; no v1/v2 migration record | **Model:** Haiku
+- [ ] **M-039** `[architecture]` `declaration/verification.rs:127`: Jitter None vs failed measurement indistinguishable | **Model:** Sonnet
 
 ### continuation.rs
-- [ ] **M-040** `[performance]` `continuation.rs:171`: Vec capacity 128 underestimates; needs ~168-256 bytes | Effort: small
-- [ ] **M-041** `[maintainability]` `continuation.rs:305`: saturating_add silently caps at u64::MAX with no audit trail | Effort: small
+- [ ] **M-040** `[performance]` `continuation.rs:171`: Vec capacity 128 underestimates; needs ~168-256 bytes | **Model:** Haiku
+- [ ] **M-041** `[maintainability]` `continuation.rs:305`: saturating_add silently caps at u64::MAX with no audit trail | **Model:** Haiku
 
 ### fingerprint modules
-- [ ] **M-042** `[security]` `fingerprint/storage.rs:127-151`: Biometric plaintext not zeroized after encryption | Effort: small
-- [ ] **M-043** `[security]` `fingerprint/storage.rs:154-166`: Biometric plaintext not zeroized after deserialization | Effort: small
-- [ ] **M-044** `[performance]` `fingerprint/activity_collection.rs:59-84`: Hurst exponent recomputed per call; not cached | Effort: medium
-- [ ] **M-045** `[code_quality]` `fingerprint/activity_analysis.rs:75-82`: partial_cmp unwrap_or(Equal) in percentile selection | Effort: small
-- [ ] **M-046** `[code_quality]` `fingerprint/comparison.rs:114-118`: Similarity weights hardcoded (0.6/0.4) | Effort: small
-- [ ] **M-047** `[security]` `fingerprint/voice.rs:372-379`: Unicode normalization missing in keystroke MinHash | Effort: medium
-- [ ] **M-048** `[maintainability]` `fingerprint/comparison.rs:85-140`: compare_fingerprints() 55 lines; could extract sub-functions | Effort: medium
+- [ ] **M-042** `[security]` `fingerprint/storage.rs:127-151`: Biometric plaintext not zeroized after encryption | **Model:** Haiku
+- [ ] **M-043** `[security]` `fingerprint/storage.rs:154-166`: Biometric plaintext not zeroized after deserialization | **Model:** Haiku
+- [ ] **M-044** `[performance]` `fingerprint/activity_collection.rs:59-84`: Hurst exponent recomputed per call; not cached | **Model:** Sonnet
+- [ ] **M-045** `[code_quality]` `fingerprint/activity_analysis.rs:75-82`: partial_cmp unwrap_or(Equal) in percentile selection | **Model:** Haiku
+- [ ] **M-046** `[code_quality]` `fingerprint/comparison.rs:114-118`: Similarity weights hardcoded (0.6/0.4) | **Model:** Haiku
+- [ ] **M-047** `[security]` `fingerprint/voice.rs:372-379`: Unicode normalization missing in keystroke MinHash | **Model:** Sonnet
+- [ ] **M-048** `[maintainability]` `fingerprint/comparison.rs:85-140`: compare_fingerprints() 55 lines; could extract sub-functions | **Model:** Sonnet
 
 ---
 
@@ -1224,43 +1811,43 @@
 
 ### High
 
-- [ ] **H-044** `[error_handling]` `crates/witnessd/src/ffi/beacon.rs:155`: Anchor failure silently yields `success: true` beacon result
+- [ ] **H-044** `[error_handling]` `crates/witnessd/src/ffi/beacon.rs:155`: Anchor failure silently yields `success: true` beacon result | **Model:** Haiku
   <!-- pid:silent_error | first:2026-04-08 -->
-  Impact: `anchor_res` error is logged at `warn!` then discarded; `FfiBeaconResult.success = true` is returned even when the WritersProof anchor call failed. Swift caller returns `CommandResult(success: true)` to the user -- they believe evidence is anchored when it is not. | Fix: If `anchor_res` is `Err`, either set `error_message` in the result or return `success: false`; distinguish "beacon fetched but not anchored" from "beacon fetched and anchored". | Effort: small
+  Impact: `anchor_res` error is logged at `warn!` then discarded; `FfiBeaconResult.success = true` is returned even when the WritersProof anchor call failed. Swift caller returns `CommandResult(success: true)` to the user -- they believe evidence is anchored when it is not. | Fix: If `anchor_res` is `Err`, either set `error_message` in the result or return `success: false`; distinguish "beacon fetched but not anchored" from "beacon fetched and anchored".
 
-- [ ] **H-045** `[concurrency]` `apps/cpop_macos/cpop/Service/CPOPService+Actions.swift:117`: Stale session index used after async gap
+- [ ] **H-045** `[concurrency]` `apps/cpop_macos/cpop/Service/CPOPService+Actions.swift:117`: Stale session index used after async gap | **Model:** Sonnet
   <!-- pid:toctou | first:2026-04-08 -->
-  Impact: `sessionIndex` is captured via `firstIndex(where:)` before `await engine.commit()`; a concurrent `refreshStatus()` can add, remove, or reorder `sessions` during the await. After the await, `sessions[idx]` may access the wrong session or crash out-of-bounds. | Fix: After the await, re-query by path: `if let idx = sessions.firstIndex(where: { $0.documentPath == doc })`. | Effort: small
+  Impact: `sessionIndex` is captured via `firstIndex(where:)` before `await engine.commit()`; a concurrent `refreshStatus()` can add, remove, or reorder `sessions` during the await. After the await, `sessions[idx]` may access the wrong session or crash out-of-bounds. | Fix: After the await, re-query by path: `if let idx = sessions.firstIndex(where: { $0.documentPath == doc })`.
 
-- [ ] **H-046** `[security]` `crates/witnessd/src/ffi/writersproof_ffi.rs:82`: JWT token transiently in non-Zeroized heap during anchor call
+- [ ] **H-046** `[security]` `crates/witnessd/src/ffi/writersproof_ffi.rs:82`: JWT token transiently in non-Zeroized heap during anchor call | **Model:** Haiku
   <!-- pid:key_zeroize_inconsistency | first:2026-04-08 -->
-  Impact: `(*api_key).clone()` dereferences the `Zeroizing<String>` wrapper and clones a bare `String`. That allocation is not Zeroized until `with_jwt` re-wraps it one frame later -- same pattern in `beacon.rs:115`. Defeats the zeroize guarantee. | Fix: Change `with_jwt` to accept `Zeroizing<String>` directly; pass `api_key` (consumed) rather than `(*api_key).clone()`. | Effort: small
+  Impact: `(*api_key).clone()` dereferences the `Zeroizing<String>` wrapper and clones a bare `String`. That allocation is not Zeroized until `with_jwt` re-wraps it one frame later -- same pattern in `beacon.rs:115`. Defeats the zeroize guarantee. | Fix: Change `with_jwt` to accept `Zeroizing<String>` directly; pass `api_key` (consumed) rather than `(*api_key).clone()`.
 
-- [ ] **H-047** `[resource_management]` `apps/cpop_macos/cpop/EngineService/EngineService.swift:217`: Orphaned FFI session cleanup tasks not tracked
+- [ ] **H-047** `[resource_management]` `apps/cpop_macos/cpop/EngineService/EngineService.swift:217`: Orphaned FFI session cleanup tasks not tracked | **Model:** Sonnet
   <!-- pid:no_resource_cleanup | first:2026-04-08 -->
-  Impact: `Task.detached { ffiEphemeralFinalize(...) }` is fire-and-forget. App shutdown or actor deallocation before the task runs leaves the Rust-side ephemeral session in memory indefinitely. | Fix: Store cleanup task handles; cancel and await them during graceful shutdown. | Effort: medium
+  Impact: `Task.detached { ffiEphemeralFinalize(...) }` is fire-and-forget. App shutdown or actor deallocation before the task runs leaves the Rust-side ephemeral session in memory indefinitely. | Fix: Store cleanup task handles; cancel and await them during graceful shutdown.
 
 ### Medium
 
-- [ ] **M-100** `[security]` `apps/cpop_macos/cpop/ChallengeService.swift:114`: Session ID validation accepts Unicode letters via `CharacterSet.alphanumerics`
+- [ ] **M-100** `[security]` `apps/cpop_macos/cpop/ChallengeService.swift:114`: Session ID validation accepts Unicode letters via `CharacterSet.alphanumerics` | **Model:** Haiku
   <!-- pid:missing_validation | first:2026-04-08 -->
-  Impact: Unicode homoglyphs or combining characters pass the guard but produce unexpected URL segments. Only ASCII alphanumerics and `-_` should be accepted. | Fix: Replace CharacterSet check with explicit ASCII byte-range comparison. | Effort: small
+  Impact: Unicode homoglyphs or combining characters pass the guard but produce unexpected URL segments. Only ASCII alphanumerics and `-_` should be accepted. | Fix: Replace CharacterSet check with explicit ASCII byte-range comparison.
 
-- [ ] **M-101** `[error_handling]` `crates/witnessd/src/ffi/beacon.rs:111`: Silent minimum timeout enforcement
+- [ ] **M-101** `[error_handling]` `crates/witnessd/src/ffi/beacon.rs:111`: Silent minimum timeout enforcement | **Model:** Haiku
   <!-- pid:silent_error | first:2026-04-08 -->
-  Impact: `timeout_secs.max(5)` silently upgrades caller-supplied timeouts below 5s; callers expecting 1-2s for UI responsiveness stall for 5s with no indication. | Fix: `log::warn!` when minimum is applied, or reject sub-minimum values with a returned error. | Effort: small
+  Impact: `timeout_secs.max(5)` silently upgrades caller-supplied timeouts below 5s; callers expecting 1-2s for UI responsiveness stall for 5s with no indication. | Fix: `log::warn!` when minimum is applied, or reject sub-minimum values with a returned error.
 
-- [ ] **M-102** `[maintainability]` `crates/witnessd/src/ffi/writersproof_ffi.rs:109`: `FfiResult::ok` returns human-readable string; `anchor_id` and `log_index` not machine-readable
+- [ ] **M-102** `[maintainability]` `crates/witnessd/src/ffi/writersproof_ffi.rs:109`: `FfiResult::ok` returns human-readable string; `anchor_id` and `log_index` not machine-readable | **Model:** Sonnet
   <!-- pid:stringly_typed | first:2026-04-08 -->
-  Impact: Swift caller must string-parse `"Anchored: <id> (log index <n>)"` to extract values; format changes silently break consumers. | Fix: Return a dedicated `FfiAnchorResult` record with `anchor_id: Option<String>` and `log_index: u64` fields. | Effort: medium
+  Impact: Swift caller must string-parse `"Anchored: <id> (log index <n>)"` to extract values; format changes silently break consumers. | Fix: Return a dedicated `FfiAnchorResult` record with `anchor_id: Option<String>` and `log_index: u64` fields.
 
-- [ ] **M-103** `[concurrency]` `apps/cpop_macos/cpop/StatusBarController.swift:448`: `Task { [weak self] }` closures missing `guard let self`
+- [ ] **M-103** `[concurrency]` `apps/cpop_macos/cpop/StatusBarController.swift:448`: `Task { [weak self] }` closures missing `guard let self` | **Model:** Haiku
   <!-- pid:weak_self_capture | first:2026-04-08 -->
-  Impact: Timer and observer Task closures access `self?` properties without `guard let self else { return }`. If `StatusBarController` deallocates while a timer fires, closures execute on nil. | Fix: Add `guard let self else { return }` as first line of every `[weak self]` Task closure. | Effort: small
+  Impact: Timer and observer Task closures access `self?` properties without `guard let self else { return }`. If `StatusBarController` deallocates while a timer fires, closures execute on nil. | Fix: Add `guard let self else { return }` as first line of every `[weak self]` Task closure.
 
-- [ ] **M-104** `[error_handling]` `apps/cpop_macos/cpop/StatusBarController.swift:526`: Untracked Task for checkpoint creation
+- [ ] **M-104** `[error_handling]` `apps/cpop_macos/cpop/StatusBarController.swift:526`: Untracked Task for checkpoint creation | **Model:** Sonnet
   <!-- pid:fire_and_forget | first:2026-04-08 -->
-  Impact: `Task(priority: .utility) { ... }` for checkpoint writes is fire-and-forget. App termination before the task completes silently abandons the checkpoint. | Fix: Store the task handle and await it during shutdown, or track completion via the existing checkpoint state machine. | Effort: medium
+  Impact: `Task(priority: .utility) { ... }` for checkpoint writes is fire-and-forget. App termination before the task completes silently abandons the checkpoint. | Fix: Store the task handle and await it during shutdown, or track completion via the existing checkpoint state machine.
 
 - [-] **M-105** `[security]` `crates/witnessd/src/writersproof/client.rs:196`: `Content-Length` pre-check in `get_certificate` is spoofable -- FALSE POSITIVE 2026-04-09
   <!-- pid:missing_validation | first:2026-04-08 -->
@@ -1270,6 +1857,6 @@
   <!-- pid:missing_validation | first:2026-04-08 -->
   <!-- fix: replaced .bytes().await with chunked streaming matching get_certificate pattern; Content-Length pre-check retained as optimization -->
 
-- [ ] **M-107** `[security]` `crates/witnessd/src/ffi/helpers.rs:130`: `std::mem::take` on `Zeroizing<Vec<u8>>` bypasses zeroize-on-drop
+- [ ] **M-107** `[security]` `crates/witnessd/src/ffi/helpers.rs:130`: `std::mem::take` on `Zeroizing<Vec<u8>>` bypasses zeroize-on-drop | **Model:** Haiku
   <!-- pid:key_zeroize_inconsistency | first:2026-04-08 -->
-  Impact: `mem::take` moves the inner `Vec` out of the `Zeroizing` wrapper; the wrapper's drop now zeroizes an empty allocation. The actual HMAC key bytes are only zeroized if `SecureStore` explicitly does so. | Fix: Pass the key by reference if `SecureStore::open` accepts `&[u8]`; otherwise manually call `.zeroize()` after the key has been consumed. | Effort: medium
+  Impact: `mem::take` moves the inner `Vec` out of the `Zeroizing` wrapper; the wrapper's drop now zeroizes an empty allocation. The actual HMAC key bytes are only zeroized if `SecureStore` explicitly does so. | Fix: Pass the key by reference if `SecureStore::open` accepts `&[u8]`; otherwise manually call `.zeroize()` after the key has been consumed.
