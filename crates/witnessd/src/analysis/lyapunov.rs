@@ -90,13 +90,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
     }
 
     // Normalize data
-    let mean = iki_intervals_ns.iter().sum::<f64>() / iki_intervals_ns.len() as f64;
-    let std_dev = (iki_intervals_ns
-        .iter()
-        .map(|&x| (x - mean).powi(2))
-        .sum::<f64>()
-        / iki_intervals_ns.len() as f64)
-        .sqrt();
+    let (mean, std_dev) = crate::utils::stats::mean_and_std_dev(iki_intervals_ns);
 
     if std_dev < 1e-10 {
         // Zero variance → perfectly periodic → flagged

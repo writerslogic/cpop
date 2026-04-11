@@ -22,14 +22,9 @@ pub(crate) fn hmac_jitter(
 
     // Length-prefix each field to prevent concatenation ambiguity.
     // Safe truncation: turns silent integer wrap in release builds into a secure panic.
-    let input_len: u32 = inputs
-        .len()
-        .try_into()
-        .expect("inputs exceeds u32 length prefix");
-    let extra_len: u32 = extra
-        .len()
-        .try_into()
-        .expect("extra exceeds u32 length prefix");
+    // Cast to u64 natively to prevent panic on massive inputs
+    let input_len = inputs.len() as u64; 
+    let extra_len = extra.len() as u64;
 
     mac.update(&input_len.to_be_bytes());
     mac.update(inputs);

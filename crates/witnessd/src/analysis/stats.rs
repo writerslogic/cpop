@@ -49,47 +49,6 @@ pub fn safe_div(a: f64, b: f64, fallback: f64) -> f64 {
     }
 }
 
-/// Single-pass mean and sample standard deviation (Bessel-corrected, divides by n-1).
-///
-/// Returns `(0.0, 0.0)` for empty input and `(mean, 0.0)` for `data.len() < 2`
-/// (sample std dev is undefined with fewer than two observations).
-///
-/// Uses Welford's online algorithm for optimal single-pass performance and 
-/// numeric stability against catastrophic cancellation.
-pub fn mean_and_sample_std_dev(data: &[f64]) -> (f64, f64) {
-    let n = data.len();
-    if n == 0 {
-        return (0.0, 0.0);
-    }
-    if n == 1 {
-        return (data[0], 0.0);
-    }
-
-    let mut count = 0.0;
-    let mut mean = 0.0;
-    let mut m2 = 0.0;
-
-    for &x in data {
-        count += 1.0;
-        let delta = x - mean;
-        mean += delta / count;
-        let delta2 = x - mean;
-        m2 += delta * delta2;
-    }
-
-    let std_dev = (m2 / (count - 1.0)).sqrt();
-    (mean, std_dev)
-}
-
-/// Mean of a slice, or 0.0 if empty.
-pub fn mean_or_zero(data: &[f64]) -> f64 {
-    if data.is_empty() {
-        0.0
-    } else {
-        data.iter().sum::<f64>() / data.len() as f64
-    }
-}
-
 /// Population skewness given pre-computed mean and std dev.
 pub fn skewness(data: &[f64], mean: f64, std: f64) -> f64 {
     if std.abs() < f64::EPSILON || data.is_empty() {
@@ -273,14 +232,6 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Result<(f64, f64, f64, f64), S
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_mean_and_sample_std_dev() {
-        let data = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
-        let (mean, std) = mean_and_sample_std_dev(&data);
-        assert!((mean - 5.0).abs() < 1e-6);
-        assert!((std - 2.138089935299395).abs() < 1e-6); // Approx std dev
-    }
 
     #[test]
     fn test_linear_regression() {

@@ -112,14 +112,8 @@ impl StatisticalAnomalyDetector {
             return (0.0, 0.0);
         }
 
-        let n = self.iki_window.len() as f64;
-        let mean = self.iki_window.iter().sum::<f64>() / n;
-        let variance = self
-            .iki_window
-            .iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>()
-            / (n - 1.0);
+        let ikis: Vec<f64> = self.iki_window.iter().copied().collect();
+        let (mean, variance) = crate::utils::stats::mean_and_sample_variance(&ikis);
         let std = variance.sqrt();
         let std = if std.is_finite() { std } else { 0.0 };
 

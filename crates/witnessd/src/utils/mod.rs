@@ -6,7 +6,10 @@ pub mod mlock;
 pub mod stats;
 pub mod time;
 
-pub use stats::{coefficient_of_variation, mean, median, std_dev};
+pub use stats::{
+    coefficient_of_variation, mean, mean_and_sample_std_dev, mean_and_sample_variance,
+    mean_and_std_dev, mean_and_variance, median, std_dev,
+};
 pub use time::now_ns;
 
 /// Hash a filesystem path (its UTF-8 string representation) with SHA-256.

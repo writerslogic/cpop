@@ -427,18 +427,7 @@ pub fn per_checkpoint_flags(
                 .windows(2)
                 .map(|w| w[1].timestamp_ns.saturating_sub(w[0].timestamp_ns) as f64)
                 .collect();
-            let mean = intervals.iter().sum::<f64>() / intervals.len() as f64;
-            if mean > f64::EPSILON {
-                let variance = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
-                    / intervals.len() as f64;
-                if mean.is_finite() && variance.is_finite() {
-                    crate::utils::finite_or(variance.sqrt() / mean, 0.0)
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            }
+            crate::utils::stats::coefficient_of_variation(&intervals)
         } else {
             0.0
         };

@@ -461,12 +461,9 @@ impl Builder {
             return self;
         }
 
-        let mean = intervals_us.iter().sum::<f64>() / intervals_us.len() as f64;
         // Population variance (N divisor) used intentionally; the full interval set is the
         // population of interest, not a sample from a larger one.
-        let variance = intervals_us.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-            / intervals_us.len() as f64;
-        let std_dev = variance.sqrt();
+        let (mean, std_dev) = crate::utils::stats::mean_and_std_dev(&intervals_us);
         let cv = if mean > 0.0 { std_dev / mean } else { 0.0 };
 
         // Hurst exponent needs original (unsorted) order, so compute before sorting.

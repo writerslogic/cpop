@@ -245,8 +245,7 @@ fn compute_iki_autocorrelation(ikis: &[f64]) -> f64 {
     }
 
     let n = ikis.len();
-    let mean = ikis.iter().sum::<f64>() / n as f64;
-    let variance: f64 = ikis.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+    let (mean, variance) = crate::utils::stats::mean_and_sample_variance(ikis);
 
     if variance <= 0.0 {
         return 0.0;
@@ -405,11 +404,10 @@ fn count_zero_variance_windows(ikis: &[f64]) -> usize {
 
     let mut count = 0;
     for window in ikis.windows(WINDOW_SIZE) {
-        let mean = window.iter().sum::<f64>() / WINDOW_SIZE as f64;
+        let (mean, variance) = crate::utils::stats::mean_and_variance(window);
         if mean <= 0.0 {
             continue;
         }
-        let variance = window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / WINDOW_SIZE as f64;
         if variance.sqrt() < ZERO_VAR_THRESHOLD_NS {
             count += 1;
         }

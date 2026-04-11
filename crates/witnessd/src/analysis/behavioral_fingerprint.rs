@@ -82,7 +82,7 @@ impl BehavioralFingerprint {
             return Self::default();
         }
 
-        let (mean, std) = stats::mean_and_sample_std_dev(&intervals);
+        let (mean, std) = crate::utils::stats::mean_and_sample_std_dev(&intervals);
 
         let skewness = stats::skewness(&intervals, mean, std);
         let kurtosis = stats::kurtosis(&intervals, mean, std);
@@ -111,11 +111,7 @@ impl BehavioralFingerprint {
             bursts.push(current_burst_len as f64);
         }
 
-        let burst_mean = if !bursts.is_empty() {
-            bursts.iter().sum::<f64>() / bursts.len() as f64
-        } else {
-            0.0
-        };
+        let burst_mean = crate::utils::stats::mean(&bursts);
 
         let bucket_edges: &[f64] = &[0.0, 50.0, 100.0, 150.0, 200.0, 300.0, 500.0, 1000.0, 2000.0];
         let mut interval_buckets = vec![0.0f64; bucket_edges.len()];
@@ -225,7 +221,7 @@ impl BehavioralFingerprint {
 
         let mut flags = Vec::new();
 
-        let (mean, std) = stats::mean_and_sample_std_dev(&intervals);
+        let (mean, std) = crate::utils::stats::mean_and_sample_std_dev(&intervals);
 
         if mean > 0.0 {
             let cv = std / mean;
@@ -264,8 +260,8 @@ impl BehavioralFingerprint {
             // Slicing doesn't allocate, this remains extremely fast
             let first_q = &intervals[..quarter];
             let last_q = &intervals[intervals.len() - quarter..];
-            let first_mean = first_q.iter().sum::<f64>() / first_q.len() as f64;
-            let last_mean = last_q.iter().sum::<f64>() / last_q.len() as f64;
+            let first_mean = crate::utils::stats::mean(first_q);
+            let last_mean = crate::utils::stats::mean(last_q);
             if first_mean > 0.0 && last_mean <= first_mean * FATIGUE_SLOWDOWN_RATIO {
                 flags.push(ForgeryFlag::NoFatiguePattern);
             }

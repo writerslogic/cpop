@@ -256,8 +256,7 @@ fn compute_error_hurst(events: &[TopologyEvent], error_indices: &[usize]) -> f64
     }
 
     let n = intervals.len();
-    let mean: f64 = intervals.iter().sum::<f64>() / n as f64;
-    let variance: f64 = intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+    let (mean, variance) = crate::utils::stats::mean_and_variance(&intervals);
 
     let mut cumsum = 0.0;
     let mut max_cumsum = f64::NEG_INFINITY;

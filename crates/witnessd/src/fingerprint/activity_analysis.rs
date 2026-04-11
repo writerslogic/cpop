@@ -62,13 +62,7 @@ impl IkiDistribution {
         }
         let intervals = intervals.as_slice();
 
-        let n = intervals.len() as f64;
-        let mean = intervals.iter().sum::<f64>() / n;
-        let variance = if n > 1.0 {
-            intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
-        } else {
-            0.0
-        };
+        let (mean, variance) = crate::utils::stats::mean_and_sample_variance(intervals);
         let std_dev = if variance > 0.0 { variance.sqrt() } else { 0.0 };
 
         let skewness = {
@@ -399,9 +393,9 @@ impl PauseSignature {
         let per_100 = 100.0 / n;
 
         Self {
-            sentence_pause_mean: stats::mean_or_zero(&sentence_pauses),
-            paragraph_pause_mean: stats::mean_or_zero(&paragraph_pauses),
-            thinking_pause_mean: stats::mean_or_zero(&thinking_pauses),
+            sentence_pause_mean: crate::utils::stats::mean(&sentence_pauses),
+            paragraph_pause_mean: crate::utils::stats::mean(&paragraph_pauses),
+            thinking_pause_mean: crate::utils::stats::mean(&thinking_pauses),
             sentence_pause_frequency: sentence_pauses.len() as f64 * per_100,
             paragraph_pause_frequency: paragraph_pauses.len() as f64 * per_100,
             thinking_pause_frequency: thinking_pauses.len() as f64 * per_100,

@@ -77,28 +77,27 @@ fn snr_db_capped(signal_power: f64, noise_power: f64) -> f64 {
 /// Signal power = variance of window means (low-frequency cadence).
 /// Noise power = mean of window variances (high-frequency jitter).
 pub fn analyze_snr(iki_intervals_ns: &[f64]) -> Result<SnrAnalysis, SnrError> {
-    if iki_intervals_ns.len() < MIN_SAMPLES {
+    let len = iki_intervals_ns.len();
+    if len < MIN_SAMPLES {
         return Err(SnrError::InsufficientSamples {
-            found: iki_intervals_ns.len(),
+            found: len,
             required: MIN_SAMPLES,
         });
     }
-    if crate::utils::require_all_finite(iki_intervals_ns, "snr").is_err() {
-        return Err(SnrError::NonFiniteValues);
-    }
+    crate::utils::require_all_finite(iki_intervals_ns, "snr").map_err(|_| SnrError::NonFiniteValues)?;
 
     // 50% overlapping windows (step = WINDOW_SIZE/2). Overlap inflates the
     // reported SNR by approximately 3 dB compared to non-overlapping windows
     // because adjacent windows share half their samples, reducing variance.
-    let mut window_stats = Vec::new();
+    const STEP: usize = WINDOW_SIZE / 2;
+    let expected_windows = (len - WINDOW_SIZE) / STEP + 1;
+    let mut window_stats = Vec::with_capacity(expected_windows);
     let mut sum_of_means = 0.0;
     let mut sum_of_variances = 0.0;
 
     // Single pass to collect means and variances, avoiding separate allocations
-    for w in iki_intervals_ns.windows(WINDOW_SIZE).step_by(WINDOW_SIZE / 2) {
-        let mean = w.iter().sum::<f64>() / w.len() as f64;
-        let variance = w.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / w.len() as f64;
-        
+    for w in iki_intervals_ns.windows(WINDOW_SIZE).step_by(STEP) {
+        let (mean, variance) = crate::utils::stats::mean_and_variance(w);
         window_stats.push((mean, variance));
         sum_of_means += mean;
         sum_of_variances += variance;
@@ -168,6 +167,20 @@ mod tests {
             analyze_snr(&data),
             Err(SnrError::InsufficientSamples { .. })
         ));
+    }
+
+    #[test]
+    fn test_snr_rejects_nan() {
+        let mut data: Vec<f64> = (0..100).map(|i| 150_000_000.0 + i as f64).collect();
+        data[50] = f64::NAN;
+        assert!(matches!(analyze_snr(&data), Err(SnrError::NonFiniteValues)));
+    }
+
+    #[test]
+    fn test_snr_rejects_infinity() {
+        let mut data: Vec<f64> = (0..100).map(|i| 150_000_000.0 + i as f64).collect();
+        data[25] = f64::INFINITY;
+        assert!(matches!(analyze_snr(&data), Err(SnrError::NonFiniteValues)));
     }
 
     #[test]

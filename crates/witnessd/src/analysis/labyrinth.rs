@@ -342,8 +342,8 @@ fn estimate_correlation_dimension(embed: &FlatEmbedding) -> f64 {
     if log_r.len() < 2 {
         return 0.0;
     }
-    let mean_x = log_r.iter().sum::<f64>() / log_r.len() as f64;
-    let mean_y = log_c.iter().sum::<f64>() / log_c.len() as f64;
+    let mean_x = crate::utils::stats::mean(&log_r);
+    let mean_y = crate::utils::stats::mean(&log_c);
     let num: f64 = log_r
         .iter()
         .zip(log_c.iter())

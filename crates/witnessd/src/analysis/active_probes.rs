@@ -53,24 +53,6 @@ impl std::error::Error for ActiveProbeError {}
 
 // --- Math Helpers ---
 
-#[inline]
-fn compute_mean(data: &[f64]) -> f64 {
-    if data.is_empty() {
-        0.0
-    } else {
-        data.iter().sum::<f64>() / data.len() as f64
-    }
-}
-
-#[inline]
-fn compute_variance(data: &[f64], mean: f64) -> f64 {
-    if data.is_empty() {
-        0.0
-    } else {
-        data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / data.len() as f64
-    }
-}
-
 // --- Galton Invariant ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,7 +145,7 @@ pub fn analyze_galton_invariant(
         return Err(ActiveProbeError::CalculateAbsorptionFailed);
     }
 
-    let absorption_coefficient = compute_mean(&absorption_rates);
+    let absorption_coefficient = crate::utils::stats::mean(&absorption_rates);
 
     let time_constant_ms = if absorption_coefficient > 0.0 {
         baseline_interval_ms / absorption_coefficient
@@ -172,13 +154,13 @@ pub fn analyze_galton_invariant(
     };
 
     let accel_mean = if !acceleration_recoveries.is_empty() {
-        compute_mean(&acceleration_recoveries)
+        crate::utils::stats::mean(&acceleration_recoveries)
     } else {
         absorption_coefficient
     };
 
     let decel_mean = if !deceleration_recoveries.is_empty() {
-        compute_mean(&deceleration_recoveries)
+        crate::utils::stats::mean(&deceleration_recoveries)
     } else {
         absorption_coefficient
     };
@@ -193,10 +175,7 @@ pub fn analyze_galton_invariant(
     let std_error = if n <= 1 {
         0.0
     } else {
-        let variance = compute_variance(&absorption_rates, absorption_coefficient);
-        // compute_variance divides by n, but for sample variance we want n-1. 
-        // Adjusting it back to standard sample variance for std_error calculation:
-        let sample_variance = (variance * n as f64) / (n - 1) as f64;
+        let (_, sample_variance) = crate::utils::stats::mean_and_sample_variance(&absorption_rates);
         (sample_variance / n as f64).sqrt()
     };
 
@@ -290,9 +269,7 @@ pub fn analyze_reflex_gate(samples: &[ProbeSample]) -> Result<ReflexGateResult, 
     }
 
     let min_latency_ms = responses.iter().copied().fold(f64::INFINITY, f64::min);
-    let mean_latency_ms = compute_mean(&responses);
-    
-    let variance = compute_variance(&responses, mean_latency_ms);
+    let (mean_latency_ms, variance) = crate::utils::stats::mean_and_variance(&responses);
     let std_latency_ms = variance.sqrt();
 
     let coefficient_of_variation = if mean_latency_ms > 0.0 {
@@ -333,7 +310,7 @@ fn compute_lag1_autocorrelation(data: &[f64], mean: f64) -> f64 {
         .map(|(&current, &next)| (current - mean) * (next - mean))
         .sum();
 
-    let denominator = compute_variance(data, mean) * data.len() as f64;
+    let denominator: f64 = data.iter().map(|&x| (x - mean).powi(2)).sum();
 
     if denominator > 0.0 {
         numerator / denominator
@@ -531,7 +508,7 @@ mod tests {
     #[test]
     fn test_lag1_autocorrelation() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let mean = compute_mean(&data);
+        let mean = crate::utils::stats::mean(&data);
         let corr = compute_lag1_autocorrelation(&data, mean);
         assert!(
             corr > 0.0,
@@ -540,7 +517,7 @@ mod tests {
         );
 
         let data2 = vec![1.0, -1.0, 1.0, -1.0, 1.0];
-        let mean2 = compute_mean(&data2);
+        let mean2 = crate::utils::stats::mean(&data2);
         let corr2 = compute_lag1_autocorrelation(&data2, mean2);
         assert!(
             corr2 < 0.0,

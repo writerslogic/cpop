@@ -13,9 +13,9 @@ pub fn mean(values: &[f64]) -> f64 {
     sum / values.len() as f64
 }
 
-/// Compute population standard deviation and mean in a single pass.
-/// Returns (mean, std_dev).
-pub fn mean_and_std_dev(values: &[f64]) -> (f64, f64) {
+/// Compute population mean and variance in a single pass using Welford's algorithm.
+/// Returns (mean, variance). Numerically stable for large values and small deviations.
+pub fn mean_and_variance(values: &[f64]) -> (f64, f64) {
     let n = values.len();
     if n == 0 {
         return (0.0, 0.0);
@@ -33,7 +33,41 @@ pub fn mean_and_std_dev(values: &[f64]) -> (f64, f64) {
         s += (x - old_m) * (x - m);
     }
 
-    (m, (s / n as f64).sqrt())
+    (m, s / n as f64)
+}
+
+/// Compute sample mean and variance (Bessel-corrected, N-1 denominator) in a single pass.
+/// Returns (mean, sample_variance). Use this when the input is a sample from a larger population.
+pub fn mean_and_sample_variance(values: &[f64]) -> (f64, f64) {
+    let n = values.len();
+    if n < 2 {
+        return (if n == 1 { values[0] } else { 0.0 }, 0.0);
+    }
+
+    // Welford's algorithm for numerical stability
+    let mut m = 0.0;
+    let mut s = 0.0;
+    for (k, &x) in values.iter().enumerate() {
+        let old_m = m;
+        m += (x - old_m) / (k + 1) as f64;
+        s += (x - old_m) * (x - m);
+    }
+
+    (m, s / (n - 1) as f64)
+}
+
+/// Compute population standard deviation and mean in a single pass.
+/// Returns (mean, std_dev).
+pub fn mean_and_std_dev(values: &[f64]) -> (f64, f64) {
+    let (m, var) = mean_and_variance(values);
+    (m, var.sqrt())
+}
+
+/// Compute sample standard deviation and mean in a single pass (Bessel-corrected, N-1).
+/// Returns (mean, sample_std_dev).
+pub fn mean_and_sample_std_dev(values: &[f64]) -> (f64, f64) {
+    let (m, var) = mean_and_sample_variance(values);
+    (m, var.sqrt())
 }
 
 /// Compute the population standard deviation of a slice of `f64`.
@@ -63,5 +97,71 @@ pub fn median(values: &[f64]) -> f64 {
         sorted[len / 2]
     } else {
         (sorted[len / 2 - 1] + sorted[len / 2]) / 2.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPS: f64 = 1e-9;
+
+    #[test]
+    fn mean_handles_empty_and_single() {
+        assert_eq!(mean(&[]), 0.0);
+        assert_eq!(mean(&[42.0]), 42.0);
+    }
+
+    #[test]
+    fn mean_and_variance_population() {
+        // deviations: -2,0,2,-2,2 → squared sum = 16 → pop var = 16/5 = 3.2
+        let data = [3.0, 5.0, 7.0, 3.0, 7.0];
+        let (m, var) = mean_and_variance(&data);
+        assert!((m - 5.0).abs() < EPS);
+        assert!((var - 3.2).abs() < EPS);
+    }
+
+    #[test]
+    fn mean_and_sample_variance_bessel_correction() {
+        // Same data; sample variance = 16/(N-1) = 16/4 = 4.0
+        let data = [3.0, 5.0, 7.0, 3.0, 7.0];
+        let (m, var) = mean_and_sample_variance(&data);
+        assert!((m - 5.0).abs() < EPS);
+        assert!((var - 4.0).abs() < EPS);
+    }
+
+    #[test]
+    fn mean_and_sample_std_dev_classic() {
+        // Wikipedia's sample: {2,4,4,4,5,5,7,9} → mean=5, sample std ≈ 2.13809
+        let data = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+        let (m, std) = mean_and_sample_std_dev(&data);
+        assert!((m - 5.0).abs() < EPS);
+        assert!((std - 2.138089935299395).abs() < 1e-6);
+    }
+
+    #[test]
+    fn variance_handles_degenerate_inputs() {
+        assert_eq!(mean_and_variance(&[]), (0.0, 0.0));
+        assert_eq!(mean_and_variance(&[7.0]), (7.0, 0.0));
+        assert_eq!(mean_and_sample_variance(&[]), (0.0, 0.0));
+        assert_eq!(mean_and_sample_variance(&[7.0]), (7.0, 0.0));
+    }
+
+    #[test]
+    fn variance_constant_data_is_zero() {
+        let data = [42.0; 10];
+        assert_eq!(mean_and_variance(&data), (42.0, 0.0));
+        assert_eq!(mean_and_sample_variance(&data), (42.0, 0.0));
+    }
+
+    #[test]
+    fn welford_numerical_stability_large_values() {
+        // Large magnitudes with small deviations — two-pass loses precision,
+        // Welford's stays accurate.
+        let base = 1.0e9;
+        let data: Vec<f64> = (0..100).map(|i| base + i as f64).collect();
+        let (_, var) = mean_and_variance(&data);
+        // Variance of 0..99 is 833.25 (population)
+        assert!((var - 833.25).abs() < 1e-6);
     }
 }
