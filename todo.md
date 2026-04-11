@@ -243,7 +243,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Haiku | **Scope:** memory
 - **Files:** Widespread across `apps/cpop_cli/`, `crates/witnessd/src/sentinel/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/analysis/`
-- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-10 (struct fields typed String, not &str; .to_string() is idiomatic; proper fix requires type refactoring)
 - **Priority:** 10/240 | **Estimated time:** 2h
 - **Description:** `.to_string()` on string literals ("auto", "default"), `vec![]` of constants. Each allocates unnecessarily.
 - **Root cause:** Lazy allocation pattern; no thought to hot-path overhead.
