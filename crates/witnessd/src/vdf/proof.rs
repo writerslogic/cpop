@@ -61,6 +61,25 @@ impl VdfProof {
         }
     }
 
+    /// Compute a VDF proof asynchronously, offloading CPU work to a blocking thread.
+    pub async fn compute_async(
+        input: [u8; 32],
+        target_duration: Duration,
+        params: Parameters,
+    ) -> Result<Self, String> {
+        tokio::task::spawn_blocking(move || Self::compute(input, target_duration, params))
+            .await
+            .map_err(|e| format!("VDF compute task panicked: {e}"))?
+    }
+
+    /// Verify this proof asynchronously, offloading CPU work to a blocking thread.
+    pub async fn verify_async(&self) -> bool {
+        let proof = self.clone();
+        tokio::task::spawn_blocking(move || proof.verify())
+            .await
+            .unwrap_or(false)
+    }
+
     /// Verify this proof by recomputing the full hash chain.
     /// Returns `false` for zero-iteration proofs (trivial, no work performed).
     pub fn verify(&self) -> bool {

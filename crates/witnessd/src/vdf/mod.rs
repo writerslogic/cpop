@@ -12,9 +12,9 @@ pub use aggregation::{
     MerkleVdfProof, SnarkScheme, SnarkVdfProof, VdfAggregateProof, VerificationMode,
 };
 pub use params::{
-    calibrate, chain_input, chain_input_entangled, compute, compute_iterations, default_parameters,
-    swf_seed_core, swf_seed_enhanced, swf_seed_genesis, verify, verify_with_progress, Parameters,
-    CALIBRATION_MAX_ITERS_PER_SEC, CALIBRATION_MIN_ITERS_PER_SEC,
+    calibrate, chain_input, chain_input_entangled, compute, compute_async, compute_iterations,
+    default_parameters, swf_seed_core, swf_seed_enhanced, swf_seed_genesis, verify,
+    verify_with_progress, Parameters, CALIBRATION_MAX_ITERS_PER_SEC, CALIBRATION_MIN_ITERS_PER_SEC,
 };
 pub use proof::VdfProof;
 

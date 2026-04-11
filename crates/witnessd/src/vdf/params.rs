@@ -89,6 +89,15 @@ pub fn compute(
     VdfProof::compute(input, duration, params)
 }
 
+/// Compute a VDF proof asynchronously, offloading CPU work to a blocking thread.
+pub async fn compute_async(
+    input: [u8; 32],
+    duration: Duration,
+    params: Parameters,
+) -> Result<VdfProof, String> {
+    VdfProof::compute_async(input, duration, params).await
+}
+
 /// Compute a VDF proof with an exact iteration count.
 pub fn compute_iterations(input: [u8; 32], iterations: u64) -> VdfProof {
     VdfProof::compute_iterations(input, iterations)
