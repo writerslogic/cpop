@@ -42,6 +42,6 @@ impl BiologicalCadence {
 
         // Lower coefficient of variation indicates steadier cadence (closer to 1.0).
         let score = 1.0 / (1.0 + cv);
-        score.clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(score).get()
     }
 }

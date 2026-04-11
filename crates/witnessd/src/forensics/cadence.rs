@@ -106,7 +106,7 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
     metrics.cross_hand_timing_ratio = compute_cross_hand_timing_ratio(samples, &ikis);
     metrics.post_pause_cv = compute_post_pause_cv(&ikis);
     metrics.iki_autocorrelation = compute_iki_autocorrelation(&ikis);
-    metrics.correction_ratio = compute_correction_ratio(samples);
+    metrics.correction_ratio = crate::utils::Probability::clamp(compute_correction_ratio(samples));
     metrics.pause_depth_distribution = compute_pause_depth_distribution(&ikis);
     metrics.burst_speed_cv = compute_burst_speed_cv(&bursts, &ikis);
     metrics.zero_variance_windows = count_zero_variance_windows(&ikis);
@@ -125,7 +125,7 @@ pub fn analyze_cadence(samples: &[SimpleJitterSample]) -> CadenceMetrics {
         metrics.iki_autocorrelation = 0.0;
     }
     if !metrics.correction_ratio.is_finite() {
-        metrics.correction_ratio = 0.0;
+        metrics.correction_ratio = crate::utils::Probability::ZERO;
     }
     if !metrics.burst_speed_cv.is_finite() {
         metrics.burst_speed_cv = 0.0;

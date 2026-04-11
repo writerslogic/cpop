@@ -293,7 +293,7 @@ impl CheckpointTrigger {
 
         let var = (self.window_sum_sq / n) - (mean * mean);
         let cv = var.max(0.0).sqrt() / mean;
-        (1.0 + cv).log2().clamp(0.0, 1.0)
+        crate::utils::Probability::clamp((1.0 + cv).log2()).get()
     }
 }
 

@@ -112,12 +112,14 @@ impl VoiceFingerprint {
             .backspace_signature
             .similarity(&other.backspace_signature);
 
-        (word_len_sim * 0.20
-            + punct_sim * 0.20
-            + ngram_sim * 0.25
-            + correction_sim * 0.15
-            + backspace_sim * 0.20)
-            .clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(
+            word_len_sim * 0.20
+                + punct_sim * 0.20
+                + ngram_sim * 0.25
+                + correction_sim * 0.15
+                + backspace_sim * 0.20,
+        )
+        .get()
     }
 }
 

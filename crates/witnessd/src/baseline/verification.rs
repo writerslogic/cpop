@@ -34,7 +34,7 @@ pub fn verify_against_baseline(digest: &BaselineDigest, session: &SessionBehavio
         digest.session_count,
     );
 
-    (0.4 * b_coeff + 0.2 * cv_sim + 0.2 * hurst_sim + 0.2 * pause_sim).clamp(0.0, 1.0)
+    crate::utils::Probability::clamp(0.4 * b_coeff + 0.2 * cv_sim + 0.2 * hurst_sim + 0.2 * pause_sim).get()
 }
 
 fn gaussian_similarity(value: f64, mean: f64, m2: f64, count: u64) -> f64 {

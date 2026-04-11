@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::jitter::SimpleJitterSample;
+use crate::utils::Probability;
 use std::collections::HashMap;
 
 fn create_test_events(count: usize) -> Vec<EventData> {
@@ -212,7 +213,7 @@ fn test_compute_primary_metrics() {
     let events = create_test_events(10);
     let regions = create_test_regions();
 
-    let metrics = compute_primary_metrics(&events, &regions).unwrap();
+    let metrics = compute_primary_metrics(SortedEvents::new(&events), &regions).unwrap();
 
     assert!(metrics.monotonic_append_ratio >= 0.0 && metrics.monotonic_append_ratio <= 1.0);
     assert!(metrics.edit_entropy >= 0.0);
@@ -225,7 +226,7 @@ fn test_insufficient_data() {
     let events = create_test_events(2);
     let regions = HashMap::new();
 
-    let result = compute_primary_metrics(&events, &regions);
+    let result = compute_primary_metrics(SortedEvents::new(&events), &regions);
     assert!(matches!(result, Err(ForensicsError::InsufficientData)));
 }
 
@@ -234,7 +235,8 @@ fn test_session_detection() {
     let mut events = create_test_events(10);
     events[5].timestamp_ns = events[4].timestamp_ns + 3_600_000_000_000; // 1 hour gap
 
-    let sessions = detect_sessions(&events, 1800.0);
+    events.sort_by_key(|e| e.timestamp_ns);
+    let sessions = detect_sessions(SortedEvents::new(&events), 1800.0);
     assert_eq!(sessions.len(), 2);
 }
 
@@ -276,10 +278,10 @@ fn test_correlation() {
 fn test_profile_comparison() {
     let profile_a = AuthorshipProfile {
         metrics: PrimaryMetrics {
-            monotonic_append_ratio: 0.5,
+            monotonic_append_ratio: Probability::clamp(0.5),
             edit_entropy: 2.5,
             median_interval: 3.0,
-            positive_negative_ratio: 0.7,
+            positive_negative_ratio: Probability::clamp(0.7),
             deletion_clustering: 0.4,
         },
         ..Default::default()
@@ -287,10 +289,10 @@ fn test_profile_comparison() {
 
     let profile_b = AuthorshipProfile {
         metrics: PrimaryMetrics {
-            monotonic_append_ratio: 0.55,
+            monotonic_append_ratio: Probability::clamp(0.55),
             edit_entropy: 2.6,
             median_interval: 3.2,
-            positive_negative_ratio: 0.72,
+            positive_negative_ratio: Probability::clamp(0.72),
             deletion_clustering: 0.45,
         },
         ..Default::default()
@@ -304,10 +306,10 @@ fn test_profile_comparison() {
 #[test]
 fn test_assessment_score() {
     let good_primary = PrimaryMetrics {
-        monotonic_append_ratio: 0.4,
+        monotonic_append_ratio: Probability::clamp(0.4),
         edit_entropy: 3.0,
         median_interval: 5.0,
-        positive_negative_ratio: 0.7,
+        positive_negative_ratio: Probability::clamp(0.7),
         deletion_clustering: 0.5,
     };
 
@@ -321,10 +323,10 @@ fn test_assessment_score() {
     assert!(score > 0.7);
 
     let bad_primary = PrimaryMetrics {
-        monotonic_append_ratio: 0.95,
+        monotonic_append_ratio: Probability::clamp(0.95),
         edit_entropy: 0.5,
         median_interval: 5.0,
-        positive_negative_ratio: 0.98,
+        positive_negative_ratio: Probability::clamp(0.98),
         deletion_clustering: 1.0,
     };
 
@@ -565,12 +567,12 @@ fn test_forgery_cost_weakest_link_is_cheapest() {
 #[test]
 fn test_velocity_empty_and_single_event() {
     let empty: Vec<EventData> = vec![];
-    let m = analyze_velocity(&empty);
+    let m = analyze_velocity(SortedEvents::new(&empty));
     assert_eq!(m.mean_bps, 0.0);
     assert_eq!(m.high_velocity_bursts, 0);
 
     let single = make_events(1, 0, 1_000_000_000);
-    let m = analyze_velocity(&single);
+    let m = analyze_velocity(SortedEvents::new(&single));
     assert_eq!(m.mean_bps, 0.0);
 }
 
@@ -593,7 +595,7 @@ fn test_velocity_detects_high_bursts() {
             file_path: "t.txt".into(),
         },
     ];
-    let m = analyze_velocity(&events);
+    let m = analyze_velocity(SortedEvents::new(&events));
     assert!(m.max_bps > THRESHOLD_HIGH_VELOCITY_BPS);
     assert_eq!(m.high_velocity_bursts, 1);
     assert!(m.autocomplete_chars > 0);
@@ -603,7 +605,7 @@ fn test_velocity_detects_high_bursts() {
 fn test_velocity_normal_typing() {
     // Events 1s apart with small deltas => ~10 bps, well under threshold
     let events = make_events(20, 1_000_000_000, 1_000_000_000);
-    let m = analyze_velocity(&events);
+    let m = analyze_velocity(SortedEvents::new(&events));
     assert!(m.mean_bps < THRESHOLD_HIGH_VELOCITY_BPS);
     assert_eq!(m.high_velocity_bursts, 0);
     assert_eq!(m.autocomplete_chars, 0);
@@ -616,7 +618,7 @@ fn test_session_stats_multi_session() {
     for event in &mut events[10..20] {
         event.timestamp_ns += 7_200_000_000_000;
     }
-    let stats = compute_session_stats(&events);
+    let stats = compute_session_stats(SortedEvents::new(&events));
     assert_eq!(stats.session_count, 2);
     assert!(stats.total_editing_time_sec > 0.0);
     assert!(stats.time_span_sec > 7000.0);

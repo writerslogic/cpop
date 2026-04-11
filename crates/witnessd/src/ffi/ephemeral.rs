@@ -18,6 +18,7 @@ use crate::ffi::types::{
     FfiEphemeralFinalizeResult, FfiEphemeralSessionResult, FfiEphemeralStatusResult, FfiResult,
 };
 use dashmap::DashMap;
+use std::sync::OnceLock;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
@@ -515,7 +516,7 @@ pub fn ffi_ephemeral_checkpoint_hash(
     entry.content_snapshots.push(ContentSnapshot {
         timestamp_ns: now_ns(),
         content_hash,
-        byte_count: char_count,
+        byte_count,
         _size_delta: size_delta,
         message: context_note,
     });
@@ -528,7 +529,7 @@ pub fn ffi_ephemeral_checkpoint_hash(
             let mut event = crate::store::SecureEvent::new(
                 ephemeral_path,
                 content_hash,
-                char_count as i64,
+                byte_count as i64,
                 entry
                     .content_snapshots
                     .last()

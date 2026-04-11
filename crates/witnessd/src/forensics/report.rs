@@ -48,11 +48,11 @@ pub fn generate_report(profile: &AuthorshipProfile) -> String {
     report.push_str(&format!(
         "Monotonic Append Ratio:   {:.3}  {}\n",
         m.monotonic_append_ratio,
-        format_metric_bar(m.monotonic_append_ratio, 0.0, 1.0, 20)
+        format_metric_bar(m.monotonic_append_ratio.get(), 0.0, 1.0, 20)
     ));
     report.push_str(&format!(
         "  -> {}\n\n",
-        interpret_monotonic_append(m.monotonic_append_ratio)
+        interpret_monotonic_append(m.monotonic_append_ratio.get())
     ));
 
     let max_entropy = ENTROPY_NORMALIZATION;
@@ -78,11 +78,11 @@ pub fn generate_report(profile: &AuthorshipProfile) -> String {
     report.push_str(&format!(
         "Positive/Negative Ratio:  {:.3}  {}\n",
         m.positive_negative_ratio,
-        format_metric_bar(m.positive_negative_ratio, 0.0, 1.0, 20)
+        format_metric_bar(m.positive_negative_ratio.get(), 0.0, 1.0, 20)
     ));
     report.push_str(&format!(
         "  -> {}\n\n",
-        interpret_pos_neg_ratio(m.positive_negative_ratio)
+        interpret_pos_neg_ratio(m.positive_negative_ratio.get())
     ));
 
     report.push_str(&format!(
@@ -174,7 +174,7 @@ fn format_metric_bar(value: f64, min: f64, max: f64, width: usize) -> String {
         return "-".repeat(width);
     }
 
-    let normalized = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    let normalized = crate::utils::stats::lerp_score(value, min, max);
     let filled = (normalized * width as f64) as usize;
     let filled = filled.min(width);
 

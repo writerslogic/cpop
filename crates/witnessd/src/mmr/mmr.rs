@@ -71,11 +71,11 @@ impl Mmr {
     }
 
     pub fn get_peaks(&self) -> Result<Vec<[u8; 32]>, MmrError> {
-        let state = self.state.read_recover();
-        if state.size == 0 {
+        let size = self.state.read_recover().size;
+        if size == 0 {
             return Ok(Vec::new());
         }
-        let peaks = find_peaks(state.size);
+        let peaks = find_peaks(size);
         let mut hashes = Vec::with_capacity(peaks.len());
         for idx in peaks {
             hashes.push(self.store.get(idx)?.hash);
@@ -112,8 +112,7 @@ impl Mmr {
     }
 
     pub fn get(&self, index: u64) -> Result<Node, MmrError> {
-        let state = self.state.read_recover();
-        if index >= state.size {
+        if index >= self.state.read_recover().size {
             return Err(MmrError::IndexOutOfRange);
         }
         self.store.get(index)
@@ -161,20 +160,23 @@ impl Mmr {
     }
 
     pub fn generate_proof(&self, leaf_index: u64) -> Result<InclusionProof, MmrError> {
-        let state = self.state.read_recover();
-        if state.size == 0 {
-            return Err(MmrError::Empty);
-        }
-        if leaf_index >= state.size {
-            return Err(MmrError::IndexOutOfRange);
-        }
+        let size = {
+            let state = self.state.read_recover();
+            if state.size == 0 {
+                return Err(MmrError::Empty);
+            }
+            if leaf_index >= state.size {
+                return Err(MmrError::IndexOutOfRange);
+            }
+            state.size
+        };
         let node = self.store.get(leaf_index)?;
         if node.height != 0 {
             return Err(MmrError::InvalidProof);
         }
-        let (path, peak_index) = self.generate_merkle_path(leaf_index, state.size)?;
+        let (path, peak_index) = self.generate_merkle_path(leaf_index, size)?;
         let peaks = self.get_peaks()?;
-        let peak_indices = find_peaks(state.size);
+        let peak_indices = find_peaks(size);
         let mut peak_position = None;
         for (i, idx) in peak_indices.iter().enumerate() {
             if *idx == peak_index {
@@ -190,7 +192,7 @@ impl Mmr {
             merkle_path: path,
             peaks,
             peak_position,
-            mmr_size: state.size,
+            mmr_size: size,
             root,
         })
     }
@@ -200,14 +202,17 @@ impl Mmr {
         start_leaf: u64,
         end_leaf: u64,
     ) -> Result<RangeProof, MmrError> {
-        let state = self.state.read_recover();
-        if state.size == 0 {
-            return Err(MmrError::Empty);
-        }
+        let size = {
+            let state = self.state.read_recover();
+            if state.size == 0 {
+                return Err(MmrError::Empty);
+            }
+            state.size
+        };
         if start_leaf > end_leaf {
             return Err(MmrError::InvalidProof);
         }
-        let leaf_count = leaf_count_from_size(state.size);
+        let leaf_count = leaf_count_from_size(size);
         if end_leaf >= leaf_count {
             return Err(MmrError::IndexOutOfRange);
         }
@@ -217,9 +222,9 @@ impl Mmr {
             leaf_hashes.push(self.store.get(*idx)?.hash);
         }
         let (sibling_path, peak_index) =
-            self.generate_range_merkle_path(&leaf_indices, state.size)?;
+            self.generate_range_merkle_path(&leaf_indices, size)?;
         let peaks = self.get_peaks()?;
-        let peak_indices = find_peaks(state.size);
+        let peak_indices = find_peaks(size);
         let mut peak_position = None;
         for (i, idx) in peak_indices.iter().enumerate() {
             if *idx == peak_index {
@@ -237,7 +242,7 @@ impl Mmr {
             sibling_path,
             peaks,
             peak_position,
-            mmr_size: state.size,
+            mmr_size: size,
             root,
         })
     }

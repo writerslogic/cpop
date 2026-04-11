@@ -70,7 +70,7 @@ impl TranscriptionDetector {
         Self {
             typing_buffer: VecDeque::with_capacity(buffer_capacity),
             buffer_capacity,
-            similarity_threshold: similarity_threshold.clamp(0.0, 1.0),
+            similarity_threshold: crate::utils::Probability::clamp(similarity_threshold).get(),
             min_match_length,
             matches: Vec::new(),
         }

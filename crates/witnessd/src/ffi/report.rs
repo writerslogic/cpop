@@ -252,13 +252,13 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             writing_mode_confidence: profile.writing_mode_confidence(),
             revision_cycle_count: profile.revision_cycle_count(),
             hurst_exponent: None,
-            assessment_score: metrics.assessment_score,
+            assessment_score: metrics.assessment_score.get(),
             risk_level: profile.risk_level().to_string(),
             mean_iki_ms: mean_iki,
             coefficient_of_variation: finite_or(cv, 0.0),
             burst_count: c.burst_count as u32,
             pause_count: c.pause_count as u32,
-            correction_ratio: finite_or(c.correction_ratio, 0.0),
+            correction_ratio: finite_or(c.correction_ratio.get(), 0.0),
             burst_speed_cv: finite_or(c.burst_speed_cv, 0.0),
             pause_depth: c.pause_depth_distribution,
             mean_bps: finite_or(metrics.velocity.mean_bps, 0.0),
@@ -279,14 +279,16 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             process.pause_p95_sec = Some(c.percentiles[PERCENTILE_IDX_P95] / 1_000_000_000.0);
         }
     }
-    process.revision_intensity = if metrics.primary.monotonic_append_ratio.is_finite() {
-        Some(1.0 - metrics.primary.monotonic_append_ratio)
+    let append_ratio = metrics.primary.monotonic_append_ratio.get();
+    process.revision_intensity = if append_ratio.is_finite() {
+        Some(1.0 - append_ratio)
     } else {
         None
     };
-    if c.correction_ratio.is_finite() && c.correction_ratio > 0.0 {
+    let correction_ratio = c.correction_ratio.get();
+    if correction_ratio.is_finite() && correction_ratio > 0.0 {
         let total_events = (c.burst_count + c.pause_count) as u64;
-        process.deletion_sequences = Some((c.correction_ratio * total_events as f64) as u64);
+        process.deletion_sequences = Some((correction_ratio * total_events as f64) as u64);
     }
 
     // Override verdict to Inconclusive when behavioral data is absent

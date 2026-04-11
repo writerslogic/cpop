@@ -147,7 +147,7 @@ impl WeightedDistribution for IkiDistribution {
             return 0.5; // inconclusive
         }
 
-        (hist_sim * 0.6 + mean_sim * 0.2 + std_sim * 0.2).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(hist_sim * 0.6 + mean_sim * 0.2 + std_sim * 0.2).get()
     }
 
     fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {
@@ -302,7 +302,7 @@ impl WeightedDistribution for ZoneProfile {
             .map(|(a, b)| a.min(*b))
             .sum();
 
-        (freq_sim * 0.4 + trans_sim * 0.6).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(freq_sim * 0.4 + trans_sim * 0.6).get()
     }
 
     fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {
@@ -438,7 +438,7 @@ impl WeightedDistribution for PauseSignature {
         let mean_sim: f64 = mean_sims.iter().sum::<f64>() / 3.0;
         let freq_sim: f64 = freq_sims.iter().sum::<f64>() / 3.0;
 
-        (mean_sim * 0.5 + freq_sim * 0.5).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(mean_sim * 0.5 + freq_sim * 0.5).get()
     }
 
     fn weighted_merge(&mut self, other: &Self, self_weight: f64, other_weight: f64) {

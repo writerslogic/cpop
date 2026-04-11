@@ -153,7 +153,7 @@ impl ActivityFingerprint {
 
     /// Set hardware entropy ratio (clamped to 0.0-1.0).
     pub fn set_phys_ratio(&mut self, ratio: f64) {
-        self.phys_ratio = Some(ratio.clamp(0.0, 1.0));
+        self.phys_ratio = Some(crate::utils::Probability::clamp(ratio).get());
     }
 
     /// Attach mouse idle jitter stats as an additional biometric signal.
@@ -172,7 +172,7 @@ impl ActivityFingerprint {
         let zone_sim = self.zone_profile.similarity(&other.zone_profile);
         let pause_sim = self.pause_signature.similarity(&other.pause_signature);
 
-        (iki_sim * 0.4 + zone_sim * 0.35 + pause_sim * 0.25).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(iki_sim * 0.4 + zone_sim * 0.35 + pause_sim * 0.25).get()
     }
 
     /// Linear confidence saturating at `CONFIDENCE_SATURATION_SAMPLES`.

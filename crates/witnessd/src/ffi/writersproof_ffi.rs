@@ -34,7 +34,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
             return FfiResult::err(e);
         }
     };
-    let doc_path_str = doc_path.to_string_lossy();
+    let doc_path_str = doc_path.to_string_lossy().into_owned();
     let events = match store.get_events_for_file(&doc_path_str) {
         Ok(e) => e,
         Err(e) => {

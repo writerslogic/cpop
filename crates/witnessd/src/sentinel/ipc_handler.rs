@@ -391,8 +391,8 @@ impl SentinelIpcHandler {
                 .map(|e| {
                     let delta = e.size_delta;
                     let cursor =
-                        ((e.file_size as f64 - delta.abs() as f64) / max_size).clamp(0.0, 1.0);
-                    let extent = (delta.abs() as f64 / max_size).clamp(0.0, 1.0);
+                        crate::utils::Probability::clamp((e.file_size as f64 - delta.abs() as f64) / max_size).get();
+                    let extent = crate::utils::Probability::clamp(delta.abs() as f64 / max_size).get();
                     crate::evidence::EditRegion {
                         start_pct: cursor,
                         end_pct: (cursor + extent).min(1.0),
@@ -501,13 +501,13 @@ impl SentinelIpcHandler {
         let (_events, metrics) = self.analyze_file(&path)?;
 
         Ok(IpcMessage::ForensicsResponse {
-            assessment_score: metrics.assessment_score,
+            assessment_score: metrics.assessment_score.get(),
             risk_level: metrics.risk_level.to_string(),
             anomaly_count: metrics.anomaly_count as u32,
-            monotonic_append_ratio: metrics.primary.monotonic_append_ratio,
+            monotonic_append_ratio: metrics.primary.monotonic_append_ratio.get(),
             edit_entropy: metrics.primary.edit_entropy,
             median_interval: metrics.primary.median_interval,
-            biological_cadence_score: metrics.biological_cadence_score,
+            biological_cadence_score: metrics.biological_cadence_score.get(),
             error: None,
         })
     }
@@ -533,7 +533,7 @@ impl SentinelIpcHandler {
             0.0
         };
         let append_ratio = if metrics.primary.monotonic_append_ratio.is_finite() {
-            metrics.primary.monotonic_append_ratio
+            metrics.primary.monotonic_append_ratio.get()
         } else {
             0.0
         };
@@ -541,7 +541,7 @@ impl SentinelIpcHandler {
             * SEQUENCE_ENTROPY_WEIGHT)
             + (append_ratio * SEQUENCE_APPEND_WEIGHT);
         let behavioral = if metrics.assessment_score.is_finite() {
-            metrics.assessment_score
+            metrics.assessment_score.get()
         } else {
             0.0
         };

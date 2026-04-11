@@ -181,10 +181,11 @@ impl Wal {
     /// with [`scan_to_end`](Self::scan_to_end) which returns `Err` on the same
     /// conditions because it cannot proceed with state reconstruction.
     pub fn verify(&self) -> Result<WalVerification, WalError> {
-        let state = self.inner.lock_recover();
-        let verifying_key = state.signing_key.verifying_key();
-
-        let mut file = state.file.try_clone()?;
+        // Snapshot key + file handle, then release the lock before I/O.
+        let (verifying_key, mut file) = {
+            let state = self.inner.lock_recover();
+            (state.signing_key.verifying_key(), state.file.try_clone()?)
+        };
 
         file.seek(SeekFrom::Start(0))?;
         let mut header_buf = vec![0u8; HEADER_SIZE];

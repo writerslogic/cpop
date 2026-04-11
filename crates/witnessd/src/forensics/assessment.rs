@@ -6,11 +6,12 @@ use chrono::DateTime;
 use std::collections::HashMap;
 
 use super::types::{
-    Anomaly, AnomalyType, Assessment, CadenceMetrics, EventData, FocusMetrics, PrimaryMetrics,
-    RegionData, RiskLevel, Severity, ALERT_THRESHOLD, MIN_EVENTS_FOR_ANALYSIS,
+    Anomaly, AnomalyType, Assessment, CadenceMetrics, FocusMetrics, PrimaryMetrics,
+    RegionData, RiskLevel, Severity, SortedEvents, ALERT_THRESHOLD, MIN_EVENTS_FOR_ANALYSIS,
     MIN_EVENTS_FOR_ASSESSMENT, THRESHOLD_GAP_HOURS, THRESHOLD_HIGH_VELOCITY_BPS,
     THRESHOLD_LOW_ENTROPY, THRESHOLD_MONOTONIC_APPEND,
 };
+use crate::utils::Probability;
 
 /// Max Shannon entropy for 20-bin edit-position histogram: log2(20).
 pub(crate) const ENTROPY_NORMALIZATION: f64 = 4.321928;
@@ -101,7 +102,7 @@ const FOCUS_OUT_OF_FOCUS_PENALTY: f64 = 0.1;
 
 /// Detect anomalies in editing patterns (topology + temporal).
 pub fn detect_anomalies(
-    events: &[EventData],
+    sorted: SortedEvents<'_>,
     regions: &HashMap<i64, Vec<RegionData>>,
     metrics: &PrimaryMetrics,
 ) -> Vec<Anomaly> {
@@ -116,7 +117,7 @@ pub fn detect_anomalies(
             severity: Severity::Warning,
             context: Some(format!(
                 "Ratio: {:.2}%",
-                metrics.monotonic_append_ratio * 100.0
+                metrics.monotonic_append_ratio.get() * 100.0
             )),
         });
     }
@@ -146,24 +147,21 @@ pub fn detect_anomalies(
         });
     }
 
-    anomalies.extend(detect_temporal_anomalies(events, regions));
+    anomalies.extend(detect_temporal_anomalies(sorted, regions));
 
     anomalies
 }
 
 /// Detect temporal gaps and high-velocity editing periods.
 fn detect_temporal_anomalies(
-    events: &[EventData],
+    sorted: SortedEvents<'_>,
     _regions: &HashMap<i64, Vec<RegionData>>,
 ) -> Vec<Anomaly> {
     let mut anomalies = Vec::new();
 
-    if events.len() < 2 {
+    if sorted.len() < 2 {
         return anomalies;
     }
-
-    let mut sorted = events.to_vec();
-    sorted.sort_by_key(|e| e.timestamp_ns);
 
     for window in sorted.windows(2) {
         let prev = &window[0];
@@ -275,7 +273,7 @@ pub fn compute_assessment_score(
     let mut score = 1.0;
 
     let mar = if primary.monotonic_append_ratio.is_finite() {
-        primary.monotonic_append_ratio
+        primary.monotonic_append_ratio.get()
     } else {
         0.0
     };
@@ -369,11 +367,7 @@ pub fn compute_assessment_score(
         score -= 0.05;
     }
 
-    if score.is_finite() {
-        score.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
+    crate::utils::Probability::clamp(score).get()
 }
 
 /// Quick cadence-only score for real-time use before full topology is available.
@@ -406,31 +400,24 @@ pub fn compute_cadence_score(cadence: &CadenceMetrics) -> f64 {
         score -= 0.15;
     }
 
-    if score.is_finite() {
-        score.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
+    crate::utils::Probability::clamp(score).get()
 }
 
 /// Apply focus-switching penalties to an assessment score.
 ///
 /// Call after `compute_assessment_score` when `FocusMetrics` are available.
-pub fn apply_focus_penalties(score: &mut f64, focus: &FocusMetrics) {
+pub fn apply_focus_penalties(score: &mut Probability, focus: &FocusMetrics) {
+    let mut s = score.get();
     if focus.reading_pattern_detected {
-        *score -= FOCUS_READING_PENALTY;
+        s -= FOCUS_READING_PENALTY;
     }
     if focus.ai_app_switch_count > FOCUS_AI_SWITCH_THRESHOLD {
-        *score -= FOCUS_AI_SWITCH_PENALTY;
+        s -= FOCUS_AI_SWITCH_PENALTY;
     }
     if focus.out_of_focus_ratio > FOCUS_OUT_OF_FOCUS_THRESHOLD {
-        *score -= FOCUS_OUT_OF_FOCUS_PENALTY;
+        s -= FOCUS_OUT_OF_FOCUS_PENALTY;
     }
-    *score = if score.is_finite() {
-        score.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    *score = Probability::clamp(s);
 }
 
 /// Apply cross-window transcription penalties to an assessment score.
@@ -439,7 +426,7 @@ pub fn apply_focus_penalties(score: &mut f64, focus: &FocusMetrics) {
 /// Each match above the 0.70 threshold applies a penalty proportional to its
 /// similarity score, capped at 0.30 total.
 pub fn apply_cross_window_penalties(
-    score: &mut f64,
+    score: &mut Probability,
     matches: &[crate::transcription::CrossWindowMatch],
 ) {
     /// Per-match penalty at similarity = 1.0.
@@ -458,12 +445,7 @@ pub fn apply_cross_window_penalties(
         }
     }
     total_penalty = total_penalty.min(CROSS_WINDOW_PENALTY_CAP);
-    *score -= total_penalty;
-    *score = if score.is_finite() {
-        score.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    *score = Probability::clamp(score.get() - total_penalty);
 }
 
 /// Map assessment score to risk level.

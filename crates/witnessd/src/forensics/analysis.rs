@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use crate::analysis::BehavioralFingerprint;
 use crate::jitter::SimpleJitterSample;
+use crate::utils::Probability;
 use crate::utils::stats::mean_and_std_dev;
 
 use super::assessment::{
@@ -16,8 +17,8 @@ use super::assessment::{
 use super::cadence::analyze_cadence;
 use super::topology::compute_primary_metrics;
 use super::types::{
-    Assessment, AuthorshipProfile, EventData, ForensicMetrics, RegionData, DEFAULT_SESSION_GAP_SEC,
-    MIN_EVENTS_FOR_ANALYSIS,
+    Assessment, AuthorshipProfile, EventData, ForensicMetrics, RegionData, SortedEvents,
+    DEFAULT_SESSION_GAP_SEC, MIN_EVENTS_FOR_ANALYSIS,
 };
 use super::velocity::{compute_session_stats, count_sessions_sorted};
 
@@ -100,8 +101,9 @@ pub fn build_profile(
     let time_span = last_ts.signed_duration_since(first_ts);
 
     let session_count = count_sessions_sorted(&sorted, DEFAULT_SESSION_GAP_SEC);
+    let sorted_ev = SortedEvents::new(&sorted);
 
-    let metrics = match compute_primary_metrics(&sorted, regions_by_event) {
+    let metrics = match compute_primary_metrics(sorted_ev, regions_by_event) {
         Ok(m) => m,
         Err(_) => {
             return AuthorshipProfile {
@@ -117,7 +119,7 @@ pub fn build_profile(
         }
     };
 
-    let anomalies = detect_anomalies(&sorted, regions_by_event, &metrics);
+    let anomalies = detect_anomalies(sorted_ev, regions_by_event, &metrics);
     let assessment = determine_assessment(&metrics, &anomalies, events.len());
 
     AuthorshipProfile {
@@ -187,6 +189,11 @@ pub fn analyze_forensics_ext_with_focus(
 ) -> ForensicMetrics {
     let mut metrics = ForensicMetrics::default();
 
+    // Sort once at pipeline entry; all analyzers receive the sorted invariant.
+    let mut sorted_buf = events.to_vec();
+    sorted_buf.sort_by_key(|e| e.timestamp_ns);
+    let sorted = SortedEvents::new(&sorted_buf);
+
     if let (Some(model), Some(text)) = (perplexity_model, document_text) {
         let score = model.compute_perplexity(text);
         metrics.perplexity_score = if score.is_finite() {
@@ -202,7 +209,7 @@ pub fn analyze_forensics_ext_with_focus(
         metrics.perplexity_score = 1.0;
     }
 
-    if let Ok(primary) = compute_primary_metrics(events, regions) {
+    if let Ok(primary) = compute_primary_metrics(sorted, regions) {
         metrics.primary = primary;
     }
 
@@ -225,7 +232,7 @@ pub fn analyze_forensics_ext_with_focus(
         }
 
         metrics.biological_cadence_score =
-            crate::physics::biological::BiologicalCadence::analyze(samples);
+            Probability::clamp(crate::physics::biological::BiologicalCadence::analyze(samples));
 
         let fingerprint = BehavioralFingerprint::from_samples(samples);
         metrics.behavioral = Some(fingerprint);
@@ -237,13 +244,13 @@ pub fn analyze_forensics_ext_with_focus(
         // Degenerate inputs (< 2 samples) yield a default CV of 0.0 — return 0.0 confidence
         // since no meaningful inference is possible.
         let cv = metrics.cadence.coefficient_of_variation;
-        metrics.steg_confidence = if samples.len() < 2 || !cv.is_finite() {
+        metrics.steg_confidence = Probability::clamp(if samples.len() < 2 || !cv.is_finite() {
             0.0
         } else if cv > STEG_LOW_CONF {
             STEG_HIGH_CONF
         } else {
             STEG_PENALTY
-        };
+        });
 
         // Steg looks valid but behavioral is suspicious — likely a perfect replay attack
         if forgery.is_suspicious && metrics.steg_confidence > STEG_ALERT_THRESHOLD {
@@ -334,11 +341,11 @@ pub fn analyze_forensics_ext_with_focus(
         }
     }
 
-    metrics.velocity = super::velocity::analyze_velocity(events);
-    metrics.session_stats = compute_session_stats(events);
+    metrics.velocity = super::velocity::analyze_velocity(sorted);
+    metrics.session_stats = compute_session_stats(sorted);
     metrics.checkpoint_count = context.checkpoint_count as usize;
 
-    let anomalies = detect_anomalies(events, regions, &metrics.primary);
+    let anomalies = detect_anomalies(sorted, regions, &metrics.primary);
     metrics.anomaly_count += anomalies.len();
 
     // Skip cross-modal when context is default/unpopulated to avoid false positives
@@ -364,24 +371,24 @@ pub fn analyze_forensics_ext_with_focus(
         metrics.cross_modal = Some(cm_result);
     }
 
-    metrics.assessment_score = compute_assessment_score(
+    metrics.assessment_score = Probability::clamp(compute_assessment_score(
         &metrics.primary,
         &metrics.cadence,
         metrics.anomaly_count,
         events.len(),
-        metrics.biological_cadence_score,
-    );
+        metrics.biological_cadence_score.get(),
+    ));
     if let Some(focus) = focus_metrics {
         metrics.focus = focus;
         apply_focus_penalties(&mut metrics.assessment_score, &metrics.focus);
     }
 
-    metrics.risk_level = determine_risk_level(metrics.assessment_score, events.len());
+    metrics.risk_level = determine_risk_level(metrics.assessment_score.get(), events.len());
 
     metrics.writing_mode = Some(super::writing_mode::classify_writing_mode(
         &metrics.primary,
         &metrics.cadence,
-        events,
+        sorted,
         events.len(),
     ));
 
@@ -396,7 +403,7 @@ pub fn per_checkpoint_flags(
     if checkpoints.is_empty() {
         return PerCheckpointResult {
             checkpoint_flags: Vec::new(),
-            pct_flagged: 0.0,
+            pct_flagged: Probability::ZERO,
             suspicious: false,
         };
     }
@@ -469,11 +476,11 @@ pub fn per_checkpoint_flags(
     }
 
     let flagged_count = flags.iter().filter(|f| f.flagged).count();
-    let pct_flagged = if flags.is_empty() {
+    let pct_flagged = Probability::clamp(if flags.is_empty() {
         0.0
     } else {
         flagged_count as f64 / flags.len() as f64
-    };
+    });
     let suspicious = pct_flagged > PER_CHECKPOINT_SUSPICIOUS_THRESHOLD;
 
     PerCheckpointResult {
@@ -549,11 +556,11 @@ pub fn analyze_focus_patterns(
     }
 
     let total_session_sec = total_session_ms as f64 / 1000.0;
-    let out_of_focus_ratio = if total_session_sec > f64::EPSILON {
-        (total_away_sec / total_session_sec).min(1.0)
+    let out_of_focus_ratio = Probability::clamp(if total_session_sec > f64::EPSILON {
+        total_away_sec / total_session_sec
     } else {
         0.0
-    };
+    });
     let avg_away_duration_sec = if completed_count > 0 {
         total_away_sec / completed_count as f64
     } else {

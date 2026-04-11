@@ -131,7 +131,7 @@ pub fn ffi_get_forensic_breakdown(path: String) -> FfiForensicBreakdown {
 
     FfiForensicBreakdown {
         success: true,
-        monotonic_append_ratio: profile.metrics.monotonic_append_ratio,
+        monotonic_append_ratio: profile.metrics.monotonic_append_ratio.get(),
         edit_entropy: profile.metrics.edit_entropy,
         median_interval: profile.metrics.median_interval,
         mean_iki_ms,
@@ -142,7 +142,7 @@ pub fn ffi_get_forensic_breakdown(path: String) -> FfiForensicBreakdown {
         mean_bps: finite_or(metrics.velocity.mean_bps, 0.0),
         max_bps: finite_or(metrics.velocity.max_bps, 0.0),
         hurst_exponent: metrics.hurst_exponent.filter(|h| h.is_finite()),
-        assessment_score: finite_or(metrics.assessment_score, 0.0),
+        assessment_score: finite_or(metrics.assessment_score.get(), 0.0),
         perplexity_score: finite_or(metrics.perplexity_score, 0.0),
         risk_level: metrics.risk_level.to_string().to_lowercase(),
         protocol_verdict: format!("{:?}", protocol_verdict),
@@ -168,7 +168,7 @@ pub fn ffi_get_forensic_breakdown(path: String) -> FfiForensicBreakdown {
             .as_ref()
             .map(|wm| wm.revision_pattern.revision_cycle_count as u32)
             .unwrap_or(0),
-        correction_ratio: metrics.cadence.correction_ratio,
+        correction_ratio: metrics.cadence.correction_ratio.get(),
         burst_speed_cv: metrics.cadence.burst_speed_cv,
         pause_depth_distribution: metrics.cadence.pause_depth_distribution.to_vec(),
         error_message: None,

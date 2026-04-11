@@ -93,8 +93,9 @@ impl ShadowManager {
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
-        if let Some(shadow) = self.shadows.write_recover().remove(id) {
-            if let Err(e) = fs::remove_file(&shadow.path) {
+        let path = self.shadows.write_recover().remove(id).map(|s| s.path);
+        if let Some(path) = path {
+            if let Err(e) = fs::remove_file(&path) {
                 log::debug!("shadow file remove: {e}");
             }
         }
@@ -103,8 +104,9 @@ impl ShadowManager {
 
     /// Migrate a shadow buffer to a real file path when the document is saved.
     pub fn migrate(&self, id: &str, _new_path: &str) -> Result<()> {
-        if let Some(shadow) = self.shadows.write_recover().remove(id) {
-            if let Err(e) = fs::remove_file(&shadow.path) {
+        let path = self.shadows.write_recover().remove(id).map(|s| s.path);
+        if let Some(path) = path {
+            if let Err(e) = fs::remove_file(&path) {
                 log::debug!("shadow file remove: {e}");
             }
         }
@@ -112,13 +114,17 @@ impl ShadowManager {
     }
 
     pub fn cleanup_all(&self) {
-        let mut shadows = self.shadows.write_recover();
-        for shadow in shadows.values() {
-            if let Err(e) = fs::remove_file(&shadow.path) {
+        let paths: Vec<PathBuf> = {
+            let mut shadows = self.shadows.write_recover();
+            let paths = shadows.values().map(|s| s.path.clone()).collect();
+            shadows.clear();
+            paths
+        };
+        for path in &paths {
+            if let Err(e) = fs::remove_file(path) {
                 log::debug!("shadow cleanup: {e}");
             }
         }
-        shadows.clear();
     }
 
     pub fn cleanup_old(&self, max_age: Duration) -> u32 {

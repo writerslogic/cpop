@@ -23,3 +23,5 @@ pub use self::builder::{
     build_ephemeral_packet, compute_events_binding_hash, convert_anchor_proof, Builder,
     EphemeralSnapshot,
 };
+
+pub use self::rfc_conversion::RfcConversionError;

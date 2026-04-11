@@ -3,11 +3,13 @@
 //! Shared engine-wide utility functions.
 
 pub mod mlock;
+pub mod probability;
 pub mod stats;
 pub mod time;
 
+pub use probability::Probability;
 pub use stats::{
-    coefficient_of_variation, mean, mean_and_sample_std_dev, mean_and_sample_variance,
+    coefficient_of_variation, lerp_score, mean, mean_and_sample_std_dev, mean_and_sample_variance,
     mean_and_std_dev, mean_and_variance, median, std_dev,
 };
 pub use time::now_ns;

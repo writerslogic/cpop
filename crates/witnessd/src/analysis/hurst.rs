@@ -148,7 +148,7 @@ pub fn compute_hurst_rs(data: &[f64]) -> Result<HurstAnalysis, HurstError> {
         return Err(HurstError::RegressionProducedNaN);
     }
 
-    let exponent = slope.clamp(0.0, 1.0);
+    let exponent = crate::utils::Probability::clamp(slope).get();
 
     let (interpretation, is_valid) = classify_hurst_exponent(exponent);
 

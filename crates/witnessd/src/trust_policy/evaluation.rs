@@ -169,11 +169,7 @@ impl AppraisalPolicy {
             };
 
             factor.observed_value = observed;
-            factor.normalized_score = if normalized.is_finite() {
-                normalized.clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
+            factor.normalized_score = crate::utils::Probability::clamp(normalized as f64).get() as f32;
             factor.contribution = factor.weight * factor.normalized_score;
         }
 

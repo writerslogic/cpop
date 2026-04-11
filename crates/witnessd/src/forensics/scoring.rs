@@ -55,7 +55,7 @@ pub fn session_forensic_score(
     let cadence = cadence_score_from_samples(jitter_samples);
     let focus = super::analysis::analyze_focus_patterns(focus_switches, total_focus_ms);
     let penalty = compute_focus_penalty(&focus);
-    (cadence - penalty).clamp(0.0, 1.0)
+    crate::utils::Probability::clamp(cadence - penalty).get()
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@
 //! Velocity analysis and session detection.
 
 use super::types::{
-    EventData, SessionStats, VelocityMetrics, DEFAULT_SESSION_GAP_SEC, THRESHOLD_HIGH_VELOCITY_BPS,
+    EventData, SessionStats, SortedEvents, VelocityMetrics, DEFAULT_SESSION_GAP_SEC,
+    THRESHOLD_HIGH_VELOCITY_BPS,
 };
 
 /// Maximum inter-event delta in seconds before treating as a session gap.
@@ -13,15 +14,12 @@ const MAX_DELTA_SEC: f64 = 60.0;
 const HUMAN_MAX_BYTES_PER_SEC: f64 = 50.0;
 
 /// Analyze edit velocity patterns (bytes/sec).
-pub fn analyze_velocity(events: &[EventData]) -> VelocityMetrics {
+pub fn analyze_velocity(sorted: SortedEvents<'_>) -> VelocityMetrics {
     let mut metrics = VelocityMetrics::default();
 
-    if events.len() < 2 {
+    if sorted.len() < 2 {
         return metrics;
     }
-
-    let mut sorted = events.to_vec();
-    sorted.sort_by_key(|e| e.timestamp_ns);
 
     let mut velocities = Vec::with_capacity(sorted.len() - 1);
     let mut high_velocity_bursts = 0;
@@ -95,13 +93,10 @@ pub fn count_sessions_sorted(sorted_events: &[EventData], gap_threshold_sec: f64
 }
 
 /// Split events into sessions using `gap_threshold_sec`.
-pub fn detect_sessions(events: &[EventData], gap_threshold_sec: f64) -> Vec<Vec<EventData>> {
-    if events.is_empty() {
+pub fn detect_sessions(sorted: SortedEvents<'_>, gap_threshold_sec: f64) -> Vec<Vec<EventData>> {
+    if sorted.is_empty() {
         return Vec::new();
     }
-
-    let mut sorted = events.to_vec();
-    sorted.sort_by_key(|e| e.timestamp_ns);
 
     let mut split_at: Vec<usize> = Vec::new();
     for i in 1..sorted.len() {
@@ -114,7 +109,7 @@ pub fn detect_sessions(events: &[EventData], gap_threshold_sec: f64) -> Vec<Vec<
     }
 
     let mut sessions = Vec::with_capacity(split_at.len() + 1);
-    let mut rest = sorted;
+    let mut rest = sorted.to_vec();
     for &idx in split_at.iter().rev() {
         sessions.push(rest.split_off(idx));
     }
@@ -124,14 +119,14 @@ pub fn detect_sessions(events: &[EventData], gap_threshold_sec: f64) -> Vec<Vec<
 }
 
 /// Compute aggregate session statistics.
-pub fn compute_session_stats(events: &[EventData]) -> SessionStats {
+pub fn compute_session_stats(sorted: SortedEvents<'_>) -> SessionStats {
     let mut stats = SessionStats::default();
 
-    if events.is_empty() {
+    if sorted.is_empty() {
         return stats;
     }
 
-    let sessions = detect_sessions(events, DEFAULT_SESSION_GAP_SEC);
+    let sessions = detect_sessions(sorted, DEFAULT_SESSION_GAP_SEC);
     stats.session_count = sessions.len();
 
     let mut total_duration = 0.0;

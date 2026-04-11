@@ -39,8 +39,8 @@ pub fn compare_profiles(
 ) -> ProfileComparison {
     let scores = DimensionScores {
         monotonic_append_similarity: gaussian_similarity(
-            profile_a.metrics.monotonic_append_ratio,
-            profile_b.metrics.monotonic_append_ratio,
+            profile_a.metrics.monotonic_append_ratio.get(),
+            profile_b.metrics.monotonic_append_ratio.get(),
             0.15,
         ),
         entropy_similarity: gaussian_similarity(
@@ -63,8 +63,8 @@ pub fn compare_profiles(
             )
         },
         pos_neg_ratio_similarity: gaussian_similarity(
-            profile_a.metrics.positive_negative_ratio,
-            profile_b.metrics.positive_negative_ratio,
+            profile_a.metrics.positive_negative_ratio.get(),
+            profile_b.metrics.positive_negative_ratio.get(),
             0.1,
         ),
         deletion_clustering_similarity: gaussian_similarity(
@@ -124,7 +124,7 @@ pub fn compare_profiles(
 /// Gaussian kernel similarity: `exp(-(a-b)^2 / 2*sigma^2)`, clamped to [0.0, 1.0].
 fn gaussian_similarity(a: f64, b: f64, sigma: f64) -> f64 {
     let diff = a - b;
-    (-diff * diff / (2.0 * sigma * sigma)).exp().clamp(0.0, 1.0)
+    crate::utils::Probability::clamp((-diff * diff / (2.0 * sigma * sigma)).exp()).get()
 }
 
 /// Return `ln(v)` for positive inputs, or `NAN` for non-positive inputs.

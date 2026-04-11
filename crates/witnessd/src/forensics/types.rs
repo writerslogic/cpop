@@ -6,6 +6,8 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::utils::Probability;
+
 use crate::analysis::{
     BehavioralFingerprint, ForgeryAnalysis, IkiCompressionAnalysis, LabyrinthAnalysis,
     LyapunovAnalysis, SnrAnalysis,
@@ -92,6 +94,31 @@ impl EventData {
     }
 }
 
+/// Newtype guaranteeing events are sorted by `timestamp_ns` ascending.
+///
+/// Sort once at the forensics pipeline entry (`analyze_forensics_ext_with_focus`)
+/// and pass this to all analyzers to avoid redundant per-analyzer sorts.
+#[derive(Clone, Copy, Debug)]
+pub struct SortedEvents<'a>(&'a [EventData]);
+
+impl<'a> SortedEvents<'a> {
+    /// Wrap a pre-sorted slice. Debug-asserts the sort invariant.
+    pub fn new(events: &'a [EventData]) -> Self {
+        debug_assert!(
+            events.windows(2).all(|w| w[0].timestamp_ns <= w[1].timestamp_ns),
+            "SortedEvents::new requires pre-sorted events"
+        );
+        Self(events)
+    }
+}
+
+impl<'a> std::ops::Deref for SortedEvents<'a> {
+    type Target = [EventData];
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegionData {
     /// Position in document as fraction `[0.0, 1.0]`.
@@ -116,13 +143,13 @@ pub fn compute_edit_extents(file_size: i64, size_delta: i32, max_file_size: f32)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PrimaryMetrics {
     /// Fraction of edits at document end (>0.95 position).
-    pub monotonic_append_ratio: f64,
+    pub monotonic_append_ratio: Probability,
     /// Shannon entropy of edit positions (20-bin histogram).
     pub edit_entropy: f64,
     /// Median inter-event interval (seconds).
     pub median_interval: f64,
     /// `insertions / (insertions + deletions)`.
-    pub positive_negative_ratio: f64,
+    pub positive_negative_ratio: Probability,
     /// Nearest-neighbor distance ratio for deletions (<1 = clustered).
     pub deletion_clustering: f64,
 }
@@ -154,7 +181,7 @@ pub struct CadenceMetrics {
     pub iki_autocorrelation: f64,
     /// Fraction of keystrokes that are backspace/delete (zone 0xFF).
     /// Cognitive >0.05; transcriptive <0.02.
-    pub correction_ratio: f64,
+    pub correction_ratio: Probability,
     /// Distribution of pause durations: [sentence_1_3s, paragraph_3_10s, deep_thought_10s_plus].
     pub pause_depth_distribution: [f64; 3],
     /// CV of typing speeds within individual bursts. Transcriptive <0.15;
@@ -249,7 +276,7 @@ pub struct FocusMetrics {
     /// Total number of focus switches during editing.
     pub switch_count: usize,
     /// Fraction of editing time spent out-of-focus.
-    pub out_of_focus_ratio: f64,
+    pub out_of_focus_ratio: Probability,
     /// Number of switches to known AI/browser apps.
     pub ai_app_switch_count: usize,
     /// Average duration of focus-away periods in seconds.
@@ -267,15 +294,15 @@ pub struct ForensicMetrics {
     pub velocity: VelocityMetrics,
     pub session_stats: SessionStats,
     /// `[0.0, 1.0]` -- higher = more human-like.
-    pub assessment_score: f64,
+    pub assessment_score: Probability,
     /// Lower = more expected/human-like.
     pub perplexity_score: f64,
     /// Confidence that timing steganography is present.
-    pub steg_confidence: f64,
+    pub steg_confidence: Probability,
     pub anomaly_count: usize,
     pub risk_level: RiskLevel,
     /// Biological cadence steadiness score (0.0-1.0, higher = steadier).
-    pub biological_cadence_score: f64,
+    pub biological_cadence_score: Probability,
     /// Cross-modal consistency analysis (keystroke/content/jitter coherence).
     pub cross_modal: Option<CrossModalResult>,
     /// Forgery cost estimation for user-adversary threat model.
@@ -358,7 +385,7 @@ impl ForensicMetrics {
         ProtocolForensicAnalysis {
             verdict: self.map_to_protocol_verdict(),
             coefficient_of_variation: self.cadence.coefficient_of_variation,
-            linearity_score: Some(self.primary.monotonic_append_ratio),
+            linearity_score: Some(self.primary.monotonic_append_ratio.get()),
             hurst_exponent: self.hurst_exponent,
             checkpoint_count: self.checkpoint_count,
             chain_duration_secs: self.session_stats.total_editing_time_sec as u64,
@@ -531,7 +558,7 @@ pub struct CheckpointFlags {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerCheckpointResult {
     pub checkpoint_flags: Vec<CheckpointFlags>,
-    pub pct_flagged: f64,
+    pub pct_flagged: Probability,
     pub suspicious: bool,
 }
 

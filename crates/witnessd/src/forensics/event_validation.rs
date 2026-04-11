@@ -255,7 +255,7 @@ pub fn validate_keystroke_event(
     }
 
     // Clamp to [0.0, 1.0].
-    confidence = confidence.clamp(0.0, 1.0);
+    confidence = crate::utils::Probability::clamp(confidence).get();
 
     // --- update rolling state ---
     if state.recent_timestamps.len() >= ROBOTIC_CV_WINDOW {

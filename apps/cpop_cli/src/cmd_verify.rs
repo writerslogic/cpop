@@ -344,7 +344,7 @@ fn print_human_result(
         println!();
         println!(
             "Per-checkpoint analysis: {:.0}% flagged{}",
-            pcp.pct_flagged * 100.0,
+            pcp.pct_flagged.get() * 100.0,
             if pcp.suspicious { " (SUSPICIOUS)" } else { "" }
         );
     }

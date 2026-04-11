@@ -278,7 +278,7 @@ fn compute_error_hurst(events: &[TopologyEvent], error_indices: &[usize]) -> f64
         if nf.ln() < f64::EPSILON {
             0.5
         } else {
-            crate::utils::finite_or(rs.ln() / nf.ln(), 0.5).clamp(0.0, 1.0)
+            crate::utils::Probability::clamp(crate::utils::finite_or(rs.ln() / nf.ln(), 0.5)).get()
         }
     } else {
         0.5

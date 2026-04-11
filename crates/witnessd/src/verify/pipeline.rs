@@ -126,7 +126,7 @@ pub(super) fn run_forensics(
         if result.suspicious {
             warnings.push(format!(
                 "Per-checkpoint analysis: {:.0}% of checkpoints flagged (threshold: {:.0}%)",
-                result.pct_flagged * 100.0,
+                result.pct_flagged.get() * 100.0,
                 PER_CHECKPOINT_SUSPICIOUS_THRESHOLD * 100.0,
             ));
         }

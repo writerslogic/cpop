@@ -161,7 +161,7 @@ impl ProfileMatcher {
 
     /// Set the minimum similarity threshold (clamped to 0.0-1.0).
     pub fn with_threshold(mut self, threshold: f64) -> Self {
-        self.threshold = threshold.clamp(0.0, 1.0);
+        self.threshold = crate::utils::Probability::clamp(threshold).get();
         self
     }
 

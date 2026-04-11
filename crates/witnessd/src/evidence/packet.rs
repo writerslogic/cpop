@@ -691,7 +691,7 @@ impl Packet {
     }
 
     /// Convert to `PacketRfc` with integer keys for compact CBOR encoding.
-    pub fn to_rfc(&self) -> rfc::PacketRfc {
-        rfc::PacketRfc::from(self)
+    pub fn to_rfc(&self) -> Result<rfc::PacketRfc, super::rfc_conversion::RfcConversionError> {
+        rfc::PacketRfc::try_from(self)
     }
 }

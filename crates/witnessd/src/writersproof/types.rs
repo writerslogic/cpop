@@ -173,7 +173,7 @@ impl VerifyResponse {
     /// `confidence` must be in [0.0, 1.0]; values outside this range indicate
     /// a malformed or tampered server response.
     pub fn sanitize(&mut self) {
-        self.confidence = self.confidence.clamp(0.0, 1.0);
+        self.confidence = crate::utils::Probability::clamp(self.confidence).get();
     }
 }
 

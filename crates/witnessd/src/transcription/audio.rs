@@ -61,7 +61,7 @@ impl TranscriptionCollector {
 
     /// Record a per-word confidence score, clamped to [0.0, 1.0].
     pub fn record_confidence(&mut self, confidence: f64) {
-        self.confidence_sum += confidence.clamp(0.0, 1.0);
+        self.confidence_sum += crate::utils::Probability::clamp(confidence).get();
         self.confidence_count += 1;
     }
 

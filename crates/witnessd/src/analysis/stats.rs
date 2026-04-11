@@ -157,11 +157,7 @@ pub fn relative_similarity(a: f64, b: f64) -> f64 {
     }
     let denom = a.abs() + b.abs() + 0.001;
     let r = 1.0 - (a - b).abs() / denom;
-    if r.is_finite() {
-        r.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
+    crate::utils::Probability::clamp(r).get()
 }
 
 /// Linear regression returning (slope, intercept, r_squared, std_error).

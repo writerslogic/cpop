@@ -121,7 +121,7 @@ pub fn ffi_sentinel_status() -> FfiSentinelStatus {
 /// Fallback score from cadence when store is unavailable or has insufficient data.
 fn fallback_score(cadence_score: f64, focus_penalty: f64) -> f64 {
     if cadence_score > 0.0 {
-        (cadence_score - focus_penalty).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(cadence_score - focus_penalty).get()
     } else {
         0.0
     }
@@ -177,7 +177,7 @@ fn query_store_metrics(
     };
 
     let score = if store_score >= MIN_MEANINGFUL_SCORE {
-        (store_score - focus_penalty).clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(store_score - focus_penalty).get()
     } else {
         fallback_score(cadence_score, focus_penalty)
     };

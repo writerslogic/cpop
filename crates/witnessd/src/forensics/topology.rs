@@ -6,16 +6,16 @@ use std::collections::HashMap;
 
 use super::error::ForensicsError;
 use super::types::{
-    EventData, PrimaryMetrics, RegionData, DEFAULT_APPEND_THRESHOLD, DEFAULT_HISTOGRAM_BINS,
+    PrimaryMetrics, RegionData, SortedEvents, DEFAULT_APPEND_THRESHOLD, DEFAULT_HISTOGRAM_BINS,
     MIN_EVENTS_FOR_ANALYSIS,
 };
 
 /// Compute all primary metrics from events and edit regions.
 pub fn compute_primary_metrics(
-    events: &[EventData],
+    sorted: SortedEvents<'_>,
     regions: &HashMap<i64, Vec<RegionData>>,
 ) -> Result<PrimaryMetrics, ForensicsError> {
-    if events.len() < MIN_EVENTS_FOR_ANALYSIS {
+    if sorted.len() < MIN_EVENTS_FOR_ANALYSIS {
         return Err(ForensicsError::InsufficientData);
     }
 
@@ -25,17 +25,17 @@ pub fn compute_primary_metrics(
     }
 
     let mut pm = PrimaryMetrics {
-        monotonic_append_ratio: monotonic_append_ratio(&all_regions, DEFAULT_APPEND_THRESHOLD),
+        monotonic_append_ratio: crate::utils::Probability::clamp(monotonic_append_ratio(&all_regions, DEFAULT_APPEND_THRESHOLD)),
         edit_entropy: edit_entropy(&all_regions, DEFAULT_HISTOGRAM_BINS),
-        median_interval: median_interval(events),
-        positive_negative_ratio: positive_negative_ratio(&all_regions),
+        median_interval: median_interval(sorted),
+        positive_negative_ratio: crate::utils::Probability::clamp(positive_negative_ratio(&all_regions)),
         deletion_clustering: deletion_clustering_coef(&all_regions),
     };
 
     // Sanitize non-finite values and log when clamping occurs.
     if !pm.monotonic_append_ratio.is_finite() {
-        log::warn!("topology: monotonic_append_ratio non-finite ({}), using 0.0", pm.monotonic_append_ratio);
-        pm.monotonic_append_ratio = 0.0;
+        log::warn!("topology: monotonic_append_ratio non-finite ({}), using 0.0", pm.monotonic_append_ratio.get());
+        pm.monotonic_append_ratio = crate::utils::Probability::ZERO;
     }
     if !pm.edit_entropy.is_finite() {
         log::warn!("topology: edit_entropy non-finite ({}), using 0.0", pm.edit_entropy);
@@ -46,8 +46,8 @@ pub fn compute_primary_metrics(
         pm.median_interval = 0.0;
     }
     if !pm.positive_negative_ratio.is_finite() {
-        log::warn!("topology: positive_negative_ratio non-finite ({}), using 0.5", pm.positive_negative_ratio);
-        pm.positive_negative_ratio = 0.5;
+        log::warn!("topology: positive_negative_ratio non-finite ({}), using 0.5", pm.positive_negative_ratio.get());
+        pm.positive_negative_ratio = crate::utils::Probability::clamp(0.5);
     }
     if !pm.deletion_clustering.is_finite() {
         log::warn!("topology: deletion_clustering non-finite ({}), using 0.0", pm.deletion_clustering);
@@ -110,13 +110,10 @@ fn shannon_entropy(histogram: &[usize]) -> f64 {
 }
 
 /// Median inter-event interval in seconds.
-pub fn median_interval(events: &[EventData]) -> f64 {
-    if events.len() < 2 {
+pub fn median_interval(sorted: SortedEvents<'_>) -> f64 {
+    if sorted.len() < 2 {
         return 0.0;
     }
-
-    let mut sorted: Vec<_> = events.to_vec();
-    sorted.sort_by_key(|e| e.timestamp_ns);
 
     let intervals: Vec<f64> = sorted
         .windows(2)

@@ -80,7 +80,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
         }
     };
 
-    let file_path_str = file_path.to_string_lossy();
+    let file_path_str = file_path.to_string_lossy().into_owned();
     let events = match store.get_events_for_file(&file_path_str) {
         Ok(e) => e,
         Err(e) => {

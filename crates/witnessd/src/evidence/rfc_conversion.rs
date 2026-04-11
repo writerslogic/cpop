@@ -13,28 +13,47 @@ use authorproof_protocol::rfc::packet::{
 
 use super::types::{Packet, TrustTier};
 
-impl From<&Packet> for rfc::PacketRfc {
-    fn from(packet: &Packet) -> Self {
+/// Error returned when converting a [`Packet`] to [`rfc::PacketRfc`] fails.
+#[derive(Debug, thiserror::Error)]
+pub enum RfcConversionError {
+    #[error("missing field: {0}")]
+    MissingField(String),
+    #[error("invalid value: {0}")]
+    InvalidValue(String),
+}
+
+impl TryFrom<&Packet> for rfc::PacketRfc {
+    type Error = RfcConversionError;
+
+    fn try_from(packet: &Packet) -> Result<Self, Self::Error> {
         let vdf = rfc::VdfStructure {
+            // Empty vec is expected when no checkpoints carry VDF data.
             input: packet
                 .checkpoints
                 .first()
                 .and_then(|cp| cp.vdf_input.as_ref())
-                .and_then(|s| {
-                    hex::decode(s)
-                        .map_err(|e| log::warn!("VDF input hex decode failed: {e}"))
-                        .ok()
+                .map(|s| {
+                    hex::decode(s).map_err(|e| {
+                        RfcConversionError::InvalidValue(format!(
+                            "vdf_input hex decode failed: {e}"
+                        ))
+                    })
                 })
+                .transpose()?
                 .unwrap_or_default(),
+            // Empty vec is expected when no checkpoints carry VDF output.
             output: packet
                 .checkpoints
                 .last()
                 .and_then(|cp| cp.vdf_output.as_ref())
-                .and_then(|s| {
-                    hex::decode(s)
-                        .map_err(|e| log::warn!("VDF output hex decode failed: {e}"))
-                        .ok()
+                .map(|s| {
+                    hex::decode(s).map_err(|e| {
+                        RfcConversionError::InvalidValue(format!(
+                            "vdf_output hex decode failed: {e}"
+                        ))
+                    })
                 })
+                .transpose()?
                 .unwrap_or_default(),
             iterations: packet
                 .checkpoints
@@ -58,6 +77,7 @@ impl From<&Packet> for rfc::PacketRfc {
                 .saturating_mul(1000)
                 .min(20_000_000);
             JitterSealStructure {
+                // lang is a placeholder; language detection is not yet implemented.
                 lang: "en-US".to_string(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),
                 entropy_millibits: entropy_estimate,
@@ -65,7 +85,11 @@ impl From<&Packet> for rfc::PacketRfc {
                 pink_noise_slope_decibits: rfc::SlopeDecibits::from_float(-1.0),
             }
         } else {
+            // No jitter data captured: bucket_commitment intentionally empty.
+            // This is expected for sessions without jitter capture; verifiers
+            // must not treat an empty commitment as a valid zero-entropy proof.
             JitterSealStructure {
+                // lang is a placeholder; language detection is not yet implemented.
                 lang: "en-US".to_string(),
                 bucket_commitment: Vec::new(),
                 entropy_millibits: 0,
@@ -74,11 +98,21 @@ impl From<&Packet> for rfc::PacketRfc {
             }
         };
 
-        // Empty root (not zero-filled) signals decode failure to verifiers
+        // An empty or malformed final_hash produces a forensically invalid packet.
+        // Reject the conversion rather than silently emitting a zero-length root.
+        if packet.document.final_hash.is_empty() {
+            return Err(RfcConversionError::MissingField(
+                "document.final_hash".to_string(),
+            ));
+        }
+        let content_hash_root = hex::decode(&packet.document.final_hash).map_err(|e| {
+            RfcConversionError::InvalidValue(format!(
+                "document.final_hash hex decode failed: {e}"
+            ))
+        })?;
+
         let content_hash_tree = rfc::ContentHashTree {
-            root: hex::decode(&packet.document.final_hash)
-                .map_err(|e| log::warn!("Content hash hex decode failed: {e}"))
-                .unwrap_or_default(),
+            root: content_hash_root,
             segment_count: u16::try_from(packet.checkpoints.len().max(1)).unwrap_or(u16::MAX),
         };
 
@@ -93,9 +127,11 @@ impl From<&Packet> for rfc::PacketRfc {
                     threshold: 700,
                 }
             } else {
+                // No fingerprint data captured; default is acceptable here.
                 rfc::CorrelationProof::default()
             }
         } else {
+            // No behavioral data captured; default is acceptable here.
             rfc::CorrelationProof::default()
         };
 
@@ -134,7 +170,7 @@ impl From<&Packet> for rfc::PacketRfc {
             TrustTier::Attested => rfc::ProfileDeclaration::maximum(),
         });
 
-        rfc::PacketRfc {
+        Ok(rfc::PacketRfc {
             version: 1,
             vdf,
             jitter_seal,
@@ -147,12 +183,50 @@ impl From<&Packet> for rfc::PacketRfc {
             privacy_budget: None,
             key_rotation: None,
             extensions: std::collections::HashMap::new(),
-        }
+        })
     }
 }
 
-impl From<Packet> for rfc::PacketRfc {
-    fn from(packet: Packet) -> Self {
-        rfc::PacketRfc::from(&packet)
+impl TryFrom<Packet> for rfc::PacketRfc {
+    type Error = RfcConversionError;
+
+    fn try_from(packet: Packet) -> Result<Self, Self::Error> {
+        rfc::PacketRfc::try_from(&packet)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::evidence::types::{DocumentInfo, Packet};
+
+    fn packet_with_hash(hash: &str) -> Packet {
+        let mut p = Packet::default();
+        p.document = DocumentInfo {
+            final_hash: hash.to_string(),
+            ..Default::default()
+        };
+        p
+    }
+
+    #[test]
+    fn rejects_empty_final_hash() {
+        let p = packet_with_hash("");
+        let err = rfc::PacketRfc::try_from(&p).unwrap_err();
+        assert!(matches!(err, RfcConversionError::MissingField(_)));
+    }
+
+    #[test]
+    fn rejects_invalid_hex_final_hash() {
+        let p = packet_with_hash("not-valid-hex!!");
+        let err = rfc::PacketRfc::try_from(&p).unwrap_err();
+        assert!(matches!(err, RfcConversionError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn accepts_valid_hash() {
+        let p = packet_with_hash("deadbeef");
+        let result = rfc::PacketRfc::try_from(&p).unwrap();
+        assert_eq!(result.content_hash_tree.root, vec![0xde, 0xad, 0xbe, 0xef]);
     }
 }

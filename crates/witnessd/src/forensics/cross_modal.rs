@@ -202,8 +202,10 @@ fn check_content_growth_rate(input: &CrossModalInput<'_>) -> CrossModalCheck {
     let score = if chars_per_sec <= MAX_SUSTAINED_CHARS_PER_SEC {
         1.0
     } else {
-        (1.0 - (chars_per_sec - MAX_SUSTAINED_CHARS_PER_SEC) / MAX_SUSTAINED_CHARS_PER_SEC)
-            .clamp(0.0, 1.0)
+        crate::utils::Probability::clamp(
+            1.0 - (chars_per_sec - MAX_SUSTAINED_CHARS_PER_SEC) / MAX_SUSTAINED_CHARS_PER_SEC,
+        )
+        .get()
     };
 
     CrossModalCheck {

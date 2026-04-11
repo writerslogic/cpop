@@ -9,7 +9,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::types::{CadenceMetrics, EventData, PrimaryMetrics};
+use crate::utils::stats::lerp_score;
+
+use super::types::{CadenceMetrics, PrimaryMetrics, SortedEvents};
+#[cfg(test)]
+use super::types::EventData;
 
 /// Minimum events for writing mode classification.
 pub const MIN_EVENTS_FOR_MODE: usize = 20;
@@ -127,7 +131,7 @@ pub struct RevisionPattern {
 pub fn classify_writing_mode(
     primary: &PrimaryMetrics,
     cadence: &CadenceMetrics,
-    events: &[EventData],
+    sorted: SortedEvents<'_>,
     event_count: usize,
 ) -> WritingModeAnalysis {
     if event_count < MIN_EVENTS_FOR_MODE {
@@ -139,13 +143,13 @@ pub fn classify_writing_mode(
         };
     }
 
-    let revision = analyze_revision_patterns(events);
+    let revision = analyze_revision_patterns(sorted);
 
     // Score each signal: 0.0 = transcriptive, 1.0 = cognitive.
     let scores = [
         (
             lerp_score(
-                cadence.correction_ratio,
+                cadence.correction_ratio.get(),
                 CORRECTION_RATIO_LOW,
                 CORRECTION_RATIO_HIGH,
             ),
@@ -192,7 +196,7 @@ pub fn classify_writing_mode(
         (
             // Inverted: higher ratio (fewer deletions) = more transcriptive.
             1.0 - lerp_score(
-                primary.positive_negative_ratio,
+                primary.positive_negative_ratio.get(),
                 POS_NEG_RATIO_LOW,
                 POS_NEG_RATIO_HIGH,
             ),
@@ -201,7 +205,7 @@ pub fn classify_writing_mode(
         (
             // Inverted: higher append ratio = more transcriptive.
             1.0 - lerp_score(
-                primary.monotonic_append_ratio,
+                primary.monotonic_append_ratio.get(),
                 MONOTONIC_APPEND_LOW,
                 MONOTONIC_APPEND_HIGH,
             ),
@@ -218,7 +222,7 @@ pub fn classify_writing_mode(
     ];
 
     let cognitive_score: f64 = scores.iter().map(|(s, w)| s * w).sum();
-    let cognitive_score = cognitive_score.clamp(0.0, 1.0);
+    let cognitive_score = crate::utils::Probability::clamp(cognitive_score).get();
 
     let mode = if cognitive_score >= COGNITIVE_THRESHOLD {
         WritingMode::Cognitive
@@ -256,13 +260,10 @@ pub fn classify_writing_mode(
 ///
 /// Detects burst->delete->burst cycles (cognitive revision pattern) vs
 /// pure-append stretches (transcriptive pattern) from file size changes.
-pub fn analyze_revision_patterns(events: &[EventData]) -> RevisionPattern {
-    if events.len() < MIN_BURST_FOR_REVISION {
+pub fn analyze_revision_patterns(sorted: SortedEvents<'_>) -> RevisionPattern {
+    if sorted.len() < MIN_BURST_FOR_REVISION {
         return RevisionPattern::default();
     }
-
-    let mut sorted = events.to_vec();
-    sorted.sort_by_key(|e| e.timestamp_ns);
 
     let deltas: Vec<i32> = sorted.iter().map(|e| e.size_delta).collect();
 
@@ -341,14 +342,6 @@ pub fn analyze_revision_patterns(events: &[EventData]) -> RevisionPattern {
     }
 }
 
-/// Linear interpolation score: maps `value` from `[low, high]` to `[0.0, 1.0]`,
-/// clamped at both ends.
-fn lerp_score(value: f64, low: f64, high: f64) -> f64 {
-    if !value.is_finite() || (high - low).abs() < f64::EPSILON {
-        return 0.0;
-    }
-    ((value - low) / (high - low)).clamp(0.0, 1.0)
-}
 
 #[cfg(test)]
 mod tests {
@@ -374,7 +367,7 @@ mod tests {
 
     fn cognitive_cadence() -> CadenceMetrics {
         CadenceMetrics {
-            correction_ratio: 0.08,
+            correction_ratio: crate::utils::Probability::clamp(0.08),
             burst_speed_cv: 0.35,
             zero_variance_windows: 0,
             iki_autocorrelation: 0.05,
@@ -391,7 +384,7 @@ mod tests {
 
     fn transcriptive_cadence() -> CadenceMetrics {
         CadenceMetrics {
-            correction_ratio: 0.01,
+            correction_ratio: crate::utils::Probability::clamp(0.01),
             burst_speed_cv: 0.08,
             zero_variance_windows: 6,
             iki_autocorrelation: 0.50,
@@ -416,14 +409,15 @@ mod tests {
         .to_vec();
         let events = make_events(&deltas);
         let primary = PrimaryMetrics {
-            monotonic_append_ratio: 0.50,
+            monotonic_append_ratio: crate::utils::Probability::clamp(0.50),
             edit_entropy: 3.5,
             median_interval: 2.0,
-            positive_negative_ratio: 0.70,
+            positive_negative_ratio: crate::utils::Probability::clamp(0.70),
             deletion_clustering: 0.5,
         };
 
-        let result = classify_writing_mode(&primary, &cognitive_cadence(), &events, events.len());
+        let result =
+            classify_writing_mode(&primary, &cognitive_cadence(), SortedEvents::new(&events), events.len());
         assert_eq!(result.mode, WritingMode::Cognitive);
         assert!(result.cognitive_score >= COGNITIVE_THRESHOLD);
         assert!(result.confidence > 0.0);
@@ -436,15 +430,15 @@ mod tests {
         let deltas: Vec<i32> = vec![10; 25];
         let events = make_events(&deltas);
         let primary = PrimaryMetrics {
-            monotonic_append_ratio: 0.95,
+            monotonic_append_ratio: crate::utils::Probability::clamp(0.95),
             edit_entropy: 0.5,
             median_interval: 0.15,
-            positive_negative_ratio: 0.99,
+            positive_negative_ratio: crate::utils::Probability::clamp(0.99),
             deletion_clustering: 0.0,
         };
 
         let result =
-            classify_writing_mode(&primary, &transcriptive_cadence(), &events, events.len());
+            classify_writing_mode(&primary, &transcriptive_cadence(), SortedEvents::new(&events), events.len());
         assert_eq!(result.mode, WritingMode::Transcriptive);
         assert!(result.cognitive_score <= TRANSCRIPTIVE_THRESHOLD);
         assert!(result.revision_pattern.revision_cycle_count == 0);
@@ -461,15 +455,15 @@ mod tests {
         .to_vec();
         let events = make_events(&deltas);
         let primary = PrimaryMetrics {
-            monotonic_append_ratio: 0.80,
+            monotonic_append_ratio: crate::utils::Probability::clamp(0.80),
             edit_entropy: 2.0,
             median_interval: 0.5,
-            positive_negative_ratio: 0.90,
+            positive_negative_ratio: crate::utils::Probability::clamp(0.90),
             deletion_clustering: 0.3,
         };
         // Cadence halfway between cognitive and transcriptive.
         let cadence = CadenceMetrics {
-            correction_ratio: 0.03,
+            correction_ratio: crate::utils::Probability::clamp(0.03),
             burst_speed_cv: 0.20,
             zero_variance_windows: 2,
             iki_autocorrelation: 0.25,
@@ -482,7 +476,8 @@ mod tests {
             ..CadenceMetrics::default()
         };
 
-        let result = classify_writing_mode(&primary, &cadence, &events, events.len());
+        let result =
+            classify_writing_mode(&primary, &cadence, SortedEvents::new(&events), events.len());
         assert_eq!(result.mode, WritingMode::Mixed);
         assert!(result.cognitive_score > TRANSCRIPTIVE_THRESHOLD);
         assert!(result.cognitive_score < COGNITIVE_THRESHOLD);
@@ -494,7 +489,8 @@ mod tests {
         let primary = PrimaryMetrics::default();
         let cadence = CadenceMetrics::default();
 
-        let result = classify_writing_mode(&primary, &cadence, &events, events.len());
+        let result =
+            classify_writing_mode(&primary, &cadence, SortedEvents::new(&events), events.len());
         assert_eq!(result.mode, WritingMode::Insufficient);
         assert_eq!(result.confidence, 0.0);
     }
@@ -504,7 +500,7 @@ mod tests {
         // Clear burst->delete->burst cycles.
         let deltas = [20, 15, 10, -8, -5, 18, 12, 10, -6, -3, 15, 10, 8];
         let events = make_events(&deltas);
-        let pattern = analyze_revision_patterns(&events);
+        let pattern = analyze_revision_patterns(SortedEvents::new(&events));
 
         assert!(pattern.revision_cycle_count >= 2);
         assert!(pattern.avg_revision_depth > MIN_REVISION_DEPTH_FRACTION);
@@ -516,7 +512,7 @@ mod tests {
         // All positive: no revision cycles.
         let deltas: Vec<i32> = vec![10; 15];
         let events = make_events(&deltas);
-        let pattern = analyze_revision_patterns(&events);
+        let pattern = analyze_revision_patterns(SortedEvents::new(&events));
 
         assert_eq!(pattern.revision_cycle_count, 0);
         assert!(pattern.pure_append_stretch_count >= 1);
@@ -531,29 +527,15 @@ mod tests {
             100, 100, 100, -1, 100, 100, 100, -1, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
         ];
         let events = make_events(&deltas);
-        let pattern = analyze_revision_patterns(&events);
+        let pattern = analyze_revision_patterns(SortedEvents::new(&events));
 
         // -1 after 300 bytes = 0.3%, below the 5% threshold.
         assert_eq!(pattern.revision_cycle_count, 0);
     }
 
     #[test]
-    fn test_lerp_score_boundaries() {
-        assert_eq!(lerp_score(0.0, 0.0, 1.0), 0.0);
-        assert_eq!(lerp_score(0.5, 0.0, 1.0), 0.5);
-        assert_eq!(lerp_score(1.0, 0.0, 1.0), 1.0);
-        // Clamped below.
-        assert_eq!(lerp_score(-1.0, 0.0, 1.0), 0.0);
-        // Clamped above.
-        assert_eq!(lerp_score(2.0, 0.0, 1.0), 1.0);
-        // Non-finite.
-        assert_eq!(lerp_score(f64::NAN, 0.0, 1.0), 0.0);
-        assert_eq!(lerp_score(f64::INFINITY, 0.0, 1.0), 0.0);
-    }
-
-    #[test]
     fn test_empty_events() {
-        let pattern = analyze_revision_patterns(&[]);
+        let pattern = analyze_revision_patterns(SortedEvents::new(&[]));
         assert_eq!(pattern.revision_cycle_count, 0);
         assert_eq!(pattern.revision_fraction, 0.0);
     }
@@ -565,7 +547,7 @@ mod tests {
         // both below MIN_BURST_FOR_REVISION, missing the revision cycle.
         let deltas = [10, 10, 0, 10, -8, 15, 10, 0, 10, -5];
         let events = make_events(&deltas);
-        let pattern = analyze_revision_patterns(&events);
+        let pattern = analyze_revision_patterns(SortedEvents::new(&events));
 
         assert_eq!(pattern.revision_cycle_count, 2);
         assert!(pattern.avg_revision_depth > MIN_REVISION_DEPTH_FRACTION);

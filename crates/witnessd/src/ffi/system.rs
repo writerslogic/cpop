@@ -210,7 +210,7 @@ pub fn ffi_list_tracked_files() -> Vec<FfiTrackedFile> {
             0.0
         };
 
-        let adjusted_score = (metrics.assessment_score - keystroke_ratio_penalty).clamp(0.0, 1.0);
+        let adjusted_score = crate::utils::Probability::clamp(metrics.assessment_score.get() - keystroke_ratio_penalty).get();
         let adjusted_risk = if keystroke_ratio_penalty >= 0.4 {
             "HIGH".to_string()
         } else {

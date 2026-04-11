@@ -84,6 +84,16 @@ pub fn coefficient_of_variation(values: &[f64]) -> f64 {
     finite_or(std / m, 0.0)
 }
 
+/// Map `value` from the range `[low, high]` to `[0.0, 1.0]`, clamped at both ends.
+///
+/// Returns `0.0` for non-finite inputs or degenerate ranges (`high ≈ low`).
+pub fn lerp_score(value: f64, low: f64, high: f64) -> f64 {
+    if !value.is_finite() || (high - low).abs() < f64::EPSILON {
+        return 0.0;
+    }
+    crate::utils::Probability::clamp((value - low) / (high - low)).get()
+}
+
 /// Compute the median of a slice of `f64`.
 pub fn median(values: &[f64]) -> f64 {
     if values.is_empty() {
@@ -162,6 +172,23 @@ mod tests {
         assert_eq!(data[1], 2.0);
         assert_eq!(data[2], 3.0);
         assert!(data[3].is_nan());
+    }
+
+    #[test]
+    fn lerp_score_boundaries() {
+        assert_eq!(lerp_score(0.0, 0.0, 1.0), 0.0);
+        assert_eq!(lerp_score(0.5, 0.0, 1.0), 0.5);
+        assert_eq!(lerp_score(1.0, 0.0, 1.0), 1.0);
+        assert_eq!(lerp_score(-1.0, 0.0, 1.0), 0.0); // clamped below
+        assert_eq!(lerp_score(2.0, 0.0, 1.0), 1.0);  // clamped above
+        assert_eq!(lerp_score(f64::NAN, 0.0, 1.0), 0.0);
+        assert_eq!(lerp_score(f64::INFINITY, 0.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn lerp_score_degenerate_range() {
+        // equal low/high — degenerate, return 0.0
+        assert_eq!(lerp_score(0.5, 0.5, 0.5), 0.0);
     }
 
     #[test]

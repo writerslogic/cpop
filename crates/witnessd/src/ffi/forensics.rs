@@ -53,7 +53,7 @@ pub fn ffi_compute_process_score(path: String) -> FfiProcessScore {
     };
 
     let sequence = (profile.metrics.edit_entropy.min(3.0) / 3.0 * 0.5)
-        + ((1.0 - profile.metrics.monotonic_append_ratio) * 0.5);
+        + ((1.0 - profile.metrics.monotonic_append_ratio.get()) * 0.5);
 
     let behavioral = if profile.assessment == crate::forensics::Assessment::Consistent {
         1.0

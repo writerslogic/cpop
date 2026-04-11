@@ -86,7 +86,7 @@ pub fn score_dictation_plausibility(event: &DictationEvent) -> f64 {
         score *= PENALTY_NO_MIC;
     }
 
-    score.clamp(0.0, 1.0)
+    crate::utils::Probability::clamp(score).get()
 }
 
 #[cfg(test)]
