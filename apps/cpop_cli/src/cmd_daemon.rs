@@ -109,7 +109,7 @@ pub(crate) async fn cmd_start(foreground: bool) -> Result<()> {
         let pid = child.id();
 
         // Brief wait to detect immediate startup failures.
-        std::thread::sleep(Duration::from_millis(DAEMON_STARTUP_GRACE_MS));
+        tokio::time::sleep(Duration::from_millis(DAEMON_STARTUP_GRACE_MS)).await;
         match child.try_wait() {
             Ok(Some(status)) => {
                 daemon_manager.cleanup();

@@ -83,8 +83,12 @@ async fn cmd_track_start(
     let mut config = ensure_dirs()?;
     if config.vdf.iterations_per_second == 0 {
         println!("Calibrating VDF (one-time)...");
-        let calibrated = witnessd::vdf::params::calibrate(Duration::from_secs(2))
-            .map_err(|e| anyhow!("Calibration failed: {}", e))?;
+        let calibrated = tokio::task::spawn_blocking(|| {
+            witnessd::vdf::params::calibrate(Duration::from_secs(2))
+        })
+        .await
+        .context("calibration task")?
+        .map_err(|e| anyhow!("Calibration failed: {}", e))?;
         config.vdf.iterations_per_second = calibrated.iterations_per_second;
         config.vdf.min_iterations = calibrated.min_iterations;
         config.vdf.max_iterations = calibrated.max_iterations;
@@ -371,7 +375,7 @@ pub(crate) async fn cmd_track_smart(
                     if !out.quiet {
                         println!("Tracking session active. Creating checkpoint...");
                     }
-                    return crate::cmd_commit::cmd_commit(&p, None, out);
+                    return crate::cmd_commit::cmd_commit(&p, None, out).await;
                 }
             }
 

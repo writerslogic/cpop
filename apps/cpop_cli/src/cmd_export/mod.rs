@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
 use witnessd::authorproof_protocol::crypto::EvidenceSigner;
 use witnessd::tpm;
@@ -91,24 +91,33 @@ pub(crate) async fn cmd_export(
     if beacon_timeout != 5 && !no_beacons && !out.quiet && !out.json {
         eprintln!("Note: --beacon-timeout set to {}s.", beacon_timeout);
     }
-    let abs_path = fs::canonicalize(file_path).map_err(|e| {
-        anyhow!(
-            "Cannot resolve path {}: {}\n\n\
-             Check that the path is valid and accessible.",
-            file_path.display(),
-            e
-        )
-    })?;
-    let abs_path_str = abs_path.to_string_lossy().into_owned();
+    let file_path_owned = file_path.clone();
+    let (abs_path_str, events, config, vdf_params) =
+        tokio::task::spawn_blocking(move || -> Result<_> {
+            let abs_path = fs::canonicalize(&file_path_owned).map_err(|e| {
+                anyhow!(
+                    "Cannot resolve path {}: {}\n\n\
+                     Check that the path is valid and accessible.",
+                    file_path_owned.display(),
+                    e
+                )
+            })?;
+            let abs_path_str = abs_path.to_string_lossy().into_owned();
 
-    let db = open_secure_store()?;
-    let events = retry_on_busy(|| db.get_events_for_file(&abs_path_str))?;
+            let db = open_secure_store()?;
+            let events = retry_on_busy(|| db.get_events_for_file(&abs_path_str))?;
+
+            let config = ensure_dirs()?;
+            let vdf_params = load_vdf_params(&config);
+
+            Ok((abs_path_str, events, config, vdf_params))
+        })
+        .await
+        .context("export I/O task")??;
 
     validate_checkpoint_count(file_path, &events)?;
 
-    let config = ensure_dirs()?;
     let dir = &config.data_dir;
-    let vdf_params = load_vdf_params(&config);
 
     if vdf_params.iterations_per_second == 0 {
         return Err(anyhow!(
