@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 todo_runner.py — parallel, model-aware, fully autonomous todo.md driver.
+Unix-only (relies on os.killpg / POSIX session groups).
 
 Parses every open task in todo.md for its Model (Haiku|Sonnet|Opus) and
 its Files list, derives the set of paths the task edits, then runs up to
@@ -84,7 +85,6 @@ class Task:
     model: str
     exclusive: bool
     files: list[str]
-    line_no: int
 
 @dataclass
 class Job:
@@ -290,22 +290,25 @@ def list_open_tasks() -> list[Task]:
     """Scan todo.md and return every task whose first Status line is 'open'."""
     tasks: list[Task] = []
     current: Optional[dict] = None
+
+    def finalize(entry: Optional[dict]) -> None:
+        if entry and entry.get("status") == "open":
+            files, exclusive = parse_files(entry.get("files_raw", ""))
+            tasks.append(
+                Task(
+                    id=entry["id"],
+                    model=entry.get("model", "sonnet"),
+                    exclusive=exclusive,
+                    files=files,
+                )
+            )
+
     with TODO_FILE.open() as fh:
-        for lineno, raw in enumerate(fh, start=1):
+        for raw in fh:
             m = TASK_HEADER_RE.match(raw)
             if m:
-                if current and current.get("status") == "open":
-                    files, exclusive = parse_files(current.get("files_raw", ""))
-                    tasks.append(
-                        Task(
-                            id=current["id"],
-                            model=current.get("model", "sonnet"),
-                            exclusive=exclusive,
-                            files=files,
-                            line_no=current["line_no"],
-                        )
-                    )
-                current = {"id": m.group(1), "line_no": lineno}
+                finalize(current)
+                current = {"id": m.group(1)}
                 continue
             if not current:
                 continue
@@ -322,17 +325,7 @@ def list_open_tasks() -> list[Task]:
                 sm = STATUS_RE.search(raw)
                 if sm:
                     current["status"] = sm.group(1).lower()
-    if current and current.get("status") == "open":
-        files, exclusive = parse_files(current.get("files_raw", ""))
-        tasks.append(
-            Task(
-                id=current["id"],
-                model=current.get("model", "sonnet"),
-                exclusive=exclusive,
-                files=files,
-                line_no=current["line_no"],
-            )
-        )
+    finalize(current)
     return tasks
 
 
@@ -609,7 +602,11 @@ def print_summary(records: list[Record], elapsed: float) -> None:
     if non_ok:
         log("Tasks needing review:")
         for tid, outcome, lp in non_ok:
-            log(f"  {tid:<14} {outcome:<9} → {lp}")
+            try:
+                display = lp.relative_to(REPO_ROOT)
+            except ValueError:
+                display = lp
+            log(f"  {tid:<14} {outcome:<9} → {display}")
 
 
 # ---------------------------------------------------------------------------
@@ -668,7 +665,8 @@ def main() -> int:
         log("✓ baseline green")
 
     global TRACKER
-    TRACKER = ProgressRenderer(total=len(tasks), concurrency=parallel)
+    total = min(len(tasks), args.max_tasks) if args.max_tasks else len(tasks)
+    TRACKER = ProgressRenderer(total=total, concurrency=parallel)
     TRACKER.render()
 
     queue: list[Task] = list(tasks)
@@ -690,7 +688,8 @@ def main() -> int:
             try:
                 statuses = all_task_statuses()
             except RuntimeError as e:
-                log(f"✗ {e}")
+                log(f"✗ {e}; terminating workers")
+                shutdown_flag["requested"] = True
                 break
 
             queue = [t for t in queue if statuses.get(t.id) == "open"]
@@ -723,6 +722,8 @@ def main() -> int:
                 jobs, new_records = reap(jobs, statuses)
                 records.extend(new_records)
                 deadlock_passes = 0
+                if TRACKER is not None:
+                    TRACKER.render()
             elif queue and spawned == 0:
                 deadlock_passes += 1
                 if deadlock_passes == 1:
