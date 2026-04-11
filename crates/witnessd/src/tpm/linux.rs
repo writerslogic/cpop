@@ -259,9 +259,14 @@ impl Provider for LinuxTpmProvider {
         let srk = create_srk(&mut state)?;
         let srk_handle = srk.key_handle;
 
-        // Inner closure so SRK handle is flushed on both success and error paths.
-        let result = (|| -> Result<(Vec<u8>, PolicySession), TpmError> {
+        // Track handles acquired inside the closure so they are flushed on every
+        // exit path, including failures between acquisition and the closure's
+        // Ok return.
+        let mut session_handle: Option<SessionHandle> = None;
+
+        let result = (|| -> Result<Vec<u8>, TpmError> {
             let session = create_policy_session(&mut state, &pcrs)?;
+            session_handle = Some(session.into());
 
             // Apply the PCR policy session before creating the sealed object
             state.context.set_sessions((Some(session), None, None));
@@ -298,20 +303,19 @@ impl Provider for LinuxTpmProvider {
             sealed.extend_from_slice(&(priv_bytes.len() as u32).to_be_bytes());
             sealed.extend_from_slice(&priv_bytes);
 
-            Ok((sealed, session))
+            Ok(sealed)
         })();
 
+        if let Some(sh) = session_handle {
+            if let Err(e) = state.context.flush_context(sh.into()) {
+                log::error!("TPM handle leak: failed to flush session after seal: {e}");
+            }
+        }
         if let Err(e) = state.context.flush_context(srk_handle.into()) {
             log::error!("TPM handle leak: failed to flush SRK after seal: {e}");
         }
 
-        let (sealed, session) = result?;
-        let session_handle: SessionHandle = session.into();
-        if let Err(e) = state.context.flush_context(session_handle.into()) {
-            log::error!("TPM handle leak: failed to flush session after seal: {e}");
-        }
-
-        Ok(sealed)
+        result
     }
 
     fn clock_info(&self) -> Result<super::ClockInfo, TpmError> {
@@ -341,14 +345,21 @@ impl Provider for LinuxTpmProvider {
         let srk = create_srk(&mut state)?;
         let srk_handle = srk.key_handle;
 
-        // Inner closure so SRK handle is flushed on both success and error paths.
-        let result = (|| -> Result<(Vec<u8>, KeyHandle, PolicySession), TpmError> {
+        // Track handles acquired inside the closure so they are flushed on every
+        // exit path, including failures between acquisition and the closure's
+        // Ok return.
+        let mut load_handle_opt: Option<KeyHandle> = None;
+        let mut session_handle: Option<SessionHandle> = None;
+
+        let result = (|| -> Result<Vec<u8>, TpmError> {
             let load_handle = state
                 .context
                 .load(srk_handle, private, public)
                 .map_err(|_| TpmError::Unsealing("load".into()))?;
+            load_handle_opt = Some(load_handle);
 
             let session = create_policy_session(&mut state, &default_pcr_selection())?;
+            session_handle = Some(session.into());
 
             state.context.set_sessions((Some(session), None, None));
 
@@ -359,24 +370,24 @@ impl Provider for LinuxTpmProvider {
 
             state.context.clear_sessions();
 
-            Ok((unsealed.value().to_vec(), load_handle, session))
+            Ok(unsealed.value().to_vec())
         })();
 
-        // Always flush SRK handle, regardless of success or failure.
+        if let Some(sh) = session_handle {
+            if let Err(e) = state.context.flush_context(sh.into()) {
+                log::error!("TPM handle leak: failed to flush session after unseal: {e}");
+            }
+        }
+        if let Some(lh) = load_handle_opt {
+            if let Err(e) = state.context.flush_context(lh.into()) {
+                log::error!("TPM handle leak: failed to flush object after unseal: {e}");
+            }
+        }
         if let Err(e) = state.context.flush_context(srk_handle.into()) {
             log::error!("TPM handle leak: failed to flush SRK after unseal: {e}");
         }
 
-        let (data, load_handle, session) = result?;
-        if let Err(e) = state.context.flush_context(load_handle.into()) {
-            log::error!("TPM handle leak: failed to flush object after unseal: {e}");
-        }
-        let session_handle: SessionHandle = session.into();
-        if let Err(e) = state.context.flush_context(session_handle.into()) {
-            log::error!("TPM handle leak: failed to flush session after unseal: {e}");
-        }
-
-        Ok(data)
+        result
     }
 }
 
@@ -543,15 +554,14 @@ fn get_device_id(state: &mut LinuxState) -> Result<Vec<u8>, TpmError> {
         .create_primary(Hierarchy::Endorsement, public, None, None, None, None)
         .map_err(|_| TpmError::NotAvailable)?;
 
-    let pub_bytes = result
-        .out_public
-        .marshall()
-        .map_err(|_| TpmError::NotAvailable)?;
+    let key_handle = result.key_handle;
+    let marshalled = result.out_public.marshall();
 
-    if let Err(e) = state.context.flush_context(result.key_handle.into()) {
+    if let Err(e) = state.context.flush_context(key_handle.into()) {
         log::warn!("flush_context after fingerprint: {e}");
     }
 
+    let pub_bytes = marshalled.map_err(|_| TpmError::NotAvailable)?;
     let hash = Sha256::digest(&pub_bytes);
     Ok(hash.to_vec())
 }

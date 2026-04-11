@@ -354,44 +354,62 @@ impl Wal {
         }
 
         let new_path = state.path.with_extension("wal.new");
-        let mut new_file = File::create(&new_path)?;
+        let write_result = (|| -> Result<([u8; 32], Hasher), WalError> {
+            let mut new_file = File::create(&new_path)?;
 
-        crate::crypto::restrict_permissions(&new_path, 0o600)?;
+            crate::crypto::restrict_permissions(&new_path, 0o600)?;
 
-        let header = Header {
-            magic: *MAGIC,
-            version: VERSION,
-            session_id: state.session_id,
-            created_at: now_nanos(),
-            last_checkpoint_seq: before_seq,
-            reserved: [0u8; 8],
+            let header = Header {
+                magic: *MAGIC,
+                version: VERSION,
+                session_id: state.session_id,
+                created_at: now_nanos(),
+                last_checkpoint_seq: before_seq,
+                reserved: [0u8; 8],
+            };
+
+            new_file.write_all(&serialize_header(&header))?;
+
+            let mut last_hash = [0u8; 32];
+            let mut cumulative_hasher = Hasher::new();
+
+            for entry in &entries {
+                let mut entry = entry.clone();
+                entry.prev_hash = last_hash;
+                let entry_hash = entry.compute_hash();
+                cumulative_hasher.update(&entry_hash);
+                entry.cumulative_hash = *cumulative_hasher.finalize().as_bytes();
+                let sig = state.signing_key.sign(&entry.cumulative_hash);
+                entry.signature = sig.to_bytes();
+
+                let data = serialize_entry(&entry)?;
+                let length = data.len() as u32;
+                new_file.write_all(&length.to_be_bytes())?;
+                new_file.write_all(&data)?;
+                last_hash = entry_hash;
+            }
+
+            new_file.sync_all()?;
+            Ok((last_hash, cumulative_hasher))
+        })();
+
+        let (last_hash, cumulative_hasher) = match write_result {
+            Ok(v) => v,
+            Err(e) => {
+                // Remove the temp file so a retry sees a clean state.
+                if let Err(rm) = fs::remove_file(&new_path) {
+                    log::warn!("compact: failed to remove temp file {:?}: {}", new_path, rm);
+                }
+                return Err(e);
+            }
         };
 
-        new_file.write_all(&serialize_header(&header))?;
-
-        let mut last_hash = [0u8; 32];
-        let mut cumulative_hasher = Hasher::new();
-
-        for entry in &entries {
-            let mut entry = entry.clone();
-            entry.prev_hash = last_hash;
-            let entry_hash = entry.compute_hash();
-            cumulative_hasher.update(&entry_hash);
-            entry.cumulative_hash = *cumulative_hasher.finalize().as_bytes();
-            let sig = state.signing_key.sign(&entry.cumulative_hash);
-            entry.signature = sig.to_bytes();
-
-            let data = serialize_entry(&entry)?;
-            let length = data.len() as u32;
-            new_file.write_all(&length.to_be_bytes())?;
-            new_file.write_all(&data)?;
-            last_hash = entry_hash;
+        if let Err(e) = fs::rename(&new_path, &state.path) {
+            if let Err(rm) = fs::remove_file(&new_path) {
+                log::warn!("compact: failed to remove temp file {:?}: {}", new_path, rm);
+            }
+            return Err(WalError::Io(e));
         }
-
-        new_file.sync_all()?;
-        drop(new_file);
-
-        fs::rename(&new_path, &state.path)?;
 
         // Open the new file first. If this fails the rename already committed,
         // so mark the WAL inconsistent before returning to prevent further writes
