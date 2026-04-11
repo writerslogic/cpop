@@ -1186,8 +1186,8 @@ pub enum SecureChannelSendError {
 
 ### platform/windows.rs
 - [ ] **M-012** `[concurrency]` `platform/windows.rs:192`: 5-second spinlock with 1ms sleep for thread ID; use Condvar | **Model:** Sonnet
-- [ ] **M-013** `[error_handling]` `platform/windows.rs:359`: PostThreadMessageW return unchecked; pump thread join may hang | **Model:** Haiku
-- [ ] **M-014** `[security]` `platform/windows.rs:99`: bundle_id = full exe path; leaks paths in evidence | **Model:** Sonnet
+- [x] **M-013** `[error_handling]` `platform/windows.rs:359`: PostThreadMessageW unchecked -- FIXED 2026-04-11 (detach pump thread when WM_QUIT post fails so stop() never hangs inside join)
+- [x] **M-014** `[security]` `platform/windows.rs:99`: bundle_id leaked full exe path -- FIXED 2026-04-11 (bundle_id is now the executable file name only; install path stays local)
 - [ ] **M-015** `[security]` `platform/windows.rs:451`: keycode_to_zone u8 cast may truncate | **Model:** Haiku
 - [ ] **M-016** `[error_handling]` `platform/windows.rs:80`: GetWindowThreadProcessId return unchecked | **Model:** Haiku
 
@@ -1828,7 +1828,7 @@ pub enum SecureChannelSendError {
   <!-- pid:silent_error | first:2026-04-08 -->
   Impact: `anchor_res` error is logged at `warn!` then discarded; `FfiBeaconResult.success = true` is returned even when the WritersProof anchor call failed. Swift caller returns `CommandResult(success: true)` to the user -- they believe evidence is anchored when it is not. | Fix: If `anchor_res` is `Err`, either set `error_message` in the result or return `success: false`; distinguish "beacon fetched but not anchored" from "beacon fetched and anchored".
 
-- [ ] **H-045** `[concurrency]` `apps/cpop_macos/cpop/Service/CPOPService+Actions.swift:117`: Stale session index used after async gap | **Model:** Sonnet
+- [x] **H-045** `[concurrency]` `apps/cpop_macos/cpop/Service/CPOPService+Actions.swift`: stale session index -- FIXED (current code computes firstIndex after every await; capture-before-gap pattern used in export)
   <!-- pid:toctou | first:2026-04-08 -->
   Impact: `sessionIndex` is captured via `firstIndex(where:)` before `await engine.commit()`; a concurrent `refreshStatus()` can add, remove, or reorder `sessions` during the await. After the await, `sessions[idx]` may access the wrong session or crash out-of-bounds. | Fix: After the await, re-query by path: `if let idx = sessions.firstIndex(where: { $0.documentPath == doc })`.
 
@@ -1836,13 +1836,13 @@ pub enum SecureChannelSendError {
   <!-- pid:key_zeroize_inconsistency | first:2026-04-08 -->
   Impact: `(*api_key).clone()` dereferences the `Zeroizing<String>` wrapper and clones a bare `String`. That allocation is not Zeroized until `with_jwt` re-wraps it one frame later -- same pattern in `beacon.rs:115`. Defeats the zeroize guarantee. | Fix: Change `with_jwt` to accept `Zeroizing<String>` directly; pass `api_key` (consumed) rather than `(*api_key).clone()`.
 
-- [ ] **H-047** `[resource_management]` `apps/cpop_macos/cpop/EngineService/EngineService.swift:217`: Orphaned FFI session cleanup tasks not tracked | **Model:** Sonnet
+- [x] **H-047** `[resource_management]` `apps/cpop_macos/cpop/EngineService/EngineService.swift`: orphan FFI cleanup -- FIXED 2026-04-11 (CleanupTaskRegistry actor caps concurrent cleanups at 8 and deduplicates by session ID; drops new requests with a warning when full)
   <!-- pid:no_resource_cleanup | first:2026-04-08 -->
   Impact: `Task.detached { ffiEphemeralFinalize(...) }` is fire-and-forget. App shutdown or actor deallocation before the task runs leaves the Rust-side ephemeral session in memory indefinitely. | Fix: Store cleanup task handles; cancel and await them during graceful shutdown.
 
 ### Medium
 
-- [ ] **M-100** `[security]` `apps/cpop_macos/cpop/ChallengeService.swift:114`: Session ID validation accepts Unicode letters via `CharacterSet.alphanumerics` | **Model:** Haiku
+- [x] **M-100** `[security]` `apps/cpop_macos/cpop/ChallengeService.swift`: session ID Unicode -- FIXED (current code validates via explicit ASCII scalar range plus length <= 128)
   <!-- pid:missing_validation | first:2026-04-08 -->
   Impact: Unicode homoglyphs or combining characters pass the guard but produce unexpected URL segments. Only ASCII alphanumerics and `-_` should be accepted. | Fix: Replace CharacterSet check with explicit ASCII byte-range comparison.
 
@@ -1854,11 +1854,11 @@ pub enum SecureChannelSendError {
   <!-- pid:stringly_typed | first:2026-04-08 -->
   Impact: Swift caller must string-parse `"Anchored: <id> (log index <n>)"` to extract values; format changes silently break consumers. | Fix: Return a dedicated `FfiAnchorResult` record with `anchor_id: Option<String>` and `log_index: u64` fields.
 
-- [ ] **M-103** `[concurrency]` `apps/cpop_macos/cpop/StatusBarController.swift:448`: `Task { [weak self] }` closures missing `guard let self` | **Model:** Haiku
+- [x] **M-103** `[concurrency]` `apps/cpop_macos/cpop/StatusBarController.swift`: Task weak self guard -- FIXED (all Task closures with [weak self] now include an immediate guard let self; 4 sites audited)
   <!-- pid:weak_self_capture | first:2026-04-08 -->
   Impact: Timer and observer Task closures access `self?` properties without `guard let self else { return }`. If `StatusBarController` deallocates while a timer fires, closures execute on nil. | Fix: Add `guard let self else { return }` as first line of every `[weak self]` Task closure.
 
-- [ ] **M-104** `[error_handling]` `apps/cpop_macos/cpop/StatusBarController.swift:526`: Untracked Task for checkpoint creation | **Model:** Sonnet
+- [x] **M-104** `[error_handling]` `apps/cpop_macos/cpop/StatusBarController.swift`: untracked checkpoint Task -- FIXED (pendingChallengeTask is now stored and cancelled-then-replaced on each auto-checkpoint)
   <!-- pid:fire_and_forget | first:2026-04-08 -->
   Impact: `Task(priority: .utility) { ... }` for checkpoint writes is fire-and-forget. App termination before the task completes silently abandons the checkpoint. | Fix: Store the task handle and await it during shutdown, or track completion via the existing checkpoint state machine.
 
