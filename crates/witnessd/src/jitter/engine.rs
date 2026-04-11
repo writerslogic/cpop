@@ -51,6 +51,7 @@ pub struct TypingProfile {
 }
 
 /// Real-time zone-committed jitter engine for keystroke monitoring sessions.
+#[derive(Debug)]
 pub struct JitterEngine {
     secret: [u8; 32],
     ordinal: u64,

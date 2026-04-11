@@ -7,6 +7,7 @@ use sha2::Digest;
 use std::time::Duration;
 
 /// Entangles physical landscape noise with the Arrow of Time.
+#[derive(Debug)]
 pub struct Entanglement;
 
 impl Entanglement {

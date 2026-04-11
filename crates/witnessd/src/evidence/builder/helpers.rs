@@ -44,6 +44,7 @@ pub fn compute_events_binding_hash(events: &[crate::store::SecureEvent]) -> [u8;
 }
 
 /// A content snapshot from an ephemeral session checkpoint.
+#[derive(Debug)]
 pub struct EphemeralSnapshot {
     pub timestamp_ns: i64,
     pub content_hash: [u8; 32],

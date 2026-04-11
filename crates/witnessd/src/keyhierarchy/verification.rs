@@ -31,13 +31,8 @@ pub fn verify_session_certificate(cert: &SessionCertificate) -> Result<(), KeyHi
         cert.document_hash,
     );
 
-    let pubkey = VerifyingKey::from_bytes(
-        cert.master_pubkey
-            .as_slice()
-            .try_into()
-            .map_err(|_| KeyHierarchyError::InvalidCert)?,
-    )
-    .map_err(|_| KeyHierarchyError::InvalidCert)?;
+    let pubkey = VerifyingKey::from_bytes(&cert.master_pubkey)
+        .map_err(|_| KeyHierarchyError::InvalidCert)?;
 
     let signature = Signature::from_bytes(&cert.signature);
     pubkey
@@ -62,13 +57,8 @@ pub fn verify_checkpoint_signatures(
             return Err(KeyHierarchyError::OrdinalMismatch);
         }
 
-        let pubkey = VerifyingKey::from_bytes(
-            sig.public_key
-                .as_slice()
-                .try_into()
-                .map_err(|_| KeyHierarchyError::SignatureFailed)?,
-        )
-        .map_err(|_| KeyHierarchyError::SignatureFailed)?;
+        let pubkey = VerifyingKey::from_bytes(&sig.public_key)
+            .map_err(|_| KeyHierarchyError::SignatureFailed)?;
         let signature = Signature::from_bytes(&sig.signature);
         pubkey
             .verify(&sig.checkpoint_hash, &signature)

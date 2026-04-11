@@ -28,7 +28,7 @@ pub fn migrate_from_legacy_key(
     Ok((
         LegacyKeyMigration {
             legacy_public_key: legacy_pub,
-            new_master_public_key: new_identity.public_key.clone(),
+            new_master_public_key: new_identity.public_key.to_vec(),
             migration_timestamp: migration_ts,
             transition_signature: signature,
             version: VERSION,

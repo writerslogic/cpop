@@ -7,10 +7,19 @@ use hkdf::Hkdf;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use std::fmt;
 
 /// 64-byte seed derived from a mnemonic and silicon PUF, zeroized on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SensitiveSeed([u8; 64]);
+
+impl fmt::Debug for SensitiveSeed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SensitiveSeed")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl AsRef<[u8]> for SensitiveSeed {
     fn as_ref(&self) -> &[u8] {
@@ -19,6 +28,7 @@ impl AsRef<[u8]> for SensitiveSeed {
 }
 
 /// BIP-39 mnemonic generation and PUF-bound seed derivation.
+#[derive(Debug)]
 pub struct MnemonicHandler;
 
 impl MnemonicHandler {

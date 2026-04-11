@@ -53,6 +53,15 @@ pub struct DaemonHandle {
     daemon_mgr: DaemonManager,
 }
 
+impl std::fmt::Debug for DaemonHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaemonHandle")
+            .field("sentinel", &"[Arc<Sentinel>]")
+            .field("daemon_mgr", &self.daemon_mgr)
+            .finish()
+    }
+}
+
 impl DaemonHandle {
     /// Gracefully shut down the IPC server, sentinel, and clean up daemon files.
     pub async fn shutdown(self) -> Result<()> {
@@ -65,6 +74,7 @@ impl DaemonHandle {
 }
 
 /// Manage daemon lifecycle via PID file, state file, and Unix socket.
+#[derive(Debug)]
 pub struct DaemonManager {
     writerslogic_dir: PathBuf,
     pid_file: PathBuf,

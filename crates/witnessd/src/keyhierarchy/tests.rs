@@ -374,10 +374,10 @@ fn test_session_recovery_no_data() {
     let recovery = SessionRecoveryState {
         certificate: SessionCertificate {
             session_id: [0u8; 32],
-            session_pubkey: vec![],
+            session_pubkey: [0u8; 32],
             created_at: Utc::now(),
             document_hash: [0u8; 32],
-            master_pubkey: vec![],
+            master_pubkey: [0u8; 32],
             signature: [0u8; 64],
             version: VERSION,
             expires_at: None,

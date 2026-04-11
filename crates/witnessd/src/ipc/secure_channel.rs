@@ -22,11 +22,13 @@ const NONCE_COUNTER_MAX: u64 = u64::MAX - 1;
 const MAX_SECURE_CHANNEL_PAYLOAD: usize = super::messages::MAX_MESSAGE_SIZE;
 
 /// Factory for creating matched sender/receiver pairs with ChaCha20-Poly1305 encryption.
+#[derive(Debug)]
 pub struct SecureChannel<T> {
     _phantom: std::marker::PhantomData<T>,
 }
 
 /// Wire-format encrypted message with nonce and ciphertext.
+#[derive(Debug)]
 pub struct EncryptedMessage {
     nonce: [u8; 12],
     ciphertext: Vec<u8>,
@@ -81,6 +83,15 @@ pub struct SecureSender<T> {
     /// Random prefix for nonce bytes [0..4], generated once at channel creation.
     nonce_prefix: Zeroizing<[u8; 4]>,
     _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for SecureSender<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureSender")
+            .field("cipher", &"[ChaCha20Poly1305]")
+            .field("nonce_counter", &self.nonce_counter.load(Ordering::SeqCst))
+            .finish()
+    }
 }
 
 impl<T: serde::Serialize> SecureSender<T> {
@@ -141,6 +152,14 @@ pub struct SecureReceiver<T> {
     rx: Receiver<EncryptedMessage>,
     cipher: ChaCha20Poly1305,
     _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for SecureReceiver<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureReceiver")
+            .field("cipher", &"[ChaCha20Poly1305]")
+            .finish()
+    }
 }
 
 impl<T: serde::de::DeserializeOwned> SecureReceiver<T> {

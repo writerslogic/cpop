@@ -12,6 +12,16 @@ pub struct Mmr {
     state: RwLock<MmrState>,
 }
 
+impl std::fmt::Debug for Mmr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mmr")
+            .field("store", &"[dyn Store]")
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 struct MmrState {
     size: u64,
     peaks: Vec<u64>,

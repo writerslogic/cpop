@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 /// High-precision clock skew measurement.
 /// Proves the delta between the CPU's Time Stamp Counter (TSC) and the system's Wall Clock.
+#[derive(Debug)]
 pub struct ClockSkew;
 
 impl ClockSkew {

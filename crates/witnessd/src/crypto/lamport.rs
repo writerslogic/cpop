@@ -3,6 +3,7 @@
 use sha2::{Digest, Sha256};
 use subtle::{Choice, ConstantTimeEq};
 use zeroize::Zeroizing;
+use std::fmt;
 
 const N: usize = 256;
 const H_SZ: usize = 32;
@@ -12,12 +13,20 @@ pub struct LamportPrivateKey {
     secrets: Zeroizing<Vec<u8>>,
 }
 
-#[derive(Clone)]
+impl fmt::Debug for LamportPrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LamportPrivateKey")
+            .field("secrets", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct LamportPublicKey {
     pub hashes: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LamportSignature {
     pub revealed: Vec<u8>,
 }

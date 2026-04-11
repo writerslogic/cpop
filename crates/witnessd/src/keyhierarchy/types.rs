@@ -4,13 +4,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::KeyHierarchyError;
-use crate::serde_utils::serde_array_64;
+use crate::serde_utils::{serde_array_32, serde_array_64};
 
 pub const VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasterIdentity {
-    pub public_key: Vec<u8>,
+    #[serde(with = "serde_array_32")]
+    pub public_key: [u8; 32],
     pub fingerprint: String,
     pub device_id: String,
     pub created_at: DateTime<Utc>,
@@ -20,10 +21,12 @@ pub struct MasterIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionCertificate {
     pub session_id: [u8; 32],
-    pub session_pubkey: Vec<u8>,
+    #[serde(with = "serde_array_32")]
+    pub session_pubkey: [u8; 32],
     pub created_at: DateTime<Utc>,
     pub document_hash: [u8; 32],
-    pub master_pubkey: Vec<u8>,
+    #[serde(with = "serde_array_32")]
+    pub master_pubkey: [u8; 32],
     #[serde(with = "serde_array_64")]
     pub signature: [u8; 64],
     pub version: u32,
@@ -54,7 +57,8 @@ pub struct SessionCertificate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointSignature {
     pub ordinal: u64,
-    pub public_key: Vec<u8>,
+    #[serde(with = "serde_array_32")]
+    pub public_key: [u8; 32],
     #[serde(with = "serde_array_64")]
     pub signature: [u8; 64],
     pub checkpoint_hash: [u8; 32],

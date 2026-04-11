@@ -119,3 +119,11 @@ impl<T: Serialize + for<'de> Deserialize<'de> + PartialEq> PartialEq for Obfusca
         result
     }
 }
+
+impl<T> std::fmt::Debug for Obfuscated<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Obfuscated")
+            .field("data", &"[REDACTED]")
+            .finish()
+    }
+}

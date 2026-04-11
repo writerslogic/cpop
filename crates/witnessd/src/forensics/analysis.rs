@@ -132,7 +132,7 @@ pub fn build_profile(
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct AnalysisContext {
     pub document_length: i64,
     pub total_keystrokes: i64,

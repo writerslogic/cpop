@@ -38,6 +38,14 @@ impl EncodePublicKey for X509VerifyingKey {
 /// Wrapper to implement x509-cert builder traits for SigningKey.
 pub struct X509Signer(pub SigningKey);
 
+impl std::fmt::Debug for X509Signer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("X509Signer")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
+
 impl Keypair for X509Signer {
     type VerifyingKey = X509VerifyingKey;
     fn verifying_key(&self) -> Self::VerifyingKey {

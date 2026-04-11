@@ -32,6 +32,7 @@ pub(super) const MIN_SAMPLES_FOR_HURST: usize = 20;
 pub(super) const HARDWARE_ENTROPY_RATIO_THRESHOLD: f64 = 0.8;
 
 /// Accumulate evidence layers into a signed evidence packet.
+#[derive(Debug)]
 pub struct Builder {
     pub(super) packet: Packet,
     pub(super) errors: Vec<String>,

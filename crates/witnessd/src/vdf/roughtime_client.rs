@@ -7,6 +7,7 @@ use std::net::UdpSocket;
 use std::time::Duration;
 
 /// Roughtime server descriptor with address and Ed25519 public key.
+#[derive(Debug)]
 pub struct RoughtimeServer {
     pub name: &'static str,
     pub address: &'static str,
@@ -47,6 +48,7 @@ const QUORUM_MIN: usize = 2;
 const QUORUM_TOLERANCE_US: u64 = 10_000_000;
 
 /// Client for querying Roughtime servers with quorum-based verification.
+#[derive(Debug)]
 pub struct RoughtimeClient;
 
 impl RoughtimeClient {

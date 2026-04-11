@@ -98,7 +98,7 @@ impl SealedIdentityStore {
             },
             device_id: self.provider.device_id(),
             sealed_seed,
-            public_key: identity.public_key.clone(),
+            public_key: identity.public_key.to_vec(),
             fingerprint: identity.fingerprint.clone(),
             sealed_at: Utc::now(),
             counter_at_seal: counter,
@@ -261,8 +261,12 @@ impl SealedIdentityStore {
     /// Load and return the public identity (key + fingerprint) from the sealed blob.
     pub fn public_identity(&self) -> Result<MasterIdentity, SealedIdentityError> {
         let blob = self.load_blob()?;
+        let public_key: [u8; 32] = blob
+            .public_key
+            .try_into()
+            .map_err(|_| SealedIdentityError::BlobCorrupted)?;
         Ok(MasterIdentity {
-            public_key: blob.public_key,
+            public_key,
             fingerprint: blob.fingerprint,
             device_id: blob.device_id,
             created_at: blob.sealed_at,

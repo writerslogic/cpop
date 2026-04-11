@@ -74,6 +74,14 @@ pub struct ChainEncryptionKey {
     key: ProtectedKey<32>,
 }
 
+impl std::fmt::Debug for ChainEncryptionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChainEncryptionKey")
+            .field("key", &"[REDACTED]")
+            .finish()
+    }
+}
+
 impl ChainEncryptionKey {
     pub fn derive(master_seed: &[u8], document_id: &[u8; 32]) -> Result<Self> {
         if master_seed.len() < 32 {

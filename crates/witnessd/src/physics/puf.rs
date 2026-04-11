@@ -5,6 +5,7 @@ use sysinfo::System;
 
 /// Silicon-level Physical Unclonable Function (PUF).
 /// Measures microscopic manufacturing variations in hardware.
+#[derive(Debug)]
 pub struct SiliconPUF;
 
 impl SiliconPUF {

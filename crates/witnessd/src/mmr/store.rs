@@ -16,6 +16,7 @@ pub trait Store: Send + Sync {
     fn close(&self) -> Result<(), MmrError>;
 }
 
+#[derive(Debug)]
 pub struct FileStore {
     file: RwLock<File>,
     writer: RwLock<BufWriter<File>>,
@@ -94,6 +95,7 @@ impl Store for FileStore {
     }
 }
 
+#[derive(Debug)]
 pub struct MemoryStore {
     nodes: RwLock<Vec<Node>>,
 }

@@ -3,6 +3,7 @@
 use crate::jitter::SimpleJitterSample;
 
 /// Analyzer for biological typing cadence regularity.
+#[derive(Debug)]
 pub struct BiologicalCadence;
 
 impl BiologicalCadence {

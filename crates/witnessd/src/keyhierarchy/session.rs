@@ -29,7 +29,7 @@ pub(crate) fn start_session_inner(
     signing_key: &SigningKey,
     document_hash: [u8; 32],
 ) -> Result<Session, KeyHierarchyError> {
-    let master_pub_key = signing_key.verifying_key().to_bytes().to_vec();
+    let master_pub_key = signing_key.verifying_key().to_bytes();
 
     let mut session_id = [0u8; 32];
     rand::rng().fill_bytes(&mut session_id);
@@ -53,7 +53,7 @@ pub(crate) fn start_session_inner(
     // dropped at end of scope, but the internal copy is not zeroized. This is a known
     // limitation tracked as SYS-033.
     let session_key = SigningKey::from_bytes(&session_seed);
-    let session_pub = session_key.verifying_key().to_bytes().to_vec();
+    let session_pub = session_key.verifying_key().to_bytes();
     let cert_data = build_cert_data(session_id, &session_pub, created_at, document_hash);
     let signature = signing_key.sign(&cert_data).to_bytes();
 
@@ -123,7 +123,7 @@ impl Session {
             &[],
         )?;
         let signing_key = SigningKey::from_bytes(&signing_seed);
-        let public_key = signing_key.verifying_key().to_bytes().to_vec();
+        let public_key = signing_key.verifying_key().to_bytes();
         let signature = signing_key.sign(&checkpoint_hash).to_bytes();
 
         // Lamport one-shot signature: derive a separate key from the ratchet
@@ -189,7 +189,7 @@ impl Session {
             &[],
         )?;
         let signing_key = SigningKey::from_bytes(&signing_seed);
-        let public_key = signing_key.verifying_key().to_bytes().to_vec();
+        let public_key = signing_key.verifying_key().to_bytes();
         let signature = signing_key.sign(&checkpoint_hash).to_bytes();
 
         // Lamport one-shot signature
@@ -342,10 +342,10 @@ impl Session {
             session_certificate: Some(self.certificate.clone()),
             checkpoint_signatures: self.signatures.clone(),
             master_fingerprint: identity.fingerprint.clone(),
-            master_public_key: identity.public_key.clone(),
+            master_public_key: identity.public_key.to_vec(),
             device_id: identity.device_id.clone(),
             session_id: hex::encode(self.certificate.session_id),
-            session_public_key: self.certificate.session_pubkey.clone(),
+            session_public_key: self.certificate.session_pubkey.to_vec(),
             session_started: self.certificate.created_at,
             session_certificate_raw: self.certificate.signature.to_vec(),
             ratchet_count: self.signatures.len() as i32,
@@ -354,7 +354,7 @@ impl Session {
         };
 
         for sig in &self.signatures {
-            evidence.ratchet_public_keys.push(sig.public_key.clone());
+            evidence.ratchet_public_keys.push(sig.public_key.to_vec());
         }
 
         evidence

@@ -9,9 +9,11 @@ use sha2::{Digest, Sha256};
 use sysinfo::System;
 
 /// Collector for ambient system entropy (processes, hardware, OS version).
+#[derive(Debug)]
 pub struct AmbientSensing;
 
 /// Captured ambient entropy snapshot with virtualization detection.
+#[derive(Debug)]
 pub struct AmbientEntropy {
     /// SHA-256 hash of combined ambient entropy sources.
     pub hash: [u8; 32],

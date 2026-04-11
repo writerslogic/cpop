@@ -7,6 +7,7 @@ use crate::physics::puf::SiliconPUF;
 use sha2::{Digest, Sha256};
 
 /// The "Contextual Salt" generated from multi-source physical synthesis.
+#[derive(Debug)]
 pub struct PhysicalContext {
     /// CPU counter delta measurement.
     pub clock_skew: u64,

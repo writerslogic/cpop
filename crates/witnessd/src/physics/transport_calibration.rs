@@ -6,6 +6,7 @@ use crate::platform::TransportType;
 use authorproof_protocol::rfc::jitter_binding::TransportCalibration;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct TransportCalibrator {
     /// Intervals in microseconds, keyed by transport type.
     samples: HashMap<TransportType, Vec<u64>>,

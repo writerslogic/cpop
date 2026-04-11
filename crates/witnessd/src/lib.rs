@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
+#![warn(missing_debug_implementations)]
+
 //! CPOP (Continuous Proof of Personhood) Engine.
 //!
 //! A high-integrity behavioral biometric engine designed for generating
