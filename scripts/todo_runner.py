@@ -25,7 +25,7 @@ Usage:
 Environment overrides:
     CLAUDE_BIN       claude CLI path        (default: claude)
     MAX_PARALLEL     concurrent workers     (default: 3)
-    TASK_TIMEOUT     per-task seconds       (default: 1800)
+    TASK_TIMEOUT     per-task seconds       (default: 3800)
     POLL_INTERVAL    reap poll seconds      (default: 2)
     REPO_ROOT        repo root              (default: script parent)
 """
@@ -61,7 +61,7 @@ STATE_LOG = STATE_DIR / "state.log"
 
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
 MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL", "3"))
-TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT", "1800"))
+TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT", "3800"))
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2"))
 
 TASK_HEADER_RE = re.compile(r"^### ((?:CRITICAL|SYS|C|H|M|L)-\d+):")
