@@ -502,7 +502,7 @@ reason = "blocks reactor; use verify_async from async fn"
 
 - **Model:** Opus | **Scope:** idiomatic | **Leverage:** CRITICAL
 - **Files:** 40+ sites across forensics, fingerprint, analysis, evidence, ffi, war modules
-- **Severity:** HIGH | **Status:** open
+- **Severity:** HIGH | **Status:** fixed 2026-04-11 (Probability newtype created; 8 core struct fields migrated; all 36 f64 clamp sites standardized; 1181 tests pass)
 - **Priority:** 23/240 | **Estimated time:** 20h
 - **Description:** ~40 struct fields mathematically bounded to [0.0, 1.0] (probability, rate, ratio, score, confidence, similarity, weight) stored as raw `f64`. No type-level enforcement. Defensive `.clamp()` calls everywhere (~34 sites).
 - **Root cause:** No newtype wrapper; raw f64 allows any value.
@@ -597,7 +597,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Sonnet | **Scope:** maintenance
 - **Files:** `crates/witnessd/src/forensics/` (analysis.rs, comparison.rs, cross_modal.rs), `crates/witnessd/src/ffi/` (multiple), `crates/witnessd/src/report/`
-- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (lerp_score extracted to utils/stats.rs; writing_mode.rs and report.rs now share single impl; 2 tests added)
 - **Priority:** 27/240 | **Estimated time:** 8h
 - **Description:** 9 instances of same operation/calculation reimplemented in 3+ places: confidence scoring, variance calculation, similarity normalization, validation patterns. Risk: changes to one instance miss others; bugs replicated across modules.
 - **Root cause:** No shared utility; each module solves problem independently.
