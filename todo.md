@@ -24,7 +24,7 @@ Execute by criticality and dependency order:
 
 - **Model:** Sonnet | **Scope:** errors
 - **File:** `crates/witnessd/src/sentinel/behavioral_key.rs:63-68`
-- **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** open
+- **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** fixed 2026-04-10 (HKDF-SHA256 expand of 32 bytes is provably infallible; replaced silent `.is_ok()` swallow with `.expect()` documenting the invariant)
 - **Priority:** 1/240 | **Estimated time:** 1.5h
 - **Description:** `add_entropy` method lines 63-68: `if hk.expand(...).is_ok()` discards errors. Failure leaves `active_key` as None. Sentinel keeps running but produces no signatures indefinitely with zero logging. Worst-case failure mode for a signing component.
 - **Root cause:** Error swallowed by `.is_ok()` check; no error propagation to callers.
@@ -65,7 +65,7 @@ pub fn add_entropy(&mut self, data: &[u8]) -> Result<(), Error> {
 
 - **Model:** Sonnet | **Scope:** performance
 - **File:** `crates/witnessd/src/keyhierarchy/migration.rs` (multiple manual `zeroize()` calls)
-- **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (replaced all manual `.zeroize()` calls with `Zeroizing<Vec<u8>>` and `Zeroizing<[u8; 32]>` wrappers; RAII cleanup on all paths)
 - **Priority:** 2/240 | **Estimated time:** 1h
 - **Description:** Multiple manual `seed.zeroize()` and `data.zeroize()` calls across error/success branches. Correct but fragile; adding new code paths risks leaving material unwiped.
 - **Root cause:** Manual RAII pattern instead of using Zeroizing<T> wrapper.

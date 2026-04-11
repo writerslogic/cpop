@@ -60,12 +60,11 @@ impl BehavioralKey {
             if let Some(ref mk) = self.master_key {
                 let hk = Hkdf::<Sha256>::new(Some(&self.entropy_pool[..]), mk.as_bytes());
                 let mut derived = Zeroizing::new([0u8; 32]);
-                if hk
-                    .expand(b"witnessd-behavioral-entropy-v1", &mut derived[..])
-                    .is_ok()
-                {
-                    self.active_key = Some(SigningKey::from_bytes(&derived));
-                }
+                // HKDF-SHA256 expand only fails when output length > 255 * 32 bytes.
+                // A 32-byte output is unconditionally valid, so this cannot fail.
+                hk.expand(b"witnessd-behavioral-entropy-v1", &mut derived[..])
+                    .expect("HKDF-SHA256 expand of 32 bytes is infallible");
+                self.active_key = Some(SigningKey::from_bytes(&derived));
             }
         }
     }

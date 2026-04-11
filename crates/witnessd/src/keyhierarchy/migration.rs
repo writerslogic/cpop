@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use std::fs;
 use std::path::Path;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::error::KeyHierarchyError;
 use super::identity::derive_master_identity;
@@ -76,32 +76,24 @@ fn build_migration_data(
 }
 
 fn load_legacy_private_key(path: impl AsRef<Path>) -> Result<SigningKey, KeyHierarchyError> {
-    let mut data = fs::read(path)?;
+    let data: Zeroizing<Vec<u8>> = Zeroizing::new(fs::read(path)?);
 
-    let result = if data.len() == 32 {
-        let mut seed = [0u8; 32];
+    if data.len() == 32 {
+        let mut seed: Zeroizing<[u8; 32]> = Zeroizing::new([0u8; 32]);
         seed.copy_from_slice(&data);
-        let key = SigningKey::from_bytes(&seed);
-        seed.zeroize();
-        Ok(key)
+        Ok(SigningKey::from_bytes(&seed))
     } else if data.len() == 64 {
-        let mut seed = [0u8; 32];
+        let mut seed: Zeroizing<[u8; 32]> = Zeroizing::new([0u8; 32]);
         seed.copy_from_slice(&data[0..32]);
         let key = SigningKey::from_bytes(&seed);
-        // Validate that the second half is the corresponding public key
         let expected_pub = key.verifying_key().to_bytes();
         if data[32..64] != expected_pub[..] {
-            seed.zeroize();
             return Err(KeyHierarchyError::LegacyKeyNotFound);
         }
-        seed.zeroize();
         Ok(key)
     } else {
         Err(KeyHierarchyError::LegacyKeyNotFound)
-    };
-
-    data.zeroize();
-    result
+    }
 }
 
 pub fn start_session_from_legacy_key(
