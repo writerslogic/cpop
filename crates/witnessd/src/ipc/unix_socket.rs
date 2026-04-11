@@ -25,6 +25,7 @@ pub enum IpcError {
     },
 }
 
+#[derive(Debug)]
 pub struct PeerCreds {
     pub uid: u32,
     pub pid: i32,
@@ -63,6 +64,7 @@ fn get_peer_creds(_stream: &UnixStream) -> Result<PeerCreds, IpcError> {
     Ok(PeerCreds { uid, pid: 0 })
 }
 
+#[derive(Debug)]
 pub struct SecureUnixSocket {
     listener: UnixListener,
     allowed_uid: u32,
@@ -112,6 +114,7 @@ impl SecureUnixSocket {
     }
 }
 
+#[derive(Debug)]
 pub struct VerifiedConnection {
     pub stream: UnixStream,
     pub peer_pid: i32,
