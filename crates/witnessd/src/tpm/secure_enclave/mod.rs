@@ -32,6 +32,12 @@ use std::time::SystemTime;
 
 /// Initialize the Secure Enclave provider, returning `None` if unavailable.
 pub fn try_init() -> Option<SecureEnclaveProvider> {
+    // Under `cargo test --lib`, always skip the real Secure Enclave so
+    // tests fall back to the software provider and never trigger a
+    // keychain / biometric prompt.
+    if cfg!(test) {
+        return None;
+    }
     if !is_secure_enclave_available() {
         return None;
     }
