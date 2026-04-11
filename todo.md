@@ -261,7 +261,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Haiku | **Scope:** idiomatic
 - **Files:** Project-wide (crates/witnessd/src/lib.rs, Cargo.toml clippy config)
-- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** partially fixed 2026-04-11 (lint enabled; 34 types fixed incl. all sensitive crypto; ~66 remaining straightforward derives)
+- **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** partially fixed 2026-04-11 (lint enabled; 38 types fixed incl. all sensitive crypto/keys; 66 violations remain, mostly straightforward derives)
 - **Priority:** 11/240 | **Estimated time:** 1h
 - **Description:** Public types missing `Debug` derive. Clippy can enforce with lint.
 - **Root cause:** No linting requirement for derived traits.
