@@ -27,6 +27,9 @@ use super::{Builder, MAX_INTERVAL_US, MIN_JITTER_SAMPLES_FOR_BINDING, MIN_SAMPLE
 use crate::analysis::compute_hurst_rs;
 use crate::evidence::types::*;
 
+const JITTER_ENTROPY_DST: &[u8] = b"witnessd-jitter-entropy-v1";
+const BINDING_MAC_KEY_DST: &[u8] = b"witnessd-binding-mac-key-v1";
+
 #[cfg(feature = "cpop_jitter")]
 use super::HARDWARE_ENTROPY_RATIO_THRESHOLD;
 
@@ -489,7 +492,7 @@ impl Builder {
         };
 
         let mut hasher = sha2::Sha256::new();
-        hasher.update(b"witnessd-jitter-entropy-v1");
+        hasher.update(JITTER_ENTROPY_DST);
         for s in &keystroke.samples {
             hasher.update(s.timestamp.timestamp_millis().to_be_bytes());
         }
@@ -536,7 +539,7 @@ impl Builder {
                 use zeroize::Zeroizing;
                 let hk = Hkdf::<sha2::Sha256>::new(None, &entropy_hash);
                 let mut mac_key = Zeroizing::new([0u8; 32]);
-                hk.expand(b"witnessd-binding-mac-key-v1", mac_key.as_mut())
+                hk.expand(BINDING_MAC_KEY_DST, mac_key.as_mut())
                     .expect("32 bytes is valid HKDF-Expand length");
                 rfc::BindingMac::compute(
                     mac_key.as_ref(),

@@ -121,6 +121,14 @@ pub fn compute_hw_entangled_hash(
 
 /// Domain separator for the hardware co-signature entangled hash.
 pub const HW_COSIGN_DST: &[u8] = b"cpop-hw-cosign-v1";
+/// Domain separator for packet-id derivation (wire export).
+pub const PACKET_ID_DST: &[u8] = b"cpop-packet-id-v1";
+/// Domain separator for checkpoint-id derivation (wire export).
+pub const CHECKPOINT_ID_DST: &[u8] = b"cpop-checkpoint-id-v1";
+/// Domain separator for packet content hashing.
+pub const PACKET_CONTENT_DST: &[u8] = b"witnessd-packet-content-v3";
+/// Domain separator for nonce-bound signing payload.
+pub const NONCE_BINDING_DST: &[u8] = b"witnessd-nonce-binding-v1";
 
 /// Complete evidence packet containing all attestation data for a document session.
 #[derive(Debug, Clone, Serialize, Deserialize)]

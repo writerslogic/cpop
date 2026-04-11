@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::checkpoint::{Chain, Checkpoint};
 use crate::error::{Error, Result};
+use crate::evidence::types::{CHECKPOINT_ID_DST, PACKET_ID_DST};
 use crate::keyhierarchy::types::CheckpointSignature;
 use authorproof_protocol::rfc::wire_types::checkpoint::CheckpointWire;
 use authorproof_protocol::rfc::wire_types::components::{
@@ -108,7 +109,7 @@ pub fn chain_to_wire_with_signatures(
         profile_uri: PROFILE_URI.to_string(),
         packet_id: {
             let mut h = Sha256::new();
-            h.update(b"cpop-packet-id-v1");
+            h.update(PACKET_ID_DST);
             h.update(content_hash);
             h.update(export_nonce);
             let d = h.finalize();
@@ -309,7 +310,7 @@ fn checkpoint_to_wire(
         sequence: cp.ordinal,
         checkpoint_id: {
             let mut h = Sha256::new();
-            h.update(b"cpop-checkpoint-id-v1");
+            h.update(CHECKPOINT_ID_DST);
             h.update(cp.content_hash);
             h.update(cp.ordinal.to_le_bytes());
             h.update(export_nonce);
@@ -391,7 +392,7 @@ mod tests {
         let sigs = vec![
             CheckpointSignature {
                 ordinal: 0,
-                public_key: vec![0u8; 32],
+                public_key: [0u8; 32],
                 signature: [0u8; 64],
                 checkpoint_hash: [0u8; 32],
                 counter_value: None,
@@ -402,7 +403,7 @@ mod tests {
             },
             CheckpointSignature {
                 ordinal: 2,
-                public_key: vec![0u8; 32],
+                public_key: [0u8; 32],
                 signature: [0u8; 64],
                 checkpoint_hash: [0u8; 32],
                 counter_value: None,

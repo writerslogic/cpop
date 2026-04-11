@@ -15,12 +15,10 @@ impl Chain {
         let report = self.verify_detailed();
         if report.valid {
             Ok(())
+        } else if report.errors.is_empty() {
+            Err(Error::checkpoint("verification failed"))
         } else {
-            Err(Error::checkpoint(if report.errors.is_empty() {
-                "verification failed".to_string()
-            } else {
-                report.errors.join("; ")
-            }))
+            Err(Error::checkpoint(report.errors.join("; ")))
         }
     }
 
@@ -58,8 +56,7 @@ impl Chain {
                 } else if !is_spec_genesis {
                     return Err(Error::checkpoint(
                         "checkpoint 0: invalid genesis previous_hash \
-                         (neither all-zeros nor spec-correct H(document-ref))"
-                            .to_string(),
+                         (neither all-zeros nor spec-correct H(document-ref))",
                     ));
                 }
             }

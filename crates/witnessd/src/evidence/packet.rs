@@ -15,7 +15,7 @@ use crate::vdf;
 use authorproof_protocol::codec::{self, Format, CBOR_TAG_CPOP};
 use authorproof_protocol::rfc;
 
-use super::types::Packet;
+use super::types::{Packet, NONCE_BINDING_DST, PACKET_CONTENT_DST};
 
 /// Minimum behavioral similarity for baseline verification to pass without warning.
 const BASELINE_SIMILARITY_THRESHOLD: f64 = 0.7;
@@ -122,15 +122,12 @@ impl Packet {
                     .map_err(|e| Error::evidence(format!("invalid hex: {e}")))?;
                 let output = hex::decode(output_hex)
                     .map_err(|e| Error::evidence(format!("invalid hex: {e}")))?;
-                if input.len() != 32 || output.len() != 32 {
-                    return Err(Error::evidence(format!(
-                        "checkpoint {i}: VDF input/output size mismatch"
-                    )));
-                }
-                let mut input_arr = [0u8; 32];
-                let mut output_arr = [0u8; 32];
-                input_arr.copy_from_slice(&input);
-                output_arr.copy_from_slice(&output);
+                let input_arr = crate::utils::to_array_32(&input).map_err(|_| {
+                    Error::evidence(format!("checkpoint {i}: VDF input/output size mismatch"))
+                })?;
+                let output_arr = crate::utils::to_array_32(&output).map_err(|_| {
+                    Error::evidence(format!("checkpoint {i}: VDF input/output size mismatch"))
+                })?;
                 let proof = vdf::VdfProof {
                     input: input_arr,
                     output: output_arr,
@@ -184,16 +181,10 @@ impl Packet {
                 let doc_hash_bytes = hex::decode(doc_hash_hex).map_err(|e| {
                     Error::evidence(format!("invalid session_document_hash hex: {e}"))
                 })?;
-                if session_id_bytes.len() != 32 {
-                    return Err(Error::evidence("session_id must be 32 bytes"));
-                }
-                if doc_hash_bytes.len() != 32 {
-                    return Err(Error::evidence("session_document_hash must be 32 bytes"));
-                }
-                let mut session_id_arr = [0u8; 32];
-                let mut doc_hash_arr = [0u8; 32];
-                session_id_arr.copy_from_slice(&session_id_bytes);
-                doc_hash_arr.copy_from_slice(&doc_hash_bytes);
+                let session_id_arr = crate::utils::to_array_32(&session_id_bytes)
+                    .map_err(|_| Error::evidence("session_id must be 32 bytes"))?;
+                let doc_hash_arr = crate::utils::to_array_32(&doc_hash_bytes)
+                    .map_err(|_| Error::evidence("session_document_hash must be 32 bytes"))?;
                 if let Err(err) = keyhierarchy::validate_cert_byte_lengths(
                     &master_pub,
                     &session_pub,
@@ -408,7 +399,7 @@ impl Packet {
         let data = codec::cbor::encode(packet)
             .map_err(|e| Error::crypto(format!("content_hash: CBOR encoding failed: {e}")))?;
         let mut hasher = Sha256::new();
-        hasher.update(b"witnessd-packet-content-v3");
+        hasher.update(PACKET_CONTENT_DST);
         hasher.update(data);
         Ok(hasher.finalize().into())
     }
@@ -420,7 +411,7 @@ impl Packet {
         match &self.verifier_nonce {
             Some(nonce) => {
                 let mut hasher = Sha256::new();
-                hasher.update(b"witnessd-nonce-binding-v1");
+                hasher.update(NONCE_BINDING_DST);
                 hasher.update(content);
                 hasher.update(nonce);
                 Ok(hasher.finalize().into())

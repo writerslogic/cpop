@@ -18,6 +18,9 @@ pub const VDF_RFC_INPUT_OFFSET: usize = 32;
 pub const VDF_RFC_INPUT_END: usize = 64;
 pub const VDF_RFC_FIELD_SIZE: usize = 64;
 
+const CHALLENGE_DST: &[u8] = b"cpop-challenge-v1";
+const MMR_ROOT_DST: &[u8] = b"witnessd-mmr-root-v1";
+
 /// Entanglement mode for checkpoint chain computation.
 ///
 /// WAR/1.0 (Legacy): VDF input = hash(content_hash ‖ previous_checkpoint_hash ‖ ordinal)
@@ -352,12 +355,12 @@ impl Checkpoint {
         }
 
         if let Some(nonce) = &self.challenge_nonce {
-            hasher.update(b"cpop-challenge-v1");
+            hasher.update(CHALLENGE_DST);
             hasher.update(nonce.as_bytes());
         }
 
         if let Some(root) = &self.mmr_root {
-            hasher.update(b"witnessd-mmr-root-v1");
+            hasher.update(MMR_ROOT_DST);
             hasher.update(root);
         }
 

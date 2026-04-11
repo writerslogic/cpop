@@ -207,7 +207,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Sonnet | **Scope:** memory
 - **Files:** Domain-separation constants across `crates/witnessd/src/crypto/`, `crates/witnessd/src/checkpoint/`, `crates/witnessd/src/utils/`, `crates/witnessd/src/evidence/`
-- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (named 8 DST byte constants; removed redundant .to_string() from Error::checkpoint calls)
 - **Priority:** 8/240 | **Estimated time:** 2h
 - **Description:** String literals allocated on each reference via `.to_string()` or `String::from()`. Examples: `"witnessd-checkpoint-v3"`, `"wld-engine/"`. Should use static `&str`.
 - **Root cause:** Habit of creating String instead of using &'static str.

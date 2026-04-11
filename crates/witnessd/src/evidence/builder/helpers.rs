@@ -10,6 +10,9 @@ use crate::error::Error;
 
 use crate::evidence::types::*;
 
+const EVENTS_BINDING_DST: &[u8] = b"witnessd-events-binding-v1";
+const EPHEMERAL_CHECKPOINT_DST: &[u8] = b"witnessd-checkpoint-v1";
+
 /// Convert an internal anchor proof to the evidence packet format.
 pub fn convert_anchor_proof(proof: &crate::anchors::Proof) -> AnchorProof {
     let provider = format!("{:?}", proof.provider).to_lowercase();
@@ -32,7 +35,7 @@ pub fn convert_anchor_proof(proof: &crate::anchors::Proof) -> AnchorProof {
 /// Includes event count to prevent truncation attacks.
 pub fn compute_events_binding_hash(events: &[crate::store::SecureEvent]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(b"witnessd-events-binding-v1");
+    hasher.update(EVENTS_BINDING_DST);
     hasher.update((events.len() as u64).to_be_bytes());
     for e in events {
         hasher.update(e.event_hash);
@@ -99,7 +102,7 @@ pub fn build_ephemeral_packet(
         };
         // Compute a deterministic checkpoint hash from its fields
         let mut cp_hasher = Sha256::new();
-        cp_hasher.update(b"witnessd-checkpoint-v1");
+        cp_hasher.update(EPHEMERAL_CHECKPOINT_DST);
         cp_hasher.update((i as u64).to_be_bytes());
         cp_hasher.update(hex::decode(&prev_hash).unwrap_or_else(|_| vec![0u8; 32]));
         cp_hasher.update(snap.content_hash);
