@@ -128,7 +128,7 @@ seed.copy_from_slice(&data[..32]);
 
 - **Model:** Sonnet | **Scope:** idiomatic
 - **Files:** `crates/authorproof-protocol/src/rfc/serde_helpers.rs:27,62,93,124`, `crates/authorproof-protocol/src/rfc/wire_types/serde_helpers.rs`, `crates/witnessd/src/serde_utils.rs:97,140`
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (visitor pattern in 8 sites; decode_to_slice for arrays; 2 roundtrip tests added; 1157 pass)
 - **Priority:** 4/240 | **Estimated time:** 5h
 - **Description:** Six deserializers (3 pairs) allocate intermediate `String` before hex/base64 decoding. Copy-pasted across two files in authorproof-protocol + witnessd.
 - **Root cause:** No shared visitor pattern; each site reimplements allocation.

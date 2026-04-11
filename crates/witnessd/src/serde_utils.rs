@@ -92,16 +92,35 @@ pub mod hex_array_opt {
         D: Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-            Option::<String>::deserialize(deserializer)?
-                .map(|s| {
-                    let mut arr = [0u8; N];
-                    if s.len() != N * 2 {
-                        return Err(de::Error::custom(format!("expected {} hex chars", N * 2)));
+            struct OptHexVisitor<const N: usize>;
+            impl<'a, const N: usize> de::Visitor<'a> for OptHexVisitor<N> {
+                type Value = Option<[u8; N]>;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "an optional {}-byte hex string or null", N)
+                }
+                fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                    Ok(None)
+                }
+                fn visit_some<D2: Deserializer<'a>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+                    struct InnerVisitor<const N: usize>;
+                    impl<'b, const N: usize> de::Visitor<'b> for InnerVisitor<N> {
+                        type Value = [u8; N];
+                        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                            write!(f, "a {}-byte hex string", N)
+                        }
+                        fn visit_str<E: de::Error>(self, v: &str) -> Result<[u8; N], E> {
+                            if v.len() != N * 2 {
+                                return Err(E::custom(format!("expected {} hex chars, got {}", N * 2, v.len())));
+                            }
+                            let mut arr = [0u8; N];
+                            hex::decode_to_slice(v, &mut arr).map_err(E::custom)?;
+                            Ok(arr)
+                        }
                     }
-                    hex::decode_to_slice(&s, &mut arr).map_err(de::Error::custom)?;
-                    Ok(arr)
-                })
-                .transpose()
+                    d.deserialize_str(InnerVisitor::<N>).map(Some)
+                }
+            }
+            deserializer.deserialize_option(OptHexVisitor::<N>)
         } else {
             Option::<Vec<u8>>::deserialize(deserializer)?
                 .map(|v| {
@@ -128,8 +147,17 @@ pub mod hex_vec {
     }
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: Deserializer<'de> {
         if deserializer.is_human_readable() {
-            let s = String::deserialize(deserializer)?;
-            hex::decode(s).map_err(de::Error::custom)
+            struct HexVisitor;
+            impl<'a> de::Visitor<'a> for HexVisitor {
+                type Value = Vec<u8>;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "a hex-encoded byte string")
+                }
+                fn visit_str<E: de::Error>(self, v: &str) -> Result<Vec<u8>, E> {
+                    hex::decode(v).map_err(E::custom)
+                }
+            }
+            deserializer.deserialize_str(HexVisitor)
         } else {
             Vec::<u8>::deserialize(deserializer)
         }
@@ -149,8 +177,17 @@ pub mod base64_vec {
     }
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: Deserializer<'de> {
         if deserializer.is_human_readable() {
-            let s = String::deserialize(deserializer)?;
-            STANDARD.decode(s).map_err(de::Error::custom)
+            struct B64Visitor;
+            impl<'a> de::Visitor<'a> for B64Visitor {
+                type Value = Vec<u8>;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, "a base64-encoded byte string")
+                }
+                fn visit_str<E: de::Error>(self, v: &str) -> Result<Vec<u8>, E> {
+                    STANDARD.decode(v).map_err(E::custom)
+                }
+            }
+            deserializer.deserialize_str(B64Visitor)
         } else {
             Vec::<u8>::deserialize(deserializer)
         }
@@ -256,6 +293,26 @@ pub mod base64_serde {
     }
 }
 
+/// Raw-bytes serde for `[u8; 32]` fields.
+pub mod serde_array_32 {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(value: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error> {
+        value.as_slice().serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 32], D::Error> {
+        let values = Vec::<u8>::deserialize(deserializer)?;
+        if values.len() != 32 {
+            return Err(serde::de::Error::custom(format!(
+                "expected 32-byte array, got {} bytes",
+                values.len()
+            )));
+        }
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&values);
+        Ok(out)
+    }
+}
+
 /// Raw-bytes serde for `[u8; 64]` fields.
 pub mod serde_array_64 {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -296,24 +353,40 @@ macro_rules! optional_hex_serde {
         where
             D: Deserializer<'de>,
         {
-            let opt: Option<String> = Option::deserialize(deserializer)?;
-            match opt {
-                Some(hex_str) => {
-                    let bytes = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
-                    if bytes.len() != $size {
-                        return Err(serde::de::Error::custom(concat!(
-                            $label,
-                            " must be ",
-                            stringify!($size),
-                            " bytes"
-                        )));
-                    }
-                    let mut arr = [0u8; $size];
-                    arr.copy_from_slice(&bytes);
-                    Ok(Some(arr))
+            struct OptVisitor;
+            impl<'a> de::Visitor<'a> for OptVisitor {
+                type Value = Option<[u8; $size]>;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    write!(f, concat!("an optional ", $label, " hex string or null"))
                 }
-                None => Ok(None),
+                fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                    Ok(None)
+                }
+                fn visit_some<D2: Deserializer<'a>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+                    struct InnerVisitor;
+                    impl<'b> de::Visitor<'b> for InnerVisitor {
+                        type Value = [u8; $size];
+                        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                            write!(f, concat!("a ", $label, " hex string"))
+                        }
+                        fn visit_str<E: de::Error>(self, v: &str) -> Result<[u8; $size], E> {
+                            if v.len() != $size * 2 {
+                                return Err(E::custom(concat!(
+                                    $label,
+                                    " must be ",
+                                    stringify!($size),
+                                    " bytes"
+                                )));
+                            }
+                            let mut arr = [0u8; $size];
+                            hex::decode_to_slice(v, &mut arr).map_err(E::custom)?;
+                            Ok(arr)
+                        }
+                    }
+                    d.deserialize_str(InnerVisitor).map(Some)
+                }
             }
+            deserializer.deserialize_option(OptVisitor)
         }
     };
 }
@@ -336,3 +409,27 @@ optional_hex_serde!(
     32,
     "public key"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_visitor_roundtrip() {
+        let original: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+        let json_str = format!(r#""{}""#, hex::encode(original));
+        let v: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let decoded: [u8; 4] = hex_array::deserialize(v).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn b64_visitor_roundtrip() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let original = vec![0xde, 0xad, 0xbe, 0xef];
+        let json_str = format!(r#""{}""#, STANDARD.encode(&original));
+        let v: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let decoded: Vec<u8> = base64_vec::deserialize(v).unwrap();
+        assert_eq!(decoded, original);
+    }
+}

@@ -9,7 +9,7 @@
 ///
 /// Usage: `#[serde(with = "crate::rfc::serde_helpers::hex_bytes")]`
 pub(crate) mod hex_bytes {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{de, Deserializer, Serializer};
 
     pub fn serialize<S, const N: usize>(bytes: &[u8; N], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -22,18 +22,22 @@ pub(crate) mod hex_bytes {
     where
         D: Deserializer<'de>,
     {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        if bytes.len() != N {
-            return Err(serde::de::Error::custom(format!(
-                "expected {} bytes, got {}",
-                N,
-                bytes.len()
-            )));
+        struct HexVisitor<const N: usize>;
+        impl<'a, const N: usize> de::Visitor<'a> for HexVisitor<N> {
+            type Value = [u8; N];
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a {}-byte hex string", N)
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<[u8; N], E> {
+                if v.len() != N * 2 {
+                    return Err(E::custom(format!("expected {} hex chars, got {}", N * 2, v.len())));
+                }
+                let mut arr = [0u8; N];
+                hex::decode_to_slice(v, &mut arr).map_err(E::custom)?;
+                Ok(arr)
+            }
         }
-        let mut arr = [0u8; N];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
+        deserializer.deserialize_str(HexVisitor::<N>)
     }
 }
 
@@ -41,7 +45,7 @@ pub(crate) mod hex_bytes {
 ///
 /// Usage: `#[serde(with = "crate::rfc::serde_helpers::hex_bytes_vec")]`
 pub(crate) mod hex_bytes_vec {
-    use serde::{de, Deserialize, Deserializer, Serializer};
+    use serde::{de, Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -57,16 +61,25 @@ pub(crate) mod hex_bytes_vec {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(de::Error::custom)?;
-        if bytes.len() > MAX_HEX_BYTES {
-            return Err(de::Error::custom(format!(
-                "hex_bytes_vec length {} exceeds maximum {}",
-                bytes.len(),
-                MAX_HEX_BYTES
-            )));
+        struct HexVecVisitor;
+        impl<'a> de::Visitor<'a> for HexVecVisitor {
+            type Value = Vec<u8>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a hex-encoded byte string")
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Vec<u8>, E> {
+                let bytes = hex::decode(v).map_err(E::custom)?;
+                if bytes.len() > MAX_HEX_BYTES {
+                    return Err(E::custom(format!(
+                        "hex_bytes_vec length {} exceeds maximum {}",
+                        bytes.len(),
+                        MAX_HEX_BYTES
+                    )));
+                }
+                Ok(bytes)
+            }
         }
-        Ok(bytes)
+        deserializer.deserialize_str(HexVecVisitor)
     }
 }
 
@@ -74,7 +87,7 @@ pub(crate) mod hex_bytes_vec {
 ///
 /// Usage: `#[serde(with = "crate::rfc::serde_helpers::hex_bytes_32_opt")]`
 pub(crate) mod hex_bytes_32_opt {
-    use serde::{de, Deserialize, Deserializer, Serializer};
+    use serde::{de, Deserializer, Serializer};
 
     pub fn serialize<S>(value: &Option<[u8; 32]>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -90,23 +103,35 @@ pub(crate) mod hex_bytes_32_opt {
     where
         D: Deserializer<'de>,
     {
-        let opt: Option<String> = Option::deserialize(deserializer)?;
-        match opt {
-            Some(s) => {
-                let bytes = hex::decode(&s).map_err(de::Error::custom)?;
-                if bytes.len() == 32 {
-                    let mut arr = [0u8; 32];
-                    arr.copy_from_slice(&bytes);
-                    Ok(Some(arr))
-                } else {
-                    Err(de::Error::custom(format!(
-                        "expected 32 bytes, got {}",
-                        bytes.len()
-                    )))
-                }
+        struct OptVisitor;
+        impl<'a> de::Visitor<'a> for OptVisitor {
+            type Value = Option<[u8; 32]>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "an optional 32-byte hex string or null")
             }
-            None => Ok(None),
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_some<D2: de::Deserializer<'a>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+                struct InnerVisitor;
+                impl<'b> de::Visitor<'b> for InnerVisitor {
+                    type Value = [u8; 32];
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        write!(f, "a 32-byte hex string")
+                    }
+                    fn visit_str<E: de::Error>(self, v: &str) -> Result<[u8; 32], E> {
+                        if v.len() != 64 {
+                            return Err(E::custom(format!("expected 64 hex chars, got {}", v.len())));
+                        }
+                        let mut arr = [0u8; 32];
+                        hex::decode_to_slice(v, &mut arr).map_err(E::custom)?;
+                        Ok(arr)
+                    }
+                }
+                d.deserialize_str(InnerVisitor).map(Some)
+            }
         }
+        deserializer.deserialize_option(OptVisitor)
     }
 }
 
@@ -114,7 +139,7 @@ pub(crate) mod hex_bytes_32_opt {
 ///
 /// Usage: `#[serde(with = "crate::rfc::serde_helpers::hex_bytes_vec_opt")]`
 pub(crate) mod hex_bytes_vec_opt {
-    use serde::{de, Deserialize, Deserializer, Serializer};
+    use serde::{de, Deserializer, Serializer};
 
     pub fn serialize<S>(value: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -130,10 +155,29 @@ pub(crate) mod hex_bytes_vec_opt {
     where
         D: Deserializer<'de>,
     {
-        let opt: Option<String> = Option::deserialize(deserializer)?;
-        match opt {
-            Some(s) => Ok(Some(hex::decode(&s).map_err(de::Error::custom)?)),
-            None => Ok(None),
+        struct OptVecVisitor;
+        impl<'a> de::Visitor<'a> for OptVecVisitor {
+            type Value = Option<Vec<u8>>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "an optional hex-encoded byte string or null")
+            }
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_some<D2: de::Deserializer<'a>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+                struct InnerVisitor;
+                impl<'b> de::Visitor<'b> for InnerVisitor {
+                    type Value = Vec<u8>;
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        write!(f, "a hex-encoded byte string")
+                    }
+                    fn visit_str<E: de::Error>(self, v: &str) -> Result<Vec<u8>, E> {
+                        hex::decode(v).map_err(E::custom)
+                    }
+                }
+                d.deserialize_str(InnerVisitor).map(Some)
+            }
         }
+        deserializer.deserialize_option(OptVecVisitor)
     }
 }
