@@ -28,6 +28,15 @@ pub struct SecureStore {
     pub(crate) last_hash: [u8; 32],
 }
 
+impl std::fmt::Debug for SecureStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureStore")
+            .field("hmac_key", &"[REDACTED]")
+            .field("last_hash", &self.last_hash)
+            .finish()
+    }
+}
+
 impl SecureStore {
     /// Open or create a secure store at `path`, initializing schema and verifying integrity.
     pub fn open<P: AsRef<Path>>(path: P, hmac_key: Zeroizing<Vec<u8>>) -> anyhow::Result<Self> {
