@@ -60,11 +60,14 @@ pub fn chain_to_wire_with_signatures(
     // ENHANCED/MAXIMUM tiers use entangled algorithm 21 per §entangled-mode-requirement
     let use_entangled = has_jitter;
 
+    let sig_by_ordinal: std::collections::HashMap<u64, &CheckpointSignature> =
+        checkpoint_sigs.iter().map(|s| (s.ordinal, s)).collect();
+
     let checkpoints: Vec<CheckpointWire> = chain
         .checkpoints
         .iter()
         .map(|cp| {
-            let lamport = checkpoint_sigs.iter().find(|s| s.ordinal == cp.ordinal);
+            let lamport = sig_by_ordinal.get(&cp.ordinal).copied();
             checkpoint_to_wire(cp, use_entangled, &export_nonce, lamport)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -79,7 +82,7 @@ pub fn chain_to_wire_with_signatures(
 
     let document = DocumentRef {
         content_hash: HashValue::try_sha256(content_hash.to_vec())
-            .expect("content_hash is 32 bytes"),
+            .map_err(Error::crypto)?,
         filename,
         byte_length: content_size,
         char_count: content_size, // byte_length used as proxy when char count unavailable
@@ -323,7 +326,7 @@ fn checkpoint_to_wire(
         },
         timestamp: u64::try_from(cp.timestamp.timestamp_millis().max(0)).unwrap_or(0),
         content_hash: HashValue::try_sha256(cp.content_hash.to_vec())
-            .expect("content_hash is 32 bytes"),
+            .map_err(Error::crypto)?,
         char_count: cp.content_size,
         // Placeholder: per-checkpoint edit deltas are not tracked in the
         // internal evidence model yet. Populated with zeros until the
@@ -339,7 +342,7 @@ fn checkpoint_to_wire(
             pause_duration_histogram: None,
         },
         prev_hash: HashValue::try_sha256(cp.previous_hash.to_vec())
-            .expect("previous_hash is 32 bytes"),
+            .map_err(Error::crypto)?,
         checkpoint_hash: HashValue::zero_sha256(), // overwritten by compute_hash() below
         process_proof,
         jitter_binding: jitter_binding_wire,
@@ -354,7 +357,7 @@ fn checkpoint_to_wire(
         lamport_pubkey_fingerprint: lamport.and_then(|s| s.lamport_pubkey_fingerprint.clone()),
     };
     // SHA-256(CBOR(checkpoint \ {8})) per spec
-    wire.checkpoint_hash = wire.compute_hash().expect("checkpoint hash computation");
+    wire.checkpoint_hash = wire.compute_hash().map_err(Error::crypto)?;
     Ok(wire)
 }
 
