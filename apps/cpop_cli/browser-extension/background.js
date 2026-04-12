@@ -1,5 +1,5 @@
 /**
- * CPOP Browser Extension — Background Service Worker
+ * CPoE Browser Extension — Background Service Worker
  *
  * Manages the native messaging connection to writerslogic-native-messaging-host
  * and coordinates between content scripts and the native host.
@@ -416,7 +416,7 @@ function bytesToHex(bytes) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("CPOP extension installed");
+  console.log("CPoE extension installed");
   updateBadge("", "#95a5a6");
 });
 

@@ -1,5 +1,5 @@
 /**
- * CPOP Browser Extension — Content Script
+ * CPoE Browser Extension — Content Script
  *
  * Monitors document editing in supported web applications:
  * - Google Docs: Watches the editor iframe and contenteditable elements
@@ -86,7 +86,7 @@
       last = current;
     }
     timerResolution = Math.min(...samples);
-    console.log(`[CPOP] Timer resolution detected: ${timerResolution.toFixed(4)}ms`);
+    console.log(`[CPoE] Timer resolution detected: ${timerResolution.toFixed(4)}ms`);
   }
 
   /**
@@ -270,7 +270,7 @@
           delta: charCount - previousCount,
         });
       } catch (e) {
-        console.warn("CPOP: content change handling failed:", e);
+        console.warn("CPoE: content change handling failed:", e);
       }
     }, 2000);
   }

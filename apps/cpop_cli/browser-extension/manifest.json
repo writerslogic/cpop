@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "CPOP",
+  "name": "WritersProof",
   "version": "1.0.0",
-  "description": "Cryptographic proof-of-process evidence for browser-based writing. Witness your creative process in Google Docs, Overleaf, Medium, and more.",
+  "description": "Prove you wrote it. WritersProof captures cryptographic evidence of your writing process in Google Docs, Overleaf, Medium, and more.",
+  "homepage_url": "https://writerslogic.com",
   "permissions": [
     "nativeMessaging",
     "activeTab",

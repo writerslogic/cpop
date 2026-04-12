@@ -1,5 +1,5 @@
 /**
- * CPOP Browser Extension — Popup Script
+ * CPoE Browser Extension — Popup Script
  */
 
 const elements = {

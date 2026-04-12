@@ -1,5 +1,5 @@
 /**
- * CPOP Secure Channel — ECDH + AES-256-GCM encrypted communication
+ * CPoE Secure Channel — ECDH + AES-256-GCM encrypted communication
  *
  * Provides end-to-end encryption between the browser extension and the
  * native messaging host using P-256 ECDH key exchange and AES-256-GCM

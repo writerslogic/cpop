@@ -1,5 +1,5 @@
 /**
- * CPOP Browser Extension — Options Script
+ * CPoE Browser Extension — Options Script
  */
 
 const DEFAULTS = {
