@@ -5,7 +5,7 @@
 
 ## The Authorship Gap
 
-In the age of generative AI, the "Authorship Gap" is the growing distance between a digital signature (which proves key possession) and the creative process (which proves human effort). CPOP exists to bridge this gap through **Proof-of-Process (PoP)**.
+In the age of generative AI, the "Authorship Gap" is the growing distance between a digital signature (which proves key possession) and the creative process (which proves human effort). CPoE exists to bridge this gap through **Proof-of-Process (PoP)**.
 
 ## Responsible vs. Abusive AI Use
 
@@ -23,7 +23,7 @@ Abusive use involves the wholesale substitution of human agency with generative 
 
 ## The Moral Right to Provenance
 
-CPOP is built on the belief that human authors have a moral and intellectual right to prove their effort. In a world saturated with synthetic content, **unforgeable provenance** is the only way to protect the value of human creative labor.
+CPoE is built on the belief that human authors have a moral and intellectual right to prove their effort. In a world saturated with synthetic content, **unforgeable provenance** is the only way to protect the value of human creative labor.
 
 - **Non-Surveillance:** We reject "proctoring" or screen-recording. Authenticity must be proven through cryptographic physics (VDFs, Jitter), not through the invasion of privacy.
 - **Falsifiability:** Authorship should not be a "trust me" claim. It should be a testable, falsifiable cryptographic assertion.

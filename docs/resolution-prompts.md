@@ -18,7 +18,7 @@ Mechanical, well-scoped fixes. Each is a single-file change with clear before/af
 
 **Todo item**: H-014 `[security]` `verify/verdict.rs:71`: Invalid declaration logged but verdict NOT downgraded to V2LikelyHuman as the inline comment states. H-020 is the same root cause found in a separate batch.
 
-**File**: `crates/witnessd/src/verify/verdict.rs`
+**File**: `crates/cpoe/src/verify/verdict.rs`
 
 **Context**: The function `compute_verdict()` (line 15) has an empty if-block at lines 71-74:
 
@@ -32,15 +32,15 @@ if !declaration_valid {
 This block has no body. The `capped` variable at line 80 (`let capped = !declaration_valid || seals_structural_only;`) does partially enforce the cap by preventing `V1VerifiedHuman` in the forensics branch (line 91) and the final signed-packet branch (line 111). However, the empty if-block is misleading dead code.
 
 **Task**:
-1. Read `crates/witnessd/src/verify/verdict.rs` in full.
+1. Read `crates/cpoe/src/verify/verdict.rs` in full.
 2. Verify that the `capped` variable at line 80 already prevents `V1VerifiedHuman` when `!declaration_valid` in all code paths (forensics branch at line 91, and final branch at line 111).
 3. If fully enforced: remove the empty if-block (lines 70-74) since `capped` handles it. Keep the `capped` variable and its comment.
 4. If NOT fully enforced (edge case found): add the missing enforcement so invalid declaration can never produce `V1VerifiedHuman`.
 5. Add a unit test: call `compute_verdict()` with `declaration_valid = false`, all other inputs set to produce `V1VerifiedHuman` (valid signature, plausible duration with VDF, consistent key provenance, forensics returning `V1VerifiedHuman`). Assert the result is `V2LikelyHuman`, not `V1VerifiedHuman`.
 6. Check for and avoid code duplication: do not add a second capping mechanism if `capped` already handles it.
-7. Follow existing patterns: the file uses `ForensicVerdict` from `authorproof_protocol::forensics`, tests in `crates/witnessd/src/verify/` use `#[test]` with `use super::*`.
+7. Follow existing patterns: the file uses `ForensicVerdict` from `authorproof_protocol::forensics`, tests in `crates/cpoe/src/verify/` use `#[test]` with `use super::*`.
 
-**Verification**: Run `cargo test -p witnessd --lib -- verify::verdict`. All existing tests must pass. New test must pass. Run `cargo clippy -p witnessd -- -D warnings` and confirm 0 warnings.
+**Verification**: Run `cargo test -p cpoe --lib -- verify::verdict`. All existing tests must pass. New test must pass. Run `cargo clippy -p cpoe -- -D warnings` and confirm 0 warnings.
 
 **Definition of done**: The empty if-block is gone (or filled with enforcement), a test proves the cap, no dead code added, no regressions.
 
@@ -48,9 +48,9 @@ This block has no body. The `capped` variable at line 80 (`let capped = !declara
 
 #### Prompt H-2: H-019 -- NaN guard on IKI-surprisal correlation
 
-**Todo item**: H-019 `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case.
+**Todo item**: H-019 `[error_handling]` `cpoe_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case.
 
-**File**: `crates/witnessd/src/forensics/advanced_metrics.rs`
+**File**: `crates/cpoe/src/forensics/advanced_metrics.rs`
 
 **Context**: Function `compute_iki_surprisal_correlation()` at line 118. Lines 130-135:
 
@@ -66,7 +66,7 @@ if iki_var <= 0.0 || surp_var <= 0.0 {
 The guard at line 133 checks `<= 0.0` but does NOT check `is_finite()`. If input arrays contain NaN values, the sums of squares will be NaN, and `NaN <= 0.0` evaluates to `false`, so NaN passes through. Line 143 then computes `covariance / (iki_var.sqrt() * surp_var.sqrt())` which propagates the NaN into signed metrics.
 
 **Task**:
-1. Read `crates/witnessd/src/forensics/advanced_metrics.rs` in full.
+1. Read `crates/cpoe/src/forensics/advanced_metrics.rs` in full.
 2. Add `is_finite()` checks alongside the existing `<= 0.0` guard at line 133. The idiomatic pattern used elsewhere in this codebase (see `cadence.rs:145`, `cadence.rs:164`) is:
    ```rust
    if !iki_var.is_finite() || !surp_var.is_finite() || iki_var <= 0.0 || surp_var <= 0.0 {
@@ -77,7 +77,7 @@ The guard at line 133 checks `<= 0.0` but does NOT check `is_finite()`. If input
 4. Do NOT add guards to other sqrt sites in this file or other files; they have their own guards already (verified: `cadence.rs:145`, `cadence.rs:164`, `analysis.rs:419` all already check `is_finite()`).
 5. Add a test: pass an array containing `f64::NAN` and verify the function returns `0.0`, not NaN.
 
-**Verification**: Run `cargo test -p witnessd --lib -- forensics::advanced_metrics`. All tests pass. `cargo clippy -p witnessd -- -D warnings` shows 0 warnings.
+**Verification**: Run `cargo test -p cpoe --lib -- forensics::advanced_metrics`. All tests pass. `cargo clippy -p cpoe -- -D warnings` shows 0 warnings.
 
 **Definition of done**: `compute_iki_surprisal_correlation()` never returns NaN regardless of input. One test proves it. No changes outside this function.
 
@@ -87,7 +87,7 @@ The guard at line 133 checks `<= 0.0` but does NOT check `is_finite()`. If input
 
 **Todo item**: H-018 `[security]` `sealed_chain.rs:95`: AES-GCM AAD covers only header fields; payload not included in authenticated data.
 
-**File**: `crates/witnessd/src/sealed_chain.rs`
+**File**: `crates/cpoe/src/sealed_chain.rs`
 
 **Context**: The `save_sealed()` function at line 78 encrypts with AES-256-GCM:
 ```rust
@@ -103,7 +103,7 @@ let ciphertext = cipher.encrypt(
 The todo claims "Attacker modifies payload bytes without invalidating GCM authentication tag." This is incorrect. AES-GCM encrypts AND authenticates the `msg` parameter via the GCM authentication tag. The `aad` parameter provides ADDITIONAL authenticated data that is NOT encrypted. Both `msg` and `aad` are authenticated by the tag. Any modification to either the ciphertext or the header will cause decryption to fail at line ~195 (`load_sealed_verified`).
 
 **Task**:
-1. Read `crates/witnessd/src/sealed_chain.rs` in full.
+1. Read `crates/cpoe/src/sealed_chain.rs` in full.
 2. Confirm that `aes_gcm::Payload { msg, aad }` authenticates BOTH msg and aad via the GCM tag (this is the standard AES-GCM construction per NIST SP 800-38D).
 3. Confirm the `load_sealed_verified()` function at line 145 decrypts with the same AAD header, so any tampering of header OR ciphertext causes an auth tag mismatch error.
 4. If confirmed: update `todo.md` to mark H-018 as FALSE POSITIVE with the explanation: "AES-GCM authenticates both the encrypted payload (msg) and the additional data (aad) via the authentication tag. The payload IS authenticated; the finding misunderstands AEAD construction."
@@ -128,7 +128,7 @@ Moderate complexity: logic fixes, crypto correctness, integration work.
 
 **Todo item**: C-007 `[security]` `ipc/secure_channel.rs:65`: Cipher cloned without zeroization; unsafe pointer arithmetic in `zeroize_cipher` at line 26. H-015 is the companion finding for the unsafe pointer itself.
 
-**File**: `crates/witnessd/src/ipc/secure_channel.rs`
+**File**: `crates/cpoe/src/ipc/secure_channel.rs`
 
 **Context**: The `zeroize_cipher()` function (line 26) uses unsafe `write_volatile` pointer arithmetic to overwrite the internals of a `ChaCha20Poly1305` cipher:
 
@@ -151,7 +151,7 @@ Problems:
 The crate already imports `zeroize::{Zeroize, Zeroizing}` (line 11).
 
 **Task**:
-1. Read `crates/witnessd/src/ipc/secure_channel.rs` in full.
+1. Read `crates/cpoe/src/ipc/secure_channel.rs` in full.
 2. Replace the `zeroize_cipher()` function with a safe approach. The `chacha20poly1305` crate's `ChaCha20Poly1305` does NOT implement `Zeroize` directly. Two options:
    - **Option A** (preferred): Store the key in a `Zeroizing<[u8; 32]>` alongside the cipher. On drop, the `Zeroizing` wrapper handles key zeroization automatically. Remove the cipher clone; instead, create two independent cipher instances from the same key material.
    - **Option B**: Use `zeroize::Zeroize` on the raw bytes via `unsafe { std::slice::from_raw_parts_mut(...) }` but wrap it in a `ZeroizeOnDrop` newtype that is sound.
@@ -167,7 +167,7 @@ The crate already imports `zeroize::{Zeroize, Zeroizing}` (line 11).
 7. Existing imports: `chacha20poly1305::{aead::{rand_core::RngCore, Aead, KeyInit, OsRng}, ChaCha20Poly1305, Nonce}`, `zeroize::{Zeroize, Zeroizing}`.
 8. Error type: this module uses `SendError<EncryptedMessage>` and `RecvError`, not the crate `Error`.
 
-**Verification**: Run `cargo test -p witnessd --lib -- ipc::secure_channel`. Run `cargo clippy -p witnessd -- -D warnings`. Grep the file for `unsafe` and confirm zero occurrences.
+**Verification**: Run `cargo test -p cpoe --lib -- ipc::secure_channel`. Run `cargo clippy -p cpoe -- -D warnings`. Grep the file for `unsafe` and confirm zero occurrences.
 
 **Definition of done**: No `unsafe` code in `secure_channel.rs`. Key material stored in `Zeroizing<>` wrapper. No cipher clone. Both sender and receiver independently constructed. All existing tests pass. Zero clippy warnings.
 
@@ -177,7 +177,7 @@ The crate already imports `zeroize::{Zeroize, Zeroizing}` (line 11).
 
 **Todo item**: H-003 `[security]` `sealed_chain.rs:90,95`: AES-GCM nonce does not include document counter; nonce reuse possible across chains sharing same document_id.
 
-**File**: `crates/witnessd/src/sealed_chain.rs`
+**File**: `crates/cpoe/src/sealed_chain.rs`
 
 **Context**: `save_sealed()` (line 78) generates a fully random 12-byte nonce at line 90-91:
 
@@ -191,7 +191,7 @@ If the encryption key is derived from `document_id`, then two calls to `save_sea
 The `ChainEncryptionKey` struct is defined elsewhere. Check how it is derived and whether a document can realistically accumulate enough saves to approach the birthday bound.
 
 **Task**:
-1. Read `crates/witnessd/src/sealed_chain.rs` in full.
+1. Read `crates/cpoe/src/sealed_chain.rs` in full.
 2. Find where `ChainEncryptionKey` is created/derived. Check if the key changes per save or is static per document.
 3. If the key is static per document: add a monotonic counter to the nonce derivation. Use the first 8 bytes from the counter and 4 random bytes, or use a SIV-like construction:
    ```rust
@@ -207,7 +207,7 @@ The `ChainEncryptionKey` struct is defined elsewhere. Check how it is derived an
 6. Do NOT modify the AAD structure unless necessary for the counter. The existing AAD (magic + version + nonce + document_id) is correct.
 7. Follow existing error patterns: `Error::crypto("message")`, `Error::checkpoint("message")`.
 
-**Verification**: Run `cargo test -p witnessd --lib -- sealed_chain`. All existing tests pass. If version bumped, add a test that loads a v1-format sealed file and verifies backward compatibility. `cargo clippy -p witnessd -- -D warnings` shows 0 warnings.
+**Verification**: Run `cargo test -p cpoe --lib -- sealed_chain`. All existing tests pass. If version bumped, add a test that loads a v1-format sealed file and verifies backward compatibility. `cargo clippy -p cpoe -- -D warnings` shows 0 warnings.
 
 **Definition of done**: Nonce reuse probability reduced below 2^-32 per document lifetime. Backward-compatible with existing sealed files. No regressions.
 
@@ -217,7 +217,7 @@ The `ChainEncryptionKey` struct is defined elsewhere. Check how it is derived an
 
 **Todo item**: H-016 `[performance]` `platform/macos/keystroke.rs:560`: CGEventTap callback performs synchronous channel send per keystroke in hot path.
 
-**File**: `crates/witnessd/src/platform/macos/keystroke.rs`
+**File**: `crates/cpoe/src/platform/macos/keystroke.rs`
 
 **Context**: Inside the CGEventTap callback closure (around line 560):
 
@@ -230,7 +230,7 @@ if tx.send(keystroke).is_err() {
 `tx` is a `std::sync::mpsc::Sender<KeystrokeEvent>`. The `send()` call is synchronous and will block if the receiver's buffer is full or if the receiver is slow. macOS disables a CGEventTap if the callback blocks for more than ~15ms (undocumented but observed threshold). At 100+ WPM with key-up/key-down events, this creates backpressure risk.
 
 **Task**:
-1. Read `crates/witnessd/src/platform/macos/keystroke.rs` in full to understand the callback setup.
+1. Read `crates/cpoe/src/platform/macos/keystroke.rs` in full to understand the callback setup.
 2. Replace `tx.send(keystroke)` with `tx.try_send(keystroke)`:
    - If the channel is `std::sync::mpsc::Sender`, it has no `try_send`. Switch to `std::sync::mpsc::sync_channel(BUFFER_SIZE)` which provides `SyncSender::try_send()`, OR use `crossbeam_channel::bounded()` if already in dependencies.
    - Check `Cargo.toml` for existing channel crate dependencies before adding a new one.
@@ -241,7 +241,7 @@ if tx.send(keystroke).is_err() {
 7. Maintain the existing `KeystrokeEvent` struct and `KeyEventType` enum unchanged.
 8. Follow existing patterns: the file uses `std::sync::atomic::{AtomicBool, AtomicU64, Ordering}`, `log::warn!`.
 
-**Verification**: Run `cargo test -p witnessd --lib -- platform::macos`. All tests pass. `cargo clippy -p witnessd -- -D warnings` shows 0 warnings. If `crossbeam-channel` added, verify it's in `Cargo.toml` and `cargo-deny` passes.
+**Verification**: Run `cargo test -p cpoe --lib -- platform::macos`. All tests pass. `cargo clippy -p cpoe -- -D warnings` shows 0 warnings. If `crossbeam-channel` added, verify it's in `Cargo.toml` and `cargo-deny` passes.
 
 **Definition of done**: CGEventTap callback never blocks on channel send. Dropped events counted and logged. No new dependencies unless necessary. No regressions.
 
@@ -251,14 +251,14 @@ if tx.send(keystroke).is_err() {
 
 **Todo item**: H-024 `[concurrency]` `ipc/async_client.rs` (approx line 150+): Async client reconnect does not re-establish ChaCha20 session; sends plaintext after reconnect.
 
-**File**: `crates/witnessd/src/ipc/async_client.rs`
+**File**: `crates/cpoe/src/ipc/async_client.rs`
 
 **Context**: The `AsyncIpcClient` struct has fields `stream: Option<...>` and `secure_session: Option<SecureSession>`. The `connect()` method (line 102) creates a new stream and calls `establish_secure_session()` to perform ECDH key exchange.
 
 However, there is no `reconnect()` method. If the stream is dropped and a new `connect()` is called, a fresh client is created. The concern is about the case where the stream dies mid-session and the caller attempts to reuse the client without re-running key exchange.
 
 **Task**:
-1. Read `crates/witnessd/src/ipc/async_client.rs` in full.
+1. Read `crates/cpoe/src/ipc/async_client.rs` in full.
 2. Identify all code paths where `self.stream` could become `None` or invalid after initial `connect()`:
    - Explicit `disconnect()` method (if any)
    - Error handling in `send_request()` that drops the stream
@@ -270,7 +270,7 @@ However, there is no `reconnect()` method. If the stream is dropped and a new `c
 7. Error type: `AsyncIpcClientError` enum (defined in the same file).
 8. Crypto imports: `p256::ecdh::EphemeralSecret`, `p256::PublicKey`, custom `SecureSession`.
 
-**Verification**: Run `cargo test -p witnessd --lib -- ipc::async_client`. All tests pass. `cargo clippy -p witnessd -- -D warnings` shows 0 warnings.
+**Verification**: Run `cargo test -p cpoe --lib -- ipc::async_client`. All tests pass. `cargo clippy -p cpoe -- -D warnings` shows 0 warnings.
 
 **Definition of done**: No code path can send plaintext on a connection that previously had an encrypted session. Either reconnect re-keys automatically, or the client refuses to send without a session. Test or assertion proves the invariant.
 
@@ -289,8 +289,8 @@ Architectural decisions, cross-cutting changes, ambiguous requirements.
 **Todo item**: C-003 `[security]` `rats/eat.rs:75`: `decode_eat_cwt()` parses EAT payload without COSE_Sign1 verification.
 
 **Files**:
-- Primary: `crates/witnessd/src/rats/eat.rs`
-- Related: `crates/witnessd/src/rats/mod.rs`, `crates/witnessd/src/rats/types.rs`
+- Primary: `crates/cpoe/src/rats/eat.rs`
+- Related: `crates/cpoe/src/rats/mod.rs`, `crates/cpoe/src/rats/types.rs`
 - Dependency: `coset` crate (COSE implementation)
 
 **Context**: The function `decode_eat_cwt()` (line 79 of `eat.rs`) explicitly states in its doc comment:
@@ -306,8 +306,8 @@ It calls `coset::CoseSign1::from_slice(bytes)` to parse the COSE structure but n
 This is a CRITICAL finding because unverified EAT tokens from IPC clients could be forged. H-021 (IPC client EAT acceptance) is blocked on this fix.
 
 **Task**:
-1. Read `crates/witnessd/src/rats/eat.rs` in full.
-2. Read `crates/witnessd/src/rats/types.rs` to understand `EarToken` structure.
+1. Read `crates/cpoe/src/rats/eat.rs` in full.
+2. Read `crates/cpoe/src/rats/types.rs` to understand `EarToken` structure.
 3. Read the `coset` crate's `CoseSign1::verify_signature()` API. The crate is already in `Cargo.toml`. Use the rust-docs MCP server (`search_items` for `verify_signature` in `coset`) if needed.
 4. Create a new function `decode_eat_cwt_verified()` that:
    - Takes `bytes: &[u8]` and `trusted_key: &[u8; 32]` (Ed25519 public key)
@@ -329,11 +329,11 @@ This is a CRITICAL finding because unverified EAT tokens from IPC clients could 
 10. Check existing imports: `coset::{CoseSign1, CoseEncrypt}`, `ed25519_dalek`, `ciborium::Value`.
 
 **Verification**:
-- Run `cargo test -p witnessd --lib -- rats`. All tests pass.
+- Run `cargo test -p cpoe --lib -- rats`. All tests pass.
 - Add at least 2 new tests:
   1. Encode an EAT with `encode_eat_cwt()`, then verify with `decode_eat_cwt_verified()` using the correct public key. Must succeed.
   2. Encode an EAT, then attempt verification with a WRONG public key. Must return `Err`.
-- `cargo clippy -p witnessd -- -D warnings` shows 0 warnings.
+- `cargo clippy -p cpoe -- -D warnings` shows 0 warnings.
 - Grep for remaining `decode_eat_cwt(` calls (without `_verified` or `_unverified` suffix) and confirm zero outside of deprecated wrapper.
 
 **Definition of done**: All production code paths verify EAT COSE_Sign1 signatures before trusting the payload. Unverified path is deprecated or test-only. H-021 can be unblocked after this fix (IPC clients now have verified EAT tokens). No regressions.
@@ -349,8 +349,8 @@ This is a CRITICAL finding because unverified EAT tokens from IPC clients could 
 **Todo item**: C-002 `[security]` `anchors/ots.rs:430`: Bitcoin block header cross-check not implemented; OTS proofs accepted without Bitcoin confirmation.
 
 **Files**:
-- Primary: `crates/witnessd/src/anchors/ots.rs`
-- Related: `crates/witnessd/src/anchors/mod.rs` (AnchorProvider trait), `crates/witnessd/src/anchors/types.rs`
+- Primary: `crates/cpoe/src/anchors/ots.rs`
+- Related: `crates/cpoe/src/anchors/mod.rs` (AnchorProvider trait), `crates/cpoe/src/anchors/types.rs`
 
 **Context**: The `OpenTimestampsProvider::verify()` method (line 511) explicitly warns:
 
@@ -370,8 +370,8 @@ It currently:
 The `verify_attestation_path()` function (line 393) processes `AttestationStep` operations (SHA256, RIPEMD160, prepend, append, Verify) and produces a candidate block header hash.
 
 **Task**:
-1. Read `crates/witnessd/src/anchors/ots.rs` in full.
-2. Read `crates/witnessd/src/anchors/types.rs` for `Proof`, `ProofStatus`, `AnchorError`.
+1. Read `crates/cpoe/src/anchors/ots.rs` in full.
+2. Read `crates/cpoe/src/anchors/types.rs` for `Proof`, `ProofStatus`, `AnchorError`.
 3. Understand the OTS verification flow: the attestation path produces a 32-byte hash that should match the Merkle root in a Bitcoin block header.
 4. Implement Bitcoin block header fetching and verification:
    - **API choice**: Use a public Bitcoin block explorer API (e.g., `blockstream.info/api/block-height/{height}` or `blockchain.info/rawblock/{hash}?format=hex`). The `reqwest::Client` is already available on `self.client`.
@@ -399,13 +399,13 @@ The `verify_attestation_path()` function (line 393) processes `AttestationStep` 
 10. Check for code duplication: `verify_attestation_path()` already runs the hash chain; reuse it, don't duplicate.
 
 **Verification**:
-- Run `cargo test -p witnessd --lib -- anchors::ots`. All existing tests pass.
+- Run `cargo test -p cpoe --lib -- anchors::ots`. All existing tests pass.
 - Add tests:
   1. Unit test: given a known block header (hardcoded bytes), verify merkle_root extraction is correct.
   2. Unit test: given a valid attestation path result and matching merkle_root, verify returns `Ok(true)`.
   3. Unit test: given a mismatched merkle_root, verify returns `Ok(false)`.
   4. Integration test (optional, may need `#[ignore]`): fetch a real block header from blockstream.info.
-- `cargo clippy -p witnessd -- -D warnings` shows 0 warnings.
+- `cargo clippy -p cpoe -- -D warnings` shows 0 warnings.
 
 **Definition of done**: OTS proofs verified against actual Bitcoin block headers when network available. Graceful fallback to structural-only when offline. CLU-001 compound risk reduced (C-002 component resolved). No regressions.
 
@@ -416,9 +416,9 @@ The `verify_attestation_path()` function (line 393) processes `AttestationStep` 
 **Todo item**: C-005 `[security]` `evidence/packet.rs:29`: Self-signed verification used as default; no external trust anchor required.
 
 **Files**:
-- Primary: `crates/witnessd/src/evidence/packet.rs`
+- Primary: `crates/cpoe/src/evidence/packet.rs`
 - Related: all callers of `Packet::verify()` across the codebase
-- Related: `crates/witnessd/src/ffi/` (FFI verification functions), `apps/cpop_cli/src/` (CLI verify command)
+- Related: `crates/cpoe/src/ffi/` (FFI verification functions), `apps/cpoe_cli/src/` (CLI verify command)
 
 **Context**: `Packet::verify()` (line 29) delegates to `verify_inner(None)`, which uses the packet's own embedded `signing_public_key` for baseline verification. The doc comment (lines 25-28) explains this:
 
@@ -431,7 +431,7 @@ The `verify_attestation_path()` function (line 393) processes `AttestationStep` 
 `Packet::verify_with_trusted_key()` (line 36) already exists and takes a `trusted_public_key: [u8; 32]`. The infrastructure for external trust anchors is already built; the issue is that `verify()` (self-signed) is the default and most callers use it.
 
 **Task**:
-1. Read `crates/witnessd/src/evidence/packet.rs` in full.
+1. Read `crates/cpoe/src/evidence/packet.rs` in full.
 2. Grep the entire codebase for all callers of `.verify(` on `Packet` (or similar types). Categorize each caller:
    - **Must have trusted key**: FFI verification functions exposed to Swift/Kotlin (these are the primary verification entry points for end users)
    - **Self-signed acceptable**: Internal engine operations (checkpoint creation, evidence building) where the signing key is local and known

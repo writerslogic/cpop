@@ -32,8 +32,8 @@ cpoe-protocol = "0.1"
 ```
 
 ```rust
-use cpop_protocol::evidence::{Builder, Verifier};
-use cpop_protocol::rfc::DocumentRef;
+use cpoe_protocol::evidence::{Builder, Verifier};
+use cpoe_protocol::rfc::DocumentRef;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 

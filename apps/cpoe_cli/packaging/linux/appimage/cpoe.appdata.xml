@@ -3,12 +3,12 @@
   <id>com.writerslogic.witnessd</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>LicenseRef-proprietary</project_license>
-  <name>CPOP</name>
+  <name>CPoE</name>
   <summary>Cryptographic authorship witnessing daemon</summary>
 
   <description>
     <p>
-      CPOP provides cryptographic authorship witnessing through kinetic
+      CPoE provides cryptographic authorship witnessing through kinetic
       proof of provenance. It captures keystroke dynamics and timing patterns
       to create unforgeable evidence of human authorship.
     </p>
@@ -22,7 +22,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">cpop.desktop</launchable>
+  <launchable type="desktop-id">cpoe.desktop</launchable>
 
   <url type="homepage">https://github.com/writerslogic/writerslogic</url>
   <url type="bugtracker">https://github.com/writerslogic/writerslogic/issues</url>
@@ -31,7 +31,7 @@
   <developer_name>David Condrey</developer_name>
 
   <provides>
-    <binary>cpop</binary>
+    <binary>cpoe</binary>
     <binary>writerslogic</binary>
     <binary>writerslogic-native-messaging-host</binary>
   </provides>

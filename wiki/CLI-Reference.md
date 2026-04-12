@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `cpop` command-line tool is the primary interface for managing authorship evidence.
+The `cpoe` command-line tool is the primary interface for managing authorship evidence.
 
 ## Global Options
 
@@ -15,33 +15,33 @@ The `cpop` command-line tool is the primary interface for managing authorship ev
 ## Core Commands
 
 ### `init`
-Initialize CPOP and generate your cryptographic identity.
+Initialize CPoE and generate your cryptographic identity.
 ```bash
-cpop init
+cpoe init
 ```
 
 ### `calibrate`
 Measure your CPU performance for VDF timing proofs. Run this once after installation.
 ```bash
-cpop calibrate
+cpoe calibrate
 ```
 
 ### `commit`
 Create a checkpoint for a file.
 ```bash
-cpop commit <file> [-m "message"]
+cpoe commit <file> [-m "message"]
 ```
 
 ### `log`
 Show the checkpoint history for a file.
 ```bash
-cpop log <file>
+cpoe log <file>
 ```
 
 ### `status`
-Show the current status of CPOP, including your identity and configuration.
+Show the current status of CPoE, including your identity and configuration.
 ```bash
-cpop status
+cpoe status
 ```
 
 ---
@@ -49,15 +49,15 @@ cpop status
 ## Evidence Commands
 
 ### `export`
-Export a `.cpop` evidence packet containing the full chain of authorship proof.
+Export a `.cpoe` evidence packet containing the full chain of authorship proof.
 ```bash
-cpop export <file> [-o output.cpop]
+cpoe export <file> [-o output.cpoe]
 ```
 
 ### `verify`
 Verify an evidence packet or a local file's checkpoint chain.
 ```bash
-cpop verify <file_or_packet>
+cpoe verify <file_or_packet>
 ```
 
 ---
@@ -67,17 +67,17 @@ cpop verify <file_or_packet>
 ### `track`
 Manage real-time activity tracking for a document.
 ```bash
-cpop track start <file>
-cpop track status
-cpop track stop
+cpoe track start <file>
+cpoe track status
+cpoe track stop
 ```
 
 ### `sentinel`
 Manage the background daemon that handles automatic tracking and checkpoints.
 ```bash
-CPOP sentinel start
-CPOP sentinel status
-CPOP sentinel stop
+CPoE sentinel start
+CPoE sentinel status
+CPoE sentinel stop
 ```
 
 ---
@@ -93,7 +93,7 @@ CPOP sentinel stop
 
 ## Interactive Menu
 
-If you run `cpop` without any arguments, it will launch an interactive TUI menu for easy navigation.
+If you run `cpoe` without any arguments, it will launch an interactive TUI menu for easy navigation.
 
 ---
 

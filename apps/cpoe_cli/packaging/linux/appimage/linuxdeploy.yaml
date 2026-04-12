@@ -1,4 +1,4 @@
-# linuxdeploy configuration for CPOP AppImage
+# linuxdeploy configuration for CPoE AppImage
 # https://github.com/linuxdeploy/linuxdeploy
 
 appimage:
@@ -9,18 +9,18 @@ appimage:
 
 # Files to include
 files:
-  - source: usr/bin/cpop
-    destination: usr/bin/cpop
+  - source: usr/bin/cpoe
+    destination: usr/bin/cpoe
   - source: usr/bin/witnessctl
     destination: usr/bin/witnessctl
-  - source: usr/bin/cpop-ibus
-    destination: usr/bin/cpop-ibus
-  - source: usr/share/applications/cpop.desktop
-    destination: usr/share/applications/cpop.desktop
-  - source: usr/share/icons/hicolor/256x256/apps/cpop.png
-    destination: usr/share/icons/hicolor/256x256/apps/cpop.png
-  - source: usr/share/metainfo/cpop.appdata.xml
-    destination: usr/share/metainfo/cpop.appdata.xml
+  - source: usr/bin/cpoe-ibus
+    destination: usr/bin/cpoe-ibus
+  - source: usr/share/applications/cpoe.desktop
+    destination: usr/share/applications/cpoe.desktop
+  - source: usr/share/icons/hicolor/256x256/apps/cpoe.png
+    destination: usr/share/icons/hicolor/256x256/apps/cpoe.png
+  - source: usr/share/metainfo/cpoe.appdata.xml
+    destination: usr/share/metainfo/cpoe.appdata.xml
 
 # Runtime configuration
 runtime:

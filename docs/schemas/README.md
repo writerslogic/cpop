@@ -1,6 +1,6 @@
 # JSON Schemas
 
-Formal data models for CPOP objects.
+Formal data models for CPoE objects.
 
 ## Schemas
 
@@ -12,5 +12,5 @@ Formal data models for CPOP objects.
 
 These schemas can be used for:
 1. Automated verification of exported packets.
-2. Cross-platform implementation of CPOP clients.
+2. Cross-platform implementation of CPoE clients.
 3. Documentation of the data model.

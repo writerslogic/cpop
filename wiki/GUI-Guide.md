@@ -1,6 +1,6 @@
 # GUI Guide
 
-CPOP provides native applications for macOS and Windows, offering a visual interface for managing your creative process evidence.
+CPoE provides native applications for macOS and Windows, offering a visual interface for managing your creative process evidence.
 
 ## macOS Application
 
@@ -16,7 +16,7 @@ The macOS app is designed to stay out of your way while providing continuous pro
 
 ### Installation
 
-1. Download the latest `CPOP.dmg`.
+1. Download the latest `CPoE.dmg`.
 2. Drag to **Applications**.
 3. Launch and grant the requested **Accessibility permissions** (required for keystroke evidence).
 

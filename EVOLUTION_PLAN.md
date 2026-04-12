@@ -1,4 +1,4 @@
-# CPOP Engine Evolution Plan
+# CPoE Engine Evolution Plan
 
 > Generated 2026-03-28 | Baseline: 1024 tests, 0 warnings, 89 open items
 
@@ -121,8 +121,8 @@
 
 ### 4.2: Systemic Patterns
 - **SYS-033 residual**: 4 files with unzeroized key material on error paths (partially fixed this session)
-- **Bridge error types**: `cpop_jitter_bridge/` uses `String` errors; should migrate to `crate::error::Error`
-- **PhysSession restore**: `cpop-jitter` crate needs `Session::from_json()` for proper session resume
+- **Bridge error types**: `cpoe_jitter_bridge/` uses `String` errors; should migrate to `crate::error::Error`
+- **PhysSession restore**: `cpoe-jitter` crate needs `Session::from_json()` for proper session resume
 
 ## Phase 5: Release Readiness
 
@@ -133,7 +133,7 @@
 - [ ] Push macOS submodule (5 commits pending)
 
 ### 5.2: Engine
-- [ ] Run full `cargo test -p cpop_engine` (not just `--lib`) for integration + doctests
+- [ ] Run full `cargo test -p cpoe_engine` (not just `--lib`) for integration + doctests
 - [ ] `cargo deny check` for license and advisory audit
 - [ ] Update MSRV verification (currently 1.75.0)
 - [ ] Rebuild FFI static library with `--release` + LTO for production

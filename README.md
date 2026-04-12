@@ -1,5 +1,5 @@
 <p align="center">
-  <strong>CPOP</strong><br>
+  <strong>CPoE</strong><br>
   Cryptographic authorship witnessing for writers and creators
 </p>
 
@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/writerslogic/cpop/actions"><img src="https://github.com/writerslogic/cpop/workflows/CI/badge.svg" alt="Build Status"></a>
-  <a href="https://github.com/writerslogic/cpop/attestations"><img src="https://img.shields.io/badge/SLSA-Build_Provenance-blue" alt="SLSA Build Provenance"></a>
+  <a href="https://github.com/writerslogic/cpoe/actions"><img src="https://github.com/writerslogic/cpoe/workflows/CI/badge.svg" alt="Build Status"></a>
+  <a href="https://github.com/writerslogic/cpoe/attestations"><img src="https://img.shields.io/badge/SLSA-Build_Provenance-blue" alt="SLSA Build Provenance"></a>
   <img src="https://img.shields.io/badge/rust-1.75%2B-orange" alt="Rust">
-  <a href="https://github.com/writerslogic/cpop/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="License"></a>
+  <a href="https://github.com/writerslogic/cpoe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/Patent-US%2019%2F460%2C364%20Pending-blue" alt="Patent Pending">
 </p>
 
@@ -26,24 +26,24 @@
 
 ## Overview
 
-**CPOP** is a cryptographic engine and CLI that produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created. It implements the [draft-condrey-rats-pop](https://datatracker.ietf.org/doc/draft-condrey-rats-pop/) IETF protocol specification.
+**CPoE** is a cryptographic engine and CLI that produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created. It implements the [draft-condrey-rats-pop](https://datatracker.ietf.org/doc/draft-condrey-rats-pop/) IETF protocol specification.
 
-This monorepo contains the full CPOP ecosystem:
+This monorepo contains the full CPoE ecosystem:
 
 | Component | Path | Target | Description | License |
 |:----------|:-----|:-------|:------------|:--------|
-| **cpop-engine** | [`crates/cpop-engine`](crates/cpop-engine) | Native | Cryptographic engine, FFI, platform captures, storage | SSPL-1.0 |
-| **cpop-protocol** | [`crates/cpop-protocol`](crates/cpop-protocol) | Native + **WASM** | Wire format (CBOR/COSE), forensic models, RFC types | Apache-2.0 |
-| **cpop-jitter** | [`crates/cpop-jitter`](crates/cpop-jitter) | Native + **no_std** | Timing entropy primitive for embedded and desktop use | Apache-2.0 |
-| **cpop_cli** | [`apps/cpop_cli`](apps/cpop_cli) | Native | CLI (`cpop`) | AGPL-3.0-only |
-| **cpop_macos** | [`apps/cpop_macos`](apps/cpop_macos) | macOS | macOS desktop app (submodule) | Proprietary |
-| **cpop_windows** | [`apps/cpop_windows`](apps/cpop_windows) | Windows | Windows desktop app (submodule) | Proprietary |
+| **cpoe-engine** | [`crates/cpoe-engine`](crates/cpoe-engine) | Native | Cryptographic engine, FFI, platform captures, storage | SSPL-1.0 |
+| **cpoe-protocol** | [`crates/cpoe-protocol`](crates/cpoe-protocol) | Native + **WASM** | Wire format (CBOR/COSE), forensic models, RFC types | Apache-2.0 |
+| **cpoe-jitter** | [`crates/cpoe-jitter`](crates/cpoe-jitter) | Native + **no_std** | Timing entropy primitive for embedded and desktop use | Apache-2.0 |
+| **cpoe_cli** | [`apps/cpoe_cli`](apps/cpoe_cli) | Native | CLI (`cpoe`) | AGPL-3.0-only |
+| **cpoe_macos** | [`apps/cpoe_macos`](apps/cpoe_macos) | macOS | macOS desktop app (submodule) | Proprietary |
+| **cpoe_windows** | [`apps/cpoe_windows`](apps/cpoe_windows) | Windows | Windows desktop app (submodule) | Proprietary |
 
 The three library crates are split by **compilation target**:
 
-- **cpop-jitter** compiles to `no_std` (bare-metal, embedded microcontrollers with no OS)
-- **cpop-protocol** compiles to `wasm32` (browser extensions for client-side evidence verification)
-- **cpop-engine** compiles to native only (requires OS APIs: CGEventTap, TPM, SQLite, Unix sockets)
+- **cpoe-jitter** compiles to `no_std` (bare-metal, embedded microcontrollers with no OS)
+- **cpoe-protocol** compiles to `wasm32` (browser extensions for client-side evidence verification)
+- **cpoe-engine** compiles to native only (requires OS APIs: CGEventTap, TPM, SQLite, Unix sockets)
 
 Dependencies flow one direction: `engine -> protocol -> jitter`. Merging them would break WASM and embedded compilation.
 
@@ -62,50 +62,50 @@ scoop install writerslogic
 
 **Linux / macOS (script):**
 ```bash
-curl -sSf https://raw.githubusercontent.com/writerslogic/cpop/main/apps/cpop_cli/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/writerslogic/cpoe/main/apps/cpoe_cli/install.sh | sh
 ```
 
 **From source:**
 ```bash
-cargo install --git https://github.com/writerslogic/cpop --bin cpop
+cargo install --git https://github.com/writerslogic/cpoe --bin cpoe
 ```
 
 ## Quick Start
 
 ```bash
 # Start tracking a document
-cpop essay.md
+cpoe essay.md
 
 # Create a checkpoint
-cpop commit essay.md -m "first draft complete"
+cpoe commit essay.md -m "first draft complete"
 
 # View history
-cpop log essay.md
+cpoe log essay.md
 
-# Export cryptographic evidence (.cpop)
-cpop export essay.md -t 2
+# Export cryptographic evidence (.cpoe)
+cpoe export essay.md -t 2
 
 # Verify evidence
-cpop verify essay.cpop
+cpoe verify essay.cpoe
 ```
 
-Run `cpop` with no arguments for an interactive menu, or `cpop --help` for full command reference.
+Run `cpoe` with no arguments for an interactive menu, or `cpoe --help` for full command reference.
 
 ## CLI Commands
 
 | Command | Description |
 |:--------|:------------|
-| `cpop <path>` | Start tracking a file or directory |
-| `cpop commit` | Create a checkpoint (alias: `checkpoint`) |
-| `cpop log` | View history or list tracked documents (alias: `history`, `ls`) |
-| `cpop export` | Export evidence packet (alias: `prove`) |
-| `cpop verify` | Verify evidence packet (alias: `check`) |
-| `cpop status` | Show current tracking status |
-| `cpop track` | Session management (start/stop/status/list/show/export) |
-| `cpop identity` | Identity management (alias: `id`) |
-| `cpop config` | Configuration (alias: `cfg`) |
-| `cpop fingerprint` | Behavioral fingerprinting (alias: `fp`) |
-| `cpop presence` | Physical presence verification |
+| `cpoe <path>` | Start tracking a file or directory |
+| `cpoe commit` | Create a checkpoint (alias: `checkpoint`) |
+| `cpoe log` | View history or list tracked documents (alias: `history`, `ls`) |
+| `cpoe export` | Export evidence packet (alias: `prove`) |
+| `cpoe verify` | Verify evidence packet (alias: `check`) |
+| `cpoe status` | Show current tracking status |
+| `cpoe track` | Session management (start/stop/status/list/show/export) |
+| `cpoe identity` | Identity management (alias: `id`) |
+| `cpoe config` | Configuration (alias: `cfg`) |
+| `cpoe fingerprint` | Behavioral fingerprinting (alias: `fp`) |
+| `cpoe presence` | Physical presence verification |
 
 All commands support `--json` for machine-readable output and `--quiet` for silent operation.
 
@@ -115,7 +115,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cpop_engine = { git = "https://github.com/writerslogic/cpop", branch = "main" }
+cpoe_engine = { git = "https://github.com/writerslogic/cpoe", branch = "main" }
 ```
 
 ## Features
@@ -123,7 +123,7 @@ cpop_engine = { git = "https://github.com/writerslogic/cpop", branch = "main" }
 | Feature | Description |
 |:--------|:------------|
 | `default` | Core library without optional features |
-| `cpop_jitter` | Hardware entropy via PhysJitter |
+| `cpoe_jitter` | Hardware entropy via PhysJitter |
 | `secure-enclave` | macOS Secure Enclave support |
 | `x11` | X11 focus detection on Linux |
 | `ffi` | UniFFI bindings for Swift/Kotlin |
@@ -133,7 +133,7 @@ cpop_engine = { git = "https://github.com/writerslogic/cpop", branch = "main" }
 ```
 writerslogic/
 ├── crates/
-│   ├── cpop_engine/    High-performance cryptographic engine
+│   ├── cpoe_engine/    High-performance cryptographic engine
 │   │   └── src/
 │   │       ├── analysis/   Signal analysis and behavioral metrics
 │   │       ├── anchors/    Blockchain and timestamp anchoring
@@ -147,12 +147,12 @@ writerslogic/
 │   │       ├── rfc/        RFC wire types
 │   │       ├── tpm/        TPM 2.0 / Secure Enclave
 │   │       └── vdf/        Verifiable Delay Functions
-│   ├── cpop_protocol/  PoP wire format (CBOR/COSE)
-│   └── cpop_jitter/    Hardware timing entropy
+│   ├── cpoe_protocol/  PoP wire format (CBOR/COSE)
+│   └── cpoe_jitter/    Hardware timing entropy
 ├── apps/
-│   ├── cpop_cli/       Command-line interface
-│   ├── cpop_macos/     Native macOS app (submodule)
-│   └── cpop_windows/   Native Windows app (submodule)
+│   ├── cpoe_cli/       Command-line interface
+│   ├── cpoe_macos/     Native macOS app (submodule)
+│   └── cpoe_windows/   Native Windows app (submodule)
 └── docs/              Schemas, specs, and user guides
 ```
 
@@ -160,7 +160,7 @@ writerslogic/
 
 ```bash
 cargo test --workspace           # Run all tests
-cargo test -p cpop-engine --lib   # Fast engine tests (~1020 tests)
+cargo test -p cpoe-engine --lib   # Fast engine tests (~1020 tests)
 cargo clippy --workspace -- -D warnings  # Lint (zero warnings maintained)
 cargo fmt --all -- --check       # Format check
 cargo audit && cargo deny check  # Security audit
@@ -168,29 +168,29 @@ cargo audit && cargo deny check  # Security audit
 
 ## Verifying Evidence
 
-Anyone can verify `.cpop` evidence packets — no account or software required:
+Anyone can verify `.cpoe` evidence packets — no account or software required:
 
 - **Web**: Upload at [writerslogic.com/verify](https://writerslogic.com/verify)
-- **CLI**: `cpop verify proof.cpop`
+- **CLI**: `cpoe verify proof.cpoe`
 
 Verification checks the checkpoint chain, Ed25519 signatures, VDF timing proofs, and behavioral consistency. It runs entirely client-side — your evidence is never uploaded to our servers.
 
 ## Security & Privacy
 
 > [!IMPORTANT]
-> CPOP provides **independently verifiable, tamper-evident process evidence**, not absolute proof. The value lies in converting unsubstantiated doubt into testable claims across independent trust boundaries.
+> CPoE provides **independently verifiable, tamper-evident process evidence**, not absolute proof. The value lies in converting unsubstantiated doubt into testable claims across independent trust boundaries.
 
 ### Privacy & External Interactions
 
-CPOP is designed with a strictly **offline-first and privacy-preserving** architecture. Core witnessing, keystroke capture, and evidence generation occur entirely on your local machine.
+CPoE is designed with a strictly **offline-first and privacy-preserving** architecture. Core witnessing, keystroke capture, and evidence generation occur entirely on your local machine.
 
 The applications interact with the following external domains for specific enhanced features:
 
-*   **Verification Portal (`writerslogic.com/verify`):** Browser-based tool for verifying `.cpop` evidence packets. Runs client-side; evidence data is never uploaded.
+*   **Verification Portal (`writerslogic.com/verify`):** Browser-based tool for verifying `.cpoe` evidence packets. Runs client-side; evidence data is never uploaded.
 *   **Attestation API (`writerslogic.com/api`):** Used for Tier 3 and Tier 4 evidence to request anti-replay nonces and receive cloud-signed attestation certificates.
 *   **Schema Registry (`protocol.writerslogic.com`):** Hosts JSON schemas and DID resolution data for protocol compliance.
 
-For a detailed breakdown, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/cpop/wiki/Privacy-&-External-Interactions)**.
+For a detailed breakdown, see the **[Privacy & External Interactions Wiki](https://github.com/writerslogic/cpoe/wiki/Privacy-&-External-Interactions)**.
 
 See [SECURITY.md](SECURITY.md) for the security policy.
 
@@ -198,7 +198,7 @@ See [SECURITY.md](SECURITY.md) for the security policy.
 
 ```bibtex
 @article{condrey2026writerslogic,
-  title={CPOP: Proof-of-process via Adversarial Collapse},
+  title={CPoE: Proof-of-process via Adversarial Collapse},
   author={Condrey, David},
   journal={arXiv preprint arXiv:2602.01663},
   year={2026},

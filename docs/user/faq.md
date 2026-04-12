@@ -12,9 +12,9 @@
 
 ## General Questions
 
-### What is CPOP?
+### What is CPoE?
 
-CPOP is a cryptographic authorship witnessing system that creates tamper-evident records proving you created a document over time. It captures:
+CPoE is a cryptographic authorship witnessing system that creates tamper-evident records proving you created a document over time. It captures:
 - **What**: Content hashes at each checkpoint
 - **When**: VDF-based timing proofs that cannot be backdated
 - **How**: Optional keystroke metrics showing real writing activity
@@ -31,7 +31,7 @@ Common use cases include:
 
 ### How is this different from version control?
 
-| Feature | CPOP | Git |
+| Feature | CPoE | Git |
 |---------|----------|-----|
 | Time proofs | VDF - cannot be backdated | Timestamps can be faked |
 | Author binding | Hardware-tied identity | Email-based (spoofable) |
@@ -39,18 +39,18 @@ Common use cases include:
 | Forward secrecy | Ratcheting keys | No |
 | Evidence packets | Self-contained, portable | Requires full repo |
 
-### Is CPOP open source?
+### Is CPoE open source?
 
-Yes! CPOP is released under the Apache License 2.0. The source code is available at:
-https://github.com/writerslogic/cpop
+Yes! CPoE is released under the Apache License 2.0. The source code is available at:
+https://github.com/writerslogic/cpoe
 
 ---
 
 ## Privacy and Security
 
-### Does CPOP record what I type?
+### Does CPoE record what I type?
 
-**No.** CPOP explicitly does NOT capture:
+**No.** CPoE explicitly does NOT capture:
 - Which keys you press
 - Keyboard content or characters
 - Screen content
@@ -66,13 +66,13 @@ It only records:
 
 All data is stored locally on your machine:
 - **CLI**: `~/.writersproof/`
-- **macOS App**: `~/Library/Application Support/CPOP/`
+- **macOS App**: `~/Library/Application Support/CPoE/`
 
 No data is sent to any server unless you explicitly export and share it.
 
 ### What data is in an evidence packet?
 
-An exported evidence packet (.cpop) contains:
+An exported evidence packet (.cpoe) contains:
 - File content hashes (not content itself)
 - Checkpoint timestamps and VDF proofs
 - Keystroke counts and timing statistics
@@ -114,11 +114,11 @@ A Verifiable Delay Function (VDF) is a cryptographic function that:
 - Cannot be parallelized or sped up
 - Produces a proof that can be quickly verified
 
-CPOP uses VDFs to prove that real time elapsed between checkpoints. You cannot backdate a checkpoint because you cannot compute the VDF faster than real time.
+CPoE uses VDFs to prove that real time elapsed between checkpoints. You cannot backdate a checkpoint because you cannot compute the VDF faster than real time.
 
 ### What is the key hierarchy?
 
-CPOP uses a three-tier key hierarchy:
+CPoE uses a three-tier key hierarchy:
 
 1. **Tier 0 (Identity)**: Master key derived from your device's PUF
    - Persistent author identity
@@ -151,7 +151,7 @@ This binds your identity to your specific device.
 
 Higher tiers provide stronger evidence but require more hardware support. Tier names follow the draft-condrey-rats-pop CDDL schema: `content-tier = core(1) / enhanced(2) / maximum(3)`.
 
-### How much storage does CPOP use?
+### How much storage does CPoE use?
 
 Typical usage:
 - **Per checkpoint**: ~500 bytes in database
@@ -160,9 +160,9 @@ Typical usage:
 
 Database grows slowly - thousands of checkpoints fit in a few megabytes.
 
-### Can I use CPOP offline?
+### Can I use CPoE offline?
 
-Yes! CPOP works entirely offline. The only network-optional features are:
+Yes! CPoE works entirely offline. The only network-optional features are:
 - External anchoring (e.g., Bitcoin timestamping)
 - Temporal beacon attestation (drand + NIST beacon values via WritersProof)
 - WritersProof certificate enrollment and verification
@@ -171,7 +171,7 @@ All core functionality (VDF proofs, keystroke capture, checkpoint chains) works 
 
 ### What are the security levels?
 
-CPOP assigns a security level (T1–T4) to each evidence export based on which temporal witnesses were successfully embedded:
+CPoE assigns a security level (T1–T4) to each evidence export based on which temporal witnesses were successfully embedded:
 
 | Level | Name | What's Included | Guarantee |
 |-------|------|-----------------|-----------|
@@ -189,7 +189,7 @@ Temporal beacons are cryptographic randomness values published by independent pu
 - **drand** (League of Entropy): BLS-signed random value every 30 seconds
 - **NIST Randomness Beacon**: RSA-signed 512-bit value every 60 seconds
 
-When beacons are enabled (default), CPOP fetches these values through WritersProof at each checkpoint. Including a beacon value in a checkpoint proves it was created *after* that value was published — regardless of what the author's system clock says.
+When beacons are enabled (default), CPoE fetches these values through WritersProof at each checkpoint. Including a beacon value in a checkpoint proves it was created *after* that value was published — regardless of what the author's system clock says.
 
 ### How do I disable beacons?
 
@@ -197,10 +197,10 @@ Beacons are enabled by default. To disable:
 
 ```bash
 # Single export:
-cpop export --no-beacons manuscript.txt
+cpoe export --no-beacons manuscript.txt
 
 # Via environment variable:
-export CPOP_BEACONS_ENABLED=false
+export CPoE_BEACONS_ENABLED=false
 
 # Via configuration file (~/.writersproof/writersproof.json):
 {
@@ -218,7 +218,7 @@ Disabling beacons caps the maximum security level at T2.
 
 ### Does this provide legal proof of authorship?
 
-CPOP creates strong cryptographic evidence of authorship, but legal acceptance depends on:
+CPoE creates strong cryptographic evidence of authorship, but legal acceptance depends on:
 - Jurisdiction
 - Type of proceeding
 - Expert testimony to explain the evidence
@@ -228,21 +228,21 @@ The evidence is designed to be admissible under FRE 902(13) for self-authenticat
 
 ### What is FRE 902(13)?
 
-Federal Rules of Evidence 902(13) allows electronic records to be self-authenticating if certified by a qualified person. CPOP evidence packets include:
+Federal Rules of Evidence 902(13) allows electronic records to be self-authenticating if certified by a qualified person. CPoE evidence packets include:
 - Cryptographic verification of integrity
 - Chain of custody through signatures
 - Declarations of authenticity
 
-### Should I use CPOP for legal disputes?
+### Should I use CPoE for legal disputes?
 
-CPOP provides technical evidence. For legal matters:
+CPoE provides technical evidence. For legal matters:
 - Consult an attorney
 - Expert testimony may be needed to explain evidence
 - Combine with other documentation (emails, drafts, etc.)
 
-### Does CPOP guarantee I created the content?
+### Does CPoE guarantee I created the content?
 
-CPOP proves:
+CPoE proves:
 - Content existed at specific times
 - Real typing activity occurred
 - The same device/identity signed all checkpoints
@@ -256,15 +256,15 @@ It cannot prove you didn't copy content from elsewhere. However:
 
 ## Practical Usage
 
-### I received a .cpop file. What do I do with it?
+### I received a .cpoe file. What do I do with it?
 
-A `.cpop` file is a self-contained cryptographic evidence packet that someone has shared with you to prove authorship of a document. You can verify it without creating an account or installing anything:
+A `.cpoe` file is a self-contained cryptographic evidence packet that someone has shared with you to prove authorship of a document. You can verify it without creating an account or installing anything:
 
 1. **Web (easiest):** Go to [writerslogic.com/verify](https://writerslogic.com/verify) and upload the file. Verification runs entirely in your browser — the file is never sent to a server.
 
-2. **CLI:** If you have `cpop` installed, run:
+2. **CLI:** If you have `cpoe` installed, run:
    ```bash
-   cpop verify proof.cpop
+   cpoe verify proof.cpoe
    ```
 
 Verification checks the checkpoint chain, Ed25519 signatures, VDF timing proofs, and behavioral consistency. The output tells you whether the evidence is intact and what it proves: the document's content hashes, the time span over which writing occurred, and the author's cryptographic identity.
@@ -315,7 +315,7 @@ The new checkpoint will:
 
 This is transparent and doesn't corrupt the chain.
 
-### Can I use CPOP with cloud documents?
+### Can I use CPoE with cloud documents?
 
 Yes, with caveats:
 - Checkpoint local copies of the file
@@ -328,14 +328,14 @@ For best results, work on local files and sync to cloud as backup.
 
 1. Export the evidence packet:
    ```bash
-   cpop export document.md -o evidence.cpop
+   cpoe export document.md -o evidence.cpoe
    ```
 
-2. Share the `.cpop` file
+2. Share the `.cpoe` file
 
 3. Recipient verifies:
    ```bash
-   cpop verify evidence.cpop
+   cpoe verify evidence.cpoe
    ```
 
 No account or registration needed - verification is self-contained.
@@ -345,7 +345,7 @@ No account or registration needed - verification is self-contained.
 Yes! PDF reports include anti-forgery security features (guilloché patterns, microtext) derived from your cryptographic seal:
 
 ```bash
-cpop export manuscript.txt -f pdf
+cpoe export manuscript.txt -f pdf
 ```
 
 The PDF includes:
@@ -358,7 +358,7 @@ The PDF includes:
 
 PDF reports are designed to be difficult to forge — the visual security features are cryptographically bound to the specific evidence packet.
 
-### Can I verify evidence without CPOP installed?
+### Can I verify evidence without CPoE installed?
 
 The evidence packet includes verification instructions. Third-party verification requires:
 - Understanding the cryptographic primitives (Ed25519, SHA-256, VDF)
@@ -371,7 +371,7 @@ You can also verify online at https://writerslogic.com/verify
 ## More Questions?
 
 - **Documentation**: https://docs.writerslogic.com
-- **GitHub Issues**: https://github.com/writerslogic/cpop/issues
+- **GitHub Issues**: https://github.com/writerslogic/cpoe/issues
 - **Website**: https://writerslogic.com
 
 ---

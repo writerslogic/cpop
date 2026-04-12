@@ -6,7 +6,7 @@
 
 ## Overview
 
-This specification defines the high-integrity hardening measures implemented in `cpop` to protect cryptographic material and evidence capture logic against a **white-box adversary** (a local user with root privileges and debugging tools).
+This specification defines the high-integrity hardening measures implemented in `cpoe` to protect cryptographic material and evidence capture logic against a **white-box adversary** (a local user with root privileges and debugging tools).
 
 ## 1. Adversarial Memory Guarding
 
@@ -14,9 +14,9 @@ The engine utilizes tiered memory protection to ensure that sensitive cryptograp
 
 ### 1.1 Physical RAM Locking (mlock)
 
-To prevent the operating system from swapping sensitive keys to disk (where they could be recovered via forensic analysis of the swap file), `cpop` utilizes the `mlock` system call.
+To prevent the operating system from swapping sensitive keys to disk (where they could be recovered via forensic analysis of the swap file), `cpoe` utilizes the `mlock` system call.
 
-- **Mechanism:** The `ProtectedKey<N>` wrapper (see `crates/cpop_engine/src/crypto/mem.rs`) calls `libc::mlock` on its internal buffer during initialization.
+- **Mechanism:** The `ProtectedKey<N>` wrapper (see `crates/cpoe_engine/src/crypto/mem.rs`) calls `libc::mlock` on its internal buffer during initialization.
 - **Scope:** Applied to all `RatchetState` keys, HMAC keys, and master seeds.
 - **Cleanup:** Memory is unlocked using `libc::munlock` and immediately overwritten with zeros via the `Zeroize` trait upon `Drop`.
 
@@ -26,7 +26,7 @@ All sensitive data structures implement the `Zeroize` and `ZeroizeOnDrop` traits
 
 ## 2. Anti-Analysis & Anti-Debugging
 
-To prevent real-time manipulation of the forensic capture loop or the VDF computation, `cpop` implements platform-specific anti-analysis measures.
+To prevent real-time manipulation of the forensic capture loop or the VDF computation, `cpoe` implements platform-specific anti-analysis measures.
 
 ### 2.1 macOS: PT_DENY_ATTACH
 

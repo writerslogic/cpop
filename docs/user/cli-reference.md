@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for the CPOP command-line interface.
+Complete reference for the CPoE command-line interface.
 
 ## Table of Contents
 
@@ -56,10 +56,10 @@ Use `--no-beacons` to cap at T2, or `--level t4` (future) to require T4.
 
 ### init
 
-Initialize CPOP in the current directory.
+Initialize CPoE in the current directory.
 
 ```bash
-cpop init
+cpoe init
 ```
 
 **What it does:**
@@ -71,7 +71,7 @@ cpop init
 
 **Example:**
 ```bash
-$ cpop init
+$ cpoe init
 
 Generating Ed25519 signing key...
   Public key: a1b2c3d4...
@@ -81,13 +81,13 @@ Initializing master identity from PUF...
 Creating secure event database...
   Database: events.db (tamper-evident)
 
-cpop initialized!
+cpoe initialized!
 ```
 
 **Notes:**
 - Safe to run multiple times (idempotent)
 - Preserves existing keys and identity
-- Run `cpop calibrate` after initialization
+- Run `cpoe calibrate` after initialization
 
 ---
 
@@ -96,7 +96,7 @@ cpop initialized!
 Create a checkpoint for a file.
 
 ```bash
-cpop commit <file> [-m <message>]
+cpoe commit <file> [-m <message>]
 ```
 
 **Options:**
@@ -107,7 +107,7 @@ cpop commit <file> [-m <message>]
 
 **Example:**
 ```bash
-$ cpop commit manuscript.md -m "Completed chapter 3"
+$ cpoe commit manuscript.md -m "Completed chapter 3"
 
 Computing checkpoint... done (1.2s)
 
@@ -127,7 +127,7 @@ Checkpoint #5 created
 
 **With tracking active:**
 ```bash
-$ cpop commit manuscript.md -m "Draft with tracking"
+$ cpoe commit manuscript.md -m "Draft with tracking"
 
 Computing checkpoint... done (1.2s)
 
@@ -143,7 +143,7 @@ Checkpoint #6 created (tracking: 1523 keystrokes, 45 samples)
 Show checkpoint history for a file.
 
 ```bash
-cpop log <file> [options]
+cpoe log <file> [options]
 ```
 
 **Options:**
@@ -156,7 +156,7 @@ cpop log <file> [options]
 
 **Example:**
 ```bash
-$ cpop log manuscript.md
+$ cpoe log manuscript.md
 
 Checkpoint History for manuscript.md
 
@@ -172,7 +172,7 @@ Total: 5 checkpoints over 7h 30m
 
 **JSON output:**
 ```bash
-$ cpop log manuscript.md --json --limit 1
+$ cpoe log manuscript.md --json --limit 1
 ```
 ```json
 {
@@ -198,7 +198,7 @@ $ cpop log manuscript.md --json --limit 1
 Export evidence packet for a file.
 
 ```bash
-cpop export <file> [options]
+cpoe export <file> [options]
 ```
 
 **Options:**
@@ -206,7 +206,7 @@ cpop export <file> [options]
 | Option | Description |
 |--------|-------------|
 | `-o <path>` | Output file path |
-| `--format <fmt>` | Format: `json`, `cpop`, `cwar`, `html`, or `pdf` |
+| `--format <fmt>` | Format: `json`, `cpoe`, `cwar`, `html`, or `pdf` |
 | `--tier <n>` | Evidence tier: `1`, `2`, or `3` |
 | `--include-content` | Include file content in packet |
 | `--no-beacons` | Disable temporal beacon attestation for this export. Caps security level at T2. |
@@ -214,11 +214,11 @@ cpop export <file> [options]
 
 **Example:**
 ```bash
-$ cpop export manuscript.md
+$ cpoe export manuscript.md
 
 Exporting evidence packet...
 
-Evidence Packet: manuscript.cpop
+Evidence Packet: manuscript.cpoe
   Checkpoints: 15
   Time span: 2026-01-15 to 2026-01-20
   Evidence tier: 2 (Software-Attested)
@@ -229,7 +229,7 @@ Packet ready for verification.
 
 **Custom output:**
 ```bash
-$ cpop export manuscript.md -o evidence.json --format json --tier 3
+$ cpoe export manuscript.md -o evidence.json --format json --tier 3
 ```
 
 **Evidence packet contents:**
@@ -242,7 +242,7 @@ $ cpop export manuscript.md -o evidence.json --format json --tier 3
 
 **Format details:**
 - `json` — Human-readable JSON evidence packet.
-- `cpop` — CBOR-encoded evidence packet with COSE signatures.
+- `cpoe` — CBOR-encoded evidence packet with COSE signatures.
 - `cwar` — CBOR-encoded Written Authorship Report (attestation result).
 - `html` — Self-contained HTML report with interactive verification display.
 - `pdf` — Self-contained PDF report with anti-forgery security features, verdict, process evidence, and verification instructions. Includes embedded WAR block for independent verification.
@@ -254,7 +254,7 @@ $ cpop export manuscript.md -o evidence.json --format json --tier 3
 Link an export or derivative file to a tracked source document. Creates a cryptographic binding between the source's evidence chain and the exported derivative.
 
 ```bash
-cpop link <SOURCE> <EXPORT> [-m <MESSAGE>]
+cpoe link <SOURCE> <EXPORT> [-m <MESSAGE>]
 ```
 
 | Option | Description |
@@ -265,9 +265,9 @@ cpop link <SOURCE> <EXPORT> [-m <MESSAGE>]
 
 **Examples:**
 ```bash
-cpop link novel.scriv manuscript.pdf -m "Final PDF"
-cpop link essay.txt essay.pdf
-cpop link project.scriv manuscript.epub -m "EPUB export"
+cpoe link novel.scriv manuscript.pdf -m "Final PDF"
+cpoe link essay.txt essay.pdf
+cpoe link project.scriv manuscript.epub -m "EPUB export"
 ```
 
 ---
@@ -277,7 +277,7 @@ cpop link project.scriv manuscript.epub -m "EPUB export"
 Verify a checkpoint chain or evidence packet.
 
 ```bash
-cpop verify <file|packet> [options]
+cpoe verify <file|packet> [options]
 ```
 
 **Options:**
@@ -289,7 +289,7 @@ cpop verify <file|packet> [options]
 
 **Verify evidence packet:**
 ```bash
-$ cpop verify manuscript.cpop
+$ cpoe verify manuscript.cpoe
 
 Evidence Packet Verification
 
@@ -311,7 +311,7 @@ Overall: VERIFIED
 
 **Verify file against local checkpoints:**
 ```bash
-$ cpop verify manuscript.md
+$ cpoe verify manuscript.md
 
 Verifying manuscript.md against local checkpoints...
 
@@ -329,7 +329,7 @@ Chain integrity: VALID (15 checkpoints)
 Track keyboard activity for a document.
 
 ```bash
-cpop track <action> [options]
+cpoe track <action> [options]
 ```
 
 **Actions:**
@@ -344,18 +344,18 @@ cpop track <action> [options]
 
 **Start tracking:**
 ```bash
-$ cpop track start manuscript.md
+$ cpoe track start manuscript.md
 
 Tracking started for manuscript.md
   Session ID: sess_abc123
   WAL: ~/.writersproof/tracking/manuscript.md.wal
 
-Press Ctrl+C or run 'cpop track stop' to end.
+Press Ctrl+C or run 'cpoe track stop' to end.
 ```
 
 **Check status:**
 ```bash
-$ cpop track status
+$ cpoe track status
 
 Tracking Status
   Document: manuscript.md
@@ -367,7 +367,7 @@ Tracking Status
 
 **Stop tracking:**
 ```bash
-$ cpop track stop
+$ cpoe track stop
 
 Tracking stopped
   Total keystrokes: 4,523
@@ -382,7 +382,7 @@ Tracking stopped
 Manage the background sentinel daemon for automatic tracking.
 
 ```bash
-CPOP sentinel <action>
+CPoE sentinel <action>
 ```
 
 **Actions:**
@@ -395,7 +395,7 @@ CPOP sentinel <action>
 
 **Start sentinel:**
 ```bash
-$ CPOP sentinel start
+$ CPoE sentinel start
 
 Sentinel daemon started
   PID: 12345
@@ -406,7 +406,7 @@ Sentinel daemon started
 
 **Check status:**
 ```bash
-$ CPOP sentinel status
+$ CPoE sentinel status
 
 Sentinel Status: Running (PID 12345)
   Uptime: 4h 23m
@@ -421,7 +421,7 @@ Auto-checkpoints: 47 created
 
 **Stop sentinel:**
 ```bash
-$ CPOP sentinel stop
+$ CPoE sentinel stop
 
 Sentinel stopped
   Final checkpoint created for all tracked documents
@@ -434,7 +434,7 @@ Sentinel stopped
 Manage presence verification sessions.
 
 ```bash
-cpop presence <action>
+cpoe presence <action>
 ```
 
 **Actions:**
@@ -447,7 +447,7 @@ cpop presence <action>
 
 **Start presence session:**
 ```bash
-$ cpop presence start
+$ cpoe presence start
 
 Presence verification session started
   Challenge interval: 10m
@@ -471,12 +471,12 @@ Challenge accepted! Next challenge in 10 minutes.
 Calibrate VDF performance for this machine.
 
 ```bash
-cpop calibrate
+cpoe calibrate
 ```
 
 **Example:**
 ```bash
-$ cpop calibrate
+$ cpoe calibrate
 
 Calibrating VDF performance...
 
@@ -501,17 +501,17 @@ Configuration updated.
 
 ### status
 
-Show cpop status and configuration.
+Show cpoe status and configuration.
 
 ```bash
-cpop status
+cpoe status
 ```
 
 **Example:**
 ```bash
-$ cpop status
+$ cpoe status
 
-CPOP Status
+CPoE Status
   Version: 1.0.0
   Data directory: ~/.writerslogic
   Initialized: Yes
@@ -541,7 +541,7 @@ Tracking: Not active
 List all tracked documents in the database.
 
 ```bash
-CPOP list
+CPoE list
 ```
 
 ---
@@ -551,29 +551,29 @@ CPOP list
 Watch folders for automatic checkpointing.
 
 ```bash
-cpop watch add <folder>
-cpop watch remove <folder>
-cpop watch list
+cpoe watch add <folder>
+cpoe watch remove <folder>
+cpoe watch list
 ```
 
 ---
 
 ### start
 
-Start the cpop daemon in the background.
+Start the cpoe daemon in the background.
 
 ```bash
-cpop start
+cpoe start
 ```
 
 ---
 
 ### stop
 
-Stop the cpop daemon.
+Stop the cpoe daemon.
 
 ```bash
-cpop stop
+cpoe stop
 ```
 
 ---
@@ -583,8 +583,8 @@ cpop stop
 Manage author fingerprints.
 
 ```bash
-cpop fingerprint activity status
-cpop fingerprint voice enable
+cpoe fingerprint activity status
+cpoe fingerprint voice enable
 ```
 
 ---
@@ -594,7 +594,7 @@ cpop fingerprint voice enable
 (Legacy) Run background monitoring daemon in the foreground.
 
 ```bash
-cpop daemon [options]
+cpoe daemon [options]
 ```
 
 **Options:**
@@ -612,14 +612,14 @@ cpop daemon [options]
 Show help information.
 
 ```bash
-CPOP help [command]
+CPoE help [command]
 ```
 
 **Examples:**
 ```bash
-CPOP help          # Show all commands
-CPOP help commit   # Show help for commit command
-cpop commit --help # Same as above
+CPoE help          # Show all commands
+CPoE help commit   # Show help for commit command
+cpoe commit --help # Same as above
 ```
 
 ---
@@ -629,14 +629,14 @@ cpop commit --help # Same as above
 Show version information.
 
 ```bash
-CPOP version
+CPoE version
 ```
 
 **Example:**
 ```bash
-$ CPOP version
+$ CPoE version
 
-CPOP v1.0.0
+CPoE v1.0.0
   Build:    2026-01-15T10:00:00Z
   Commit:   abc12345
   Platform: darwin/arm64
@@ -646,16 +646,16 @@ CPOP v1.0.0
 
 ## Interactive Menu
 
-Running `cpop` without arguments launches the interactive menu:
+Running `cpoe` without arguments launches the interactive menu:
 
 ```bash
-$ cpop
+$ cpoe
 
 ░█░░░█░░▀░░▀█▀░█▀▀▄░█▀▀░█▀▀░█▀▀░░░░█▀▄
 ░▀▄█▄▀░░█▀░░█░░█░▒█░█▀▀░▀▀▄░▀▀▄░▀▀░█░█
 ░░▀░▀░░▀▀▀░░▀░░▀░░▀░▀▀▀░▀▀▀░▀▀▀░░░░▀▀░
 
-CPOP v1.0.0
+CPoE v1.0.0
 
 ? Select an action:
   > Initialize

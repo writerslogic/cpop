@@ -6,21 +6,21 @@
 
 ## Overview
 
-CPOP is designed to be integrated into third-party applications (editors, IDEs, LMS platforms) to provide native authorship witnessing. This guide outlines the two primary integration paths: **Direct FFI** (preferred for native apps) and **IPC/CLI** (preferred for web or sandbox-constrained environments).
+CPoE is designed to be integrated into third-party applications (editors, IDEs, LMS platforms) to provide native authorship witnessing. This guide outlines the two primary integration paths: **Direct FFI** (preferred for native apps) and **IPC/CLI** (preferred for web or sandbox-constrained environments).
 
 ## 1. Direct FFI Integration (UniFFI)
 
-The `cpop_engine` crate exports a C-compatible FFI layer using **UniFFI**. This allows native apps (macOS/Swift, Windows/C#, Linux/Kotlin) to call the engine directly without the overhead of subprocesses.
+The `cpoe_engine` crate exports a C-compatible FFI layer using **UniFFI**. This allows native apps (macOS/Swift, Windows/C#, Linux/Kotlin) to call the engine directly without the overhead of subprocesses.
 
 ### Available Bindings
-- **Swift:** Bundled in `cpop_macos` as `CPOPEngineFFI.xcframework`.
-- **C# / WinUI:** Integrated via the `CPOPCoreFFI.dll`.
+- **Swift:** Bundled in `cpoe_macos` as `CPoEEngineFFI.xcframework`.
+- **C# / WinUI:** Integrated via the `CPoECoreFFI.dll`.
 - **Kotlin:** Generated bindings available for Linux desktop integrations.
 
 ### Key API Pattern
 ```swift
 // Example: Creating a checkpoint from a native app
-import CPOPEngineFFI
+import CPoEEngineFFI
 
 func performCheckpoint(path: String) {
     let result = ffiCreateCheckpoint(path: path, message: "Manual save")
@@ -34,7 +34,7 @@ func performCheckpoint(path: String) {
 
 ## 2. IPC Integration (Daemon-Mode)
 
-For web applications or sandboxed apps that cannot link native libraries, the `cpop` daemon provides a local Unix Socket (or Named Pipe on Windows) for asynchronous communication.
+For web applications or sandboxed apps that cannot link native libraries, the `cpoe` daemon provides a local Unix Socket (or Named Pipe on Windows) for asynchronous communication.
 
 - **Address:** `~/.writersproof/writersproof.sock` (Unix) or `\.\pipe\writerslogic` (Windows).
 - **Format:** JSON-RPC over the socket.
@@ -48,7 +48,7 @@ Vendors should generally use the **[[Glossary#Sentinel|Sentinel]]** to handle ba
 
 If you are a vendor building a web-based editor (e.g., Google Docs, Notion):
 1. **Native Messaging:** Utilize the `writerslogic-native-messaging-host` to bridge your web app to the local daemon.
-2. **PostMessage API:** The CPOP browser extension exposes a `window.postMessage` interface that web apps can use to signal "Save" or "Checkpoint" events without direct daemon access.
+2. **PostMessage API:** The CPoE browser extension exposes a `window.postMessage` interface that web apps can use to signal "Save" or "Checkpoint" events without direct daemon access.
 
 ## 4. Best Practices for Vendors
 
@@ -58,12 +58,12 @@ If you are a vendor building a web-based editor (e.g., Google Docs, Notion):
 - **Use the Forensic Score:** Display the real-time [[Behavioral Metrics#3. Composite Authorship Score (Process Score)|Authorship Score]] in your UI to give users immediate feedback on their evidence integrity.
 
 ### Don't:
-- **Don't store keys yourself:** Let the CPOP engine handle the Tier 0-2 key hierarchy and hardware binding.
+- **Don't store keys yourself:** Let the CPoE engine handle the Tier 0-2 key hierarchy and hardware binding.
 - **Don't modify the data directory:** All integrity checks rely on the engine's ownership of `~/.writerslogic`.
 
 ## 5. Security & Privacy Disclosure
 
-When integrating CPOP, vendors should be aware of the following external domain interactions:
+When integrating CPoE, vendors should be aware of the following external domain interactions:
 
 - **Local-First:** Core witnessing and authorship capture are strictly local and offline-first. Content never leaves the user's device.
 - **Verification:** Verification of evidence packets typically occurs at `writerslogic.com/verify`, which uses a client-side (WASM) engine to maintain privacy.

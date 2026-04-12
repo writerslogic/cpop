@@ -32,7 +32,7 @@ Part of the CPoE monorepo:
 | Component | Description |
 |:----------|:------------|
 | [**cpoe_engine**](../../crates/cpoe_engine) | Cryptographic engine |
-| [**cpop_protocol**](../../crates/cpop_protocol) | PoP wire format (CBOR/COSE) |
+| [**cpoe_protocol**](../../crates/cpoe_protocol) | PoP wire format (CBOR/COSE) |
 | [**cpoe_jitter**](../../crates/cpoe_jitter) | Hardware timing entropy |
 | **cpoe_cli** (this crate) | CLI tool |
 

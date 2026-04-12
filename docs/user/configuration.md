@@ -1,6 +1,6 @@
 # Configuration Guide
 
-CPOP can be configured through configuration files, environment variables, and command-line flags. This guide covers all available options.
+CPoE can be configured through configuration files, environment variables, and command-line flags. This guide covers all available options.
 
 ## Table of Contents
 
@@ -24,19 +24,19 @@ CPOP can be configured through configuration files, environment variables, and c
 | Platform | Path |
 |----------|------|
 | macOS/Linux | `~/.writersproof/config.json` |
-| macOS App | `~/Library/Application Support/CPOP/config.json` |
+| macOS App | `~/Library/Application Support/CPoE/config.json` |
 
 ### Custom Location
 
-Use the `--config` flag or `CPOP_CONFIG` environment variable:
+Use the `--config` flag or `CPoE_CONFIG` environment variable:
 
 ```bash
-CPOP --config /path/to/config.json status
+CPoE --config /path/to/config.json status
 ```
 
 ## Configuration File Format
 
-CPOP uses JSON configuration with the following structure:
+CPoE uses JSON configuration with the following structure:
 
 ```json
 {
@@ -58,7 +58,7 @@ For the legacy daemon mode, TOML configuration is also supported at `~/.writersp
 watch_paths = ["~/Documents"]
 interval = 5
 database_path = "~/.writersproof/mmr.db"
-log_path = "~/.writersproof/cpop.log"
+log_path = "~/.writersproof/cpoe.log"
 signing_key_path = "~/.writersproof/signing_key"
 signatures_path = "~/.writersproof/signatures.sigs"
 event_store_path = "~/.writersproof/events.db"
@@ -74,7 +74,7 @@ event_store_path = "~/.writersproof/events.db"
 
 ## Storage Settings
 
-Configure how CPOP stores evidence data.
+Configure how CPoE stores evidence data.
 
 ```json
 {
@@ -130,7 +130,7 @@ Configure the Verifiable Delay Function for timing proofs.
 Run calibration to measure your CPU's VDF performance:
 
 ```bash
-cpop calibrate
+cpoe calibrate
 ```
 
 This updates `iterations_per_second` to reflect actual performance, ensuring accurate timing proofs.
@@ -198,13 +198,13 @@ Presence sessions create additional proof that the author was actively present:
 
 ```bash
 # Start a presence session
-cpop presence start
+cpoe presence start
 
 # Respond to challenges when prompted
 # ...
 
 # End session
-cpop presence stop
+cpoe presence stop
 ```
 
 ## Sentinel Settings
@@ -235,13 +235,13 @@ Configure the background sentinel daemon for automatic document tracking.
 
 ```bash
 # Start sentinel daemon
-CPOP sentinel start
+CPoE sentinel start
 
 # Check status
-CPOP sentinel status
+CPoE sentinel status
 
 # Stop sentinel
-CPOP sentinel stop
+CPoE sentinel stop
 ```
 
 ## Beacon Settings
@@ -270,8 +270,8 @@ Temporal beacons anchor evidence to publicly verifiable timestamps via the Write
 
 | Variable | Description |
 |----------|-------------|
-| `CPOP_BEACONS_ENABLED` | Override beacon enabled setting (`true`/`false`) |
-| `CPOP_BEACONS_TIMEOUT_SECS` | Override beacon timeout |
+| `CPoE_BEACONS_ENABLED` | Override beacon enabled setting (`true`/`false`) |
+| `CPoE_BEACONS_TIMEOUT_SECS` | Override beacon timeout |
 
 ### CLI Flags
 
@@ -286,17 +286,17 @@ Override configuration with environment variables:
 
 | Variable | Description |
 |----------|-------------|
-| `CPOP_DATA_DIR` | Override data directory path |
-| `CPOP_CONFIG` | Path to configuration file |
-| `CPOP_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
-| `CPOP_NO_COLOR` | Disable colored output |
+| `CPoE_DATA_DIR` | Override data directory path |
+| `CPoE_CONFIG` | Path to configuration file |
+| `CPoE_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
+| `CPoE_NO_COLOR` | Disable colored output |
 
 ### Example
 
 ```bash
-export CPOP_DATA_DIR=/custom/path
-export CPOP_LOG_LEVEL=debug
-cpop status
+export CPoE_DATA_DIR=/custom/path
+export CPoE_LOG_LEVEL=debug
+cpoe status
 ```
 
 ## macOS App Settings
@@ -307,7 +307,7 @@ The macOS app provides a graphical settings interface with additional options:
 
 | Setting | Description |
 |---------|-------------|
-| Open at Login | Launch CPOP when you log in |
+| Open at Login | Launch CPoE when you log in |
 | Auto-create checkpoints | Automatically save checkpoints at intervals |
 | Checkpoint Interval | Time between auto-checkpoints (5min to 2hr) |
 | Debounce Interval | Wait time after last keystroke (100-2000ms) |

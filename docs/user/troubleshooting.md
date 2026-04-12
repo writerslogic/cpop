@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Solutions to common issues with CPOP.
+Solutions to common issues with CPoE.
 
 ## Table of Contents
 
@@ -16,9 +16,9 @@ Solutions to common issues with CPOP.
 
 ## Installation Issues
 
-### "Command not found: cpop"
+### "Command not found: cpoe"
 
-**Cause:** CPOP is not in your PATH.
+**Cause:** CPoE is not in your PATH.
 
 **Solutions:**
 
@@ -87,7 +87,7 @@ make install PREFIX=$HOME/.local
    ```bash
    mkdir -p ~/.writerslogic
    chmod 700 ~/.writerslogic
-   cpop init
+   cpoe init
    ```
 
 ### "Error generating key"
@@ -105,7 +105,7 @@ make install PREFIX=$HOME/.local
 2. **Regenerate key manually:**
    ```bash
    rm ~/.writersproof/signing_key*
-   cpop init
+   cpoe init
    ```
 
 ### "Error deriving master identity"
@@ -117,7 +117,7 @@ make install PREFIX=$HOME/.local
 1. **Remove PUF seed and reinitialize:**
    ```bash
    rm ~/.writersproof/puf_seed
-   cpop init
+   cpoe init
    ```
 
 2. **Check file permissions:**
@@ -133,9 +133,9 @@ make install PREFIX=$HOME/.local
 
 **Solutions:**
 
-1. **Check if CPOP is initialized:**
+1. **Check if CPoE is initialized:**
    ```bash
-   cpop status
+   cpoe status
    ```
 
 2. **Verify file exists:**
@@ -145,10 +145,10 @@ make install PREFIX=$HOME/.local
 
 3. **Check for existing tracking session:**
    ```bash
-   cpop track status
+   cpoe track status
    # If stuck, stop and restart
-   cpop track stop
-   cpop track start document.md
+   cpoe track stop
+   cpoe track start document.md
    ```
 
 ### "Keystroke count always zero"
@@ -159,7 +159,7 @@ make install PREFIX=$HOME/.local
 
 1. **Grant accessibility permissions:**
    - System Settings > Privacy & Security > Accessibility
-   - Enable CPOP
+   - Enable CPoE
 
 2. **Restart the app after granting permissions**
 
@@ -174,7 +174,7 @@ make install PREFIX=$HOME/.local
 1. **Check if running in terminal with input:**
    ```bash
    # Must run in terminal that receives keyboard input
-   cpop track start document.md
+   cpoe track start document.md
    ```
 
 2. **Verify input group membership:**
@@ -193,7 +193,7 @@ make install PREFIX=$HOME/.local
 
 1. **Stop tracking and check WAL:**
    ```bash
-   cpop track stop
+   cpoe track stop
    ls -la ~/.writersproof/tracking/
    ```
 
@@ -236,7 +236,7 @@ make install PREFIX=$HOME/.local
 
 1. **Calibrate VDF:**
    ```bash
-   cpop calibrate
+   cpoe calibrate
    ```
 
 2. **Check VDF settings:**
@@ -278,12 +278,12 @@ make install PREFIX=$HOME/.local
 
 1. **Verify with verbose output:**
    ```bash
-   cpop verify document.md --verbose
+   cpoe verify document.md --verbose
    ```
 
 2. **Check for gaps in sequence:**
    ```bash
-   cpop log document.md --json | jq '.[].number'
+   cpoe log document.md --json | jq '.[].number'
    ```
 
 ### "VDF proof invalid"
@@ -294,8 +294,8 @@ make install PREFIX=$HOME/.local
 
 1. **Re-verify with current VDF parameters:**
    ```bash
-   cpop calibrate
-   cpop verify document.cpop
+   cpoe calibrate
+   cpoe verify document.cpoe
    ```
 
 2. **VDF proofs are deterministic - if fails, evidence may be invalid**
@@ -308,7 +308,7 @@ make install PREFIX=$HOME/.local
 
 1. **Check certificate chain:**
    ```bash
-   cpop verify document.cpop --verbose 2>&1 | grep -i cert
+   cpoe verify document.cpoe --verbose 2>&1 | grep -i cert
    ```
 
 2. **Verify master identity matches:**
@@ -326,8 +326,8 @@ make install PREFIX=$HOME/.local
 
 1. **Check what's running:**
    ```bash
-   cpop status
-   CPOP sentinel status
+   cpoe status
+   CPoE sentinel status
    ```
 
 2. **VDF computation is intentionally CPU-intensive (brief)**
@@ -370,7 +370,7 @@ make install PREFIX=$HOME/.local
 
 1. **Calibrate VDF:**
    ```bash
-   cpop calibrate
+   cpoe calibrate
    ```
 
 2. **For large files, checkpointing takes longer due to hashing**
@@ -388,15 +388,15 @@ make install PREFIX=$HOME/.local
 
 1. **Check if app is running:**
    ```bash
-   pgrep -l CPOP
+   pgrep -l CPoE
    ```
 
 2. **Check menu bar overflow** (click >> on right side of menu bar)
 
 3. **Restart the app:**
    ```bash
-   pkill CPOP
-   open /Applications/CPOP.app
+   pkill CPoE
+   open /Applications/CPoE.app
    ```
 
 ### App Crashes on Launch
@@ -405,12 +405,12 @@ make install PREFIX=$HOME/.local
 
 1. **Check Console for crash logs:**
    - Open Console.app
-   - Filter for "CPOP"
+   - Filter for "CPoE"
 
 2. **Reset app state:**
    ```bash
-   rm -rf ~/Library/Application\ Support/CPOP/
-   open /Applications/CPOP.app
+   rm -rf ~/Library/Application\ Support/CPoE/
+   open /Applications/CPoE.app
    ```
 
 3. **Check macOS version compatibility**
@@ -420,7 +420,7 @@ make install PREFIX=$HOME/.local
 **Solutions:**
 
 1. **Check notification permissions:**
-   - System Settings > Notifications > CPOP
+   - System Settings > Notifications > CPoE
 
 2. **Check Focus mode** isn't blocking notifications
 
@@ -432,7 +432,7 @@ make install PREFIX=$HOME/.local
 
 1. **Remove and re-add permission:**
    - System Settings > Privacy & Security > Accessibility
-   - Remove CPOP
+   - Remove CPoE
    - Quit and relaunch app
    - Grant permission when prompted
 
@@ -454,7 +454,7 @@ make install PREFIX=$HOME/.local
 
 2. **If no backup, generate new key:**
    ```bash
-   cpop init
+   cpoe init
    ```
 
 3. **Previous evidence remains valid but new evidence will have different identity**
@@ -485,8 +485,8 @@ Before complete reset:
 
 ```bash
 # Export all evidence packets
-for file in $(cpop log --all --files); do
-  cpop export "$file" -o "backup_${file}.cpop"
+for file in $(cpoe log --all --files); do
+  cpoe export "$file" -o "backup_${file}.cpoe"
 done
 ```
 
@@ -499,23 +499,23 @@ Collect this before reporting issues:
 ```bash
 # System info
 uname -a
-CPOP version
+CPoE version
 
 # Configuration
 cat ~/.writersproof/config.json
 
 # Status
-cpop status
+cpoe status
 
 # Recent logs (if available)
-tail -100 ~/.writersproof/cpop.log
+tail -100 ~/.writersproof/cpoe.log
 ```
 
 ### Reporting Issues
 
-1. Search [existing issues](https://github.com/writerslogic/cpop/issues)
+1. Search [existing issues](https://github.com/writerslogic/cpoe/issues)
 2. Create new issue with:
-   - CPOP version
+   - CPoE version
    - Operating system and version
    - Steps to reproduce
    - Expected vs actual behavior
@@ -523,7 +523,7 @@ tail -100 ~/.writersproof/cpop.log
 
 ### Community Support
 
-- GitHub Discussions: https://github.com/writerslogic/cpop/discussions
+- GitHub Discussions: https://github.com/writerslogic/cpoe/discussions
 - Discord: https://discord.gg/writerslogic
 
 ---

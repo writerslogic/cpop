@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-title: "cpop-core"
+title: "cpoe-core"
 message: "If you use this software, please cite the associated paper."
 type: software
 authors:
   - family-names: Condrey
     given-names: David
     orcid: "https://orcid.org/0009-0003-1849-2963"
-repository-code: "https://github.com/writerslogic/cpop"
+repository-code: "https://github.com/writerslogic/cpoe"
 license: Apache-2.0
 version: 0.2.0
 date-released: "2026-02-20"
@@ -20,7 +20,7 @@ keywords:
   - jitter-seals
 preferred-citation:
   type: article
-  title: "CPOP: Proof-of-process via Adversarial Collapse"
+  title: "CPoE: Proof-of-process via Adversarial Collapse"
   authors:
     - family-names: Condrey
       given-names: David

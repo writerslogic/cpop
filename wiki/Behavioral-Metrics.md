@@ -1,6 +1,6 @@
 # Behavioral Metrics Specification
 
-CPOP uses behavioral forensic metrics to analyze whether a document's creation process is consistent with human authorship. These metrics look at the **rhythm** and **topology** of edits without ever capturing the content of what is being written.
+CPoE uses behavioral forensic metrics to analyze whether a document's creation process is consistent with human authorship. These metrics look at the **rhythm** and **topology** of edits without ever capturing the content of what is being written.
 
 ---
 
@@ -25,7 +25,7 @@ CPOP uses behavioral forensic metrics to analyze whether a document's creation p
 
 ## Forensic Metrics Suite
 
-CPOP implements a tiered forensic evaluation suite that produces a composite **Authorship Score (PS)**.
+CPoE implements a tiered forensic evaluation suite that produces a composite **Authorship Score (PS)**.
 
 ### 1. Keystroke Cadence Analysis
 
@@ -64,7 +64,7 @@ $$PS = 0.3R + 0.3S + 0.4B$$
 
 ## [[Glossary#Jitter Seal|Jitter Seals]] (Tier 2 Evidence)
 
-For higher-tier evidence, CPOP uses **Jitter Seals**.
+For higher-tier evidence, CPoE uses **Jitter Seals**.
  This measures the nanosecond-level timing variations (jitter) between keystrokes. 
 
 - **Uniqueness**: Every person has a unique "typing fingerprint" based on their neuromuscular timing.
@@ -73,7 +73,7 @@ For higher-tier evidence, CPOP uses **Jitter Seals**.
 ---
 
 ## Privacy First
-- **No Content Capture**: CPOP records *when* you type, but never *what* you type.
+- **No Content Capture**: CPoE records *when* you type, but never *what* you type.
 - **Local Processing**: All behavioral analysis happens on your device.
 - **Statistical Aggregates**: Only high-level statistics (e.g., "Median Interval: 250ms") are included in exported evidence packets.
 

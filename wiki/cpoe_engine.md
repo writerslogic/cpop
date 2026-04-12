@@ -1,9 +1,9 @@
-# cpop_engine
+# cpoe_engine
 
-**cpop_engine** is the high-performance cryptographic engine at the heart of the CPOP ecosystem. It produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
+**cpoe_engine** is the high-performance cryptographic engine at the heart of the CPoE ecosystem. It produces independently verifiable, tamper-evident process evidence constraining when and how a document could have been created.
 
 **License:** Apache-2.0
-**Path:** [`crates/cpop_engine`](https://github.com/writerslogic/cpop/tree/main/crates/cpop_engine)
+**Path:** [`crates/cpoe_engine`](https://github.com/writerslogic/cpoe/tree/main/crates/cpoe_engine)
 
 ---
 
@@ -20,7 +20,7 @@
 ## Architecture
 
 ```
-cpop_engine/src/
+cpoe_engine/src/
 ├── analysis/       Signal analysis and behavioral metrics
 ├── anchors/        Blockchain and timestamp anchoring
 ├── calibration/    VDF calibration for target hardware
@@ -49,7 +49,7 @@ cpop_engine/src/
 | Feature | Description |
 |:--------|:------------|
 | `default` | Core library without optional features |
-| `cpop_jitter` | Hardware entropy via [[cpop_jitter]] |
+| `cpoe_jitter` | Hardware entropy via [[cpoe_jitter]] |
 | `secure-enclave` | macOS Secure Enclave support |
 | `x11` | X11 focus detection on Linux |
 | `ffi` | UniFFI bindings for Swift/Kotlin |
@@ -58,13 +58,13 @@ cpop_engine/src/
 
 ```toml
 [dependencies]
-cpop_engine = { git = "https://github.com/writerslogic/cpop", branch = "main" }
+cpoe_engine = { git = "https://github.com/writerslogic/cpoe", branch = "main" }
 ```
 
 ## Dependencies
 
-- **[[cpop_protocol]]**: Wire format types and forensic models
-- **[[cpop_jitter]]** (optional): Hardware timing entropy
+- **[[cpoe_protocol]]**: Wire format types and forensic models
+- **[[cpoe_jitter]]** (optional): Hardware timing entropy
 
 ## Related Pages
 

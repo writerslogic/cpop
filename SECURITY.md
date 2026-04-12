@@ -44,12 +44,12 @@ We follow coordinated disclosure:
 
 ### Threat Model
 
-CPOP provides cryptographic evidence of file authorship. The security
+CPoE provides cryptographic evidence of file authorship. The security
 model assumes:
 
 **Trusted Components:**
 - Local kernel and hardware (including TPM when used)
-- The user account running CPOP
+- The user account running CPoE
 - The filesystem's access control enforcement
 
 **Protected Against:**
@@ -102,10 +102,10 @@ chmod 600 /var/lib/writerslogic/config.toml
 chmod 400 /var/lib/writerslogic/signing.key
 
 # Use TPM-sealed keys (recommended)
-cpop init --tpm-sealed
+cpoe init --tpm-sealed
 
 # Enable audit logging
-cpop start --foreground  # daemon logs to ~/.writersproof/logs/daemon.log
+cpoe start --foreground  # daemon logs to ~/.writersproof/logs/daemon.log
 ```
 
 ### Linux Capabilities
@@ -114,7 +114,7 @@ Instead of running as root, grant specific capabilities:
 
 ```bash
 # Required for TPM access
-sudo setcap cap_sys_admin+ep /usr/local/bin/cpop
+sudo setcap cap_sys_admin+ep /usr/local/bin/cpoe
 
 # Or use the provided udev rules for non-root TPM access
 sudo cp rules.d/99-writerslogic-tpm.rules /etc/udev/rules.d/

@@ -1,6 +1,6 @@
-# Getting Started with CPOP
+# Getting Started with CPoE
 
-CPOP is a cryptographic authorship witnessing system that creates tamper-evident records of your creative process. This guide will help you install and configure CPOP for first use.
+CPoE is a cryptographic authorship witnessing system that creates tamper-evident records of your creative process. This guide will help you install and configure CPoE for first use.
 
 ## Table of Contents
 
@@ -35,15 +35,15 @@ CPOP is a cryptographic authorship witnessing system that creates tamper-evident
 #### Using Homebrew
 
 ```bash
-brew tap writerslogic/cpop
+brew tap writerslogic/cpoe
 brew install writerslogic
 ```
 
 #### Using the macOS App
 
-1. Download `CPOP.dmg` from the [releases page](https://github.com/writerslogic/cpop/releases)
+1. Download `CPoE.dmg` from the [releases page](https://github.com/writerslogic/cpoe/releases)
 2. Open the DMG file
-3. Drag **CPOP** to your Applications folder
+3. Drag **CPoE** to your Applications folder
 4. Launch the app from Applications or Spotlight
 
 The macOS app includes:
@@ -57,13 +57,13 @@ The macOS app includes:
 #### Using the Install Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/writerslogic/cpop/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/writerslogic/cpoe/main/install.sh | bash
 ```
 
 #### Building from Source
 
 ```bash
-git clone https://github.com/writerslogic/cpop.git
+git clone https://github.com/writerslogic/cpoe.git
 cd writerslogic
 make build
 sudo make install
@@ -72,12 +72,12 @@ sudo make install
 ### Verifying Installation
 
 ```bash
-CPOP version
+CPoE version
 ```
 
 Expected output:
 ```
-CPOP v1.0.0
+CPoE v1.0.0
   Build:    2026-01-15T10:00:00Z
   Commit:   abc1234
   Platform: darwin/arm64
@@ -85,12 +85,12 @@ CPOP v1.0.0
 
 ## Initial Setup
 
-### Initialize CPOP
+### Initialize CPoE
 
-Before creating checkpoints, you must initialize CPOP:
+Before creating checkpoints, you must initialize CPoE:
 
 ```bash
-cpop init
+cpoe init
 ```
 
 This creates:
@@ -110,12 +110,12 @@ Initializing master identity from PUF...
 Creating secure event database...
   Database: events.db (tamper-evident)
 
-cpop initialized!
+cpoe initialized!
 
 Next steps:
-  1. Run 'cpop calibrate' to calibrate VDF for your machine
-  2. Create checkpoints with 'cpop commit <file> -m "message"'
-  3. Export evidence with 'cpop export <file>'
+  1. Run 'cpoe calibrate' to calibrate VDF for your machine
+  2. Create checkpoints with 'cpoe commit <file> -m "message"'
+  3. Export evidence with 'cpoe export <file>'
 ```
 
 ### Calibrate VDF
@@ -123,7 +123,7 @@ Next steps:
 The Verifiable Delay Function (VDF) provides timing proofs. Calibration measures your CPU speed:
 
 ```bash
-cpop calibrate
+cpoe calibrate
 ```
 
 This takes about 30 seconds and only needs to be done once per machine.
@@ -167,7 +167,7 @@ Create a checkpoint for any file:
 echo "My first witnessed document" > mydoc.txt
 
 # Create a checkpoint
-cpop commit mydoc.txt -m "Initial version"
+cpoe commit mydoc.txt -m "Initial version"
 ```
 
 Output:
@@ -184,7 +184,7 @@ Checkpoint #1 created
 ### View Checkpoint History
 
 ```bash
-cpop log mydoc.txt
+cpoe log mydoc.txt
 ```
 
 Output:
@@ -203,19 +203,19 @@ For stronger evidence, track keystrokes during writing:
 
 ```bash
 # Start tracking
-cpop track start mydoc.txt
+cpoe track start mydoc.txt
 
 # ... write your document ...
 # The system counts keystrokes (not content!) in the background
 
 # Check progress
-cpop track status
+cpoe track status
 
 # Create checkpoint with keystroke evidence
-cpop commit mydoc.txt -m "Draft with tracked keystrokes"
+cpoe commit mydoc.txt -m "Draft with tracked keystrokes"
 
 # Stop tracking
-cpop track stop
+cpoe track stop
 ```
 
 ## Exporting Evidence
@@ -225,10 +225,10 @@ cpop track stop
 When you need to prove authorship:
 
 ```bash
-cpop export mydoc.txt
+cpoe export mydoc.txt
 ```
 
-This creates `mydoc.cpop` containing:
+This creates `mydoc.cpoe` containing:
 - Complete checkpoint chain with VDF proofs
 - Key hierarchy with session certificates
 - Signed declaration of creative process
@@ -239,7 +239,7 @@ This creates `mydoc.cpop` containing:
 Anyone can verify the evidence:
 
 ```bash
-cpop verify mydoc.cpop
+cpoe verify mydoc.cpoe
 ```
 
 Output:
@@ -270,16 +270,16 @@ When you need to prove authorship to an editor, publisher, or legal counterpart:
 
 ```bash
 # Export the evidence packet
-cpop export mydoc.txt -o mydoc.cpop
+cpoe export mydoc.txt -o mydoc.cpoe
 
-# Share mydoc.cpop with the recipient
+# Share mydoc.cpoe with the recipient
 ```
 
-The `.cpop` file is self-contained — the recipient does not need access to your machine, your database, or your private key.
+The `.cpoe` file is self-contained — the recipient does not need access to your machine, your database, or your private key.
 
-### For Recipients: Verifying a .cpop File
+### For Recipients: Verifying a .cpoe File
 
-Anyone can verify a `.cpop` evidence packet. No account, registration, or special software is required.
+Anyone can verify a `.cpoe` evidence packet. No account, registration, or special software is required.
 
 **Option 1 — Web (no install needed):**
 
@@ -288,7 +288,7 @@ Upload the file at [writerslogic.com/verify](https://writerslogic.com/verify). V
 **Option 2 — CLI:**
 
 ```bash
-cpop verify mydoc.cpop
+cpoe verify mydoc.cpoe
 ```
 
 Verification checks:
@@ -311,7 +311,7 @@ The output shows a per-check pass/fail summary and an overall verdict.
 ## Getting Help
 
 - **Documentation**: https://docs.writerslogic.com
-- **Issues**: https://github.com/writerslogic/cpop/issues
+- **Issues**: https://github.com/writerslogic/cpoe/issues
 - **Website**: https://writerslogic.com
 
 ---

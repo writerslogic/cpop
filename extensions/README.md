@@ -1,6 +1,6 @@
-# CPOP Browser Extensions — Publishing Guide
+# CPoE Browser Extensions — Publishing Guide
 
-This directory contains packaging and publishing instructions for the CPOP browser extensions. All extensions share a common codebase in `apps/cpop_cli/browser-extension/` and are packaged into browser-specific zip files for store submission.
+This directory contains packaging and publishing instructions for the CPoE browser extensions. All extensions share a common codebase in `apps/cpoe_cli/browser-extension/` and are packaged into browser-specific zip files for store submission.
 
 ## Architecture
 
@@ -53,7 +53,7 @@ extensions/dist/
 1. Build the macOS app in Xcode (scheme "Witness")
 2. Safari → Settings → Advanced → "Show features for web developers"
 3. Develop → Allow Unsigned Extensions (resets each Safari restart)
-4. Safari → Settings → Extensions → Enable "CPOP"
+4. Safari → Settings → Extensions → Enable "CPoE"
 5. Test on supported sites
 
 ---
@@ -69,7 +69,7 @@ extensions/dist/
 2. Click **New Item**
 3. Upload `extensions/dist/writerslogic-chrome.zip`
 4. Fill in the store listing:
-   - **Name:** CPOP
+   - **Name:** CPoE
    - **Summary:** Cryptographic proof-of-process evidence for browser-based writing
    - **Description:** (see [Store Description](#store-description) below)
    - **Category:** Productivity
@@ -79,7 +79,7 @@ extensions/dist/
 7. Under Privacy:
    - **Single purpose:** "Creates cryptographic evidence of the document authorship process"
    - **Permissions justification:**
-     - `nativeMessaging` — Communicates with the local CPOP daemon for full cryptographic witnessing
+     - `nativeMessaging` — Communicates with the local CPoE daemon for full cryptographic witnessing
      - `activeTab` — Reads document content on the currently active tab to create content checkpoints
      - `storage` — Stores extension settings and hash-chain data locally
    - **Host permissions justification:** "Monitors document content on supported writing platforms (Google Docs, Overleaf, Medium, Notion) to create cryptographic authorship evidence"
@@ -89,7 +89,7 @@ extensions/dist/
 ### Post-Publish: Native Host Registration
 Once published, copy the extension ID from the Chrome Web Store listing (32-character string), then update the native messaging manifest:
 ```sh
-./apps/cpop_cli/browser-extension/install-native-host.sh --chrome --extension-id YOUR_CHROME_EXTENSION_ID
+./apps/cpoe_cli/browser-extension/install-native-host.sh --chrome --extension-id YOUR_CHROME_EXTENSION_ID
 ```
 
 ---
@@ -104,22 +104,22 @@ Once published, copy the extension ID from the Chrome Web Store listing (32-char
 2. Click **Submit a New Add-on**
 3. Choose **On this site** (listed on AMO)
 4. Upload `extensions/dist/writerslogic-firefox.zip`
-5. AMO will validate the manifest. The extension ID `cpop@writerslogic.com` is declared in `browser_specific_settings.gecko.id`.
+5. AMO will validate the manifest. The extension ID `cpoe@writerslogic.com` is declared in `browser_specific_settings.gecko.id`.
 6. Fill in the listing:
-   - **Name:** CPOP
+   - **Name:** CPoE
    - **Summary:** Cryptographic proof-of-process evidence for browser-based writing
    - **Description:** (see [Store Description](#store-description) below)
    - **Categories:** Privacy & Security, Productivity
    - **License:** GPL-3.0
    - **Homepage:** https://writerslogic.com
-7. **Source code submission:** AMO may request source code for review since the extension uses no build step — upload the entire `apps/cpop_cli/browser-extension/` directory as a zip, or link to the public repository.
+7. **Source code submission:** AMO may request source code for review since the extension uses no build step — upload the entire `apps/cpoe_cli/browser-extension/` directory as a zip, or link to the public repository.
 8. Upload screenshots
 9. Submit for review
 
 ### Post-Publish: Native Host Registration
-The Firefox extension ID is fixed (`cpop@writerslogic.com`), so the native manifest works immediately:
+The Firefox extension ID is fixed (`cpoe@writerslogic.com`), so the native manifest works immediately:
 ```sh
-./apps/cpop_cli/browser-extension/install-native-host.sh --firefox
+./apps/cpoe_cli/browser-extension/install-native-host.sh --firefox
 ```
 
 ---
@@ -134,7 +134,7 @@ The Firefox extension ID is fixed (`cpop@writerslogic.com`), so the native manif
 2. Click **Create new extension**
 3. Upload `extensions/dist/writerslogic-edge.zip`
 4. Fill in the listing:
-   - **Name:** CPOP
+   - **Name:** CPoE
    - **Short description:** Cryptographic proof-of-process evidence for browser-based writing
    - **Description:** (see [Store Description](#store-description) below)
    - **Category:** Productivity
@@ -147,7 +147,7 @@ The Firefox extension ID is fixed (`cpop@writerslogic.com`), so the native manif
 ### Post-Publish: Native Host Registration
 Copy the extension ID from the Edge Add-ons dashboard, then:
 ```sh
-./apps/cpop_cli/browser-extension/install-native-host.sh --edge --extension-id YOUR_EDGE_EXTENSION_ID
+./apps/cpoe_cli/browser-extension/install-native-host.sh --edge --extension-id YOUR_EDGE_EXTENSION_ID
 ```
 
 ---
@@ -207,11 +207,11 @@ Safari extensions are distributed as part of the macOS app bundle, not as standa
 
 Use this description (adapt length per store):
 
-> **CPOP** creates cryptographic evidence of your writing process. As you write in Google Docs, Overleaf, Medium, or Notion, CPOP silently builds proof that a human authored the content — not AI.
+> **CPoE** creates cryptographic evidence of your writing process. As you write in Google Docs, Overleaf, Medium, or Notion, CPoE silently builds proof that a human authored the content — not AI.
 >
 > **How it works:**
 > - Content checkpoints are hashed and chained together, creating a tamper-evident record of your document's evolution
-> - When the CPOP native host is installed, the extension captures full cryptographic evidence: VDF time proofs, behavioral fingerprinting, and keystroke timing jitter
+> - When the CPoE native host is installed, the extension captures full cryptographic evidence: VDF time proofs, behavioral fingerprinting, and keystroke timing jitter
 > - Without the native host, the extension runs in hash-chain mode: a lightweight SHA-256 chain that proves your document grew incrementally over time
 >
 > **Privacy first:**
@@ -222,7 +222,7 @@ Use this description (adapt length per store):
 >
 > **Supported editors:** Google Docs, Overleaf, Medium, Notion
 >
-> **For full witnessing:** Install the CPOP desktop app and native messaging host from https://writerslogic.com
+> **For full witnessing:** Install the CPoE desktop app and native messaging host from https://writerslogic.com
 
 ---
 
@@ -236,10 +236,10 @@ The native host is optional. Without it, extensions run in degraded hash-chain m
 cargo build --release --bin writerslogic-native-messaging-host
 
 # Install for all browsers
-./apps/cpop_cli/browser-extension/install-native-host.sh --all
+./apps/cpoe_cli/browser-extension/install-native-host.sh --all
 
 # Or specific browsers with known extension IDs
-./apps/cpop_cli/browser-extension/install-native-host.sh \
+./apps/cpoe_cli/browser-extension/install-native-host.sh \
   --chrome --extension-id CHROME_ID \
   --edge --extension-id EDGE_ID \
   --firefox
@@ -251,10 +251,10 @@ cargo build --release --bin writerslogic-native-messaging-host
 cargo build --release --bin writerslogic-native-messaging-host
 
 # Install for all browsers
-.\apps\cpop_cli\browser-extension\install-native-host.ps1 -All
+.\apps\cpoe_cli\browser-extension\install-native-host.ps1 -All
 
 # Or specific browsers
-.\apps\cpop_cli\browser-extension\install-native-host.ps1 -Chrome -ExtensionId CHROME_ID
+.\apps\cpoe_cli\browser-extension\install-native-host.ps1 -Chrome -ExtensionId CHROME_ID
 ```
 
 ---
@@ -264,7 +264,7 @@ cargo build --release --bin writerslogic-native-messaging-host
 | Browser | ID Type | Value |
 |---------|---------|-------|
 | Chrome | Extension ID | *(assigned after first upload to Chrome Web Store)* |
-| Firefox | Add-on ID | `cpop@writerslogic.com` |
+| Firefox | Add-on ID | `cpoe@writerslogic.com` |
 | Edge | Extension ID | *(assigned after first upload to Edge Add-ons)* |
 | Safari | Bundle ID | `com.writerslogic.witnessd.WitnessdSafariExtension` |
 
@@ -282,6 +282,6 @@ All extensions share the same version number, declared in their respective `mani
 ```
 
 Or manually edit:
-- `apps/cpop_cli/browser-extension/manifest.json` (Chrome/Edge)
-- `apps/cpop_cli/browser-extension/manifest-firefox.json` (Firefox)
-- `apps/cpop_macos/CPOPSafariExtension/Resources/manifest.json` (Safari)
+- `apps/cpoe_cli/browser-extension/manifest.json` (Chrome/Edge)
+- `apps/cpoe_cli/browser-extension/manifest-firefox.json` (Firefox)
+- `apps/cpoe_macos/CPoESafariExtension/Resources/manifest.json` (Safari)

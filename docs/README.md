@@ -1,13 +1,13 @@
 <p align="center">
-  <strong>CPOP</strong><br>
-  Documentation, schemas, and specifications for CPOP
+  <strong>CPoE</strong><br>
+  Documentation, schemas, and specifications for CPoE
 </p>
 
 <p align="center">
   <a href="https://doi.org/10.5281/zenodo.18480372"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18480372.svg" alt="DOI"></a>
   <a href="https://arxiv.org/abs/2602.01663"><img src="https://img.shields.io/badge/arXiv-2602.01663-b31b1b.svg" alt="arXiv"></a>
   <a href="https://orcid.org/0009-0003-1849-2963"><img src="https://img.shields.io/badge/ORCID-0009--0003--1849--2963-green.svg" alt="ORCID"></a>
-  <a href="https://github.com/writerslogic/cpop/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
+  <a href="https://github.com/writerslogic/cpoe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/Patent-US%2019%2F460%2C364%20Pending-blue" alt="Patent Pending">
 </p>
 
@@ -20,20 +20,20 @@
 
 ## Overview
 
-**CPOP** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. This repository contains the core implementation, reference applications, and technical documentation.
+**CPoE** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. This repository contains the core implementation, reference applications, and technical documentation.
 
 | Component | Path | Description | License |
 |:----------|:-----|:------------|:--------|
-| **cpop_engine** | [`crates/cpop_engine`](../crates/cpop_engine) | High-performance cryptographic engine | AGPL-3.0-only |
-| **cpop_protocol** | [`crates/cpop_protocol`](../crates/cpop_protocol) | PoP protocol wire format & forensic models | AGPL-3.0-only |
-| **cpop_jitter** | [`crates/cpop_jitter`](../crates/cpop_jitter) | Hardware timing entropy foundation | AGPL-3.0-only |
-| **cpop_cli** | [`apps/cpop_cli`](../apps/cpop_cli) | Command-line interface & Linux packaging | AGPL-3.0-only |
-| **cpop_macos** | [`apps/cpop_macos`](../apps/cpop_macos) | Native macOS desktop application | Proprietary |
-| **cpop_windows** | [`apps/cpop_windows`](../apps/cpop_windows) | Native Windows desktop application | Proprietary |
+| **cpoe_engine** | [`crates/cpoe_engine`](../crates/cpoe_engine) | High-performance cryptographic engine | AGPL-3.0-only |
+| **cpoe_protocol** | [`crates/cpoe_protocol`](../crates/cpoe_protocol) | PoP protocol wire format & forensic models | AGPL-3.0-only |
+| **cpoe_jitter** | [`crates/cpoe_jitter`](../crates/cpoe_jitter) | Hardware timing entropy foundation | AGPL-3.0-only |
+| **cpoe_cli** | [`apps/cpoe_cli`](../apps/cpoe_cli) | Command-line interface & Linux packaging | AGPL-3.0-only |
+| **cpoe_macos** | [`apps/cpoe_macos`](../apps/cpoe_macos) | Native macOS desktop application | Proprietary |
+| **cpoe_windows** | [`apps/cpoe_windows`](../apps/cpoe_windows) | Native Windows desktop application | Proprietary |
 
 ## Technical Implementation
 
-CPOP is built on a high-integrity cryptographic stack:
+CPoE is built on a high-integrity cryptographic stack:
 
 - **Streaming Evidence Engine:** Optimized for massive files via chunked SHA-256 hashing.
 - **Adversarial Hardening:** Tier 4 protections including RAM-locking (`mlock`) and anti-debugging.
@@ -67,7 +67,7 @@ CPOP is built on a high-integrity cryptographic stack:
 
 ```bibtex
 @article{condrey2026writerslogic,
-  title={CPOP: Proof-of-process via Adversarial Collapse},
+  title={CPoE: Proof-of-process via Adversarial Collapse},
   author={Condrey, David},
   journal={arXiv preprint arXiv:2602.01663},
   year={2026},

@@ -5,14 +5,14 @@
 
 ## Overview
 
-CPOP is a local-first file witnessing daemon that creates cryptographic
+CPoE is a local-first file witnessing daemon that creates cryptographic
 evidence of file authorship and modification history. This privacy policy
-explains what data CPOP collects, how it is processed, and your rights
+explains what data CPoE collects, how it is processed, and your rights
 regarding that data.
 
 **Key Principle:** All data processing occurs exclusively on your local device.
 No data is transmitted to external servers, cloud services, or third parties
-by the CPOP software itself.
+by the CPoE software itself.
 
 ## Data Collection and Processing
 
@@ -87,7 +87,7 @@ admissibility depends on jurisdiction and context; consult legal counsel.
 
 ### Local Storage Only
 
-All CPOP data is stored locally in:
+All CPoE data is stored locally in:
 - `~/.writersproof/` - Configuration and databases
 - `~/.writersproof/events.db` - Event store (SQLite, encrypted at rest optional)
 - `~/.writersproof/mmr.bin` - Merkle Mountain Range (append-only)
@@ -101,7 +101,7 @@ All CPOP data is stored locally in:
 
 ### No Network Transmission
 
-CPOP does not:
+CPoE does not:
 - Connect to any remote servers
 - Transmit telemetry or analytics
 - Phone home for license verification
@@ -140,14 +140,14 @@ contents, keystroke data, or behavioral metrics.
 ### Under BIPA (Illinois residents)
 
 - **Written Policy:** This document serves as the required written policy
-- **Consent:** By running CPOP, you consent to local biometric collection
+- **Consent:** By running CPoE, you consent to local biometric collection
 - **Retention Schedule:** Data retained until manually deleted
 - **Destruction Guidelines:** Delete `~/.writersproof/` directory
 - **No Disclosure:** Biometric data is never disclosed to third parties
 
 ## Children's Privacy
 
-CPOP does not knowingly collect data from children under 13. The software
+CPoE does not knowingly collect data from children under 13. The software
 is intended for use by adults in professional and legal contexts.
 
 ## Changes to This Policy
@@ -158,12 +158,12 @@ CHANGELOG and git history. Continued use after changes constitutes acceptance.
 ## Contact
 
 For privacy inquiries:
-- GitHub Issues: https://github.com/writerslogic/cpop/issues
+- GitHub Issues: https://github.com/writerslogic/cpoe/issues
 - Email: privacy@writerslogic.com
 
 ## Technical Appendix: Data Minimization
 
-CPOP implements privacy-by-design principles:
+CPoE implements privacy-by-design principles:
 
 1. **Hash-Only Content Tracking:** File contents are never stored unless
    explicitly enabled. Only cryptographic hashes are retained.

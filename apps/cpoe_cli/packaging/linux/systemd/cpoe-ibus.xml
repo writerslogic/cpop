@@ -4,11 +4,11 @@
   "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
 <busconfig>
   <policy user="root">
-    <allow own="org.freedesktop.IBus.CPOP"/>
+    <allow own="org.freedesktop.IBus.CPoE"/>
   </policy>
 
   <policy context="default">
-    <allow send_destination="org.freedesktop.IBus.CPOP"/>
-    <allow receive_sender="org.freedesktop.IBus.CPOP"/>
+    <allow send_destination="org.freedesktop.IBus.CPoE"/>
+    <allow receive_sender="org.freedesktop.IBus.CPoE"/>
   </policy>
 </busconfig>

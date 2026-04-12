@@ -6,7 +6,7 @@
 
 ## Overview
 
-This specification defines the behavioral forensic metrics used by CPOP to analyze edit patterns for consistency with human authorship. These metrics examine the spatial distribution and timing of document edits without capturing actual content.
+This specification defines the behavioral forensic metrics used by CPoE to analyze edit patterns for consistency with human authorship. These metrics examine the spatial distribution and timing of document edits without capturing actual content.
 
 **Important:** This specification covers edit topology and timing pattern analysis. For jitter seal keystroke watermarking (HMAC-based timing injection), see the research paper `paper/jitter-seal.md` and evidence format `specs/evidence-format.md`.
 
@@ -21,7 +21,7 @@ Behavioral metrics are statistical indicators. Jitter seal provides cryptographi
 
 ## Forensic Metrics Suite
 
-CPOP implements a tiered forensic evaluation suite that produces a composite **Authorship Score (PS)**.
+CPoE implements a tiered forensic evaluation suite that produces a composite **Authorship Score (PS)**.
 
 ### 1. Keystroke Cadence Analysis
 
@@ -62,7 +62,7 @@ $$PS = 0.3R + 0.3S + 0.4B$$
 
 | Term | Definition |
 |------|------------|
-| **Event** | A file modification detected by CPOP |
+| **Event** | A file modification detected by CPoE |
 | **Interval** | Time between consecutive events (nanoseconds) |
 | **Session** | A cluster of events separated by gaps > 30 minutes |
 | **Flight Time** | Duration a key is held down (not directly measured; inferred) |
@@ -268,7 +268,7 @@ This specification draws from established keystroke dynamics research:
 
 ### Limitations
 
-1. **Indirect Measurement:** CPOP observes file save events, not actual
+1. **Indirect Measurement:** CPoE observes file save events, not actual
    keystrokes. Metrics are approximations based on observable behavior.
 
 2. **Editor Variability:** Different editors have different auto-save behaviors,

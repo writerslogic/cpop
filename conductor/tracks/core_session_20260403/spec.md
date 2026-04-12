@@ -1,7 +1,7 @@
 # Specification: Core Session Management and Evidence Export
 
 ## Goal
-Implement the core logic for managing a cryptographic witnessing session, including session initialization, real-time monitoring, and exporting evidence packets (.cpop).
+Implement the core logic for managing a cryptographic witnessing session, including session initialization, real-time monitoring, and exporting evidence packets (.cpoe).
 
 ## Requirements
 - Session Lifecycle: Start, Pause, Resume, Stop.

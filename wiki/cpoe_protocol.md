@@ -1,9 +1,9 @@
-# cpop_protocol
+# cpoe_protocol
 
-**cpop_protocol** is the core Rust implementation of the **[[Glossary#PoP|Proof-of-Process (PoP)]]** protocol wire format, currently being socialized in the **[[Glossary#RATS|IETF RATS]]** working group.
+**cpoe_protocol** is the core Rust implementation of the **[[Glossary#PoP|Proof-of-Process (PoP)]]** protocol wire format, currently being socialized in the **[[Glossary#RATS|IETF RATS]]** working group.
 
 **License:** Apache-2.0
-**Path:** [`crates/cpop_protocol`](https://github.com/writerslogic/cpop/tree/main/crates/cpop_protocol)
+**Path:** [`crates/cpoe_protocol`](https://github.com/writerslogic/cpoe/tree/main/crates/cpoe_protocol)
 
 ---
 
@@ -18,7 +18,7 @@
 ## Architecture
 
 ```
-cpop_protocol/src/
+cpoe_protocol/src/
 ├── crypto.rs        Cryptographic primitives and key management
 ├── forensics/       Forensic analysis models and scoring
 │   └── mod.rs       ProcessScore, BehavioralScore, ForensicReport
@@ -50,12 +50,12 @@ The protocol implements types defined in [draft-condrey-rats-pop](https://github
 
 ```toml
 [dependencies]
-cpop_protocol = { git = "https://github.com/writerslogic/cpop", branch = "main" }
+cpoe_protocol = { git = "https://github.com/writerslogic/cpoe", branch = "main" }
 ```
 
 ## Dependencies
 
-- **[[cpop_jitter]]**: Hardware timing entropy for jitter seals
+- **[[cpoe_jitter]]**: Hardware timing entropy for jitter seals
 
 ## Related Pages
 

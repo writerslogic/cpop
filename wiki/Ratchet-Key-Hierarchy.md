@@ -1,6 +1,6 @@
 # Ratchet Key Hierarchy Specification
 
-CPOP uses a three-tier key hierarchy to provide **persistent identity**, **session isolation**, and **forward secrecy**.
+CPoE uses a three-tier key hierarchy to provide **persistent identity**, **session isolation**, and **forward secrecy**.
 
 ---
 

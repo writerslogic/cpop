@@ -1,14 +1,14 @@
 # Initial Concept
 
-CPOP: Cryptographic authorship witnessing for writers and creators. A cryptographic engine and CLI that produces independently verifiable, tamper-evident process evidence.
+CPoE: Cryptographic authorship witnessing for writers and creators. A cryptographic engine and CLI that produces independently verifiable, tamper-evident process evidence.
 
 # Product Definition
 
 ## Overview
-**CPOP (Cryptographic Proof-of-Process)** is a cryptographic engine and ecosystem that produces independently verifiable, tamper-evident evidence of document authorship. It ensures that a document was created through an actual writing process, constrained by "cryptographic causality locks" and behavioral attestation.
+**CPoE (Cryptographic Proof-of-Process)** is a cryptographic engine and ecosystem that produces independently verifiable, tamper-evident evidence of document authorship. It ensures that a document was created through an actual writing process, constrained by "cryptographic causality locks" and behavioral attestation.
 
 ## Initial Concept
-CPOP implements the draft-condrey-rats-pop IETF protocol specification to convert unsubstantiated doubt about authorship into testable claims across independent trust boundaries.
+CPoE implements the draft-condrey-rats-pop IETF protocol specification to convert unsubstantiated doubt about authorship into testable claims across independent trust boundaries.
 
 ## Target Users
 - **Writers & Journalists:** Proving the authenticity and timeline of their work.
@@ -23,8 +23,8 @@ CPOP implements the draft-condrey-rats-pop IETF protocol specification to conver
 4. **Behavioral Attestation:** Using jitter seals and timing entropy to ensure a human-driven process.
 
 ## Core Ecosystem
-- **cpop-engine:** The native cryptographic engine and platform capture layer.
-- **cpop-protocol:** The wire format and RFC-compliant types.
-- **cpop-jitter:** Hardware timing entropy primitives.
-- **cpop_cli:** The primary user interface for desktop and server environments.
+- **cpoe-engine:** The native cryptographic engine and platform capture layer.
+- **cpoe-protocol:** The wire format and RFC-compliant types.
+- **cpoe-jitter:** Hardware timing entropy primitives.
+- **cpoe_cli:** The primary user interface for desktop and server environments.
 - **Integrations:** Support for macOS, Windows, Atlassian Confluence, and Google Workspace.

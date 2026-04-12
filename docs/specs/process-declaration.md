@@ -179,7 +179,7 @@ collaborators:
 | `name` | string | Yes | Collaborator's name |
 | `role` | enum | Yes | Their role in creation |
 | `sections` | array | No | Which sections they contributed to |
-| `public_key` | bytes[32] | No | Their CPOP public key (if they have one) |
+| `public_key` | bytes[32] | No | Their CPoE public key (if they have one) |
 
 #### Collaborator Roles
 
@@ -243,7 +243,7 @@ func ComputeSigningPayload(d *Declaration) ([]byte, error) {
     h := sha256.New()
 
     // Protocol prefix for domain separation
-    h.Write([]byte("cpop-declaration-v1"))
+    h.Write([]byte("cpoe-declaration-v1"))
 
     // Document binding (32 bytes each, must be hex-decoded)
     docHash, err := hex.DecodeString(d.DocumentHash)
@@ -394,7 +394,7 @@ func VerifyDeclaration(d *Declaration) error {
 
 ### Payload Construction Rules
 
-1. **Domain Separation**: Prefix with `"cpop-declaration-v1"` to prevent cross-protocol attacks
+1. **Domain Separation**: Prefix with `"cpoe-declaration-v1"` to prevent cross-protocol attacks
 2. **Determinism**: Sort arrays before hashing (modalities by type, AI tools by name)
 3. **Length Prefixing**: All variable-length strings are prefixed with 8-byte big-endian length
 4. **Fixed-Point**: Percentages stored as integer × 1000 (e.g., 95.5% → 95500)

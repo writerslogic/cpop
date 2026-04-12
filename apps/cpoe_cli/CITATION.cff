@@ -1,13 +1,13 @@
 cff-version: 1.2.0
-title: "cpop-cli"
+title: "cpoe-cli"
 message: "If you use this software, please cite the associated paper."
 type: software
 authors:
   - family-names: Condrey
     given-names: David
     orcid: "https://orcid.org/0009-0003-1849-2963"
-repository-code: "https://github.com/writerslogic/cpop-cli"
-url: "https://github.com/writerslogic/cpop"
+repository-code: "https://github.com/writerslogic/cpoe-cli"
+url: "https://github.com/writerslogic/cpoe"
 license: GPL-3.0
 version: 0.1.0
 date-released: "2026-02-20"
@@ -19,7 +19,7 @@ keywords:
   - RATS
 preferred-citation:
   type: article
-  title: "CPOP: Proof-of-process via Adversarial Collapse"
+  title: "CPoE: Proof-of-process via Adversarial Collapse"
   authors:
     - family-names: Condrey
       given-names: David

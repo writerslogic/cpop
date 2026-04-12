@@ -253,7 +253,7 @@
         },
         "hardware_sealed": {
           "type": "boolean",
-          "description": "Whether jitter was captured via hardware entropy source (cpop_jitter)"
+          "description": "Whether jitter was captured via hardware entropy source (cpoe_jitter)"
         }
       }
     }

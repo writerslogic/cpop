@@ -45,10 +45,10 @@
 
 ### Components
 
-- [[cpop_engine]]
-- [[cpop_protocol]]
-- [[cpop_jitter]]
+- [[cpoe_engine]]
+- [[cpoe_protocol]]
+- [[cpoe_jitter]]
 
 ---
 
-*[[Home|CPOP wiki]]*
+*[[Home|CPoE wiki]]*

@@ -1,10 +1,10 @@
 # Specification: Refactoring, Hardening, and Completion (Engine)
 
 ## Overview
-This track focuses on a comprehensive effort to reduce code duplication, improve performance, harden the application against evidence manipulation, and complete any remaining stubbed features within the `cpop-engine` submodule.
+This track focuses on a comprehensive effort to reduce code duplication, improve performance, harden the application against evidence manipulation, and complete any remaining stubbed features within the `cpoe-engine` submodule.
 
 ## Scope
-- **Submodules:** `cpop-engine`
+- **Submodules:** `cpoe-engine`
 - **Code Quality:** Refactoring to eliminate duplication and completing stubbed implementations.
 - **Security Hardening:** Implementing defenses against timing/jitter spoofing, memory/process tampering, and storage/file tampering within the engine.
 - **Performance:** Optimizing code for better execution speed and resource usage.

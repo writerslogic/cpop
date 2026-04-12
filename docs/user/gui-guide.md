@@ -1,6 +1,6 @@
 # macOS App User Guide
 
-The CPOP macOS app provides a graphical interface for cryptographic authorship witnessing. This guide covers all features of the menu bar application.
+The CPoE macOS app provides a graphical interface for cryptographic authorship witnessing. This guide covers all features of the menu bar application.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ The CPOP macOS app provides a graphical interface for cryptographic authorship w
 
 ### Install from DMG
 
-1. Download `CPOP.dmg` from the [releases page](https://github.com/writerslogic/cpop/releases)
+1. Download `CPoE.dmg` from the [releases page](https://github.com/writerslogic/cpoe/releases)
 2. Open the DMG file
-3. Drag **CPOP** to your **Applications** folder
+3. Drag **CPoE** to your **Applications** folder
 4. Eject the DMG
 
 ### Launch
 
 - Open from **Applications** folder, or
-- Search "CPOP" in **Spotlight** (Cmd+Space)
+- Search "CPoE" in **Spotlight** (Cmd+Space)
 
 The app runs as a menu bar application - look for the eye icon in your menu bar.
 
@@ -43,21 +43,21 @@ The app runs as a menu bar application - look for the eye icon in your menu bar.
 
 On first launch, you'll see the onboarding screen:
 
-1. **Welcome**: Overview of CPOP features
+1. **Welcome**: Overview of CPoE features
 2. **Permissions**: Grant accessibility permissions (required for keystroke counting)
 3. **Initialize**: Creates your cryptographic identity
 4. **Calibrate**: Measures VDF performance for your Mac
 
 ### Accessibility Permissions
 
-CPOP requires accessibility permissions to count keystrokes (not capture content):
+CPoE requires accessibility permissions to count keystrokes (not capture content):
 
 1. Click **Open System Settings** when prompted
 2. Navigate to **Privacy & Security > Accessibility**
-3. Enable the toggle next to **CPOP**
+3. Enable the toggle next to **CPoE**
 4. Return to the app
 
-**Privacy Note:** CPOP only counts keystroke events - it does NOT record which keys you press.
+**Privacy Note:** CPoE only counts keystroke events - it does NOT record which keys you press.
 
 ### Initialization
 
@@ -93,7 +93,7 @@ Click the menu bar icon to open the quick menu:
   View Details…
   Settings…                ⌘,
 ──────────────────
-  Quit CPOP           ⌘Q
+  Quit CPoE           ⌘Q
 ```
 
 **When tracking:**
@@ -106,7 +106,7 @@ Click the menu bar icon to open the quick menu:
   View Details…
   Settings…                ⌘,
 ──────────────────
-  Quit CPOP           ⌘Q
+  Quit CPoE           ⌘Q
 ```
 
 ## Tracking Documents
@@ -118,7 +118,7 @@ Start tracking all keystrokes without specifying a document:
 1. Click the menu bar icon
 2. Select **Start Global Tracking**
 
-This creates a session file in `~/Library/Application Support/CPOP/sessions/` named with the current date.
+This creates a session file in `~/Library/Application Support/CPoE/sessions/` named with the current date.
 
 ### Document-Specific Tracking
 
@@ -237,7 +237,7 @@ Access settings via menu bar > **Settings...** or **Cmd+,**
 
 | Setting | Description |
 |---------|-------------|
-| Open at Login | Auto-start CPOP on login |
+| Open at Login | Auto-start CPoE on login |
 | Auto-create checkpoints | Enable automatic checkpoints |
 | Checkpoint Interval | Time between auto-checkpoints |
 | Debounce Interval | Wait after last keystroke (100-2000ms) |
@@ -250,7 +250,7 @@ Configure directories for automatic tracking:
 2. Select a folder to watch
 3. Toggle paths on/off as needed
 
-When you edit files in watched directories, CPOP can automatically start tracking.
+When you edit files in watched directories, CPoE can automatically start tracking.
 
 ### Patterns Tab
 
@@ -295,7 +295,7 @@ Notification types:
 
 **Reveal**: Opens the data folder in Finder
 
-**Reset CPOP**: Deletes all data and keys (irreversible!)
+**Reset CPoE**: Deletes all data and keys (irreversible!)
 
 ## Keyboard Shortcuts
 
@@ -303,7 +303,7 @@ Notification types:
 |----------|--------|
 | ⌘G | Start global tracking |
 | ⌘, | Open Settings |
-| ⌘Q | Quit CPOP |
+| ⌘Q | Quit CPoE |
 
 ## Permissions
 
@@ -318,11 +318,11 @@ Notification types:
 
 **Accessibility:**
 1. System Settings > Privacy & Security > Accessibility
-2. Enable CPOP
+2. Enable CPoE
 
 **Notifications:**
 1. System Settings > Notifications
-2. Find CPOP
+2. Find CPoE
 3. Enable notifications
 
 ### Revoking Permissions
@@ -336,12 +336,12 @@ If you revoke accessibility permissions:
 
 All data is stored in:
 ```
-~/Library/Application Support/CPOP/
+~/Library/Application Support/CPoE/
 ```
 
 Contents:
 ```
-CPOP/
+CPoE/
 ├── config.json        # Configuration
 ├── events.db          # Checkpoint database
 ├── identity.json      # Public identity info
@@ -356,8 +356,8 @@ CPOP/
 ### Backup
 
 To backup your evidence:
-1. Quit CPOP
-2. Copy the entire `CPOP` folder
+1. Quit CPoE
+2. Copy the entire `CPoE` folder
 3. Store backup securely
 
 **Important:** The `signing_key` file is your cryptographic identity. Keep backups secure!

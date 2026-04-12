@@ -1,9 +1,9 @@
-# cpop_jitter
+# cpoe_jitter
 
-**cpop_jitter** (formerly `physjitter`) is the hardware timing entropy foundation for the CPOP ecosystem. It provides cryptographic proof-of-process through timing jitter, enabling verification that content was created through a human typing process.
+**cpoe_jitter** (formerly `physjitter`) is the hardware timing entropy foundation for the CPoE ecosystem. It provides cryptographic proof-of-process through timing jitter, enabling verification that content was created through a human typing process.
 
 **License:** Apache-2.0
-**Path:** [`crates/cpop_jitter`](https://github.com/writerslogic/cpop/tree/main/crates/cpop_jitter)
+**Path:** [`crates/cpoe_jitter`](https://github.com/writerslogic/cpoe/tree/main/crates/cpoe_jitter)
 
 ---
 
@@ -31,7 +31,7 @@ Combines both models: uses physics when available, falls back to pure jitter in 
 ## Architecture
 
 ```
-cpop_jitter/src/
+cpoe_jitter/src/
 ├── lib.rs         Session, HybridEngine, public API
 ├── traits.rs      EntropySource, JitterEngine traits
 ├── pure.rs        PureJitter (HMAC-based)
@@ -68,12 +68,12 @@ The `HumanModel` validates jitter sequences against statistical patterns from th
 
 ```toml
 [dependencies]
-cpop_jitter = { git = "https://github.com/writerslogic/cpop", branch = "main" }
+cpoe_jitter = { git = "https://github.com/writerslogic/cpoe", branch = "main" }
 ```
 
 ## Related Pages
 
-- [[cpop_engine]] - Uses cpop_jitter for evidence generation
-- [[cpop_protocol]] - Wire format for jitter evidence
+- [[cpoe_engine]] - Uses cpoe_jitter for evidence generation
+- [[cpoe_protocol]] - Wire format for jitter evidence
 - [[Behavioral Metrics]] - Keystroke dynamics specification
 - [[Glossary]] - Key terms (Jitter Seal, IKI, PUF, etc.)

@@ -1,6 +1,6 @@
-# CPOP Standards Alignment Map
+# CPoE Standards Alignment Map
 
-This document maps CPOP's implementation to external standards and specifications,
+This document maps CPoE's implementation to external standards and specifications,
 documenting current alignment status, integration points, and identified gaps.
 
 Last updated: 2026-03-24
@@ -57,7 +57,7 @@ Last updated: 2026-03-24
   - Runtime Opaque → VDF proof strength + time plausibility
   - Storage Opaque → key hierarchy + session certificate
   - Sourced Data → behavioral entropy + jitter quality
-- **Private-use CWT keys**: 70001-70009 for CPOP-specific claims
+- **Private-use CWT keys**: 70001-70009 for CPoE-specific claims
 - **CBOR wire format**: Tagged per RFC 8949 with tags 0x43504F50 and 0x43574152
 
 ### Gap: None identified
@@ -113,8 +113,8 @@ Last updated: 2026-03-24
 - No RFC 3161 time-stamp in COSE unprotected headers
 
 ### Integration path
-CPOP is positioned as an **evidence source for C2PA**, not a C2PA replacement.
-The assertion projection allows CPOP attestations to be consumed by C2PA manifest
+CPoE is positioned as an **evidence source for C2PA**, not a C2PA replacement.
+The assertion projection allows CPoE attestations to be consumed by C2PA manifest
 generators (e.g., c2patool) as custom assertions.
 
 ## 5. CBOR/COSE (RFC 8949 / RFC 9052)
@@ -123,7 +123,7 @@ generators (e.g., c2patool) as custom assertions.
 - **ciborium** crate for CBOR encoding (deterministic, RFC 8949 Section 4.2.1)
 - **coset** crate for COSE signatures
 - Custom CBOR tags: 0x43504F50 (evidence), 0x43574152 (attestation)
-- Media types: `application/vnd.writersproof.cpop+cbor`, `application/vnd.writersproof.cwar+cbor`
+- Media types: `application/vnd.writersproof.cpoe+cbor`, `application/vnd.writersproof.cwar+cbor`
 - Ed25519 signatures via ed25519-dalek with zeroize
 
 ### Gap: None identified
@@ -131,7 +131,7 @@ generators (e.g., c2patool) as custom assertions.
 ## 6. NIST AI RMF 1.0 (AI 100-1) / AI 100-4
 
 ### Mapping (`war/profiles/standards.rs`)
-| RMF Subcategory | CPOP Coverage |
+| RMF Subcategory | CPoE Coverage |
 |-----------------|---------------|
 | GV-1.1 | Declaration with AI disclosure fields per EU AI Act Art. 50 |
 | GV-1.2 | AR4SI trustworthiness vector (8 components) |
@@ -148,7 +148,7 @@ generators (e.g., c2patool) as custom assertions.
 ## 7. ISO/IEC 42001 (AI Management Systems)
 
 ### Mapping (`war/profiles/standards.rs`)
-| Control | Topic | CPOP Coverage |
+| Control | Topic | CPoE Coverage |
 |---------|-------|---------------|
 | A.6 | Data governance | HMAC chains, WAL, MMR append-only proofs |
 | A.7 | System documentation | claim_generator_info with version, capabilities |
@@ -158,7 +158,7 @@ generators (e.g., c2patool) as custom assertions.
 ## 8. IPTC Digital Source Type
 
 ### Implementation (`war/profiles/standards.rs`)
-| CPOP AiExtent | IPTC Source Type | W3C ai-disclosure |
+| CPoE AiExtent | IPTC Source Type | W3C ai-disclosure |
 |---------------|------------------|-------------------|
 | None | `humanCreation` | `none` |
 | Minimal | `compositeWithTrainedAlgorithmicMedia` | `ai-assisted` |
@@ -172,11 +172,11 @@ Used in C2PA action entries via `digitalSourceType` field.
 ### Implementation (`war/profiles/standards.rs`)
 - `AiDisclosureLevel` enum: `none`, `ai-assisted`, `ai-generated`
 - HTML meta tag generation: `<meta name="ai-disclosure" content="...">`
-- Maps from CPOP declaration's `AiExtent` via `from_ai_extent()`
+- Maps from CPoE declaration's `AiExtent` via `from_ai_extent()`
 
 ### Regulatory alignment
 - EU AI Act Article 50 (effective August 2026): requires machine-readable
-  disclosure of AI-generated content — CPOP's `AiDisclosureLevel` satisfies this
+  disclosure of AI-generated content — CPoE's `AiDisclosureLevel` satisfies this
 
 ## 10. WGA MBA / SAG-AFTRA AI Provisions
 
@@ -188,8 +188,8 @@ Used in C2PA action entries via `digitalSourceType` field.
   - `digital_source_type`: IPTC URI for cross-standard compatibility
 
 ### WGA MBA alignment
-- "AI is not a writer": CPOP's behavioral attestation proves human authorship process
-- Company disclosure obligation: CPOP's declaration records AI tool usage
+- "AI is not a writer": CPoE's behavioral attestation proves human authorship process
+- Company disclosure obligation: CPoE's declaration records AI tool usage
 - Writer consent: Declaration is author-signed, proving informed consent
 
 ### SAG-AFTRA alignment
@@ -200,10 +200,10 @@ Used in C2PA action entries via `digitalSourceType` field.
 
 ### Status: Not applicable
 WebAuthn proves **user presence** (button press, biometric) for authentication.
-CPOP proves **authorship process** (keystrokes, timing, behavior) for content creation.
+CPoE proves **authorship process** (keystrokes, timing, behavior) for content creation.
 These are complementary but different concerns.
 
-**Future opportunity**: WebAuthn assertions could supplement CPOP evidence as
+**Future opportunity**: WebAuthn assertions could supplement CPoE evidence as
 additional human-presence proofs during authoring sessions.
 
 ## 12. IEEE P3119
@@ -211,13 +211,13 @@ additional human-presence proofs during authoring sessions.
 ### Status: Not applicable
 IEEE P3119-2025 is a **procurement process standard** for acquiring AI systems.
 It has no metadata fields or technical data structures to implement.
-CPOP can reference P3119 compliance in procurement responses.
+CPoE can reference P3119 compliance in procurement responses.
 
 ## 13. NCCoE AI Agent Identity
 
 ### Alignment
-- CPOP uses DIDs for human author identity (NCCoE recommends distinguishing human/AI)
-- CPOP's declaration includes `ai_tools` disclosure (distinguishes AI involvement)
+- CPoE uses DIDs for human author identity (NCCoE recommends distinguishing human/AI)
+- CPoE's declaration includes `ai_tools` disclosure (distinguishes AI involvement)
 - Key hierarchy with delegation supports the NCCoE's "delegation chain" model
 
 ### Gap: No explicit `author_type: human | ai_agent` field in evidence packet
@@ -318,7 +318,7 @@ ToIP's Ecosystem Governance Framework defines governance metadata for trust
 ecosystems including credential schemas, trust registries, and policies.
 
 ### Alignment
-- CPOP's trust policy module (`trust_policy/`) evaluates evidence against
+- CPoE's trust policy module (`trust_policy/`) evaluates evidence against
   configurable policy profiles, which could map to ToIP governance rules
 - Key hierarchy and session certificates align with ToIP's credential lifecycle
 
@@ -333,7 +333,7 @@ issuer or holder is authorized within a governance framework.
 
 ### Alignment
 - WritersProof API could expose a TRQP-compatible endpoint for querying
-  authorized CPOP attestation issuers
+  authorized CPoE attestation issuers
 - DID-based identity aligns with TRQP's identifier model
 
 ### Spec reference
@@ -374,7 +374,7 @@ DIF Well Known DID Configuration, v0.2.0
 ORCID provides persistent digital identifiers for researchers and authors.
 
 ### Implementation (`identity/orcid.rs`)
-- Binds an ORCID iD to a CPOP author identity
+- Binds an ORCID iD to a CPoE author identity
 - ORCID can be included in evidence packets and VC credential subjects
 - Validates ORCID format (0000-0000-0000-000X)
 
@@ -388,10 +388,10 @@ JPEG Trust defines Trust Profiles and Trust Reports for assessing media
 trustworthiness. A Trust Report aggregates trust indicators from multiple sources.
 
 ### Implementation (`war/profiles/jpeg_trust.rs`)
-- `JpegTrustProfile` maps CPOP attestation to a JPEG Trust profile
+- `JpegTrustProfile` maps CPoE attestation to a JPEG Trust profile
 - Three trust indicators: process_evidence, identity_binding, temporal_proof
 - Confidence levels derived from attestation strength
-- Profile ID: `cpop-pop-attestation-v1`
+- Profile ID: `cpoe-pop-attestation-v1`
 
 ### Spec reference
 ISO/IEC 21617 (JPEG Trust), Parts 1-4
@@ -419,7 +419,7 @@ attestation verification.
 ### Alignment
 - EAR token carries claims compatible with CoRIM reference value structure
 - AR4SI trust vector components map to CoRIM measurement categories
-- CBOR wire format shared between CPOP evidence and CoRIM manifests
+- CBOR wire format shared between CPoE evidence and CoRIM manifests
 
 ### Gap
 - No explicit CoRIM manifest generation or parsing

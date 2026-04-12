@@ -1,6 +1,6 @@
-# Welcome to the CPOP Wiki
+# Welcome to the CPoE Wiki
 
-**CPOP** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. It creates tamper-evident cryptographic records of your creative process, proving that you created a document over time through real effort.
+**CPoE** is a unified protocol suite for high-integrity authorship witnessing based on the **Proof-of-Process (PoP)** protocol. It creates tamper-evident cryptographic records of your creative process, proving that you created a document over time through real effort.
 
 ---
 
@@ -13,21 +13,21 @@
 
 | Engine | Protocol | Jitter |
 |:---:|:---:|:---:|
-| <img src="https://raw.githubusercontent.com/writerslogic/cpop/main/crates/cpop_engine/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/cpop/main/crates/cpop_protocol/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/cpop/main/crates/cpop_jitter/assets/logo.png" width="200"> |
-| **[[cpop_engine]]** | **[[cpop_protocol]]** | **[[cpop_jitter]]** |
+| <img src="https://raw.githubusercontent.com/writerslogic/cpoe/main/crates/cpoe_engine/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/cpoe/main/crates/cpoe_protocol/assets/logo.png" width="200"> | <img src="https://raw.githubusercontent.com/writerslogic/cpoe/main/crates/cpoe_jitter/assets/logo.png" width="200"> |
+| **[[cpoe_engine]]** | **[[cpoe_protocol]]** | **[[cpoe_jitter]]** |
 
 ## 🚀 Getting Started
 
-If you're new to CPOP, start here:
+If you're new to CPoE, start here:
 
 - **[[Getting Started]]**: Installation and your first cryptographic checkpoint.
 - **[[GUI Guide]]**: Using the native macOS and Windows applications.
-- **[[CLI Reference]]**: A complete guide to the `cpop` command-line tool.
-- **[[Vendor Integration Guide]]**: How to build CPOP into your own app.
+- **[[CLI Reference]]**: A complete guide to the `cpoe` command-line tool.
+- **[[Vendor Integration Guide]]**: How to build CPoE into your own app.
 - **[[Evidence Interpretation Guide]]**: How to identify tampering and verify reports.
 - **[[Philosophy of Authorship]]**: Why we prove human creativity.
 - **[[Adversarial AI]]**: How we defeat synthetic history forgery.
-- **[[Configuration]]**: Customizing CPOP to fit your workflow.
+- **[[Configuration]]**: Customizing CPoE to fit your workflow.
 
 ## 📘 Documentation
 
@@ -41,7 +41,7 @@ If you're new to CPOP, start here:
 For developers and researchers interested in the underlying protocol:
 
 - **[[Technical Specifications Index]]**
-- **[[Evidence Format]]**: Structure of the `.cpop` evidence packets.
+- **[[Evidence Format]]**: Structure of the `.cpoe` evidence packets.
 - **[[Process Declaration]]**: How creative intent is cryptographically declared.
 - **[[Ratchet Key Hierarchy]]**: Our forward-secure key management system.
 - **[[Behavioral Metrics]]**: How we use keystroke dynamics for attestation.
@@ -49,10 +49,10 @@ For developers and researchers interested in the underlying protocol:
 
 ## 🤝 Community & Support
 
-- **[GitHub Issues](https://github.com/writerslogic/cpop/issues)**: Report bugs or request features.
-- **[Discussions](https://github.com/writerslogic/cpop/discussions)**: Ask questions and share your experiences.
+- **[GitHub Issues](https://github.com/writerslogic/cpoe/issues)**: Report bugs or request features.
+- **[Discussions](https://github.com/writerslogic/cpoe/discussions)**: Ask questions and share your experiences.
 - **[Official Website](https://writerslogic.com)**: Learn more about the project mission.
 
 ---
 
-*Licensed under the [Apache License, Version 2.0](https://github.com/writerslogic/cpop/blob/main/LICENSE).*
+*Licensed under the [Apache License, Version 2.0](https://github.com/writerslogic/cpoe/blob/main/LICENSE).*

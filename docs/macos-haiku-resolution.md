@@ -18,7 +18,7 @@
 #### Prompt HK-1A-1: H-021 + H-039 + M-033 -- Force-unwrap removals
 
 **Files to fix**:
-- `crates/witnessd/src/verify/verdict.rs` -- NOT a Swift file, skip
+- `crates/cpoe/src/verify/verdict.rs` -- NOT a Swift file, skip
 - `DeviceAttestationService.swift:400` -- H-021: `lastAttestedAt` force-unwrap
 - `BrowserExtensionService.swift:412` -- H-039: `constantTimeEqual` result force-unwrap
 - `ExportFormView.swift:117` -- M-033: `destURL.path` force-unwrap
@@ -72,10 +72,10 @@ Fix the top 5-10 instances in each file.
 #### Prompt HK-2A-1: M-021 + M-039 + M-075 + M-076 -- Weak self in closures
 
 **Files to fix**:
-- `CPOPService+Polling.swift:101` -- M-021: closure captures session
+- `CPoEService+Polling.swift:101` -- M-021: closure captures session
 - `DashboardView.swift:1340` -- M-039: Task sleep closure captures self
 - `NotificationManager.swift:235` -- M-075: groupFlushTask outlives manager
-- `CPOPService+Actions.swift:224` -- M-076: Cloud backup Task races with dealloc
+- `CPoEService+Actions.swift:224` -- M-076: Cloud backup Task races with dealloc
 
 **Task**: For each file:
 1. Find the closure/Task that captures `self` implicitly
@@ -112,9 +112,9 @@ Task { [weak self] in
 **Files to fix**:
 - `DataDirectoryMonitor.swift:185` -- M-079: MainActor.run after dealloc
 - `NotificationManager.swift:254` -- M-080: Init task continues after deinit
-- `CPOPService+Polling.swift:149` -- M-081: pulseResetTask not cancelled
-- `CPOPService+Polling.swift:161` -- M-082: integrityCheckTask not tracked
-- `CPOPService+Polling.swift:125` -- M-098: statusTimer not invalidated on deinit
+- `CPoEService+Polling.swift:149` -- M-081: pulseResetTask not cancelled
+- `CPoEService+Polling.swift:161` -- M-082: integrityCheckTask not tracked
+- `CPoEService+Polling.swift:125` -- M-098: statusTimer not invalidated on deinit
 
 **Task**: For each service class:
 1. Add property to store Task: `var backgroundTask: Task<Void, Never>?`
@@ -210,7 +210,7 @@ if let error = error {
 
 **Files to fix**:
 - `SettingsUtilities.swift:115` -- H-041: `flock(LOCK_UN)` failure unchecked
-- `CPOPService.swift:215` -- M-099: FileHandle not closed on hash timeout
+- `CPoEService.swift:215` -- M-099: FileHandle not closed on hash timeout
 - `SettingsContent.swift:381` -- M-050: `NSWorkspace.open()` return unchecked
 - `ReceiptValidation.swift:630` -- M-070: Invalid RFC3339 date silently accepted
 
@@ -460,8 +460,8 @@ if let error = error {
 #### Prompt HK-8A-1: M-098 + M-099 + H-027 + H-028 -- Resource cleanup
 
 **Files to fix**:
-- `CPOPService+Polling.swift:125` -- M-098: statusTimer not invalidated on deinit
-- `CPOPService.swift:215` -- M-099: FileHandle not closed on hash timeout
+- `CPoEService+Polling.swift:125` -- M-098: statusTimer not invalidated on deinit
+- `CPoEService.swift:215` -- M-099: FileHandle not closed on hash timeout
 - `SecurityScopedBookmark.swift:127` -- H-027: startAccessingSecurityScopedResource not paired
 - `EndpointSecurityClient.swift:176` -- H-028: `es_delete_client` without unsubscribe
 

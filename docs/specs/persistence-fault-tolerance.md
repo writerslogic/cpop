@@ -6,7 +6,7 @@
 
 ## Overview
 
-This specification defines how `cpop` transitions ephemeral keystroke/timing data from volatile buffers to permanent cryptographic records. The critical requirements are:
+This specification defines how `cpoe` transitions ephemeral keystroke/timing data from volatile buffers to permanent cryptographic records. The critical requirements are:
 
 1. **Zero data loss** on expected shutdown (user closes app, system restart)
 2. **Minimal data loss** on unexpected failure (power loss, crash)
@@ -24,7 +24,7 @@ Most evidence systems fail at the boundary between capture and persistence:
 - Systems that record everything create privacy nightmares and storage bloat
 - Systems that only record final saves produce weak evidence ("could have been generated")
 
-`cpop` captures the *process* of creation through high-frequency sampling, then commits **signed hashes and VDF proofs** (not raw content) to permanent storage. This provides strong evidence while respecting privacy and storage constraints.
+`cpoe` captures the *process* of creation through high-frequency sampling, then commits **signed hashes and VDF proofs** (not raw content) to permanent storage. This provides strong evidence while respecting privacy and storage constraints.
 
 ### Evidence Strength vs. Friction
 
@@ -78,7 +78,7 @@ Most evidence systems fail at the boundary between capture and persistence:
 
 ## The Labyrinth: Machine-State Entanglement
 
-To prevent an adversary from "cherry-picking" which evidence to keep, CPOP implements **The Labyrinth**—a machine-wide Merkle Mountain Range (MMR).
+To prevent an adversary from "cherry-picking" which evidence to keep, CPoE implements **The Labyrinth**—a machine-wide Merkle Mountain Range (MMR).
 
 ### Global Hash Chain
 

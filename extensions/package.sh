@@ -1,8 +1,8 @@
 #!/bin/bash
-# Package CPOP browser extensions for store submission
+# Package CPoE browser extensions for store submission
 #
 # Builds three zip packages from the shared source in
-# apps/cpop_cli/browser-extension/:
+# apps/cpoe_cli/browser-extension/:
 #   - extensions/dist/writerslogic-chrome.zip   (Chrome Web Store)
 #   - extensions/dist/writerslogic-firefox.zip  (Firefox Add-ons / AMO)
 #   - extensions/dist/writerslogic-edge.zip     (Edge Add-ons)
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${REPO_ROOT}/apps/cpop_cli/browser-extension"
+SRC="${REPO_ROOT}/apps/cpoe_cli/browser-extension"
 DIST="${REPO_ROOT}/extensions/dist"
 VERSION=""
 
@@ -57,15 +57,15 @@ package_browser() {
   copy_shared "${dir}"
   cp "${manifest_src}" "${dir}/manifest.json"
   patch_version "${dir}/manifest.json"
-  (cd "${dir}" && zip -r -q "${DIST}/cpop-${name}.zip" .)
-  echo "  -> cpop-${name}.zip"
+  (cd "${dir}" && zip -r -q "${DIST}/cpoe-${name}.zip" .)
+  echo "  -> cpoe-${name}.zip"
 }
 
 # Clean previous builds
 rm -rf "${DIST}"
 mkdir -p "${DIST}"
 
-echo "=== Packaging CPOP Browser Extensions ==="
+echo "=== Packaging CPoE Browser Extensions ==="
 echo "Source: ${SRC}"
 echo "Output: ${DIST}"
 if [ -n "${VERSION}" ]; then

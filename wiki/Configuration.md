@@ -1,8 +1,8 @@
 # Configuration
 
-CPOP can be customized via a JSON configuration file. By default, this file is located at:
+CPoE can be customized via a JSON configuration file. By default, this file is located at:
 - **Linux/macOS (CLI)**: `~/.writersproof/config.json`
-- **macOS App**: `~/Library/Application Support/CPOP/config.json`
+- **macOS App**: `~/Library/Application Support/CPoE/config.json`
 
 ## Configuration Structure
 
@@ -45,7 +45,7 @@ CPOP can be customized via a JSON configuration file. By default, this file is l
 - `iterations_per_second`: Calibrated speed of your CPU.
 - `min_iterations`: Minimum delay for any single checkpoint.
 - `max_iterations`: Maximum allowable delay (safety limit).
-- `calibrated`: Whether `cpop calibrate` has been run.
+- `calibrated`: Whether `cpoe calibrate` has been run.
 
 ### [[Glossary#Sentinel|Sentinel (Background Daemon)]]
 
@@ -61,9 +61,9 @@ You can override certain settings using environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CPOP_DIR` | Base directory for CPOP data | `~/.writerslogic` |
-| `CPOP_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
-| `CPOP_CONFIG` | Path to a specific config file | `$CPOP_DIR/config.json` |
+| `CPoE_DIR` | Base directory for CPoE data | `~/.writerslogic` |
+| `CPoE_LOG_LEVEL` | Logging verbosity (debug, info, warn, error) | `info` |
+| `CPoE_CONFIG` | Path to a specific config file | `$CPoE_DIR/config.json` |
 
 ---
 
@@ -72,7 +72,7 @@ You can override certain settings using environment variables:
 Most CLI commands accept a `--config` flag to use an alternative configuration directory:
 
 ```bash
-CPOP --config /path/to/alt/dir commit myfile.txt
+CPoE --config /path/to/alt/dir commit myfile.txt
 ```
 
 ---

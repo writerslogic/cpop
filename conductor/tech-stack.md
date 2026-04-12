@@ -9,8 +9,8 @@
 - **Platform APIs:** CGEventTap (macOS), TPM 2.0 / Secure Enclave (Platform-specific), UniFFI (for FFI bindings)
 
 ## Protocol & Timing (Library)
-- **cpop-protocol:** Native + WASM32 support (for web/browser verification)
-- **cpop-jitter:** Native + no_std support (for embedded/timing entropy)
+- **cpoe-protocol:** Native + WASM32 support (for web/browser verification)
+- **cpoe-jitter:** Native + no_std support (for embedded/timing entropy)
 
 ## Atlassian/Web Integrations
 - **Framework:** Atlassian Forge (TypeScript)

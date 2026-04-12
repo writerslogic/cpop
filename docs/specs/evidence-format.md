@@ -7,7 +7,7 @@
 
 ## Overview
 
-A CPOP **Evidence Packet** (`.cpop`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
+A CPoE **Evidence Packet** (`.cpoe`) is a self-contained, portable proof of documented authorship. It bundles cryptographic proofs, process declarations, and sequential attestations into a single format compliant with the IETF RATS (Remote ATtestation ProcedureS) framework and the **Proof-of-Process (PoP)** protocol.
 
 This specification aligns with the CDDL schema defined in `draft-condrey-rats-pop`.
 
