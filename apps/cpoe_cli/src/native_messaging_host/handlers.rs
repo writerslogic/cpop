@@ -78,7 +78,6 @@ pub(crate) fn handle_start_session(document_url: String, document_title: String)
     // Write to a temp file with restricted permissions first, then rename
     // to avoid a TOCTOU window where the file is world-readable.
     {
-        use std::io::Write;
         let mut tmp = match tempfile::NamedTempFile::new_in(&session_dir) {
             Ok(t) => t,
             Err(e) => {
