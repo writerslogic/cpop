@@ -658,7 +658,7 @@ fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 
-#[cfg(unix)]
+#[cfg(all(debug_assertions, unix))]
 fn open_nofollow_append(path: &str) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
@@ -668,7 +668,7 @@ fn open_nofollow_append(path: &str) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-#[cfg(not(unix))]
+#[cfg(all(debug_assertions, not(unix)))]
 fn open_nofollow_append(path: &str) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .create(true)
