@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cpop-jitter",
+    "crates/cpoe-jitter",
     "crates/authorproof-protocol",
-    "crates/witnessd",
-    "apps/cpop_cli",
+    "crates/cpoe",
+    "apps/cpoe_cli",
 ]
 
 [workspace.package]
@@ -12,7 +12,7 @@ version = "1.0.5"
 authors = ["David Condrey <david@writerslogic.com>"]
 edition = "2021"
 license = "AGPL-3.0-only"
-repository = "https://github.com/writerslogic/cpop"
+repository = "https://github.com/writerslogic/cpoe"
 
 [profile.release]
 opt-level = 3

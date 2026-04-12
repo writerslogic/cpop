@@ -189,7 +189,7 @@ impl TrustworthinessVector {
 /// Verifier identity per EAR.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifierId {
-    /// Build identifier string (e.g. "cpop-engine/0.3.6")
+    /// Build identifier string (e.g. "cpoe-engine/0.3.6")
     pub build: String,
     /// Developer/organization name
     pub developer: String,
@@ -198,7 +198,7 @@ pub struct VerifierId {
 impl Default for VerifierId {
     fn default() -> Self {
         Self {
-            build: format!("cpop-engine/{}", env!("CARGO_PKG_VERSION")),
+            build: format!("cpoe-engine/{}", env!("CARGO_PKG_VERSION")),
             developer: "writerslogic".to_string(),
         }
     }

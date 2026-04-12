@@ -15,7 +15,7 @@ impl Block {
         // Sanitize header values: strip newlines and control chars
         let safe_author: String = self.author.chars().filter(|c| !c.is_control()).collect();
 
-        output.push_str("-----BEGIN CPOP WAR-----\n");
+        output.push_str("-----BEGIN CPoE WAR-----\n");
         output.push_str(&format!("Version: {}\n", self.version.as_str()));
         output.push_str(&format!("Author: {}\n", safe_author));
         output.push_str(&format!("Document-ID: {}\n", hex::encode(self.document_id)));
@@ -40,7 +40,7 @@ impl Block {
         }
 
         output.push_str("-----END SEAL-----\n");
-        output.push_str("-----END CPOP WAR-----\n");
+        output.push_str("-----END CPoE WAR-----\n");
 
         output
     }
@@ -49,11 +49,11 @@ impl Block {
     pub fn decode_ascii(text: &str) -> Result<Self, String> {
         let lines: Vec<&str> = text.lines().collect();
 
-        // Accept CPOP WAR (current), POP WAR (previous), and legacy format
+        // Accept CPoE WAR (current), POP WAR (previous), and legacy format
         let start = lines
             .iter()
             .position(|l| {
-                l.contains("BEGIN CPOP WAR")
+                l.contains("BEGIN CPoE WAR")
                     || l.contains("BEGIN POP WAR")
                     || l.contains("BEGIN WRITTEN AUTHORSHIP REPORT")
             })
@@ -61,7 +61,7 @@ impl Block {
         let end = lines
             .iter()
             .position(|l| {
-                l.contains("END CPOP WAR")
+                l.contains("END CPoE WAR")
                     || l.contains("END POP WAR")
                     || l.contains("END WRITTEN AUTHORSHIP REPORT")
             })

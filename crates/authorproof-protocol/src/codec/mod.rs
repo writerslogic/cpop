@@ -11,10 +11,10 @@ pub mod json;
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
-/// CBOR semantic tag for Compact Proof-of-Process (CPOP) evidence packet.
-/// Tag value: 1129336656 (0x43504F50 = "CPOP" in ASCII)
+/// CBOR semantic tag for Compact Proof-of-Process (CPoE) evidence packet.
+/// Tag value: 1129336645 (0x43504F45 = "CPoE" in ASCII)
 /// Per draft-condrey-rats-pop CDDL and IANA CBOR tag registry.
-pub const CBOR_TAG_CPOP: u64 = 1129336656;
+pub const CBOR_TAG_CPOE: u64 = 1129336645;
 
 /// CBOR semantic tag for Compact Writers Attestation Result (CWAR).
 /// Tag value: 1129791826 (0x43574152 = "CWAR" in ASCII)
@@ -44,7 +44,7 @@ impl Format {
     /// Return the MIME type for this format.
     pub fn mime_type(&self) -> &'static str {
         match self {
-            Format::Cbor => "application/cpop+cbor",
+            Format::Cbor => "application/cpoe+cbor",
             Format::CborWar => "application/cwar+cbor",
             Format::Json => "application/json",
         }
@@ -53,7 +53,7 @@ impl Format {
     /// Return the file extension for this format.
     pub fn extension(&self) -> &'static str {
         match self {
-            Format::Cbor => "cpop",
+            Format::Cbor => "cpoe",
             Format::CborWar => "cwar",
             Format::Json => "json",
         }
@@ -159,18 +159,18 @@ pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R, format: Format) -> R
 
 // Backward-compatible convenience functions from v0.1
 /// Alias for engine-era constant names.
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_CPOP;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_CPOE;
 /// Alias for engine-era constant names.
 pub const CBOR_TAG_ATTESTATION_RESULT: u64 = CBOR_TAG_CWAR;
 
 /// Serialize an EvidencePacket to CBOR with the registered tag.
 pub fn encode_evidence(packet: &crate::rfc::EvidencePacket) -> crate::error::Result<Vec<u8>> {
-    cbor::encode_cpop(packet).map_err(|e| crate::error::Error::Serialization(e.to_string()))
+    cbor::encode_cpoe(packet).map_err(|e| crate::error::Error::Serialization(e.to_string()))
 }
 
 /// Deserialize CBOR-tagged bytes into an EvidencePacket.
 pub fn decode_evidence(bytes: &[u8]) -> crate::error::Result<crate::rfc::EvidencePacket> {
-    cbor::decode_cpop(bytes).map_err(|e| crate::error::Error::Serialization(e.to_string()))
+    cbor::decode_cpoe(bytes).map_err(|e| crate::error::Error::Serialization(e.to_string()))
 }
 
 /// Serialize an AttestationResult to CBOR with the registered tag.
@@ -254,14 +254,14 @@ mod tests {
 
     #[test]
     fn test_format_mime_type() {
-        assert_eq!(Format::Cbor.mime_type(), "application/cpop+cbor");
+        assert_eq!(Format::Cbor.mime_type(), "application/cpoe+cbor");
         assert_eq!(Format::CborWar.mime_type(), "application/cwar+cbor");
         assert_eq!(Format::Json.mime_type(), "application/json");
     }
 
     #[test]
     fn test_format_extension() {
-        assert_eq!(Format::Cbor.extension(), "cpop");
+        assert_eq!(Format::Cbor.extension(), "cpoe");
         assert_eq!(Format::CborWar.extension(), "cwar");
         assert_eq!(Format::Json.extension(), "json");
     }

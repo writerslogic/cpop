@@ -71,12 +71,12 @@ fn build_test_manifest() -> C2paManifest {
 }
 
 #[test]
-fn cpop_assertion_from_evidence() {
+fn cpoe_assertion_from_evidence() {
     let packet = test_evidence_packet();
     let evidence_bytes = b"fake evidence cbor";
     let assertion = ProcessAssertion::from_evidence(&packet, evidence_bytes);
 
-    assert_eq!(assertion.label, ASSERTION_LABEL_CPOP);
+    assert_eq!(assertion.label, ASSERTION_LABEL_CPOE);
     assert_eq!(assertion.version, 1);
     assert_eq!(assertion.jitter_seals.len(), 3);
     assert!(!assertion.evidence_hash.is_empty());

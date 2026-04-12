@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use cpop_protocol::codec::{decode_evidence, encode_evidence};
-use cpop_protocol::rfc::{Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
+use authorproof_protocol::codec::{decode_evidence, encode_evidence};
+use authorproof_protocol::rfc::{
+    Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue,
+};
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 

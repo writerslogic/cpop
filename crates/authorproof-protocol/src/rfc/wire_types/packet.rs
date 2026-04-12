@@ -17,7 +17,7 @@ use crate::codec::{self, CodecError};
 
 /// Wire-format evidence packet per CDDL `evidence-packet`.
 ///
-/// Wrapped with CBOR tag 1129336656 (CPOP) for transmission.
+/// Wrapped with CBOR tag 1129336645 (CPoE) for transmission.
 ///
 /// ```cddl
 /// evidence-packet = {
@@ -114,7 +114,7 @@ const MAX_PRESENCE_CHALLENGES: usize = 100;
 use super::MAX_STRING_LEN;
 
 impl EvidencePacketWire {
-    /// Encode to CBOR with the CPOP semantic tag.
+    /// Encode to CBOR with the CPoE semantic tag.
     pub fn encode_cbor(&self) -> Result<Vec<u8>, CodecError> {
         codec::cbor::encode_tagged(self, CBOR_TAG_EVIDENCE_PACKET)
     }

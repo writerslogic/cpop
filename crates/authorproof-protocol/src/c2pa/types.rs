@@ -4,7 +4,7 @@ use crate::rfc::EvidencePacket;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::ASSERTION_LABEL_CPOP;
+use super::ASSERTION_LABEL_CPOE;
 
 /// C2PA process assertion carrying CPoP evidence metadata.
 ///
@@ -43,7 +43,7 @@ impl ProcessAssertion {
             .collect();
 
         Self {
-            label: ASSERTION_LABEL_CPOP.to_string(),
+            label: ASSERTION_LABEL_CPOE.to_string(),
             version: packet.version,
             evidence_id: hex::encode(&packet.packet_id),
             evidence_hash: hex::encode(hash),

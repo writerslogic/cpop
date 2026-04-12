@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! End-to-end and edge case tests for cpop-protocol.
+//! End-to-end and edge case tests for cpoe-protocol.
 
 use authorproof_protocol::c2pa::{
     encode_jumbf, validate_manifest, verify_jumbf_structure, C2paManifestBuilder,
 };
 use authorproof_protocol::codec::cbor::{
-    decode_cpop, decode_cwar, encode_compact_ref, encode_cpop, encode_cwar, extract_tag, has_tag,
+    decode_cpoe, decode_cwar, encode_compact_ref, encode_cpoe, encode_cwar, extract_tag, has_tag,
 };
 use authorproof_protocol::codec::{
-    decode_evidence, encode_evidence, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CWAR,
+    decode_evidence, encode_evidence, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOE, CBOR_TAG_CWAR,
 };
 use authorproof_protocol::compact_ref::{CompactEvidenceRef, CompactRefError, CompactSummary};
 use authorproof_protocol::crypto::hash_sha256;
@@ -218,7 +218,7 @@ fn test_war_block_encode_decode() {
         author: "Test Author".to_string(),
         document_id: [0xAA; 32],
         timestamp: chrono::Utc::now(),
-        statement: "I authored this document using CPOP witnessing.".to_string(),
+        statement: "I authored this document using CPoE witnessing.".to_string(),
         seal,
         signed: true,
         verifier_nonce: Some([0xBB; 32]),
@@ -226,8 +226,8 @@ fn test_war_block_encode_decode() {
     };
 
     let ascii = block.encode_ascii();
-    assert!(ascii.contains("BEGIN CPOP WAR"));
-    assert!(ascii.contains("END CPOP WAR"));
+    assert!(ascii.contains("BEGIN CPoE WAR"));
+    assert!(ascii.contains("END CPoE WAR"));
     assert!(ascii.contains("WAR/1.1"));
     assert!(ascii.contains("Test Author"));
 
@@ -282,7 +282,7 @@ fn test_war_block_author_newline_sanitization() {
 
 #[test]
 fn test_war_block_decode_missing_required_header() {
-    let malformed = "-----BEGIN CPOP WAR-----\nVersion: 1.0\n\nStatement body\n\n-----BEGIN SEAL-----\n-----END SEAL-----\n-----END CPOP WAR-----\n";
+    let malformed = "-----BEGIN CPoE WAR-----\nVersion: 1.0\n\nStatement body\n\n-----BEGIN SEAL-----\n-----END SEAL-----\n-----END CPoE WAR-----\n";
     let result = Block::decode_ascii(malformed);
     assert!(
         result.is_err(),
@@ -348,19 +348,19 @@ fn test_compact_ref_generation() {
 fn test_codec_cbor_tag_preservation() {
     let packet = test_evidence_packet();
 
-    // CPOP tag
-    let cpop_encoded = encode_cpop(&packet).unwrap();
-    assert!(has_tag(&cpop_encoded, CBOR_TAG_CPOP));
-    assert!(!has_tag(&cpop_encoded, CBOR_TAG_CWAR));
-    assert_eq!(extract_tag(&cpop_encoded), Some(CBOR_TAG_CPOP));
-    let cpop_decoded: EvidencePacket = decode_cpop(&cpop_encoded).unwrap();
-    assert_eq!(cpop_decoded.version, 1);
-    assert_eq!(cpop_decoded.checkpoints.len(), 2);
+    // CPoE tag
+    let cpoe_encoded = encode_cpoe(&packet).unwrap();
+    assert!(has_tag(&cpoe_encoded, CBOR_TAG_CPOE));
+    assert!(!has_tag(&cpoe_encoded, CBOR_TAG_CWAR));
+    assert_eq!(extract_tag(&cpoe_encoded), Some(CBOR_TAG_CPOE));
+    let cpoe_decoded: EvidencePacket = decode_cpoe(&cpoe_encoded).unwrap();
+    assert_eq!(cpoe_decoded.version, 1);
+    assert_eq!(cpoe_decoded.checkpoints.len(), 2);
 
     // CWAR tag
     let cwar_encoded = encode_cwar(&packet).unwrap();
     assert!(has_tag(&cwar_encoded, CBOR_TAG_CWAR));
-    assert!(!has_tag(&cwar_encoded, CBOR_TAG_CPOP));
+    assert!(!has_tag(&cwar_encoded, CBOR_TAG_CPOE));
     assert_eq!(extract_tag(&cwar_encoded), Some(CBOR_TAG_CWAR));
     let cwar_decoded: EvidencePacket = decode_cwar(&cwar_encoded).unwrap();
     assert_eq!(cwar_decoded.version, packet.version);
@@ -371,7 +371,7 @@ fn test_codec_cbor_tag_preservation() {
     assert_eq!(extract_tag(&compact_encoded), Some(CBOR_TAG_COMPACT_REF));
 
     // Cross-tag decode should fail
-    let wrong_tag_result: std::result::Result<EvidencePacket, _> = decode_cwar(&cpop_encoded);
+    let wrong_tag_result: std::result::Result<EvidencePacket, _> = decode_cwar(&cpoe_encoded);
     assert!(wrong_tag_result.is_err());
 }
 

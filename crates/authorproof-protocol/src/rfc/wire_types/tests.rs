@@ -211,7 +211,7 @@ fn test_evidence_packet_cbor_roundtrip() {
 
     assert!(
         codec::cbor::has_tag(&encoded, CBOR_TAG_EVIDENCE_PACKET),
-        "encoded packet should have CPOP tag"
+        "encoded packet should have CPoE tag"
     );
 
     let decoded = EvidencePacketWire::decode_cbor(&encoded).expect("decode should succeed");
@@ -261,8 +261,8 @@ fn test_attestation_result_cbor_roundtrip() {
 #[test]
 fn test_correct_cbor_tag_values() {
     assert_eq!(
-        CBOR_TAG_EVIDENCE_PACKET, 1129336656,
-        "Evidence packet tag should be 1129336656 (IANA CPOP)"
+        CBOR_TAG_EVIDENCE_PACKET, 1129336645,
+        "Evidence packet tag should be 1129336645 (IANA CPoE)"
     );
     assert_eq!(
         CBOR_TAG_ATTESTATION_RESULT, 1129791826,

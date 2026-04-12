@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::rfc::{
     AttestationTier, Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue,
 };
-use cpop_jitter::{EntropySource, PhysJitter};
+use cpoe_jitter::{EntropySource, PhysJitter};
 use ed25519_dalek::VerifyingKey;
 use rand::rngs::OsRng;
 use rand::RngCore;

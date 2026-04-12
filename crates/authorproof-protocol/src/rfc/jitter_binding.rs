@@ -143,7 +143,7 @@ impl SourceType {
             Self::Touchscreen => "touchscreen",
             Self::Stylus => "stylus",
             Self::Accelerometer => "accelerometer",
-            Self::CpopJitter => "cpop_jitter",
+            Self::CpopJitter => "cpoe_jitter",
             Self::Other(s) => s,
         }
     }
@@ -163,7 +163,7 @@ impl From<&str> for SourceType {
             "touchscreen" | "touch" => Self::Touchscreen,
             "stylus" | "pen" => Self::Stylus,
             "accelerometer" | "accel" | "imu" => Self::Accelerometer,
-            "cpop_jitter" | "cpop-jitter" => Self::CpopJitter,
+            "cpoe_jitter" | "cpoe-jitter" => Self::CpopJitter,
             _ => Self::Other(s.to_string()),
         }
     }

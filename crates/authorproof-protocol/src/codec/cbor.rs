@@ -10,7 +10,7 @@
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
-use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CWAR};
+use super::{CodecError, Result, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOE, CBOR_TAG_CWAR};
 
 /// Maximum CBOR payload size (16 MiB). Rejects inputs larger than this
 /// before deserialization to prevent OOM from malicious payloads.
@@ -267,9 +267,9 @@ pub fn decode_from<T: DeserializeOwned, R: Read>(reader: R) -> Result<T> {
     ciborium::from_reader(buf.as_slice()).map_err(|e| CodecError::CborDecode(e.to_string()))
 }
 
-/// Encode with CPOP semantic tag (evidence packet).
-pub fn encode_cpop<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    encode_tagged(value, CBOR_TAG_CPOP)
+/// Encode with CPoE semantic tag (evidence packet).
+pub fn encode_cpoe<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    encode_tagged(value, CBOR_TAG_CPOE)
 }
 
 /// Encode with CWAR semantic tag (attestation result).
@@ -356,7 +356,7 @@ pub fn decode_tagged<T: DeserializeOwned>(data: &[u8], expected_tag: u64) -> Res
 /// This is a targeted custom parser rather than using ciborium because ciborium
 /// does not expose a public API to inspect the leading tag before full
 /// deserialization. We need the tag number upfront to validate it against the
-/// expected CPOP/CWAR semantic tag before passing the payload to ciborium.
+/// expected CPoE/CWAR semantic tag before passing the payload to ciborium.
 fn parse_cbor_tag_header(data: &[u8]) -> Option<(u64, usize)> {
     let first = *data.first()?;
     let major = first >> 5;
@@ -386,9 +386,9 @@ fn parse_cbor_tag_header(data: &[u8]) -> Option<(u64, usize)> {
     }
 }
 
-/// Decode a CPOP-tagged evidence packet.
-pub fn decode_cpop<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
-    decode_tagged(data, CBOR_TAG_CPOP)
+/// Decode a CPoE-tagged evidence packet.
+pub fn decode_cpoe<T: DeserializeOwned>(data: &[u8]) -> Result<T> {
+    decode_tagged(data, CBOR_TAG_CPOE)
 }
 
 /// Decode a CWAR-tagged attestation result.
@@ -491,8 +491,8 @@ mod tests {
             data: vec![1, 2, 3, 4, 5],
         };
 
-        let encoded = encode_cpop(&original).unwrap();
-        let decoded: TestPacket = decode_cpop(&encoded).unwrap();
+        let encoded = encode_cpoe(&original).unwrap();
+        let decoded: TestPacket = decode_cpoe(&encoded).unwrap();
 
         assert_eq!(original, decoded);
     }
@@ -504,14 +504,14 @@ mod tests {
             data: vec![],
         };
 
-        let cpop_encoded = encode_cpop(&packet).unwrap();
+        let cpoe_encoded = encode_cpoe(&packet).unwrap();
         let cwar_encoded = encode_cwar(&packet).unwrap();
 
-        assert!(has_tag(&cpop_encoded, CBOR_TAG_CPOP));
-        assert!(!has_tag(&cpop_encoded, CBOR_TAG_CWAR));
+        assert!(has_tag(&cpoe_encoded, CBOR_TAG_CPOE));
+        assert!(!has_tag(&cpoe_encoded, CBOR_TAG_CWAR));
 
         assert!(has_tag(&cwar_encoded, CBOR_TAG_CWAR));
-        assert!(!has_tag(&cwar_encoded, CBOR_TAG_CPOP));
+        assert!(!has_tag(&cwar_encoded, CBOR_TAG_CPOE));
     }
 
     #[test]
@@ -521,8 +521,8 @@ mod tests {
             data: vec![],
         };
 
-        let encoded = encode_cpop(&packet).unwrap();
-        assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_CPOP));
+        let encoded = encode_cpoe(&packet).unwrap();
+        assert_eq!(extract_tag(&encoded), Some(CBOR_TAG_CPOE));
 
         let untagged = encode(&packet).unwrap();
         assert_eq!(extract_tag(&untagged), None);
@@ -535,14 +535,14 @@ mod tests {
             data: vec![],
         };
 
-        let encoded = encode_cpop(&packet).unwrap();
+        let encoded = encode_cpoe(&packet).unwrap();
         let result: Result<TestPacket> = decode_cwar(&encoded);
 
         assert!(matches!(
             result,
             Err(CodecError::InvalidTag {
                 expected: CBOR_TAG_CWAR,
-                actual: CBOR_TAG_CPOP
+                actual: CBOR_TAG_CPOE
             })
         ));
     }
@@ -554,15 +554,15 @@ mod tests {
             data: vec![10, 20],
         };
         let encoded = encode(&packet).unwrap();
-        assert!(!has_tag(&encoded, CBOR_TAG_CPOP));
+        assert!(!has_tag(&encoded, CBOR_TAG_CPOE));
         assert!(!has_tag(&encoded, CBOR_TAG_CWAR));
     }
 
     #[test]
     fn test_has_tag_on_invalid_cbor() {
         // Garbage bytes that aren't valid CBOR
-        assert!(!has_tag(&[0xFF, 0xFE, 0xFD], CBOR_TAG_CPOP));
-        assert!(!has_tag(&[], CBOR_TAG_CPOP));
+        assert!(!has_tag(&[0xFF, 0xFE, 0xFD], CBOR_TAG_CPOE));
+        assert!(!has_tag(&[], CBOR_TAG_CPOE));
     }
 
     #[test]
@@ -578,7 +578,7 @@ mod tests {
             data: vec![],
         };
         let encoded = encode(&packet).unwrap();
-        let result: Result<TestPacket> = decode_tagged(&encoded, CBOR_TAG_CPOP);
+        let result: Result<TestPacket> = decode_tagged(&encoded, CBOR_TAG_CPOE);
         assert!(matches!(result, Err(CodecError::MissingTag)));
     }
 
@@ -668,9 +668,9 @@ mod tests {
         inner.push(0x00);
         // Build a directly nested tagged payload with arrays exceeding depth.
         let mut nested_payload = Vec::new();
-        write_cbor_tag_header(&mut nested_payload, CBOR_TAG_CPOP);
+        write_cbor_tag_header(&mut nested_payload, CBOR_TAG_CPOE);
         nested_payload.extend_from_slice(&inner);
-        let result: Result<ciborium::Value> = decode_tagged(&nested_payload, CBOR_TAG_CPOP);
+        let result: Result<ciborium::Value> = decode_tagged(&nested_payload, CBOR_TAG_CPOE);
         assert!(
             matches!(result, Err(CodecError::Validation(ref msg)) if msg.contains("nesting depth")),
             "expected depth rejection for tagged decode, got: {result:?}"
@@ -680,11 +680,11 @@ mod tests {
     #[test]
     fn test_oversized_tagged_payload_rejected() {
         let mut oversized = Vec::with_capacity(MAX_CBOR_PAYLOAD + 10);
-        // Write a valid CPOP tag header followed by junk
+        // Write a valid CPoE tag header followed by junk
         oversized.push(0xDA); // major type 6, 4-byte tag
-        oversized.extend_from_slice(&(CBOR_TAG_CPOP as u32).to_be_bytes());
+        oversized.extend_from_slice(&(CBOR_TAG_CPOE as u32).to_be_bytes());
         oversized.resize(MAX_CBOR_PAYLOAD + 6, 0);
-        let result: Result<TestPacket> = decode_tagged(&oversized, CBOR_TAG_CPOP);
+        let result: Result<TestPacket> = decode_tagged(&oversized, CBOR_TAG_CPOE);
         assert!(matches!(result, Err(CodecError::Validation(_))));
     }
 }

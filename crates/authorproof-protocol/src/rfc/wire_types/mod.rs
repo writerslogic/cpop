@@ -12,7 +12,7 @@
 //!
 //! # CBOR Tags
 //!
-//! - Evidence Packet: `#6.1129336656` (IANA "CPOP")
+//! - Evidence Packet: `#6.1129336645` (IANA "CPoE")
 //! - Attestation Result: `#6.1129791826` (IANA "CWAR")
 //!
 //! # Module Organization
@@ -37,9 +37,9 @@ pub mod packet;
 #[cfg(test)]
 mod tests;
 
-use crate::codec::{CBOR_TAG_CPOP, CBOR_TAG_CWAR};
+use crate::codec::{CBOR_TAG_CPOE, CBOR_TAG_CWAR};
 
-pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_CPOP;
+pub const CBOR_TAG_EVIDENCE_PACKET: u64 = CBOR_TAG_CPOE;
 pub const CBOR_TAG_ATTESTATION_RESULT: u64 = CBOR_TAG_CWAR;
 
 /// Maximum length of any single string field in wire types.

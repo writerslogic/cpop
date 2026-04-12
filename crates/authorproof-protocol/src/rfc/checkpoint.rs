@@ -27,11 +27,11 @@ use super::serde_helpers::{hex_bytes, hex_bytes_32_opt, hex_bytes_vec};
 use super::vdf::VdfProofRfc;
 
 /// Domain separation tag for checkpoint hash computation.
-/// Note: the spelling "witnessd" (missing 'e') is the canonical DST
+/// Note: the spelling "cpoe" (missing 'e') is the canonical DST
 /// used since protocol v3; changing it would break hash compatibility.
 /// See `CHECKPOINT_HASH_DST_V4` for the corrected spelling to use in
 /// future protocol versions.
-const CHECKPOINT_HASH_DST: &[u8] = b"witnessd-checkpoint-v3";
+const CHECKPOINT_HASH_DST: &[u8] = b"cpoe-checkpoint-v3";
 
 /// Corrected DST for future protocol versions (v4+). NOT used in any
 /// hash computation today; kept here so the migration path is explicit.
@@ -303,7 +303,7 @@ mod tests {
     fn test_checkpoint_hash_dst_is_stable() {
         assert_eq!(
             super::CHECKPOINT_HASH_DST,
-            b"witnessd-checkpoint-v3",
+            b"cpoe-checkpoint-v3",
             "CHECKPOINT_HASH_DST must not change; see comment on the constant"
         );
     }

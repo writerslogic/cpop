@@ -41,7 +41,7 @@ confidence-threshold = 0.8
 # The engine is SSPL-1.0 OR LicenseRef-Commercial; protocol+jitter stay Apache-2.0
 [[licenses.exceptions]]
 allow = ["SSPL-1.0"]
-name = "witnessd"
+name = "cpoe"
 
 [bans]
 multiple-versions = "warn"

@@ -24,7 +24,7 @@ pub use types::{
 };
 pub use validation::validate_manifest;
 
-pub const ASSERTION_LABEL_CPOP: &str = "org.cpop.evidence";
+pub const ASSERTION_LABEL_CPOE: &str = "org.cpoe.evidence";
 pub const ASSERTION_LABEL_ACTIONS: &str = "c2pa.actions.v2";
 pub const ASSERTION_LABEL_HASH_DATA: &str = "c2pa.hash.data";
 pub const ASSERTION_LABEL_METADATA: &str = "c2pa.metadata";

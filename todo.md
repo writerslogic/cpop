@@ -36,7 +36,7 @@ Usage: `scripts/todo_runner.py --dry-run` (preview), `scripts/todo_runner.py` (d
 ### CRITICAL-002: HKDF expand failure silently leaves behavioral key unset
 
 - **Model:** Sonnet | **Scope:** errors
-- **File:** `crates/witnessd/src/sentinel/behavioral_key.rs:63-68`
+- **File:** `crates/cpoe/src/sentinel/behavioral_key.rs:63-68`
 - **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** fixed 2026-04-10 (HKDF-SHA256 expand of 32 bytes is provably infallible; replaced silent `.is_ok()` swallow with `.expect()` documenting the invariant)
 - **Priority:** 1/240 | **Estimated time:** 1.5h
 - **Description:** `add_entropy` method lines 63-68: `if hk.expand(...).is_ok()` discards errors. Failure leaves `active_key` as None. Sentinel keeps running but produces no signatures indefinitely with zero logging. Worst-case failure mode for a signing component.
@@ -60,7 +60,7 @@ pub fn add_entropy(&mut self, data: &[u8]) -> Result<(), Error> {
         if let Some(ref mk) = self.master_key {
             let hk = Hkdf::<Sha256>::new(Some(&self.entropy_pool[..]), mk.as_bytes());
             let mut derived = Zeroizing::new([0u8; 32]);
-            hk.expand(b"witnessd-behavioral-entropy-v1", &mut derived[..])
+            hk.expand(b"cpoe-behavioral-entropy-v1", &mut derived[..])
                 .map_err(|e| Error::crypto(format!("HKDF expand failed: {e}")))?;
             self.active_key = Some(SigningKey::from_bytes(&derived));
         }
@@ -77,7 +77,7 @@ pub fn add_entropy(&mut self, data: &[u8]) -> Result<(), Error> {
 ### CRITICAL-006: Redundant zeroization calls in load_legacy_private_key
 
 - **Model:** Sonnet | **Scope:** performance
-- **File:** `crates/witnessd/src/keyhierarchy/migration.rs` (multiple manual `zeroize()` calls)
+- **File:** `crates/cpoe/src/keyhierarchy/migration.rs` (multiple manual `zeroize()` calls)
 - **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (replaced all manual `.zeroize()` calls with `Zeroizing<Vec<u8>>` and `Zeroizing<[u8; 32]>` wrappers; RAII cleanup on all paths)
 - **Priority:** 2/240 | **Estimated time:** 1h
 - **Description:** Multiple manual `seed.zeroize()` and `data.zeroize()` calls across error/success branches. Correct but fragile; adding new code paths risks leaving material unwiped.
@@ -107,7 +107,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-002: Fixed-size crypto fields as Vec<u8>
 
 - **Model:** Sonnet | **Scope:** idiomatic
-- **File:** `crates/witnessd/src/keyhierarchy/types.rs:13,24,46`
+- **File:** `crates/cpoe/src/keyhierarchy/types.rs:13,24,46`
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (4 public key Vec<u8> fields changed to [u8; 32] with serde_array_32; all call sites updated; 1156 tests pass)
 - **Priority:** 3/240 | **Estimated time:** 4h
 - **Description:** `MasterIdentity`, `SessionCertificate`, `CheckpointSignature` structs store Ed25519 keys as `Vec<u8>` despite fixed lengths (32 bytes public, 64 bytes signature).
@@ -127,16 +127,16 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-001: Shared borrowed hex/base64 serde visitors
 
 - **Model:** Sonnet | **Scope:** idiomatic
-- **Files:** `crates/authorproof-protocol/src/rfc/serde_helpers.rs:27,62,93,124`, `crates/authorproof-protocol/src/rfc/wire_types/serde_helpers.rs`, `crates/witnessd/src/serde_utils.rs:97,140`
+- **Files:** `crates/authorproof-protocol/src/rfc/serde_helpers.rs:27,62,93,124`, `crates/authorproof-protocol/src/rfc/wire_types/serde_helpers.rs`, `crates/cpoe/src/serde_utils.rs:97,140`
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (visitor pattern in 8 sites; decode_to_slice for arrays; 2 roundtrip tests added; 1157 pass)
 - **Priority:** 4/240 | **Estimated time:** 5h
-- **Description:** Six deserializers (3 pairs) allocate intermediate `String` before hex/base64 decoding. Copy-pasted across two files in authorproof-protocol + witnessd.
+- **Description:** Six deserializers (3 pairs) allocate intermediate `String` before hex/base64 decoding. Copy-pasted across two files in authorproof-protocol + cpoe.
 - **Root cause:** No shared visitor pattern; each site reimplements allocation.
 - **Fix:**
   1. Create single-source-of-truth: `crates/authorproof-protocol/src/rfc/serde_helpers.rs`
   2. Implement `BorrowedHexVisitor` and `BorrowedB64Visitor` (zero-copy on valid input)
   3. Update `wire_types/serde_helpers.rs` to re-export (not duplicate)
-  4. Update witnessd to import from authorproof-protocol if exported, else accept small duplication
+  4. Update cpoe to import from authorproof-protocol if exported, else accept small duplication
   5. Add `#[test] fn hex_visitor_zero_alloc()` and `b64_visitor_zero_alloc()` using dhat or manual counting
   6. Verify CBOR roundtrip: hex string → deserialize → bytes → serialize → identical hex
 
@@ -147,7 +147,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-006: IpcOperation enum replaces stringly-typed operation keys
 
 - **Model:** Sonnet | **Scope:** memory
-- **Files:** `crates/witnessd/src/ipc/crypto.rs:234`, `crates/witnessd/src/ipc/server_handler.rs` (multiple call sites)
+- **Files:** `crates/cpoe/src/ipc/crypto.rs:234`, `crates/cpoe/src/ipc/server_handler.rs` (multiple call sites)
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (IpcOperation enum; RateLimiter keyed by enum; rate_limit_key returns IpcOperation; 1157 tests pass)
 - **Priority:** 5/240 | **Estimated time:** 3h
 - **Description:** Operation identifiers stored as `&str`/`String` keys in HashMaps. Fixed set of ~8 values. Every rate-limit check and log allocates.
@@ -167,7 +167,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-012: Byte-slice parameters should be &[u8]; fixed-array conversion helper
 
 - **Model:** Sonnet | **Scope:** idiomatic
-- **Files:** `crates/witnessd/src/crypto/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/fingerprint/` (multiple)
+- **Files:** `crates/cpoe/src/crypto/`, `crates/cpoe/src/evidence/`, `crates/cpoe/src/fingerprint/` (multiple)
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (to_array_16/32/64 helpers added; two manual copy_from_slice patterns in evidence/packet.rs replaced)
 - **Priority:** 6/240 | **Estimated time:** 6h
 - **Description:** Functions take `Vec<u8>` by value when they only read. Wastes ownership transfer in every call.
@@ -187,7 +187,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-011: Path parameters should accept &Path / impl AsRef<Path>
 
 - **Model:** Sonnet | **Scope:** idiomatic
-- **Files:** `apps/cpop_cli/src/cmd_*.rs`, `crates/witnessd/src/wal/operations.rs:22-27`, checkpoint, store modules
+- **Files:** `apps/cpop_cli/src/cmd_*.rs`, `crates/cpoe/src/wal/operations.rs:22-27`, checkpoint, store modules
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (store load_document_stats/get_events_for_file/update_file_path changed to impl AsRef<Path>; WAL/checkpoint were already fixed)
 - **Priority:** 7/240 | **Estimated time:** 4h
 - **Description:** Functions take `String` or `&str` for file paths. Should accept `impl AsRef<Path>` for flexibility (works with Path, &str, String, OsStr).
@@ -206,16 +206,16 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-014: Constant identifier strings as &'static str / Cow<'static, str>
 
 - **Model:** Sonnet | **Scope:** memory
-- **Files:** Domain-separation constants across `crates/witnessd/src/crypto/`, `crates/witnessd/src/checkpoint/`, `crates/witnessd/src/utils/`, `crates/witnessd/src/evidence/`
+- **Files:** Domain-separation constants across `crates/cpoe/src/crypto/`, `crates/cpoe/src/checkpoint/`, `crates/cpoe/src/utils/`, `crates/cpoe/src/evidence/`
 - **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (named 8 DST byte constants; removed redundant .to_string() from Error::checkpoint calls)
 - **Priority:** 8/240 | **Estimated time:** 2h
-- **Description:** String literals allocated on each reference via `.to_string()` or `String::from()`. Examples: `"witnessd-checkpoint-v3"`, `"wld-engine/"`. Should use static `&str`.
+- **Description:** String literals allocated on each reference via `.to_string()` or `String::from()`. Examples: `"cpoe-checkpoint-v3"`, `"wld-engine/"`. Should use static `&str`.
 - **Root cause:** Habit of creating String instead of using &'static str.
 - **Fix:**
   1. Find all `const` strings that get `.to_string()` wrapped
-  2. Define as `const DOMAIN_SEP: &str = "witnessd-checkpoint-v3";` at module level
+  2. Define as `const DOMAIN_SEP: &str = "cpoe-checkpoint-v3";` at module level
   3. Use directly in hash/DST calls (no allocation)
-  4. Run `grep -r "to_string\|String::from" crates/witnessd/src/crypto/ crates/witnessd/src/checkpoint/` to catch stragglers
+  4. Run `grep -r "to_string\|String::from" crates/cpoe/src/crypto/ crates/cpoe/src/checkpoint/` to catch stragglers
 
 - **Closes:** HIGH-271, HIGH-323, related allocation findings
 
@@ -224,7 +224,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-015: Use hex crate; consolidate decode-and-length-check
 
 - **Model:** Sonnet | **Scope:** idiomatic
-- **Files:** `crates/witnessd/src/utils/`, `crates/authorproof-protocol/src/rfc/`
+- **Files:** `crates/cpoe/src/utils/`, `crates/authorproof-protocol/src/rfc/`
 - **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (added hex_decode_16/32/64 to utils/mod.rs; 8 edge-case tests; rfc/serde_helpers already consolidated)
 - **Priority:** 9/240 | **Estimated time:** 3h
 - **Description:** Repeated hex decoding patterns with manual length validation. No single point of validation.
@@ -242,7 +242,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-009: Allocation discipline sweep (to_string on literals, Vec of static strs)
 
 - **Model:** Haiku | **Scope:** memory
-- **Files:** Widespread across `apps/cpop_cli/`, `crates/witnessd/src/sentinel/`, `crates/witnessd/src/evidence/`, `crates/witnessd/src/analysis/`
+- **Files:** Widespread across `apps/cpop_cli/`, `crates/cpoe/src/sentinel/`, `crates/cpoe/src/evidence/`, `crates/cpoe/src/analysis/`
 - **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-10 (struct fields typed String, not &str; .to_string() is idiomatic; proper fix requires type refactoring)
 - **Priority:** 10/240 | **Estimated time:** 2h
 - **Description:** `.to_string()` on string literals ("auto", "default"), `vec![]` of constants. Each allocates unnecessarily.
@@ -260,13 +260,13 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-010: Missing derive completeness via clippy lint
 
 - **Model:** Haiku | **Scope:** idiomatic
-- **Files:** Project-wide (crates/witnessd/src/lib.rs, Cargo.toml clippy config)
+- **Files:** Project-wide (crates/cpoe/src/lib.rs, Cargo.toml clippy config)
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** partially fixed 2026-04-11 (lint enabled; 38 types fixed incl. all sensitive crypto/keys; 66 violations remain, mostly straightforward derives)
 - **Priority:** 11/240 | **Estimated time:** 1h
 - **Description:** Public types missing `Debug` derive. Clippy can enforce with lint.
 - **Root cause:** No linting requirement for derived traits.
 - **Fix:**
-  1. Add to crates/witnessd/src/lib.rs: `#![warn(missing_debug_implementations)]`
+  1. Add to crates/cpoe/src/lib.rs: `#![warn(missing_debug_implementations)]`
   2. Run `cargo clippy --workspace -- -W missing_debug_implementations`
   3. For each flagged type: add `derive(Debug)` or `#[automatically_derived]` comment
   4. Some types may need custom Debug (e.g., crypto keys that should redact content)
@@ -278,7 +278,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-018: Linear search over small fixed sets → match / matches! / const lookup
 
 - **Model:** Haiku | **Scope:** performance
-- **Files:** `crates/witnessd/src/mmr/mmr.rs:139`, `crates/witnessd/src/anchors/mod.rs:113`, `crates/witnessd/src/ipc/crypto.rs:234`
+- **Files:** `crates/cpoe/src/mmr/mmr.rs:139`, `crates/cpoe/src/anchors/mod.rs:113`, `crates/cpoe/src/ipc/crypto.rs:234`
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-10 (encapsulated provider lookup via get_provider_by_type; ipc/crypto already optimal)
 - **Priority:** 12/240 | **Estimated time:** 2h
 - **Description:** `iter().find()` or `Vec::contains` over constant slices. ~8 values or fewer each.
@@ -297,7 +297,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-017: Single-pass Welford accumulator for forensic statistics
 
 - **Model:** Haiku | **Scope:** performance
-- **Files:** `crates/witnessd/src/utils/stats.rs` (helper already exists), call sites in `crates/witnessd/src/forensics/`
+- **Files:** `crates/cpoe/src/utils/stats.rs` (helper already exists), call sites in `crates/cpoe/src/forensics/`
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (consolidated 5 two-pass variance sites, 1168 tests green)
 - **Priority:** 13/240 | **Estimated time:** 1.5h
 - **Description:** Forensic analyzers compute variance with repeated passes over events. Single-pass Welford helper already exists in utils/stats.rs but not used consistently.
@@ -315,7 +315,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-013: Clone-on-read accessor audit (return &T or Arc<T>)
 
 - **Model:** Sonnet | **Scope:** memory
-- **Files:** `crates/witnessd/src/fingerprint/manager.rs`, `crates/witnessd/src/identity/keychain.rs`, analysis modules
+- **Files:** `crates/cpoe/src/fingerprint/manager.rs`, `crates/cpoe/src/identity/keychain.rs`, analysis modules
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-11 (ActivityFingerprintAccumulator cache changed to Arc; current_fingerprint returns Arc)
 - **Priority:** 14/240 | **Estimated time:** 5h
 - **Description:** Getter functions return owned clone of read-only data (e.g., `fn get_profile(&self) -> Profile` where callers only read). Clone is wasteful.
@@ -334,7 +334,7 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-021: Lock scope must not span blocking I/O (snapshot-and-release)
 
 - **Model:** Opus | **Scope:** async | **Leverage:** HIGH
-- **Files:** `crates/witnessd/src/wal/operations.rs`, `crates/witnessd/src/wal/types.rs:167`, `crates/witnessd/src/mmr/mmr.rs:9`, `crates/witnessd/src/sentinel/shadow.rs:155`
+- **Files:** `crates/cpoe/src/wal/operations.rs`, `crates/cpoe/src/wal/types.rs:167`, `crates/cpoe/src/mmr/mmr.rs:9`, `crates/cpoe/src/sentinel/shadow.rs:155`
 - **Severity:** HIGH | **Status:** fixed 2026-04-11 (snapshot-and-release in WAL verify, MMR read paths, shadow delete/migrate/cleanup)
 - **Priority:** 15/240 | **Estimated time:** 10h
 - **Description:** Mutex/RwLock guards held across multi-step I/O (fdatasync, fs::rename, store loops). All readers/writers block on entire I/O duration instead of just critical section.
@@ -353,13 +353,13 @@ seed.copy_from_slice(&data[..32]);
 ### SYS-003: Async-blocking VDF and hash chain operations
 
 - **Model:** Sonnet | **Scope:** async
-- **Files:** `crates/witnessd/src/vdf/proof.rs` (compute, verify methods), `apps/cpop_cli/src/cmd_commit.rs:83`
+- **Files:** `crates/cpoe/src/vdf/proof.rs` (compute, verify methods), `apps/cpop_cli/src/cmd_commit.rs:83`
 - **Severity:** HIGH | **Leverage:** CRITICAL | **Status:** fixed 2026-04-11 (added compute_async/verify_async via spawn_blocking; cmd_commit made async; both async callers await it)
 - **Priority:** 16/240 | **Estimated time:** 4h
-- **Description:** VDF and hash-chain loops are CPU-bound (seconds) with no enforcement against being called from Tokio task. Fixing one call site leaves others exposed. Callers live in cpop_cli, not witnessd; wrappers in witnessd, config in cpop_cli.
+- **Description:** VDF and hash-chain loops are CPU-bound (seconds) with no enforcement against being called from Tokio task. Fixing one call site leaves others exposed. Callers live in cpop_cli, not cpoe; wrappers in cpoe, config in cpop_cli.
 - **Root cause:** No async wrappers; sync functions directly called from async code.
 - **Fix:**
-  1. Add `compute_async()` and `verify_async()` wrappers in `crates/witnessd/src/vdf/proof.rs`
+  1. Add `compute_async()` and `verify_async()` wrappers in `crates/cpoe/src/vdf/proof.rs`
   2. Wrappers use `tokio::task::spawn_blocking(|| self.compute_sync())`
   3. Mark sync versions `#[deprecated(since = "0.4", note = "use *_async from async fn")]`
   4. Update cpop_cli call sites to use async versions and `.await`
@@ -367,11 +367,11 @@ seed.copy_from_slice(&data[..32]);
 
 ```toml
 [[disallowed-methods]]
-path = "witnessd::vdf::proof::VdfProof::compute"
+path = "cpoe::vdf::proof::VdfProof::compute"
 reason = "blocks reactor; use compute_async from async fn"
 
 [[disallowed-methods]]
-path = "witnessd::vdf::proof::VdfProof::verify"
+path = "cpoe::vdf::proof::VdfProof::verify"
 reason = "blocks reactor; use verify_async from async fn"
 ```
 
@@ -403,7 +403,7 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-004: Silent error swallowing (Result<_, String>, log-and-continue)
 
 - **Model:** Opus | **Scope:** errors | **Leverage:** CRITICAL
-- **Files:** `crates/witnessd/src/trust_policy/evaluation.rs:79`, `crates/witnessd/src/fingerprint/manager.rs:80`, report, rfc_conversion modules
+- **Files:** `crates/cpoe/src/trust_policy/evaluation.rs:79`, `crates/cpoe/src/fingerprint/manager.rs:80`, report, rfc_conversion modules
 - **Severity:** HIGH | **Status:** partially fixed 2026-04-11 (trust_policy and report/pdf converted to crate::error::Error; fingerprint already uses anyhow; ~100 hits remain in other modules)
 - **Priority:** 18/240 | **Estimated time:** 16h
 - **Description:** Library functions return non-Result types, log on failure, lose error context. ~109 grep hits on `Result<_, String>` across crate.
@@ -423,7 +423,7 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-005: Silent default-fallback on malformed input (rfc_conversion)
 
 - **Model:** Sonnet | **Scope:** errors
-- **File:** `crates/witnessd/src/evidence/rfc_conversion.rs` (not `rfc_conversions.rs`)
+- **File:** `crates/cpoe/src/evidence/rfc_conversion.rs` (not `rfc_conversions.rs`)
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-11 (TryFrom replaces From; empty/malformed final_hash returns Err; VDF decode failures propagated; 3 tests added)
 - **Priority:** 19/240 | **Estimated time:** 4h
 - **Description:** `From<&Packet> for rfc::PacketRfc` is infallible, emits zero-defaults ("en-US", zero hashes) on missing fields. Forensically dangerous: produces valid-looking output from corrupt input.
@@ -443,7 +443,7 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-007: Renderer modules must return Result (html + pdf)
 
 - **Model:** Sonnet | **Scope:** errors
-- **Files:** `crates/witnessd/src/report/html/mod.rs:16`, `crates/witnessd/src/report/html/css.rs:8`, `crates/witnessd/src/report/pdf/` (entire)
+- **Files:** `crates/cpoe/src/report/html/mod.rs:16`, `crates/cpoe/src/report/html/css.rs:8`, `crates/cpoe/src/report/pdf/` (entire)
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-11 (only one let _ site; PDF already propagates; .expect("infallible: String::Write") applied)
 - **Priority:** 20/240 | **Estimated time:** 5h
 - **Description:** Renderers discard `fmt::Result` via `let _ = ...`, return partial/corrupted output on error. (Note: String writes are infallible; PDF writes are not. Distinguish via testing.)
@@ -463,13 +463,13 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-008: Sorted-events invariant for forensics pipeline
 
 - **Model:** Sonnet | **Scope:** performance
-- **Files:** `crates/witnessd/src/forensics/velocity.rs:29,86`, `crates/witnessd/src/forensics/writing_mode.rs:206`, analysis modules
+- **Files:** `crates/cpoe/src/forensics/velocity.rs:29,86`, `crates/cpoe/src/forensics/writing_mode.rs:206`, analysis modules
 - **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (SortedEvents newtype; sort once in pipeline; 5 per-analyzer sorts removed; 1171 tests pass)
 - **Priority:** 21/240 | **Estimated time:** 5h
 - **Description:** Every forensics analyzer defensively sorts its input via `.to_vec() + .sort()`. No pipeline-level guarantee.
 - **Root cause:** Defensive programming; no coordination at pipeline level.
 - **Fix:**
-  1. Introduce `SortedEvents<'a>(&'a [EventData])` newtype in `crates/witnessd/src/forensics/mod.rs`
+  1. Introduce `SortedEvents<'a>(&'a [EventData])` newtype in `crates/cpoe/src/forensics/mod.rs`
   2. Sort once at pipeline entry (forensics_engine.rs analyze_forensics())
   3. Update all analyzer signatures: `analyze_velocity(sorted: SortedEvents<'_>)` instead of `analyze_velocity(events: &[EventData])`
   4. Remove per-analyzer `.to_vec() + .sort()` calls
@@ -482,14 +482,14 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-020: Reject-or-propagate policy for non-finite (NaN/Inf) values
 
 - **Model:** Sonnet | **Scope:** errors
-- **Files:** `crates/witnessd/src/forensics/forgery_cost.rs:315`, `crates/witnessd/src/forensics/topology.rs:28`, `crates/witnessd/src/utils/stats.rs:127`
+- **Files:** `crates/cpoe/src/forensics/forgery_cost.rs:315`, `crates/cpoe/src/forensics/topology.rs:28`, `crates/cpoe/src/utils/stats.rs:127`
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (added finite(), total_cmp in median/weakest_link, log::warn on NaN clamp in forgery_cost and topology)
 - **Priority:** 22/240 | **Estimated time:** 4h
 - **Description:** NaN/Inf silently coerced to defaults (0.0, 0.5, f64::MAX) or fall back to `Ordering::Equal`. No logging or error propagation.
 - **Root cause:** No explicit policy for finiteness validation.
 - **Fix:**
   1. Project-wide policy: validate finite at trust boundary, reject or log explicitly
-  2. Add `fn finite(x: f64) -> Result<f64, NotFinite>` to `crates/witnessd/src/utils/stats.rs`
+  2. Add `fn finite(x: f64) -> Result<f64, NotFinite>` to `crates/cpoe/src/utils/stats.rs`
   3. Use `f64::total_cmp` (stable since Rust 1.62, within MSRV 1.75) instead of `partial_cmp().unwrap_or(Equal)`
   4. Audit sites: HIGH-310 (geometric mean NaN at :315) is highest priority (silent exclusion from hash input)
   5. Add tests: verify NaN/Inf rejection at all boundaries
@@ -507,7 +507,7 @@ reason = "blocks reactor; use verify_async from async fn"
 - **Description:** ~40 struct fields mathematically bounded to [0.0, 1.0] (probability, rate, ratio, score, confidence, similarity, weight) stored as raw `f64`. No type-level enforcement. Defensive `.clamp()` calls everywhere (~34 sites).
 - **Root cause:** No newtype wrapper; raw f64 allows any value.
 - **Fix:** (Incremental, staged by module)
-  1. Create `struct Probability(f64)` in `crates/witnessd/src/utils/probability.rs`
+  1. Create `struct Probability(f64)` in `crates/cpoe/src/utils/probability.rs`
   2. Implement `new(f64) -> Result<Self, ProbabilityError>` with validation
   3. Constants: `Probability::ZERO`, `Probability::ONE`
   4. `Deref` to f64 for math compatibility during transition
@@ -522,7 +522,7 @@ reason = "blocks reactor; use verify_async from async fn"
 ### SYS-022: Typed secure-channel error enums (eliminate dummy EncryptedMessage placeholders)
 
 - **Model:** Sonnet | **Scope:** errors | **Leverage:** CRITICAL
-- **Files:** `crates/witnessd/src/ipc/secure_channel.rs:71,84,98,122,128,145,160`, sentinel IPC sites
+- **Files:** `crates/cpoe/src/ipc/secure_channel.rs:71,84,98,122,128,145,160`, sentinel IPC sites
 - **Severity:** HIGH | **Status:** fixed 2026-04-11 (SecureChannelSendError/RecvError enums replace dummy EncryptedMessage error constructions; recv logs WARN on Decryption)
 - **Priority:** 24/240 | **Estimated time:** 5h
 - **Description:** `SecureSender::send` returns `Result<(), SendError<EncryptedMessage>>`. Errors construct fake `{ nonce: [0; 12], ciphertext: vec![] }`. Erases distinctions, fabricates invalid crypto. Security-relevant.
@@ -557,7 +557,7 @@ pub enum SecureChannelSendError {
 ### SYS-023: TOCTOU and symlink attacks (file/path race conditions)
 
 - **Model:** Opus | **Scope:** security
-- **Files:** `crates/witnessd/src/sentinel/core_session.rs:36`, `crates/witnessd/src/sentinel/helpers.rs:620`, `crates/witnessd/src/wal/operations.rs:97,105,393,682`, `crates/witnessd/src/platform/windows.rs`, `crates/witnessd/src/engine/watcher.rs:78-97,105`
+- **Files:** `crates/cpoe/src/sentinel/core_session.rs:36`, `crates/cpoe/src/sentinel/helpers.rs:620`, `crates/cpoe/src/wal/operations.rs:97,105,393,682`, `crates/cpoe/src/platform/windows.rs`, `crates/cpoe/src/engine/watcher.rs:78-97,105`
 - **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** fixed 2026-04-10 (all named sites verified: H-002 relative path rejection, H-004 canonicalize, H-045 hash_map TOCTOU, H-046 open-then-fstat pattern; WAL ops use `open_nofollow` / state-before-commit)
 - **Priority:** 25/240 | **Estimated time:** 12h
 - **Description:** 28 instances across filesystem operations where file/path checks performed separately from subsequent I/O. Attacker can substitute files via symlinks, renames, or deletes between check and use. Examples: H-004 (symlink in session path), H-008 (WAL state before fsync), H-010 (symlink hash), H-045/H-046 (TOCTOU in rename detection).
@@ -577,7 +577,7 @@ pub enum SecureChannelSendError {
 ### SYS-024: Unwrap/expect on fallible I/O operations (crash on recoverable errors)
 
 - **Model:** Sonnet | **Scope:** errors
-- **Files:** `crates/witnessd/src/sentinel/helpers.rs:517,620`, `crates/witnessd/src/war/verification.rs:512`, `crates/witnessd/src/wal/operations.rs:682`, `crates/witnessd/src/crypto.rs:125,89`, and 4+ others
+- **Files:** `crates/cpoe/src/sentinel/helpers.rs:517,620`, `crates/cpoe/src/war/verification.rs:512`, `crates/cpoe/src/wal/operations.rs:682`, `crates/cpoe/src/crypto.rs:125,89`, and 4+ others
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (all named sites verified: crypto.rs expects are provably-infallible HMAC/HKDF-32B with documenting messages, war verification uses `find_ca_key` Result, WAL ops use `.unwrap_or` with safe fallback, sentinel helpers propagate via `?`)
 - **Priority:** 26/240 | **Estimated time:** 6h
 - **Description:** 9 instances where expect/unwrap called on I/O results that can legitimately fail (file reads, copy_from_slice on mismatched length, arithmetic underflow). Examples: H-032 (CA key unwrap), H-038 (arithmetic underflow), H-006 (copy_from_slice panic).
@@ -596,7 +596,7 @@ pub enum SecureChannelSendError {
 ### SYS-025: Duplicated logic across modules (inconsistency risk)
 
 - **Model:** Sonnet | **Scope:** maintenance
-- **Files:** `crates/witnessd/src/forensics/` (analysis.rs, comparison.rs, cross_modal.rs), `crates/witnessd/src/ffi/` (multiple), `crates/witnessd/src/report/`
+- **Files:** `crates/cpoe/src/forensics/` (analysis.rs, comparison.rs, cross_modal.rs), `crates/cpoe/src/ffi/` (multiple), `crates/cpoe/src/report/`
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (lerp_score extracted to utils/stats.rs; writing_mode.rs and report.rs now share single impl; 2 tests added)
 - **Priority:** 27/240 | **Estimated time:** 8h
 - **Description:** 9 instances of same operation/calculation reimplemented in 3+ places: confidence scoring, variance calculation, similarity normalization, validation patterns. Risk: changes to one instance miss others; bugs replicated across modules.
@@ -615,7 +615,7 @@ pub enum SecureChannelSendError {
 ### SYS-026: Clone in loops / hot-path allocations (performance regression)
 
 - **Model:** Sonnet | **Scope:** performance
-- **Files:** `crates/witnessd/src/forensics/` (loop-based analyzers), `crates/witnessd/src/ffi/` (polling loops), `crates/witnessd/src/report/` (rendering loops)
+- **Files:** `crates/cpoe/src/forensics/` (loop-based analyzers), `crates/cpoe/src/ffi/` (polling loops), `crates/cpoe/src/report/` (rendering loops)
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (detect_sessions now returns Vec<&[EventData]> borrowing into SortedEvents; compute_session_stats hot path no longer clones N events per analysis pass)
 - **Priority:** 28/240 | **Estimated time:** 6h
 - **Description:** 9-16 instances of .clone() called repeatedly in loops or hot paths. At 1KB per clone × 100 iterations = 100KB per second; on moderate dataset (1000 events) = 100MB+ temporary allocation per analysis pass.
@@ -635,7 +635,7 @@ pub enum SecureChannelSendError {
 ### SYS-027: Data race and concurrent access issues (undefined behavior)
 
 - **Model:** Opus | **Scope:** concurrency
-- **Files:** `crates/witnessd/src/sentinel/core.rs:614`, `crates/witnessd/src/ipc/crypto.rs` (rate limit), `crates/witnessd/src/ffi/sentinel_inject.rs:74`
+- **Files:** `crates/cpoe/src/sentinel/core.rs:614`, `crates/cpoe/src/ipc/crypto.rs` (rate limit), `crates/cpoe/src/ffi/sentinel_inject.rs:74`
 - **Severity:** CRITICAL | **Leverage:** CRITICAL | **Status:** fixed 2026-04-10 (H-001 focus lock held across sessions write-lock; H-017 Mutex-guarded rate window; H-056 CAS loop for sequence advance; all three sites explicitly documented in code)
 - **Priority:** 29/240 | **Estimated time:** 8h
 - **Description:** 6 instances of non-atomic operations on shared state or check-then-act races without holding lock across both steps. H-001: session state changes between read release and write acquire. H-017: rate_limit fetch_add race allows burst > limit.
@@ -655,7 +655,7 @@ pub enum SecureChannelSendError {
 ### SYS-028: Lock ordering violations and deadlock risk (circular wait)
 
 - **Model:** Sonnet | **Scope:** concurrency
-- **Files:** `crates/witnessd/src/sentinel/core.rs`, `crates/witnessd/src/keyhierarchy/`, `crates/witnessd/src/wal/`, `crates/witnessd/src/mmr/`
+- **Files:** `crates/cpoe/src/sentinel/core.rs`, `crates/cpoe/src/keyhierarchy/`, `crates/cpoe/src/wal/`, `crates/cpoe/src/mmr/`
 - **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-10 (AUD-041 fix in place: `lock_order` module with debug-build runtime enforcement, Sentinel doc comment declares signing_key(1) < sessions(2) < focus(3) ordering, enforcement active at multi-lock sites)
 - **Priority:** 30/240 | **Estimated time:** 4h
 - **Description:** 5 instances where Mutex/RwLock pairs acquired in inconsistent order across code. Some paths acquire `signing_key` then `sessions`; others reverse. Risk: circular wait deadlock under concurrent load.
@@ -674,7 +674,7 @@ pub enum SecureChannelSendError {
 ### SYS-029: Resource cleanup / RAII violations (leak and handle exhaustion)
 
 - **Model:** Sonnet | **Scope:** resource management
-- **Files:** `crates/witnessd/src/tpm/linux.rs:327`, `crates/witnessd/src/wal/operations.rs`, `crates/witnessd/src/store/`, `crates/witnessd/src/ipc/`
+- **Files:** `crates/cpoe/src/tpm/linux.rs:327`, `crates/cpoe/src/wal/operations.rs`, `crates/cpoe/src/store/`, `crates/cpoe/src/ipc/`
 - **Severity:** MEDIUM | **Leverage:** MEDIUM | **Status:** fixed 2026-04-11 (tpm/linux.rs seal/unseal/fingerprint no longer leak session/load handles when mid-closure ops fail; wal compact removes .wal.new tempfile on write or rename failure)
 - **Priority:** 31/240 | **Estimated time:** 4h
 - **Description:** 5 instances where file handles, TPM handles, or database connections not properly released on all code paths. H-050: TPM flush_context() error logged but ignored; accumulates unflushed handles. Risk: handle exhaustion, leaked file descriptors.
@@ -802,7 +802,7 @@ pub enum SecureChannelSendError {
   <!-- pid:logic_in_boundary | verified:true | first:2026-04-07 | systemic:SYS-003 -->
   Added process-level `ForensicCacheEntry` DashMap in ffi/report.rs keyed by (path, event_count); cache hit skips both evaluate_authorship and run_full_forensics; cache capped at 10 entries with clear-on-overflow.
 
-- [x] **C-029** `[security]` `apps/cpop_macos/cpop/SubscriptionService.swift:176`: Storage upgrade purchase proceeds without `appAccountToken` when `userId` is nil -- FIXED 2026-04-07
+- [x] **C-029** `[security]` `apps/cpop_macos/cpoe/SubscriptionService.swift:176`: Storage upgrade purchase proceeds without `appAccountToken` when `userId` is nil -- FIXED 2026-04-07
   <!-- pid:missing_validation | verified:true | first:2026-04-07 -->
   Added guard requiring userId + valid UUID before purchase; always passes appAccountToken(accountUUID) so Apple's S2S notification can identify the account.
 
@@ -852,11 +852,11 @@ pub enum SecureChannelSendError {
 
 - [x] **H-011** `[security]` `sentinel/behavioral_key.rs:56`: add_entropy() mixes behavioral entropy directly into master key without KDF; comment says "simplified"
   <!-- pid:missing_validation | verified:analytical | first:2026-04-06 -->
-  Impact: Direct XOR of entropy into master key reduces independence; correlated behavioral inputs create predictable key evolution | Fix: Use HKDF-Expand(master_key, entropy_bytes, "witnessd-behavioral-entropy-v1") for key update | Effort: medium
+  Impact: Direct XOR of entropy into master key reduces independence; correlated behavioral inputs create predictable key evolution | Fix: Use HKDF-Expand(master_key, entropy_bytes, "cpoe-behavioral-entropy-v1") for key update | Effort: medium
 
 - [x] **H-012** `[security]` `apps/cpop_cli/src/cmd_daemon.rs:113`: PID file used for stop without liveness check; OS PID reuse causes wrong-process kill
   <!-- pid:toctou | verified:analytical | first:2026-04-06 -->
-  Impact: If daemon dies and OS reuses PID, `cpop stop` kills an unrelated process | Fix: Verify /proc/{pid}/comm matches expected process name before sending signal; or use socket-based stop | Effort: medium
+  Impact: If daemon dies and OS reuses PID, `cpoe stop` kills an unrelated process | Fix: Verify /proc/{pid}/comm matches expected process name before sending signal; or use socket-based stop | Effort: medium
 
 - [x] **H-013** `[security]` `ffi/sentinel_witnessing.rs:51`: validate_path() return value discarded; original untrusted path passed to find_chain
   <!-- pid:path_traversal | verified:true | first:2026-04-06 -->
@@ -882,7 +882,7 @@ pub enum SecureChannelSendError {
   <!-- pid:missing_validation | verified:false | first:2026-04-06 | updated:2026-04-07 -->
   Misunderstands AEAD semantics. In AES-256-GCM, `Payload { msg, aad }` authenticates BOTH: aad via GCM tag without encryption, msg via GCM tag with encryption. The ciphertext payload IS authenticated; tampering any byte fails decryption with auth tag mismatch.
 
-- [-] **H-019** `[error_handling]` `cpop_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case -- FALSE POSITIVE 2026-04-07
+- [-] **H-019** `[error_handling]` `cpoe_jitter_bridge/session.rs` (IKI autocorrelation): sqrt called without is_finite guard on variance; NaN on floating-point edge case -- FALSE POSITIVE 2026-04-07
   <!-- pid:nan_inf_unguarded | verified:false | first:2026-04-06 | updated:2026-04-07 -->
   No sqrt or variance code exists in session.rs. IKI autocorrelation is in analysis/active_probes.rs:263 which uses numerator/denominator division with explicit > 0.0 guard; no sqrt involved.
 
@@ -966,11 +966,11 @@ pub enum SecureChannelSendError {
   <!-- pid:silent_error | verified:true | first:2026-04-07 -->
   Now returns Response::Error { code: "JITTER_WRITE_FAILED" } on write failure instead of eprintln + success response.
 
-- [-] **H-040** `[security]` `apps/cpop_macos/cpop/AppDelegate.swift:464`: File descriptor not validated before `flock()` call -- FALSE POSITIVE 2026-04-07
+- [-] **H-040** `[security]` `apps/cpop_macos/cpoe/AppDelegate.swift:464`: File descriptor not validated before `flock()` call -- FALSE POSITIVE 2026-04-07
   <!-- pid:missing_validation | verified:false | first:2026-04-07 -->
   guard fd >= 0 else { return } is present at line 458 before the flock() call at line 464; invalid fd is already handled.
 
-- [-] **H-041** `[concurrency]` `apps/cpop_macos/cpop/AppDelegate.swift:165`: `applicationShouldTerminate` returns `.terminateNow` without awaiting task cancellation -- FALSE POSITIVE 2026-04-07
+- [-] **H-041** `[concurrency]` `apps/cpop_macos/cpoe/AppDelegate.swift:165`: `applicationShouldTerminate` returns `.terminateNow` without awaiting task cancellation -- FALSE POSITIVE 2026-04-07
   <!-- pid:data_race | verified:false | first:2026-04-07 -->
   The daemon handles graceful shutdown via IPC stop command and WAL fsync before the app exits; AppKit termination is not the primary shutdown path for the background daemon process.
 
@@ -1022,7 +1022,7 @@ pub enum SecureChannelSendError {
   <!-- pid:missing_validation | verified:true | first:2026-04-08 -->
   Fix: Added sign() and verify() methods on CawgIdentityAssertion. Test covers roundtrip and unsigned rejection.
 
-- [x] **H-053** `[error_handling]` `cpop_jitter_bridge/session.rs:375`: persist() error loses path context; debugging blind -- ALREADY FIXED
+- [x] **H-053** `[error_handling]` `cpoe_jitter_bridge/session.rs:375`: persist() error loses path context; debugging blind -- ALREADY FIXED
   <!-- pid:unhelpful_error_msg | verified:true | first:2026-04-08 | resolved:2026-04-09 -->
   persist error now includes path context: format!("failed to persist session file to {}: {}", path.as_ref().display(), e.error) at line 386.
 
@@ -1213,10 +1213,10 @@ pub enum SecureChannelSendError {
 - [x] **M-025** `[error_handling]` `ipc/async_client.rs:299-316`: Timeout during send leaves partial data; no recovery guidance -- FIXED 2026-04-09
   <!-- fix: send_message and recv_message now poison (drop) the stream on timeout; caller must reconnect -->
 
-### cpop_jitter_bridge/session.rs
-- [ ] **M-026** `[error_handling]` `cpop_jitter_bridge/session.rs:333-336`: try_from().unwrap_or(i32::MAX) silent truncation | **Model:** Haiku
-- [x] **M-027** `[error_handling]` `cpop_jitter_bridge/session.rs:369-376`: tempfile not synced before persist -- FIXED (sync_all is already called at session.rs:384)
-- [ ] **M-028** `[performance]` `cpop_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | **Model:** Sonnet
+### cpoe_jitter_bridge/session.rs
+- [ ] **M-026** `[error_handling]` `cpoe_jitter_bridge/session.rs:333-336`: try_from().unwrap_or(i32::MAX) silent truncation | **Model:** Haiku
+- [x] **M-027** `[error_handling]` `cpoe_jitter_bridge/session.rs:369-376`: tempfile not synced before persist -- FIXED (sync_all is already called at session.rs:384)
+- [ ] **M-028** `[performance]` `cpoe_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | **Model:** Sonnet
 
 ### sealed_chain.rs
 - [ ] **M-029** `[maintainability]` `sealed_chain.rs:180-182`: Header validation duplicated in read_sealed_document_id vs load_sealed_verified | **Model:** Haiku
@@ -1287,7 +1287,7 @@ pub enum SecureChannelSendError {
 
 ## Coverage
 <!-- session 7: 27 changed files across 4 batches, 1 wave (2026-04-09) -->
-<!-- session 7 reviewed: platform/windows.rs, war/verification.rs, ffi/ephemeral.rs, evidence/packet.rs, sealed_chain.rs, evidence/builder/setters.rs, store/access_log.rs, fingerprint/activity_analysis.rs, cpop_jitter_bridge/session.rs, fingerprint/storage.rs, analysis/labyrinth.rs, collaboration.rs, sentinel/core_session.rs, engine/watcher.rs, fingerprint/consent.rs, continuation.rs, ffi/sentinel_witnessing.rs, analysis/lyapunov.rs, trust_policy/evaluation.rs, declaration/verification.rs, verify/mod.rs, anchors/notary.rs, store/mod.rs -->
+<!-- session 7 reviewed: platform/windows.rs, war/verification.rs, ffi/ephemeral.rs, evidence/packet.rs, sealed_chain.rs, evidence/builder/setters.rs, store/access_log.rs, fingerprint/activity_analysis.rs, cpoe_jitter_bridge/session.rs, fingerprint/storage.rs, analysis/labyrinth.rs, collaboration.rs, sentinel/core_session.rs, engine/watcher.rs, fingerprint/consent.rs, continuation.rs, ffi/sentinel_witnessing.rs, analysis/lyapunov.rs, trust_policy/evaluation.rs, declaration/verification.rs, verify/mod.rs, anchors/notary.rs, store/mod.rs -->
 <!-- session 7 confirmed_clean: sealed_chain.rs (AES-GCM correct, nonce design sound, version migration handled) -->
 <!-- session 7 false_positives: setters.rs:292 (expect after ensured Some), setters.rs:532 (HKDF 32-byte infallible), windows.rs:395 (standard Drop pattern), storage.rs:174 (dup of M-043), jitter_bridge:331 (dup of M-026, logs warning) -->
 <!-- session 6: 42 files across 8 batches, 2 waves (2026-04-08) -->
@@ -1301,7 +1301,7 @@ pub enum SecureChannelSendError {
 <!-- reviewed:platform/windows.rs:2026-04-08 -->
 <!-- reviewed:tpm/linux.rs:2026-04-09 -->
 <!-- reviewed:ipc/async_client.rs:2026-04-08 -->
-<!-- reviewed:cpop_jitter_bridge/session.rs:2026-04-08 -->
+<!-- reviewed:cpoe_jitter_bridge/session.rs:2026-04-08 -->
 <!-- reviewed:sealed_chain.rs:2026-04-08 -->
 <!-- reviewed:report/pdf/layout_sections.rs:2026-04-08 -->
 <!-- reviewed:war/profiles/cawg.rs:2026-04-09 -->
@@ -1334,7 +1334,7 @@ pub enum SecureChannelSendError {
 <!-- confirmed_clean:physics/synthesis.rs:2026-04-08 (overflow protected, wrapping_sub safe) -->
 <!-- confirmed_clean:physics/puf.rs:2026-04-08 (deterministic hash, privacy acceptable) -->
 <!-- confirmed_clean:physics/clock.rs:2026-04-08 (unsafe RDTSC safe, ARM asm correct, fallback to 0) -->
-<!-- prior confirmed_clean: vdf/params.rs, vdf/proof.rs, error.rs, cpop-jitter/evidence.rs, cmd_verify.rs, war/profiles/standards.rs -->
+<!-- prior confirmed_clean: vdf/params.rs, vdf/proof.rs, error.rs, cpoe-jitter/evidence.rs, cmd_verify.rs, war/profiles/standards.rs -->
 <!-- false_positives_session6: sealed_chain.rs:198 (doc_id not secret), sealed_chain.rs:243 (4-byte try_into infallible), windows.rs:706 (signed i64 subtraction safe) -->
 
 ---
@@ -1786,13 +1786,13 @@ pub enum SecureChannelSendError {
   <!-- pid:unhelpful_error_msg | batch:1 -->
 - [x] **M-084** `[code_quality]` `anchors/rfc3161.rs:146`: DER length encoding uses unchecked as u8 cast -- FIXED 2026-04-02
   <!-- pid:unwrap_on_io | batch:1 -->
-- [-] **M-085** `[performance]` `cpop_jitter_bridge/session.rs:180`: session_id String cloned per sample -- FALSE POSITIVE: session_id is Arc<str>; Arc::clone is a refcount bump, not a String allocation
+- [-] **M-085** `[performance]` `cpoe_jitter_bridge/session.rs:180`: session_id String cloned per sample -- FALSE POSITIVE: session_id is Arc<str>; Arc::clone is a refcount bump, not a String allocation
   <!-- pid:clone_in_loop | batch:1 -->
-- [-] **M-086** `[performance]` `cpop_jitter_bridge/session.rs:263`: export() clones entire Vec<HybridSample> -- FALSE POSITIVE: HybridSample contains only fixed-size arrays ([u8;32]), primitive scalars, and Arc<str>; clone is O(n) shallow copies
+- [-] **M-086** `[performance]` `cpoe_jitter_bridge/session.rs:263`: export() clones entire Vec<HybridSample> -- FALSE POSITIVE: HybridSample contains only fixed-size arrays ([u8;32]), primitive scalars, and Arc<str>; clone is O(n) shallow copies
   <!-- pid:clone_in_loop | batch:1 -->
-- [x] **M-087** `[error_handling]` `cpop_jitter_bridge/session.rs:381`: fs::remove_file error discarded with let _ = -- ALREADY FIXED: remove_file no longer exists
+- [x] **M-087** `[error_handling]` `cpoe_jitter_bridge/session.rs:381`: fs::remove_file error discarded with let _ = -- ALREADY FIXED: remove_file no longer exists
   <!-- pid:silent_error | batch:1 -->
-- [-] **M-088** `[code_quality]` `cpop_jitter_bridge/zone_engine.rs:49`: Unwrap on signed_duration_since; panics on clock skew -- FALSE POSITIVE: already uses unwrap_or with fallback
+- [-] **M-088** `[code_quality]` `cpoe_jitter_bridge/zone_engine.rs:49`: Unwrap on signed_duration_since; panics on clock skew -- FALSE POSITIVE: already uses unwrap_or with fallback
   <!-- pid:unwrap_on_io | batch:1 -->
 - [-] **M-089** `[code_quality]` `anchors/ots.rs:104,112,120`: TODO(WU-14) markers for unimplemented OTS parsing -- FALSE POSITIVE: no TODO(WU-14) markers exist in current code; find_pending_calendars is implemented
   <!-- pid:todo_fixme | batch:1 -->
@@ -1828,45 +1828,45 @@ pub enum SecureChannelSendError {
   <!-- pid:silent_error | first:2026-04-08 -->
   Impact: `anchor_res` error is logged at `warn!` then discarded; `FfiBeaconResult.success = true` is returned even when the WritersProof anchor call failed. Swift caller returns `CommandResult(success: true)` to the user -- they believe evidence is anchored when it is not. | Fix: If `anchor_res` is `Err`, either set `error_message` in the result or return `success: false`; distinguish "beacon fetched but not anchored" from "beacon fetched and anchored".
 
-- [x] **H-045** `[concurrency]` `apps/cpop_macos/cpop/Service/CPOPService+Actions.swift`: stale session index -- FIXED (current code computes firstIndex after every await; capture-before-gap pattern used in export)
+- [x] **H-045** `[concurrency]` `apps/cpop_macos/cpoe/Service/CPoEService+Actions.swift`: stale session index -- FIXED (current code computes firstIndex after every await; capture-before-gap pattern used in export)
   <!-- pid:toctou | first:2026-04-08 -->
   Impact: `sessionIndex` is captured via `firstIndex(where:)` before `await engine.commit()`; a concurrent `refreshStatus()` can add, remove, or reorder `sessions` during the await. After the await, `sessions[idx]` may access the wrong session or crash out-of-bounds. | Fix: After the await, re-query by path: `if let idx = sessions.firstIndex(where: { $0.documentPath == doc })`.
 
-- [ ] **H-046** `[security]` `crates/witnessd/src/ffi/writersproof_ffi.rs:82`: JWT token transiently in non-Zeroized heap during anchor call -- DEFERRED 2026-04-11 (not actionable: reqwest bearer_auth internally copies into HeaderValue outside our control; witnessd side already uses Zeroizing<String>)
+- [ ] **H-046** `[security]` `crates/cpoe/src/ffi/writersproof_ffi.rs:82`: JWT token transiently in non-Zeroized heap during anchor call -- DEFERRED 2026-04-11 (not actionable: reqwest bearer_auth internally copies into HeaderValue outside our control; cpoe side already uses Zeroizing<String>)
   <!-- pid:key_zeroize_inconsistency | first:2026-04-08 -->
   Impact: `(*api_key).clone()` dereferences the `Zeroizing<String>` wrapper and clones a bare `String`. That allocation is not Zeroized until `with_jwt` re-wraps it one frame later -- same pattern in `beacon.rs:115`. Defeats the zeroize guarantee. | Fix: Change `with_jwt` to accept `Zeroizing<String>` directly; pass `api_key` (consumed) rather than `(*api_key).clone()`.
 
-- [x] **H-047** `[resource_management]` `apps/cpop_macos/cpop/EngineService/EngineService.swift`: orphan FFI cleanup -- FIXED 2026-04-11 (CleanupTaskRegistry actor caps concurrent cleanups at 8 and deduplicates by session ID; drops new requests with a warning when full)
+- [x] **H-047** `[resource_management]` `apps/cpop_macos/cpoe/EngineService/EngineService.swift`: orphan FFI cleanup -- FIXED 2026-04-11 (CleanupTaskRegistry actor caps concurrent cleanups at 8 and deduplicates by session ID; drops new requests with a warning when full)
   <!-- pid:no_resource_cleanup | first:2026-04-08 -->
   Impact: `Task.detached { ffiEphemeralFinalize(...) }` is fire-and-forget. App shutdown or actor deallocation before the task runs leaves the Rust-side ephemeral session in memory indefinitely. | Fix: Store cleanup task handles; cancel and await them during graceful shutdown.
 
 ### Medium
 
-- [x] **M-100** `[security]` `apps/cpop_macos/cpop/ChallengeService.swift`: session ID Unicode -- FIXED (current code validates via explicit ASCII scalar range plus length <= 128)
+- [x] **M-100** `[security]` `apps/cpop_macos/cpoe/ChallengeService.swift`: session ID Unicode -- FIXED (current code validates via explicit ASCII scalar range plus length <= 128)
   <!-- pid:missing_validation | first:2026-04-08 -->
   Impact: Unicode homoglyphs or combining characters pass the guard but produce unexpected URL segments. Only ASCII alphanumerics and `-_` should be accepted. | Fix: Replace CharacterSet check with explicit ASCII byte-range comparison.
 
-- [ ] **M-101** `[error_handling]` `crates/witnessd/src/ffi/beacon.rs:111`: Silent minimum timeout enforcement | **Model:** Haiku
+- [ ] **M-101** `[error_handling]` `crates/cpoe/src/ffi/beacon.rs:111`: Silent minimum timeout enforcement | **Model:** Haiku
   <!-- pid:silent_error | first:2026-04-08 -->
   Impact: `timeout_secs.max(5)` silently upgrades caller-supplied timeouts below 5s; callers expecting 1-2s for UI responsiveness stall for 5s with no indication. | Fix: `log::warn!` when minimum is applied, or reject sub-minimum values with a returned error.
 
-- [ ] **M-102** `[maintainability]` `crates/witnessd/src/ffi/writersproof_ffi.rs:109`: `FfiResult::ok` returns human-readable string; `anchor_id` and `log_index` not machine-readable | **Model:** Sonnet
+- [ ] **M-102** `[maintainability]` `crates/cpoe/src/ffi/writersproof_ffi.rs:109`: `FfiResult::ok` returns human-readable string; `anchor_id` and `log_index` not machine-readable | **Model:** Sonnet
   <!-- pid:stringly_typed | first:2026-04-08 -->
   Impact: Swift caller must string-parse `"Anchored: <id> (log index <n>)"` to extract values; format changes silently break consumers. | Fix: Return a dedicated `FfiAnchorResult` record with `anchor_id: Option<String>` and `log_index: u64` fields.
 
-- [x] **M-103** `[concurrency]` `apps/cpop_macos/cpop/StatusBarController.swift`: Task weak self guard -- FIXED (all Task closures with [weak self] now include an immediate guard let self; 4 sites audited)
+- [x] **M-103** `[concurrency]` `apps/cpop_macos/cpoe/StatusBarController.swift`: Task weak self guard -- FIXED (all Task closures with [weak self] now include an immediate guard let self; 4 sites audited)
   <!-- pid:weak_self_capture | first:2026-04-08 -->
   Impact: Timer and observer Task closures access `self?` properties without `guard let self else { return }`. If `StatusBarController` deallocates while a timer fires, closures execute on nil. | Fix: Add `guard let self else { return }` as first line of every `[weak self]` Task closure.
 
-- [x] **M-104** `[error_handling]` `apps/cpop_macos/cpop/StatusBarController.swift`: untracked checkpoint Task -- FIXED (pendingChallengeTask is now stored and cancelled-then-replaced on each auto-checkpoint)
+- [x] **M-104** `[error_handling]` `apps/cpop_macos/cpoe/StatusBarController.swift`: untracked checkpoint Task -- FIXED (pendingChallengeTask is now stored and cancelled-then-replaced on each auto-checkpoint)
   <!-- pid:fire_and_forget | first:2026-04-08 -->
   Impact: `Task(priority: .utility) { ... }` for checkpoint writes is fire-and-forget. App termination before the task completes silently abandons the checkpoint. | Fix: Store the task handle and await it during shutdown, or track completion via the existing checkpoint state machine.
 
-- [-] **M-105** `[security]` `crates/witnessd/src/writersproof/client.rs:196`: `Content-Length` pre-check in `get_certificate` is spoofable -- FALSE POSITIVE 2026-04-09
+- [-] **M-105** `[security]` `crates/cpoe/src/writersproof/client.rs:196`: `Content-Length` pre-check in `get_certificate` is spoofable -- FALSE POSITIVE 2026-04-09
   <!-- pid:missing_validation | first:2026-04-08 -->
   <!-- get_certificate already uses chunked streaming with per-chunk size check (lines 201-214); Content-Length pre-check is optimization only, actual bytes are guarded -->
 
-- [x] **M-106** `[error_handling]` `crates/witnessd/src/writersproof/client.rs:243`: `get_crl` missing `Content-Length` pre-check (inconsistent with `get_certificate`) -- FIXED 2026-04-09
+- [x] **M-106** `[error_handling]` `crates/cpoe/src/writersproof/client.rs:243`: `get_crl` missing `Content-Length` pre-check (inconsistent with `get_certificate`) -- FIXED 2026-04-09
   <!-- pid:missing_validation | first:2026-04-08 -->
   <!-- fix: replaced .bytes().await with chunked streaming matching get_certificate pattern; Content-Length pre-check retained as optimization -->
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! WASM bindings for cpop_protocol.
+//! WASM bindings for authorproof_protocol.
 //!
 //! Build with: `wasm-pack build --target web --features wasm`
 
@@ -100,7 +100,7 @@ impl VerificationResult {
 /// and Hurst exponent estimation. Returns forensic verdict V1-V5.
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn verify_cpop_evidence(evidence_bytes: &[u8], public_key_bytes: &[u8]) -> VerificationResult {
+pub fn verify_cpoe_evidence(evidence_bytes: &[u8], public_key_bytes: &[u8]) -> VerificationResult {
     let key_bytes: [u8; 32] = match public_key_bytes.try_into() {
         Ok(bytes) => bytes,
         Err(_) => {

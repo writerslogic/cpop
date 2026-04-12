@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// NOTE: cpop_engine extends Block with evidence: Option<Box<Packet>>
+// NOTE: cpoe_engine extends Block with evidence: Option<Box<Packet>>
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

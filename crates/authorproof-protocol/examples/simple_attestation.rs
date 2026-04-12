@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use cpop_protocol::crypto::hash_sha256;
-use cpop_protocol::evidence::{Builder, Verifier};
-use cpop_protocol::rfc::DocumentRef;
+use authorproof_protocol::crypto::hash_sha256;
+use authorproof_protocol::evidence::{Builder, Verifier};
+use authorproof_protocol::rfc::DocumentRef;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use rand::RngCore;

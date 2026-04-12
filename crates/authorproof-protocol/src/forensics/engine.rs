@@ -82,7 +82,7 @@ impl ForensicAnalysis {
 
 // --- Forensic threshold constants ---
 // Empirical calibration values from keystroke dynamics literature.
-// See draft-condrey-cpop-appraisal §forensic-assessment for rationale.
+// See draft-condrey-cpoe-appraisal §forensic-assessment for rationale.
 
 /// CV below this indicates mechanically regular timing (bot/replay).
 const CV_MIN: f64 = 0.15;

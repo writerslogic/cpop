@@ -2,13 +2,13 @@
 
 <div align="center">
 
-<img alt="cpop-protocol" src="https://raw.githubusercontent.com/LF-Decentralized-Trust-labs/proof-of-process/main/assets/branding/production/dark/png/cpop-protocol.png" width="360">
+<img alt="cpoe-protocol" src="https://raw.githubusercontent.com/LF-Decentralized-Trust-labs/proof-of-process/main/assets/branding/production/dark/png/cpoe-protocol.png" width="360">
 
 ### Wire format, CBOR/COSE codec, and evidence builder for CPoP
 
-[![crates.io](https://img.shields.io/crates/v/cpop-protocol.svg?style=for-the-badge)](https://crates.io/crates/cpop-protocol)
-[![downloads](https://img.shields.io/crates/d/cpop-protocol?style=for-the-badge)](https://crates.io/crates/cpop-protocol)
-[![docs.rs](https://img.shields.io/docsrs/cpop-protocol?style=for-the-badge)](https://docs.rs/cpop-protocol)
+[![crates.io](https://img.shields.io/crates/v/cpoe-protocol.svg?style=for-the-badge)](https://crates.io/crates/cpoe-protocol)
+[![downloads](https://img.shields.io/crates/d/cpoe-protocol?style=for-the-badge)](https://crates.io/crates/cpoe-protocol)
+[![docs.rs](https://img.shields.io/docsrs/cpoe-protocol?style=for-the-badge)](https://docs.rs/cpoe-protocol)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=for-the-badge)](https://github.com/LF-Decentralized-Trust-labs/proof-of-process/blob/main/LICENSE)
 
 Part of the [Cryptographic Proof of Process (CPoP)](https://github.com/LF-Decentralized-Trust-labs/proof-of-process/blob/main/README.md) specification — an [LF Decentralized Trust](https://www.lfdecentralizedtrust.org/) Lab
@@ -19,8 +19,8 @@ Part of the [Cryptographic Proof of Process (CPoP)](https://github.com/LF-Decent
 
 ## Overview
 
-`cpop-protocol` is the reference implementation of the CPoP wire format as
-defined in [`draft-condrey-cpop-protocol`](../../draft-condrey-cpop-protocol.md).
+`cpoe-protocol` is the reference implementation of the CPoP wire format as
+defined in [`draft-condrey-cpoe-protocol`](../../draft-condrey-cpoe-protocol.md).
 It provides the types, codec, and cryptographic logic needed to build and
 verify CPoP Evidence Packets and Written Authorship Reports.
 
@@ -28,7 +28,7 @@ verify CPoP Evidence Packets and Written Authorship Reports.
 
 ```toml
 [dependencies]
-cpop-protocol = "0.1"
+cpoe-protocol = "0.1"
 ```
 
 ```rust

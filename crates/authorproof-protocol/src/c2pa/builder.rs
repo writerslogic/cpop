@@ -14,7 +14,7 @@ use super::types::{
     HashedExtUri, HashedUri, MetadataAssertion, ProcessAssertion, SoftwareAgent,
 };
 use super::{
-    ASSERTION_LABEL_ACTIONS, ASSERTION_LABEL_CPOP, ASSERTION_LABEL_EXTERNAL_REF,
+    ASSERTION_LABEL_ACTIONS, ASSERTION_LABEL_CPOE, ASSERTION_LABEL_EXTERNAL_REF,
     ASSERTION_LABEL_HASH_DATA, ASSERTION_LABEL_METADATA,
 };
 
@@ -39,7 +39,7 @@ impl C2paManifestBuilder {
         evidence_bytes: Vec<u8>,
         document_hash: [u8; 32],
     ) -> Self {
-        let manifest_label = format!("urn:cpop:{}", hex::encode(&evidence_packet.packet_id));
+        let manifest_label = format!("urn:cpoe:{}", hex::encode(&evidence_packet.packet_id));
         Self {
             document_hash,
             document_filename: None,
@@ -70,7 +70,7 @@ impl C2paManifestBuilder {
         self
     }
 
-    /// Set the URL where the .cpop evidence packet is hosted for external reference.
+    /// Set the URL where the .cpoe evidence packet is hosted for external reference.
     pub fn evidence_url(mut self, url: impl Into<String>) -> Self {
         self.evidence_url = Some(url.into());
         self
@@ -82,7 +82,7 @@ impl C2paManifestBuilder {
     }
 
     pub fn build_manifest(self, signer: &dyn EvidenceSigner) -> Result<C2paManifest> {
-        let cpop_assertion =
+        let cpoe_assertion =
             ProcessAssertion::from_evidence(&self.evidence_packet, &self.evidence_bytes);
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -92,13 +92,13 @@ impl C2paManifestBuilder {
                 action: "c2pa.created".to_string(),
                 when: Some(now),
                 software_agent: Some(SoftwareAgent::Info(ClaimGeneratorInfo {
-                    name: "CPOP".to_string(),
+                    name: "CPoE".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
                     spec_version: None,
                 })),
                 parameters: Some(ActionParameters {
                     description: Some(
-                        "Document authored with CPOP Proof-of-Process witnessing".to_string(),
+                        "Document authored with CPoE Proof-of-Process witnessing".to_string(),
                     ),
                 }),
             }],
@@ -117,18 +117,18 @@ impl C2paManifestBuilder {
         let hash_data_box =
             build_assertion_jumbf_cbor(ASSERTION_LABEL_HASH_DATA, &hash_data_assertion)?;
         let actions_box = build_assertion_jumbf_cbor(ASSERTION_LABEL_ACTIONS, &actions_assertion)?;
-        let cpop_box = build_assertion_jumbf_json(ASSERTION_LABEL_CPOP, &cpop_assertion)?;
+        let cpoe_box = build_assertion_jumbf_json(ASSERTION_LABEL_CPOE, &cpoe_assertion)?;
 
         let manifest_label = &self.manifest_label;
 
-        let mut assertion_boxes = vec![hash_data_box, actions_box, cpop_box];
+        let mut assertion_boxes = vec![hash_data_box, actions_box, cpoe_box];
         let mut created_assertions = Vec::new();
 
         // §8.4.2.3: hash superbox contents, skipping 8-byte jumb header
         for (box_bytes, label) in assertion_boxes.iter().zip(&[
             ASSERTION_LABEL_HASH_DATA,
             ASSERTION_LABEL_ACTIONS,
-            ASSERTION_LABEL_CPOP,
+            ASSERTION_LABEL_CPOE,
         ]) {
             let hash = Sha256::digest(&box_bytes[8..]);
             created_assertions.push(HashedUri {
@@ -156,7 +156,7 @@ impl C2paManifestBuilder {
             assertion_boxes.push(meta_box);
         }
 
-        // c2pa.external-reference assertion (hashed link to .cpop evidence packet)
+        // c2pa.external-reference assertion (hashed link to .cpoe evidence packet)
         if let Some(ref url) = self.evidence_url {
             let evidence_hash = Sha256::digest(&self.evidence_bytes);
             let process_start = self.evidence_packet.checkpoints.first().and_then(|cp| {
@@ -170,12 +170,12 @@ impl C2paManifestBuilder {
                     url: url.clone(),
                     alg: "sha256".to_string(),
                     hash: evidence_hash.to_vec(),
-                    format: Some("application/vnd.writersproof.cpop+cbor".to_string()),
+                    format: Some("application/vnd.writersproof.cpoe+cbor".to_string()),
                     data_types: Some(vec![AssetType {
                         type_id: "c2pa.types.audit-log".to_string(),
                     }]),
                 },
-                description: Some("CPOP proof-of-process evidence packet".to_string()),
+                description: Some("CPoE proof-of-process evidence packet".to_string()),
                 metadata: Some(AssertionMetadata {
                     process_start,
                     process_end,
@@ -202,12 +202,12 @@ impl C2paManifestBuilder {
         let claim = C2paClaim {
             claim_generator_info: vec![
                 ClaimGeneratorInfo {
-                    name: "CPOP".to_string(),
+                    name: "CPoE".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
                     spec_version: Some(C2PA_SPEC_VERSION.to_string()),
                 },
                 ClaimGeneratorInfo {
-                    name: "cpop_protocol".to_string(),
+                    name: "authorproof_protocol".to_string(),
                     version: Some(env!("CARGO_PKG_VERSION").to_string()),
                     spec_version: None,
                 },

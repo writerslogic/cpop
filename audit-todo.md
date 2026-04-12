@@ -150,9 +150,9 @@ Total findings: 190 (14 High, 52 Medium, 124 Low)
 
 ### Jitter / Calibration
 
-- [ ] **AUD-162** [M] `cpop_jitter_bridge/session.rs:336` - Loaded session gets fresh PhysSession; jitter evidence chain lost on load
-- [ ] **AUD-163** [M] `cpop_jitter_bridge/session.rs:59` - key_material not zeroized after derive_session_secret
-- [ ] **AUD-168** [M] `cpop_jitter_bridge/helpers.rs:10` - duration.as_millis() u128 cast to i64 truncates; subsequent < 0 guard is dead code
+- [ ] **AUD-162** [M] `cpoe_jitter_bridge/session.rs:336` - Loaded session gets fresh PhysSession; jitter evidence chain lost on load
+- [ ] **AUD-163** [M] `cpoe_jitter_bridge/session.rs:59` - key_material not zeroized after derive_session_secret
+- [ ] **AUD-168** [M] `cpoe_jitter_bridge/helpers.rs:10` - duration.as_millis() u128 cast to i64 truncates; subsequent < 0 guard is dead code
 - [ ] **AUD-169** [M] `calibration/transport.rs:74` - std_dev f64 cast to u64 truncates fractional part; 0.9 becomes 0
 - [ ] **AUD-170** [M] `calibration/transport.rs:17` - No validation min_samples > 0; allows potential division by zero
 
@@ -262,12 +262,12 @@ Total findings: 190 (14 High, 52 Medium, 124 Low)
 - [ ] **AUD-156** [L] `rats/scitt.rs:63` - beacon_to_receipt_format doesn't validate field contents
 
 ### Jitter / Calibration
-- [ ] **AUD-160** [L] `cpop_jitter_bridge/zone_engine.rs:87` - total_transitions u64 overflow without saturation
-- [ ] **AUD-161** [L] `cpop_jitter_bridge/zone_engine.rs:88` - Tautological guard; always true after increment
-- [ ] **AUD-164** [L] `cpop_jitter_bridge/session.rs:308` - Session save not atomic; crash produces corrupt JSON
-- [ ] **AUD-165** [L] `cpop_jitter_bridge/session.rs:281` - samples.len() cast to i32 overflows for >2^31 samples
-- [ ] **AUD-166** [L] `cpop_jitter_bridge/session.rs:284` - unique_doc_hashes cast to i32 overflow
-- [ ] **AUD-167** [L] `cpop_jitter_bridge/session.rs:274` - HashSet built every call; O(n) with no caching
+- [ ] **AUD-160** [L] `cpoe_jitter_bridge/zone_engine.rs:87` - total_transitions u64 overflow without saturation
+- [ ] **AUD-161** [L] `cpoe_jitter_bridge/zone_engine.rs:88` - Tautological guard; always true after increment
+- [ ] **AUD-164** [L] `cpoe_jitter_bridge/session.rs:308` - Session save not atomic; crash produces corrupt JSON
+- [ ] **AUD-165** [L] `cpoe_jitter_bridge/session.rs:281` - samples.len() cast to i32 overflows for >2^31 samples
+- [ ] **AUD-166** [L] `cpoe_jitter_bridge/session.rs:284` - unique_doc_hashes cast to i32 overflow
+- [ ] **AUD-167** [L] `cpoe_jitter_bridge/session.rs:274` - HashSet built every call; O(n) with no caching
 - [ ] **AUD-171** [L] `calibration/transport.rs:62` - Population variance used instead of sample variance
 
 ### Declaration / Baseline / Collaboration
