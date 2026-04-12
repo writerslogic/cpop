@@ -336,8 +336,6 @@ impl Default for SentinelConfig {
                 "explorer".to_string(),
                 // Terminals (not document editors)
                 "com.apple.Terminal".to_string(),
-                "com.googlecode.iterm2".to_string(),
-                "org.vim.MacVim".to_string(),
                 "com.github.wez.wezterm".to_string(),
                 "net.kovidgoyal.kitty".to_string(),
                 "io.alacritty".to_string(),
