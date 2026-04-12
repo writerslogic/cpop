@@ -5,7 +5,7 @@ WritersProof uses the following open-source software:
 
 AGPL-3.0-only
 -------------
-Used by: cpop_cli v1.0.5
+Used by: cpoe_cli v1.0.5
 
 GNU AFFERO GENERAL PUBLIC LICENSE
 Version 3, 19 November 2007
@@ -227,7 +227,7 @@ Used by: moxcms v0.8.1, pxfm v0.1.28
 
 Apache-2.0
 ----------
-Used by: cpop-jitter v0.2.1, cpop-protocol v0.3.0
+Used by: cpoe-jitter v0.2.1, cpoe-protocol v0.3.0
 
                                  Apache License
                            Version 2.0, January 2004
@@ -7033,7 +7033,7 @@ Used by: aws-lc-sys v0.38.0
 
 SSPL-1.0
 --------
-Used by: cpop-engine v1.0.5
+Used by: cpoe-engine v1.0.5
 
                      Server Side Public License
                      VERSION 1, OCTOBER 16, 2018
