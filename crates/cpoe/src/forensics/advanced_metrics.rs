@@ -129,6 +129,10 @@ fn compute_iki_surprisal_correlation(ikis: &[f64], surprisals: &[f64]) -> f64 {
     let (iki_mean, iki_var_norm) = mean_and_variance(iki_sample);
     let (surp_mean, surp_var_norm) = mean_and_variance(surp_sample);
 
+    if !iki_mean.is_finite() || !iki_var_norm.is_finite() {
+        return 0.0;
+    }
+
     // Convert normalized variance to sum of squared deviations for correlation formula
     let iki_var = iki_var_norm * iki_sample.len() as f64;
     let surp_var = surp_var_norm * surp_sample.len() as f64;

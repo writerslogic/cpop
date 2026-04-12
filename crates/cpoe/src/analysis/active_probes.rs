@@ -95,6 +95,13 @@ pub fn analyze_galton_invariant(
         });
     }
 
+    if samples.iter().any(|s| !s.interval_ms.is_finite()) {
+        return Err(ActiveProbeError::InsufficientGaltonSamples {
+            found: 0,
+            required: MIN_GALTON_SAMPLES,
+        });
+    }
+
     let threshold = baseline_interval_ms * PERTURBATION_THRESHOLD_FRACTION;
 
     // Identify perturbations using an iterator chain

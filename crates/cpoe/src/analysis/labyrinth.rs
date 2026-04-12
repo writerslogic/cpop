@@ -141,9 +141,12 @@ pub fn analyze_labyrinth(
 // ---------------------------------------------------------------------------
 
 fn normalize(data: &[f64]) -> Vec<f64> {
+    if data.iter().any(|v| !v.is_finite()) {
+        return data.to_vec();
+    }
     let (min, max) = data
         .iter()
-        .fold((f64::MAX, f64::MIN), |(m, ax), &x| (m.min(x), ax.max(x)));
+        .fold((f64::MAX, f64::NEG_INFINITY), |(m, ax), &x| (m.min(x), ax.max(x)));
     let range = (max - min).max(1e-9);
     data.iter().map(|&x| (x - min) / range).collect()
 }
