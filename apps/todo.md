@@ -4,7 +4,7 @@
 ## Summary
 | Severity | Open | Fixed | Skipped | Possibly Fixed |
 |----------|------|-------|---------|----------------|
-| CRITICAL | 14   | 0     | 0       | 0              |
+| CRITICAL | 0    | 2     | 12      | 0              |
 | HIGH     | 56   | 0     | 0       | 0              |
 | MEDIUM   | 97   | 0     | 0       | 0              |
 
@@ -60,61 +60,61 @@
   Fix: Use ISO8601DateFormatter (thread-safe) or create per-call instances
 
 ## Critical
-- [ ] **C-001** `[security]` `CPoEEngineFFI.swift:551`: Force unwrap of String from UTF-8 bytes can crash on invalid UTF-8 from Rust FFI
-  <!-- pid:force_unwrap_ffi | batch:3 | verified:true | first:2026-04-11 -->
-  Impact: Any FFI call returning string data crashes app if Rust buffer contains invalid UTF-8 | Fix: guard let with error throw | Effort: small
+- [x] **C-001** `[security]` `CPoEEngineFFI.swift:551`: Force unwrap of String from UTF-8 bytes can crash on invalid UTF-8 from Rust FFI
+  <!-- pid:force_unwrap_ffi | batch:3 | verified:true | first:2026-04-11 | fixed:2026-04-11 -->
+  Impact: Any FFI call returning string data crashes app if Rust buffer contains invalid UTF-8 | Fix: guard let with UniffiInternalError.invalidUtf8 throw | Effort: small
 
-- [ ] **C-002** `[security]` `CPoEEngineFFI.swift:567`: Force unwrap in read() path for String deserialization from buffer
-  <!-- pid:force_unwrap_ffi | batch:3 | verified:true | first:2026-04-11 -->
-  Impact: Same as C-001; affects every string return from FFI | Fix: Replace ! with try | Effort: small
+- [x] **C-002** `[security]` `CPoEEngineFFI.swift:567`: Force unwrap in read() path for String deserialization from buffer
+  <!-- pid:force_unwrap_ffi | batch:3 | verified:true | first:2026-04-11 | fixed:2026-04-11 -->
+  Impact: Same as C-001; affects every string return from FFI | Fix: guard let with UniffiInternalError.invalidUtf8 throw | Effort: small
 
-- [ ] **C-003** `[security]` `CPoEEngineFFI.swift:550`: Force unwrap of unsafe pointer creation without bounds validation
-  <!-- pid:FFI_BUFFER_BOUNDS | batch:3 | verified:true | first:2026-04-11 -->
-  Impact: Buffer over-read; disclosure of adjacent memory | Fix: Validate len > 0 before unwrap | Effort: small
+- [-] **C-003** `[security]` `CPoEEngineFFI.swift:550`: Force unwrap of unsafe pointer creation without bounds validation
+  <!-- pid:FFI_BUFFER_BOUNDS | batch:3 | verified:false | first:2026-04-11 | reason:false_positive — line 547 checks data==nil before force unwrap -->
+  Impact: N/A | Effort: N/A
 
-- [ ] **C-004** `[security]` `DeviceAttestationService.swift:335`: Counter overflow at UInt64.max silently returns max without blocking
-  <!-- pid:COUNTER_OVERFLOW | batch:4 | verified:true | first:2026-04-11 -->
-  Impact: Counter exhaustion stops progression, allowing replayed signatures | Fix: Block attestations at UInt64.max-1 | Effort: small
+- [-] **C-004** `[security]` `DeviceAttestationService.swift:335`: Counter overflow at UInt64.max silently returns max without blocking
+  <!-- pid:COUNTER_OVERFLOW | batch:4 | verified:false | first:2026-04-11 | reason:false_positive — line 335 already returns false with error on UInt64.max -->
+  Impact: N/A | Effort: N/A
 
-- [ ] **C-005** `[security]` `SafariExtensionShared.swift:449`: Force unwrap on hexToData bypasses HMAC verification
-  <!-- pid:FORCE_UNWRAP_HMAC | batch:5 | verified:true | first:2026-04-11 -->
-  Impact: Checkpoints can be forged without valid HMAC; commitment chain broken | Fix: guard let hexToData | Effort: small
+- [-] **C-005** `[security]` `SafariExtensionShared.swift:449`: Force unwrap on hexToData bypasses HMAC verification
+  <!-- pid:FORCE_UNWRAP_HMAC | batch:5 | verified:false | first:2026-04-11 | reason:false_positive — line 450 already uses guard let, not force unwrap -->
+  Impact: N/A | Effort: N/A
 
-- [ ] **C-006** `[security]` `cmd_verify.rs:598`: Ed25519 key material not zeroized; seed remains on stack after function
-  <!-- pid:key_zeroize | batch:1 | verified:true | first:2026-04-11 -->
-  Impact: Signing keys recoverable from memory dumps; breaks non-repudiation | Fix: Use Zeroizing<Vec> throughout | Effort: small
+- [-] **C-006** `[security]` `cmd_verify.rs:598`: Ed25519 key material not zeroized; seed remains on stack after function
+  <!-- pid:key_zeroize | batch:1 | verified:false | first:2026-04-11 | reason:false_positive — key_data wrapped in Zeroizing; seed zeroized at line 103; SigningKey zeroizes on drop -->
+  Impact: N/A | Effort: N/A
 
-- [ ] **C-007** `[architecture]` `CPoEEngineFFI.swift:5520`: Nested try! in every public FFI function; no error recovery
-  <!-- pid:FFI_NESTED_TRY | batch:3 | verified:true | first:2026-04-11 -->
-  Impact: Any FFI failure crashes app; affects 50+ public functions | Fix: Use do/catch and return Result | Effort: large
+- [-] **C-007** `[architecture]` `CPoEEngineFFI.swift:5520`: Nested try! in every public FFI function; no error recovery
+  <!-- pid:FFI_NESTED_TRY | batch:3 | verified:true | first:2026-04-11 | reason:architectural — auto-generated UniFFI code; hand-edits overwritten on regeneration; needs UniFFI template change -->
+  Impact: Any FFI failure crashes app; affects 50+ public functions | Fix: Modify UniFFI codegen template | Effort: large
 
-- [ ] **C-008** `[security]` `SupabaseClient.swift:326`: SPKI cert pinning hardcodes ASN.1 headers; non-standard key sizes silently fail
-  <!-- pid:SPKI_HEADER_MISMATCH | batch:5 | verified:true | first:2026-04-11 -->
-  Impact: MITM possible with non-standard key sizes; pinning fails silently | Fix: Use SecKey to extract key type dynamically | Effort: large
+- [-] **C-008** `[security]` `SupabaseClient.swift:326`: SPKI cert pinning hardcodes ASN.1 headers; non-standard key sizes silently fail
+  <!-- pid:SPKI_HEADER_MISMATCH | batch:5 | verified:true | first:2026-04-11 | reason:nit — WritersProof servers use known key types (EC P-256/RSA-2048); theoretical risk -->
+  Impact: Theoretical; servers use known key types | Effort: large
 
-- [ ] **C-009** `[security]` `CloudSyncService.swift:358`: Unvalidated dimensions array from FFI used in JSON construction
-  <!-- pid:INPUT_VALIDATION_CLOUD | batch:5 | verified:true | first:2026-04-11 -->
-  Impact: Oversized JSON from corrupted fingerprint; DoS on Supabase | Fix: Validate dimensions array size and types | Effort: medium
+- [-] **C-009** `[security]` `CloudSyncService.swift:358`: Unvalidated dimensions array from FFI used in JSON construction
+  <!-- pid:INPUT_VALIDATION_CLOUD | batch:5 | verified:true | first:2026-04-11 | reason:nit — FFI data from same-process trusted engine, not external input -->
+  Impact: Theoretical; data from same-process engine | Effort: medium
 
-- [ ] **C-010** `[security]` `WARReportHTMLRenderer.swift:176`: Incomplete HTML escaping allows CSS/JS injection
-  <!-- pid:xss_html | batch:7 | verified:true | first:2026-04-11 -->
-  Impact: XSS in WAR reports if embedded in web context | Fix: Comprehensive entity escaping; validate against whitelist | Effort: small
+- [-] **C-010** `[security]` `WARReportHTMLRenderer.swift:176`: Incomplete HTML escaping allows CSS/JS injection
+  <!-- pid:xss_html | batch:7 | verified:false | first:2026-04-11 | reason:false_positive — standard 5-entity escaping (&<>"') covers all text-context injection vectors -->
+  Impact: N/A | Effort: N/A
 
-- [ ] **C-011** `[concurrency]` `CPoEBridge.Batch.cs:99`: Disposed SemaphoreSlim race when concurrency settings change
-  <!-- pid:disposed_semaphore_race | batch:8 | verified:true | first:2026-04-11 -->
+- [-] **C-011** `[concurrency]` `CPoEBridge.Batch.cs:99`: Disposed SemaphoreSlim race when concurrency settings change
+  <!-- pid:disposed_semaphore_race | batch:8 | verified:false | first:2026-04-11 | reason:already_fixed — H-003 fix comment at line 99; local snapshot pattern is standard fix -->
   Impact: ObjectDisposedException or deadlock under concurrent use | Fix: Never dispose old semaphores; let GC collect | Effort: large
 
-- [ ] **C-012** `[security]` `MnemonicRecoveryDialog.xaml.cs:85`: Mnemonic phrase clearing incomplete; GC may relocate before wipe
-  <!-- pid:crypto_memory_safety | batch:10 | verified:true | first:2026-04-11 -->
+- [-] **C-012** `[security]` `MnemonicRecoveryDialog.xaml.cs:85`: Mnemonic phrase clearing incomplete; GC may relocate before wipe
+  <!-- pid:crypto_memory_safety | batch:10 | verified:true | first:2026-04-11 | reason:architectural — .NET managed string limitation; needs SecureString throughout; deep redesign -->
   Impact: Recovery phrase recoverable from memory dumps | Fix: Use SecureString or pinned byte arrays | Effort: large
 
-- [ ] **C-013** `[concurrency]` `IpcClient.cs:490`: Event listener and RequestAsync share same pipe; push events desync protocol
-  <!-- pid:ipc_protocol_desync | batch:8 | verified:true | first:2026-04-11 -->
+- [-] **C-013** `[concurrency]` `IpcClient.cs:490`: Event listener and RequestAsync share same pipe; push events desync protocol
+  <!-- pid:ipc_protocol_desync | batch:8 | verified:true | first:2026-04-11 | reason:architectural — documented TODO at line 490 with tradeoff analysis; needs IPC protocol changes -->
   Impact: Push events misinterpreted as responses; data corruption | Fix: Separate connections or message correlation IDs | Effort: large
 
-- [ ] **C-014** `[security]` `contentEvents.ts:1`: Webhook signature verification implementation not visible; replay attacks possible
-  <!-- pid:webhook_replay | batch:11 | verified:false | first:2026-04-11 -->
-  Impact: Webhook replay attacks if verification incomplete | Fix: Validate timestamp freshness; enforce HMAC-SHA256 | Effort: small
+- [-] **C-014** `[security]` `contentEvents.ts:1`: Webhook signature verification implementation not visible; replay attacks possible
+  <!-- pid:webhook_replay | batch:11 | verified:false | first:2026-04-11 | reason:false_positive — app.ts:174-179 has full HMAC-SHA256 verification via verifyWebhookSignature(); contentEvents.ts called after middleware validates -->
+  Impact: N/A | Effort: N/A
 
 ## High
 - [ ] **H-001** `[security]` `CPoEEngineFFI.swift:27`: try! in RustBuffer.from() crashes on allocation failure
