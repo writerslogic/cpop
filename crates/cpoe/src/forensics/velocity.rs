@@ -29,7 +29,7 @@ pub fn analyze_velocity(sorted: SortedEvents<'_>) -> VelocityMetrics {
         let delta_ns = window[1]
             .timestamp_ns
             .saturating_sub(window[0].timestamp_ns);
-        let delta_sec = delta_ns as f64 / 1e9;
+        let delta_sec = crate::utils::ns_to_secs(delta_ns);
 
         if delta_sec > 0.0 && delta_sec < MAX_DELTA_SEC {
             let bytes_delta = window[1].size_delta.abs() as f64;
@@ -85,7 +85,7 @@ pub fn count_sessions_sorted(sorted_events: &[EventData], gap_threshold_sec: f64
         let delta_ns = sorted_events[i]
             .timestamp_ns
             .saturating_sub(sorted_events[i - 1].timestamp_ns);
-        if delta_ns as f64 / 1e9 > gap_threshold_sec {
+        if crate::utils::ns_to_secs(delta_ns) > gap_threshold_sec {
             count += 1;
         }
     }
@@ -112,7 +112,7 @@ pub fn detect_sessions<'a>(
         let delta_ns = slice[i]
             .timestamp_ns
             .saturating_sub(slice[i - 1].timestamp_ns);
-        if delta_ns as f64 / 1e9 > gap_threshold_sec {
+        if crate::utils::ns_to_secs(delta_ns) > gap_threshold_sec {
             sessions.push(&slice[start..i]);
             start = i;
         }
@@ -136,7 +136,7 @@ pub fn compute_session_stats(sorted: SortedEvents<'_>) -> SessionStats {
     for session in &sessions {
         if let (Some(first), Some(last)) = (session.first(), session.last()) {
             let dur_ns = last.timestamp_ns.saturating_sub(first.timestamp_ns).max(0);
-            total_duration += dur_ns as f64 / 1e9;
+            total_duration += crate::utils::ns_to_secs(dur_ns);
         }
     }
 
@@ -153,7 +153,7 @@ pub fn compute_session_stats(sorted: SortedEvents<'_>) -> SessionStats {
         .last()
         .and_then(|s| s.last())
         .map_or(0, |e| e.timestamp_ns);
-    stats.time_span_sec = last.saturating_sub(first).max(0) as f64 / 1e9;
+    stats.time_span_sec = crate::utils::ns_to_secs(last.saturating_sub(first));
 
     stats
 }

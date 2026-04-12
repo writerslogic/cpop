@@ -193,7 +193,7 @@ fn compute_gap_correlation(events: &[TopologyEvent], error_indices: &[usize]) ->
     let mut normal_count = 0;
 
     for (i, event) in events.iter().enumerate() {
-        let gap_ms = event.gap_ns as f64 / 1_000_000.0;
+        let gap_ms = crate::utils::ns_to_ms(event.gap_ns as i64);
 
         if error_set.contains(&i) {
             pre_error_sum += gap_ms;
@@ -384,7 +384,7 @@ fn compute_error_distribution(
 
     for (i, &error_idx) in error_indices.iter().enumerate() {
         let event = &events[error_idx];
-        let gap_ms = event.gap_ns as f64 / 1_000_000.0;
+        let gap_ms = crate::utils::ns_to_ms(event.gap_ns as i64);
 
         if gap_ms < 500.0 {
             dist.immediate_corrections += 1;
@@ -399,7 +399,7 @@ fn compute_error_distribution(
             let time_diff = events[error_idx]
                 .timestamp_ns
                 .saturating_sub(events[prev_idx].timestamp_ns);
-            time_diff > 0 && (time_diff as f64 / 1_000_000_000.0) < 1.0
+            time_diff > 0 && (crate::utils::ns_to_secs(time_diff)) < 1.0
         } else {
             false
         };
