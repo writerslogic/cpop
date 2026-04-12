@@ -348,7 +348,18 @@ pub(crate) fn handle_checkpoint(
         payload.extend_from_slice(&new_commitment);
         payload.extend_from_slice(&now_ns.to_le_bytes());
         payload.extend_from_slice(&session.jitter_hash);
-        hex::encode(sk.sign(&payload).to_bytes())
+        let sig_hex = hex::encode(sk.sign(&payload).to_bytes());
+        let pubkey_hex = hex::encode(sk.verifying_key().as_bytes());
+        // Persist signature to evidence file so it survives browser crashes
+        let sig_line = format!(
+            "<!-- sig: {} pubkey: {} ordinal: {} -->\n",
+            sig_hex, pubkey_hex, session.expected_ordinal
+        );
+        let _ = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&session.evidence_path)
+            .and_then(|mut f| f.write_all(sig_line.as_bytes()));
+        sig_hex
     });
 
     session.prev_commitment = new_commitment;
@@ -444,7 +455,16 @@ pub(crate) fn handle_stop_session() -> Response {
         payload.extend_from_slice(&session.checkpoint_count.to_le_bytes());
         payload.extend_from_slice(&session.prev_commitment);
         payload.extend_from_slice(&session.jitter_hash);
-        hex::encode(sk.sign(&payload).to_bytes())
+        let sig_hex = hex::encode(sk.sign(&payload).to_bytes());
+        let seal_line = format!(
+            "<!-- session-end-sig: {} checkpoints: {} -->\n",
+            sig_hex, session.checkpoint_count
+        );
+        let _ = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&session.evidence_path)
+            .and_then(|mut f| f.write_all(seal_line.as_bytes()));
+        sig_hex
     });
 
     Response::SessionStopped {

@@ -906,6 +906,7 @@ mod tests {
             session_id: "abc123".into(),
             message: "Now witnessing: test".into(),
             session_nonce: "deadbeef".into(),
+            device_public_key: None,
         };
         let mut buf = Vec::new();
         write_message_to(&mut buf, &resp).unwrap();
@@ -931,6 +932,7 @@ mod tests {
             checkpoint_count: 5,
             message: "Created".into(),
             commitment: "b".repeat(64),
+            signature: None,
         };
         let mut buf = Vec::new();
         write_message_to(&mut buf, &resp).unwrap();
@@ -942,5 +944,91 @@ mod tests {
             64,
             "commitment should be 64 hex chars"
         );
+        assert!(body.get("signature").is_none(), "signature omitted when None");
+    }
+
+    #[test]
+    fn test_nmh_checkpoint_response_includes_signature_when_present() {
+        let resp = Response::CheckpointCreated {
+            hash: "a".repeat(64),
+            checkpoint_count: 1,
+            message: "ok".into(),
+            commitment: "b".repeat(64),
+            signature: Some("c".repeat(128)),
+        };
+        let mut buf = Vec::new();
+        write_message_to(&mut buf, &resp).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+        assert_eq!(body["signature"].as_str().unwrap().len(), 128);
+    }
+
+    #[test]
+    fn test_nmh_session_started_includes_device_public_key() {
+        let resp = Response::SessionStarted {
+            session_id: "s1".into(),
+            message: "ok".into(),
+            session_nonce: "aa".repeat(16),
+            device_public_key: Some("dd".repeat(32)),
+        };
+        let mut buf = Vec::new();
+        write_message_to(&mut buf, &resp).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+        assert_eq!(body["device_public_key"].as_str().unwrap().len(), 64);
+    }
+
+    #[test]
+    fn test_nmh_session_stopped_includes_signature() {
+        let resp = Response::SessionStopped {
+            message: "ended".into(),
+            signature: Some("ee".repeat(64)),
+        };
+        let mut buf = Vec::new();
+        write_message_to(&mut buf, &resp).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+        assert_eq!(body["type"], "session_stopped");
+        assert_eq!(body["signature"].as_str().unwrap().len(), 128);
+    }
+
+    #[test]
+    fn test_nmh_session_stopped_omits_signature_when_none() {
+        let resp = Response::SessionStopped {
+            message: "ended".into(),
+            signature: None,
+        };
+        let mut buf = Vec::new();
+        write_message_to(&mut buf, &resp).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&buf[4..]).unwrap();
+        assert!(body.get("signature").is_none());
+    }
+
+    #[test]
+    fn test_nmh_load_device_signing_key_signs_and_verifies() {
+        use ed25519_dalek::{Signer, Verifier};
+        let seed = [42u8; 32];
+        let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let vk = sk.verifying_key();
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"cpoe-checkpoint-sig-v1");
+        payload.extend_from_slice(b"session123");
+        payload.extend_from_slice(&1u64.to_le_bytes());
+        payload.extend_from_slice(b"contenthash");
+        payload.extend_from_slice(&[0u8; 32]); // commitment
+        payload.extend_from_slice(&12345u64.to_le_bytes()); // timestamp
+        payload.extend_from_slice(&[0u8; 32]); // jitter_hash
+
+        let sig = sk.sign(&payload);
+        assert!(vk.verify(&payload, &sig).is_ok());
+    }
+
+    #[test]
+    fn test_nmh_commitment_includes_all_fields() {
+        let prev = [1u8; 32];
+        let nonce = [2u8; 16];
+        let c1 = compute_commitment(&prev, "hash1", 1, &nonce);
+        let c2 = compute_commitment(&prev, "hash2", 1, &nonce);
+        let c3 = compute_commitment(&prev, "hash1", 2, &nonce);
+        assert_ne!(c1, c2, "different content_hash must produce different commitment");
+        assert_ne!(c1, c3, "different ordinal must produce different commitment");
     }
 }
