@@ -10,7 +10,7 @@
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Read, Write};
 
-use super::{CodecError, Result, CBOR_TAG_CPOR, CBOR_TAG_CPOE, CBOR_TAG_CWAR};
+use super::{CodecError, Result, CBOR_TAG_CPOE, CBOR_TAG_CPOR, CBOR_TAG_CWAR};
 
 /// Maximum CBOR payload size (16 MiB). Rejects inputs larger than this
 /// before deserialization to prevent OOM from malicious payloads.

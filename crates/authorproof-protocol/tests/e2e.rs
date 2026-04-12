@@ -9,7 +9,7 @@ use authorproof_protocol::codec::cbor::{
     decode_cpoe, decode_cwar, encode_compact_ref, encode_cpoe, encode_cwar, extract_tag, has_tag,
 };
 use authorproof_protocol::codec::{
-    decode_evidence, encode_evidence, CBOR_TAG_CPOR, CBOR_TAG_CPOE, CBOR_TAG_CWAR,
+    decode_evidence, encode_evidence, CBOR_TAG_CPOE, CBOR_TAG_CPOR, CBOR_TAG_CWAR,
 };
 use authorproof_protocol::compact_ref::{CompactEvidenceRef, CompactRefError, CompactSummary};
 use authorproof_protocol::crypto::hash_sha256;
