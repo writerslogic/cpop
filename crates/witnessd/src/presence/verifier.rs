@@ -11,6 +11,7 @@ use subtle::ConstantTimeEq;
 use super::helpers::hash_response;
 use super::types::{Challenge, ChallengeStatus, ChallengeType, Config, Session};
 
+#[derive(Debug)]
 /// Issue and verify interactive presence challenges during authoring sessions.
 pub struct Verifier {
     config: Config,

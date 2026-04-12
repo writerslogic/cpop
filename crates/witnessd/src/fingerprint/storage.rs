@@ -49,6 +49,7 @@ pub struct StoredProfile {
     pub file_size: u64,
 }
 
+#[derive(Debug)]
 /// Encrypted on-disk profile store. Key material is zeroized on drop.
 pub struct FingerprintStorage {
     storage_dir: PathBuf,

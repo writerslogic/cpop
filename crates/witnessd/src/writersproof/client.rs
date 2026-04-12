@@ -16,6 +16,7 @@ use crate::error::{Error, Result};
 /// Default WritersProof API base URL.
 pub const DEFAULT_API_URL: &str = "https://api.writersproof.com";
 
+#[derive(Debug)]
 /// WritersProof API client.
 pub struct WritersProofClient {
     base_url: String,

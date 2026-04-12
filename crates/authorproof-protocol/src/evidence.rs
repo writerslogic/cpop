@@ -41,9 +41,14 @@ pub struct Builder {
     last_checkpoint_hash: HashValue,
     signer: Box<dyn EvidenceSigner>,
     jitter: PhysJitter,
+    min_causality_entropy_bits: u8,
     attestation_tier: AttestationTier,
     baseline_verification: Option<crate::baseline::BaselineVerification>,
 }
+
+/// Production floor for causality-lock entropy. 8 bits = 256 possible values,
+/// enough to block brute-force pre-computation within a single VDF window.
+pub const DEFAULT_MIN_CAUSALITY_ENTROPY_BITS: u8 = 8;
 
 impl Builder {
     pub fn new(document: DocumentRef, signer: Box<dyn EvidenceSigner>) -> Result<Self> {
@@ -64,6 +69,7 @@ impl Builder {
             last_checkpoint_hash: initial_hash,
             signer,
             jitter: PhysJitter::new(1),
+            min_causality_entropy_bits: DEFAULT_MIN_CAUSALITY_ENTROPY_BITS,
             attestation_tier: AttestationTier::SoftwareOnly,
             baseline_verification: None,
         })
@@ -74,8 +80,13 @@ impl Builder {
         self
     }
 
+    /// Configure the jitter's internal min-entropy threshold AND the Builder's
+    /// causality-lock threshold to the same value. Callers that want to
+    /// accept lower-entropy jitter (e.g. integration tests on fast CI hardware
+    /// where timing std-dev is small) should set this explicitly.
     pub fn with_min_entropy_bits(mut self, bits: u8) -> Self {
         self.jitter = PhysJitter::new(bits);
+        self.min_causality_entropy_bits = bits;
         self
     }
 
@@ -99,14 +110,10 @@ impl Builder {
             .sample(content)
             .map_err(|e| Error::Crypto(format!("PhysJitter sampling failed: {}", e)))?;
 
-        // Minimum entropy for a cryptographically meaningful causality lock.
-        // 8 bits = 256 possible values, sufficient to prevent brute-force
-        // pre-computation of the lock within a single VDF window.
-        const MIN_CAUSALITY_ENTROPY_BITS: u8 = 8;
-        if entropy.entropy_bits < MIN_CAUSALITY_ENTROPY_BITS {
+        if entropy.entropy_bits < self.min_causality_entropy_bits {
             return Err(Error::Crypto(format!(
                 "PhysJitter entropy too low ({} bits); causality lock requires >= {} bits",
-                entropy.entropy_bits, MIN_CAUSALITY_ENTROPY_BITS,
+                entropy.entropy_bits, self.min_causality_entropy_bits,
             )));
         }
 

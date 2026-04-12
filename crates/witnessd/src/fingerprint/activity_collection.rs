@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug)]
 /// Ring-buffer accumulator for building fingerprints from streaming samples.
 pub struct ActivityFingerprintAccumulator {
     samples: VecDeque<SimpleJitterSample>,

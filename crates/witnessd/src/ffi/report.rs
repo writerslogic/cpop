@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use crate::ffi::helpers::{detect_attestation_tier_info, open_store};
+use crate::ffi::helpers::detect_attestation_tier_info;
 use crate::ffi::report_types::*;
 use crate::report::*;
 use crate::utils::finite_or;

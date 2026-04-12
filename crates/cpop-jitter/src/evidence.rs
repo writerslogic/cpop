@@ -212,6 +212,15 @@ impl EvidenceChain {
         &self.records
     }
 
+    /// Mutable access to the evidence records, exposed for integrity tests
+    /// that deliberately tamper with the chain and then assert that
+    /// validation detects the mutation. Production code should prefer
+    /// `append()` and the read-only `records()` accessor.
+    #[doc(hidden)]
+    pub fn records_mut(&mut self) -> &mut Vec<Evidence> {
+        &mut self.records
+    }
+
     /// Read-only access to the chain MAC.
     pub fn chain_mac(&self) -> &[u8; 32] {
         &self.chain_mac

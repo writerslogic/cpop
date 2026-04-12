@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::collector::ResearchCollector;
 use super::types::{UploadResult, DEFAULT_UPLOAD_INTERVAL_SECS};
 
+#[derive(Debug)]
 /// Background task that periodically uploads buffered research sessions.
 pub struct ResearchUploader {
     collector: Arc<tokio::sync::Mutex<ResearchCollector>>,

@@ -2,20 +2,20 @@
 
 //! End-to-end and edge case tests for cpop-protocol.
 
-use cpop_protocol::c2pa::{
+use authorproof_protocol::c2pa::{
     encode_jumbf, validate_manifest, verify_jumbf_structure, C2paManifestBuilder,
 };
-use cpop_protocol::codec::cbor::{
+use authorproof_protocol::codec::cbor::{
     decode_cpop, decode_cwar, encode_compact_ref, encode_cpop, encode_cwar, extract_tag, has_tag,
 };
-use cpop_protocol::codec::{
+use authorproof_protocol::codec::{
     decode_evidence, encode_evidence, CBOR_TAG_COMPACT_REF, CBOR_TAG_CPOP, CBOR_TAG_CWAR,
 };
-use cpop_protocol::compact_ref::{CompactEvidenceRef, CompactRefError, CompactSummary};
-use cpop_protocol::crypto::hash_sha256;
-use cpop_protocol::evidence::{Builder, Verifier};
-use cpop_protocol::rfc::{Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
-use cpop_protocol::war::types::{Block, Seal, Version};
+use authorproof_protocol::compact_ref::{CompactEvidenceRef, CompactRefError, CompactSummary};
+use authorproof_protocol::crypto::hash_sha256;
+use authorproof_protocol::evidence::{Builder, Verifier};
+use authorproof_protocol::rfc::{Checkpoint, DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
+use authorproof_protocol::war::types::{Block, Seal, Version};
 use ed25519_dalek::SigningKey;
 use rand::RngCore;
 use uuid::Uuid;
@@ -455,13 +455,13 @@ fn test_jumbf_parse_malformed() {
 
 #[test]
 fn test_cose_sign_verify_roundtrip() {
-    use cpop_protocol::crypto::{sign_evidence_cose, verify_evidence_cose};
+    use authorproof_protocol::crypto::{sign_evidence_cose, verify_evidence_cose};
 
     let signing_key = random_signing_key();
     let verifying_key = signing_key.verifying_key();
 
     let payload = b"test payload for COSE signing";
-    let signer: Box<dyn cpop_protocol::crypto::EvidenceSigner> = Box::new(signing_key);
+    let signer: Box<dyn authorproof_protocol::crypto::EvidenceSigner> = Box::new(signing_key);
     let signed = sign_evidence_cose(payload, signer.as_ref()).unwrap();
 
     // Verify with correct key

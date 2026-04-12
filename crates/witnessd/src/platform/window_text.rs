@@ -20,6 +20,7 @@ pub struct WindowText {
 
 /// Captures text from visible windows on the current machine.
 #[cfg(target_os = "macos")]
+#[derive(Debug)]
 pub struct WindowTextCapture;
 
 #[cfg(target_os = "macos")]

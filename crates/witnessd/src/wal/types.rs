@@ -144,10 +144,17 @@ pub(super) struct WalState {
     pub(super) pending_syncs: u64,
 }
 
+#[derive(Debug)]
 /// Result of a full WAL integrity verification pass.
 pub struct WalVerification {
     pub valid: bool,
     pub entries: u64,
     pub final_hash: [u8; 32],
     pub error: Option<WalError>,
+}
+
+impl std::fmt::Debug for Wal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Wal").finish_non_exhaustive()
+    }
 }

@@ -12,6 +12,7 @@ use super::types::{
     MIN_SESSIONS_FOR_UPLOAD, RESEARCH_UPLOAD_URL,
 };
 
+#[derive(Debug)]
 /// Collects anonymized sessions and manages disk persistence / upload.
 pub struct ResearchCollector {
     config: ResearchConfig,

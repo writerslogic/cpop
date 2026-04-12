@@ -46,6 +46,15 @@ pub struct AnchorManager {
     config: AnchorManagerConfig,
 }
 
+impl std::fmt::Debug for AnchorManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnchorManager")
+            .field("providers_count", &self.providers.len())
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 /// Configuration for anchor manager behavior.
 #[derive(Debug, Clone)]
 pub struct AnchorManagerConfig {

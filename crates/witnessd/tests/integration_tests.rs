@@ -1282,9 +1282,12 @@ fn test_exported_cpop_is_valid_cbor() {
     let data = std::fs::read(&output).expect("read exported file");
     assert!(!data.is_empty(), "exported file should not be empty");
 
+    // Evidence is wrapped in a COSE_Sign1 envelope; strip the envelope first.
+    let payload = cpop_engine::ffi::helpers::unwrap_cose_or_raw(&data);
+
     // Parse as generic CBOR value to confirm structural validity
     let value: ciborium::Value =
-        ciborium::from_reader(data.as_slice()).expect("exported file should be valid CBOR");
+        ciborium::from_reader(payload.as_slice()).expect("exported payload should be valid CBOR");
 
     // The top-level value is a CBOR tag (CPOP tag 1129336656) wrapping a map
     let inner = match &value {
@@ -1404,8 +1407,10 @@ fn test_export_includes_document_metadata() {
 
     // Parse the CBOR and verify document metadata fields
     let data = std::fs::read(&output).expect("read exported file");
+    // Evidence is wrapped in a COSE_Sign1 envelope; strip the envelope first.
+    let payload = cpop_engine::ffi::helpers::unwrap_cose_or_raw(&data);
     let value: ciborium::Value =
-        ciborium::from_reader(data.as_slice()).expect("should be valid CBOR");
+        ciborium::from_reader(payload.as_slice()).expect("should be valid CBOR");
 
     // Unwrap CBOR tag if present (CPOP tag wraps the map)
     let inner = match &value {

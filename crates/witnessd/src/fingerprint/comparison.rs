@@ -144,6 +144,7 @@ fn confidence_from_samples(samples: u64) -> f64 {
     (samples as f64 / CONFIDENCE_SATURATION_SAMPLES).min(1.0)
 }
 
+#[derive(Debug)]
 /// Threshold-based matcher for finding similar profiles.
 pub struct ProfileMatcher {
     threshold: f64,
@@ -251,6 +252,7 @@ pub struct VerificationResult {
     pub verdict: ComparisonVerdict,
 }
 
+#[derive(Debug)]
 /// Single-linkage clustering of fingerprints by similarity.
 pub struct BatchComparator {
     cluster_threshold: f64,

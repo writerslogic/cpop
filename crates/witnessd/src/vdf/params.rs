@@ -201,6 +201,7 @@ pub fn swf_seed_core(prev_hash: &[u8; 32], local_nonce: &[u8; 32]) -> [u8; 32] {
 /// available parallelism, to prevent resource exhaustion on large proof sets.
 const MAX_BATCH_THREADS: usize = 16;
 
+#[derive(Debug)]
 /// Parallel VDF proof verifier using a bounded worker thread pool.
 pub struct BatchVerifier {
     workers: usize,

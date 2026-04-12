@@ -8,6 +8,7 @@ use objc::runtime::Object;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+#[derive(Debug)]
 /// macOS focus monitor using NSWorkspace and Accessibility APIs.
 pub struct MacOSFocusMonitor {
     _config: Arc<SentinelConfig>,

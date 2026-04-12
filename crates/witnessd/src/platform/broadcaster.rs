@@ -23,6 +23,20 @@ where
     failed_sends: AtomicU64,
 }
 
+impl<T> std::fmt::Debug for EventBroadcaster<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventBroadcaster")
+            .field("subscribers", &self.subscribers.len())
+            .field("next_id", &self.next_id.load(Ordering::Relaxed))
+            .field("broadcast_count", &self.broadcast_count.load(Ordering::Relaxed))
+            .field("failed_sends", &self.failed_sends.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
 impl<T> EventBroadcaster<T>
 where
     T: Clone + Send + Sync + 'static,
@@ -114,6 +128,20 @@ where
     next_id: AtomicU64,
     broadcast_count: AtomicU64,
     failed_sends: AtomicU64,
+}
+
+impl<T> std::fmt::Debug for SyncEventBroadcaster<T>
+where
+    T: Clone + Send + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncEventBroadcaster")
+            .field("subscribers", &self.subscribers.len())
+            .field("next_id", &self.next_id.load(Ordering::Relaxed))
+            .field("broadcast_count", &self.broadcast_count.load(Ordering::Relaxed))
+            .field("failed_sends", &self.failed_sends.load(Ordering::Relaxed))
+            .finish()
+    }
 }
 
 impl<T> SyncEventBroadcaster<T>

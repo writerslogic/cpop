@@ -64,6 +64,7 @@ pub fn compute_jitter_hash(
     result
 }
 
+#[derive(Debug)]
 /// HMAC-based timing injection engine for mouse events.
 pub struct MouseStegoEngine {
     seed: [u8; 32],

@@ -16,7 +16,7 @@ use super::types::PufProvider;
 const SOFTWARE_PUF_SEED_NAME: &str = "puf_seed";
 
 /// Software-based PUF using a persisted random seed for key derivation.
-#[derive(Zeroize, ZeroizeOnDrop)]
+#[derive(Debug, Zeroize, ZeroizeOnDrop)]
 pub struct SoftwarePUF {
     device_id: String,
     #[zeroize(skip)]

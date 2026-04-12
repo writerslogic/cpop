@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use zeroize::{Zeroize, Zeroizing};
 
+#[derive(Debug)]
 /// A wrapper for the sentinel's signing key that is tied to human behavioral entropy.
 ///
 /// The key is "wrapped" in memory using a rolling window of behavioral entropy (jitter).

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
 
+#[derive(Debug)]
 /// IPC message handler that dispatches requests to the sentinel.
 pub struct SentinelIpcHandler {
     sentinel: Arc<Sentinel>,

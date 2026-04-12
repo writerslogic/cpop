@@ -82,6 +82,7 @@ pub enum ForgeryResistanceTier {
     VeryHigh,
 }
 
+#[derive(Debug)]
 /// Input parameters for forgery cost estimation.
 pub struct ForgeryCostInput {
     /// VDF iterations completed.

@@ -236,6 +236,7 @@ impl std::fmt::Display for AggregateError {
 
 impl std::error::Error for AggregateError {}
 
+#[derive(Debug)]
 /// Incremental builder for `MerkleVdfProof`
 pub struct MerkleVdfBuilder {
     leaf_hashes: Vec<String>,

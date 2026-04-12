@@ -304,6 +304,7 @@ impl BackspaceSignature {
 
 use crate::analysis::stats::relative_similarity as relative_sim;
 
+#[derive(Debug)]
 /// Streaming collector that builds a `VoiceFingerprint` from keystroke events.
 pub struct VoiceCollector {
     current_word: String,

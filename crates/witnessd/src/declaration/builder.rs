@@ -10,6 +10,7 @@ use super::types::{
     DeclarationJitter, InputModality, ModalityType,
 };
 
+#[derive(Debug)]
 /// Fluent builder for constructing and signing author declarations.
 pub struct Builder {
     decl: Declaration,

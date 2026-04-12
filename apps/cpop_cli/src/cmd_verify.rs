@@ -68,7 +68,12 @@ fn verify_json(file_path: &PathBuf, output_war: Option<PathBuf>, out: &OutputMod
         write_war_appraisal(&packet, &war_path)?;
     }
 
-    let overall_valid = result.structural && result.signature == Some(true);
+    // Unsigned packets (signature == None) are accepted when structural checks
+    // pass; only an explicit signature failure (Some(false)) invalidates.
+    // A packet with zero checkpoints is meaningless and is always rejected.
+    let overall_valid = result.structural
+        && result.signature != Some(false)
+        && !packet.checkpoints.is_empty();
 
     if out.json {
         print_json_result(file_path, &packet, &raw_json, &result, &spec_warnings);

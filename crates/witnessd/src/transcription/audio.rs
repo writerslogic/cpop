@@ -33,6 +33,7 @@ pub struct TranscriptionMetadata {
     pub timestamp_ms: u64,
 }
 
+#[derive(Debug)]
 /// Aggregates word timing into a content-free fingerprint.
 pub struct TranscriptionCollector {
     engine: String,

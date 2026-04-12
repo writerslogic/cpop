@@ -347,3 +347,9 @@ async fn handle_connection<H: IpcMessageHandler>(
     )
     .await;
 }
+
+impl std::fmt::Debug for IpcServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IpcServer").finish_non_exhaustive()
+    }
+}

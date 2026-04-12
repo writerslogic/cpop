@@ -679,7 +679,7 @@ impl JitterBinding {
 
         if let Some(h) = self.summary.hurst_exponent {
             if !h.is_finite() || !(0.0..=1.0).contains(&h) {
-                findings.push(ValidationFinding::error(
+                findings.push(ValidationFinding::warning(
                     "summary.hurst_exponent",
                     format!("{} out of range [0, 1] or non-finite", h),
                 ));

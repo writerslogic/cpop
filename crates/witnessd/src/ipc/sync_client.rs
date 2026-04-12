@@ -17,6 +17,7 @@ use std::io::{Read, Write};
 /// where the server side also speaks raw bincode (e.g. the sentinel's synchronous
 /// command socket). It must NOT be used against the async IPC server.
 #[cfg(not(target_os = "windows"))]
+#[derive(Debug)]
 pub struct IpcClient {
     stream: std::os::unix::net::UnixStream,
 }
@@ -78,6 +79,7 @@ impl IpcClient {
 /// Pipe name: `\\.\pipe\writerslogic-{filename}`. Same length-prefixed
 /// bincode wire protocol as the Unix client.
 #[cfg(target_os = "windows")]
+#[derive(Debug)]
 pub struct IpcClient {
     // std::fs::File can open Named Pipes as regular file handles,
     // avoiding raw Win32 CreateFileW calls.

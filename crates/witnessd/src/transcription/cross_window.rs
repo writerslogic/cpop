@@ -40,6 +40,7 @@ pub struct CrossWindowMatch {
     pub detected_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
 /// Detects transcription by comparing typed content against other window text.
 pub struct TranscriptionDetector {
     typing_buffer: VecDeque<char>,

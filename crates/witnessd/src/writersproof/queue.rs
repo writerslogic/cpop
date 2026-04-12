@@ -27,6 +27,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 /// Disk-backed attestation queue.
 pub struct OfflineQueue {
     queue_dir: PathBuf,

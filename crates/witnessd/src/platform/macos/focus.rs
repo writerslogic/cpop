@@ -7,6 +7,7 @@ use super::permissions::check_accessibility_permissions;
 use super::FocusInfo;
 use crate::platform::FocusMonitor;
 
+#[derive(Debug)]
 pub(crate) struct DocumentInfo {
     pub doc_path: Option<String>,
     pub window_title: Option<String>,
@@ -188,6 +189,7 @@ unsafe fn get_ax_url_as_path(element: *mut std::ffi::c_void) -> Option<String> {
     }
 }
 
+#[derive(Debug)]
 /// macOS focus monitor implementation.
 pub struct MacOSFocusMonitor {
     running: Arc<AtomicBool>,

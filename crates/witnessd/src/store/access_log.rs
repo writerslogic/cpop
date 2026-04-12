@@ -90,6 +90,7 @@ pub struct AccessLogEntry {
     pub ip_or_source: String,
 }
 
+#[derive(Debug)]
 /// SQLite-backed administrative access audit log for SOC 2 compliance.
 ///
 /// Each entry is protected by an HMAC-SHA256 integrity tag computed over the

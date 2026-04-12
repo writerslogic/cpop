@@ -5,7 +5,7 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use witnessd::vdf;
@@ -18,11 +18,11 @@ use crate::util::{
 };
 
 pub(crate) async fn cmd_commit(
-    file_path: &PathBuf,
+    file_path: &Path,
     message: Option<String>,
     out: &OutputMode,
 ) -> Result<()> {
-    let file_path_owned = file_path.clone();
+    let file_path_owned = file_path.to_path_buf();
 
     // Phase 1: file I/O, hashing, and DB read (all blocking)
     #[allow(clippy::type_complexity)]
@@ -253,10 +253,10 @@ pub(crate) async fn cmd_commit_smart(
     Ok(())
 }
 
-async fn cmd_anchor(file_path: &PathBuf) -> Result<()> {
+async fn cmd_anchor(file_path: &Path) -> Result<()> {
     use witnessd::writersproof::{AnchorMetadata, AnchorRequest, WritersProofClient};
 
-    let file_path_owned = file_path.clone();
+    let file_path_owned = file_path.to_path_buf();
     let (evidence_hash, signature, did, api_key) =
         tokio::task::spawn_blocking(move || -> Result<_> {
             let abs_path = fs::canonicalize(&file_path_owned)?;

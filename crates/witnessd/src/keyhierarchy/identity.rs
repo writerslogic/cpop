@@ -29,7 +29,7 @@ pub fn derive_master_identity(puf: &dyn PufProvider) -> Result<MasterIdentity, K
     let signing_key = derive_signing_key(puf)?;
     let public_key = signing_key.verifying_key().to_bytes();
 
-    let fingerprint = Sha256::digest(&public_key);
+    let fingerprint = Sha256::digest(public_key);
     let fingerprint_hex = hex::encode(&fingerprint[0..8]);
 
     Ok(MasterIdentity {

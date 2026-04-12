@@ -106,6 +106,7 @@ impl SessionManager {
     }
 }
 
+#[derive(Debug)]
 pub struct ChainSigner {
     chain: checkpoint::Chain,
     manager: SessionManager,
@@ -170,5 +171,11 @@ impl ChainSigner {
 
     pub fn identity(&self) -> &MasterIdentity {
         self.manager.identity()
+    }
+}
+
+impl std::fmt::Debug for SessionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionManager").finish_non_exhaustive()
     }
 }

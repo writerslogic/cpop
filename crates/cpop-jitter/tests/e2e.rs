@@ -28,7 +28,7 @@ fn test_full_session_lifecycle() {
 
     // Evidence chain should have all records
     let chain = session.evidence();
-    assert_eq!(chain.records.len(), 30);
+    assert_eq!(chain.records().len(), 30);
     assert!(chain.validate_sequences());
     assert!(chain.validate_timestamps());
 
@@ -43,7 +43,7 @@ fn test_full_session_lifecycle() {
     // Export and re-import JSON
     let json = session.export_json().unwrap();
     let reimported: EvidenceChain = serde_json::from_str(&json).unwrap();
-    assert_eq!(reimported.records.len(), 30);
+    assert_eq!(reimported.records().len(), 30);
     assert!(reimported.verify_integrity(&secret));
 }
 
@@ -65,8 +65,8 @@ fn test_session_with_hardware_fallback() {
 
     // All samples should be pure (fallback) since min_entropy=255 is impossible
     let chain = session.evidence();
-    assert_eq!(chain.records.len(), 25);
-    for record in &chain.records {
+    assert_eq!(chain.records().len(), 25);
+    for record in chain.records().iter() {
         assert!(
             !record.is_phys(),
             "Record should be pure (fallback), not phys"
@@ -97,7 +97,7 @@ fn test_evidence_chain_tamper_detection() {
     assert!(chain.verify_integrity(&secret));
 
     // Tamper: modify a jitter value in the middle
-    if let Evidence::Pure { jitter, .. } = &mut chain.records[5] {
+    if let Evidence::Pure { jitter, .. } = &mut chain.records_mut()[5] {
         *jitter = 99999;
     }
     assert!(
@@ -116,7 +116,7 @@ fn test_evidence_chain_tamper_detection() {
             .unwrap();
     }
     assert!(chain2.verify_integrity(&secret));
-    chain2.records.swap(1, 3);
+    chain2.records_mut().swap(1, 3);
     assert!(
         !chain2.verify_integrity(&secret),
         "Swapped records should fail integrity"
@@ -271,19 +271,19 @@ fn test_chain_serialization_across_versions() {
 
     // Deserialize and verify all fields preserved
     let restored: EvidenceChain = serde_json::from_str(&json).unwrap();
-    assert_eq!(restored.records.len(), 3);
-    assert!(restored.records[0].is_phys());
-    assert!(!restored.records[1].is_phys());
-    assert!(restored.records[2].is_phys());
-    assert_eq!(restored.records[0].jitter(), 1000);
-    assert_eq!(restored.records[1].jitter(), 1500);
-    assert_eq!(restored.records[2].jitter(), 2000);
-    assert_eq!(restored.records[0].timestamp_us(), 100000);
-    assert_eq!(restored.records[1].timestamp_us(), 200000);
-    assert_eq!(restored.records[2].timestamp_us(), 300000);
-    assert_eq!(restored.records[0].sequence(), 0);
-    assert_eq!(restored.records[1].sequence(), 1);
-    assert_eq!(restored.records[2].sequence(), 2);
+    assert_eq!(restored.records().len(), 3);
+    assert!(restored.records()[0].is_phys());
+    assert!(!restored.records()[1].is_phys());
+    assert!(restored.records()[2].is_phys());
+    assert_eq!(restored.records()[0].jitter(), 1000);
+    assert_eq!(restored.records()[1].jitter(), 1500);
+    assert_eq!(restored.records()[2].jitter(), 2000);
+    assert_eq!(restored.records()[0].timestamp_us(), 100000);
+    assert_eq!(restored.records()[1].timestamp_us(), 200000);
+    assert_eq!(restored.records()[2].timestamp_us(), 300000);
+    assert_eq!(restored.records()[0].sequence(), 0);
+    assert_eq!(restored.records()[1].sequence(), 1);
+    assert_eq!(restored.records()[2].sequence(), 2);
 
     // Integrity still verifiable after deserialization
     assert!(restored.verify_integrity(&secret));

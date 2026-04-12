@@ -29,3 +29,9 @@ impl EvidenceSigner for TpmSigner {
         self.provider.public_key()
     }
 }
+
+impl std::fmt::Debug for TpmSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TpmSigner").finish_non_exhaustive()
+    }
+}

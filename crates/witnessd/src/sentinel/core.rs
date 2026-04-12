@@ -33,28 +33,30 @@ const TYPING_PROXIMITY_SECS: u64 = 2;
 /// Lower values must be acquired before higher values.
 #[cfg(debug_assertions)]
 pub(super) mod lock_order {
-    use std::cell::Cell;
+    use std::cell::RefCell;
 
     /// Ordering: signing_key(1) < sessions(2) < current_focus(3).
     pub const SIGNING_KEY: u8 = 1;
     pub const SESSIONS: u8 = 2;
 
     thread_local! {
-        static MAX_HELD: Cell<u8> = const { Cell::new(0) };
+        /// Stack of currently-held lock levels (in acquisition order).
+        static HELD_STACK: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     }
 
     /// Assert that acquiring a lock at `level` does not violate ordering.
-    /// Panics in debug builds if a higher-ordered lock is already held.
+    /// Panics in debug builds if a higher-or-equal-ordered lock is already held.
     pub fn assert_order(level: u8) -> LockOrderGuard {
-        MAX_HELD.with(|cell| {
-            let held = cell.get();
+        HELD_STACK.with(|stack| {
+            let s = stack.borrow();
+            let held = s.last().copied().unwrap_or(0);
             debug_assert!(
                 held < level,
                 "Lock ordering violation (AUD-041): attempted to acquire level {level} \
                  while level {held} is held. Order: signing_key(1) < sessions(2) < focus(3)."
             );
-            cell.set(level);
         });
+        HELD_STACK.with(|stack| stack.borrow_mut().push(level));
         LockOrderGuard { level }
     }
 
@@ -69,11 +71,12 @@ pub(super) mod lock_order {
         }
     }
 
-    /// Release: reset the max held level to below this lock's level.
+    /// Release: pop the most recently acquired matching level off the stack.
     pub fn release(level: u8) {
-        MAX_HELD.with(|cell| {
-            if cell.get() == level {
-                cell.set(level.saturating_sub(1));
+        HELD_STACK.with(|stack| {
+            let mut s = stack.borrow_mut();
+            if let Some(pos) = s.iter().rposition(|&l| l == level) {
+                s.remove(pos);
             }
         });
     }
@@ -1397,5 +1400,11 @@ impl Drop for Sentinel {
             }
             *guard = None;
         }
+    }
+}
+
+impl std::fmt::Debug for Sentinel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sentinel").finish_non_exhaustive()
     }
 }

@@ -208,10 +208,23 @@ impl Sentinel {
         if !self.running.load(std::sync::atomic::Ordering::SeqCst) {
             return false;
         }
+        // AUD-041: Acquire signing_key before sessions so the lock ordering
+        // is preserved when we later call open_event_store (which re-reads
+        // signing_key internally).
+        let sk_cached = {
+            #[cfg(debug_assertions)]
+            let _sk_guard =
+                super::core::lock_order::assert_order(super::core::lock_order::SIGNING_KEY);
+            self.signing_key.read_recover().key()
+        };
+
         // Atomically check-and-claim the checkpoint slot so a concurrent
         // caller for the same path cannot start a duplicate commit during
         // the hash/store window. On failure below we roll the count back.
         let (claimed_count, prior_count) = {
+            #[cfg(debug_assertions)]
+            let _sess_guard =
+                super::core::lock_order::assert_order(super::core::lock_order::SESSIONS);
             let mut sessions = self.sessions.write_recover();
             let Some(s) = sessions.get_mut(path) else {
                 return false;
@@ -250,10 +263,19 @@ impl Sentinel {
         if !self.running.load(std::sync::atomic::Ordering::SeqCst) {
             return false;
         }
-        let mut store = match self.open_event_store() {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("Auto-checkpoint store open failed: {e}");
+        // Use the cached signing key so no fresh level-1 lock is taken while
+        // other locks are held later in this function.
+        let db_path = self.config.writersproof_dir.join("events.db");
+        let mut store = match sk_cached.as_ref() {
+            Some(sk) => match crate::store::open_store_with_signing_key(sk, &db_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Auto-checkpoint store open failed: {e}");
+                    return false;
+                }
+            },
+            None => {
+                log::warn!("Auto-checkpoint skipped: signing key not initialized");
                 return false;
             }
         };
@@ -265,8 +287,7 @@ impl Sentinel {
             Some("Auto-checkpoint".to_string()),
         );
 
-        let sk = self.signing_key.read_recover().key();
-        match store.add_secure_event_with_signer(&mut event, sk.as_ref()) {
+        match store.add_secure_event_with_signer(&mut event, sk_cached.as_ref()) {
             Ok(_) => {
                 log::info!("Auto-checkpoint committed for {path}");
                 if let Some(ref tpm) = self.tpm_provider {
@@ -303,7 +324,14 @@ impl Sentinel {
         &self,
         file_path: &Path,
     ) -> std::result::Result<(), (IpcErrorCode, String)> {
-        let path_str = file_path.to_string_lossy().to_string();
+        // Canonicalize so the session lookup matches the key used by
+        // `start_witnessing`, which resolves symlinks and macOS
+        // /var → /private/var before storing. Fall back to the raw path
+        // if canonicalization fails (file may have been deleted).
+        let path_str = match file_path.canonicalize() {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => file_path.to_string_lossy().to_string(),
+        };
 
         // Commit a final checkpoint before removing the session so keystrokes
         // are never lost on abrupt session end.

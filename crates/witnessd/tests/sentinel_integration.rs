@@ -120,7 +120,10 @@ async fn witnessing_start_and_stop() {
     let result = sentinel.start_witnessing(&file);
     assert!(result.is_ok(), "start_witnessing failed: {:?}", result);
     assert_eq!(sentinel.sessions().len(), 1);
-    assert_eq!(sentinel.sessions()[0].path, file.to_string_lossy());
+    // Sentinel canonicalizes paths on macOS (/var → /private/var) so compare
+    // against the canonicalized form rather than the original.
+    let canonical = std::fs::canonicalize(&file).expect("canonicalize");
+    assert_eq!(sentinel.sessions()[0].path, canonical.to_string_lossy());
 
     // Double witnessing same file should fail
     let dup = sentinel.start_witnessing(&file);
@@ -159,7 +162,8 @@ async fn witnessing_multiple_files() {
 
     sentinel.stop_witnessing(&f1).expect("stop f1");
     assert_eq!(sentinel.sessions().len(), 1);
-    assert_eq!(sentinel.sessions()[0].path, f2.to_string_lossy());
+    let canonical_f2 = std::fs::canonicalize(&f2).expect("canonicalize");
+    assert_eq!(sentinel.sessions()[0].path, canonical_f2.to_string_lossy());
 
     sentinel.stop().await.ok();
 }
@@ -477,9 +481,10 @@ async fn test_witnessing_status_tracks_active_document() {
 
     let sessions = sentinel.sessions();
     assert_eq!(sessions.len(), 1, "expected exactly one session");
+    let canonical = std::fs::canonicalize(&file).expect("canonicalize");
     assert_eq!(
         sessions[0].path,
-        file.to_string_lossy(),
+        canonical.to_string_lossy(),
         "session should track the temp file"
     );
 

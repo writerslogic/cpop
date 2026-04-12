@@ -55,6 +55,7 @@ fn debug_write_keystroke(tag: &str, count: u64) {
     }
 }
 
+#[derive(Debug)]
 /// Thread-safe handle to a CFRunLoop that can be stopped from another thread.
 /// SAFETY: CFRunLoopStop is documented as thread-safe in Apple's documentation.
 pub struct RunLoopHandle(pub(super) *mut std::ffi::c_void);
@@ -630,5 +631,17 @@ impl KeystrokeCapture for MacOSKeystrokeCapture {
 impl Drop for MacOSKeystrokeCapture {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+impl std::fmt::Debug for KeystrokeMonitor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeystrokeMonitor").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for MacOSKeystrokeCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MacOSKeystrokeCapture").finish_non_exhaustive()
     }
 }

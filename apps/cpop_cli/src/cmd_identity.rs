@@ -55,7 +55,7 @@ pub(crate) fn cmd_identity(
             "version": 1,
             "fingerprint": identity.fingerprint,
             "did": did,
-            "public_key": hex::encode(&identity.public_key),
+            "public_key": hex::encode(identity.public_key),
             "device_id": identity.device_id,
             "created_at": identity.created_at.to_rfc3339(),
         });

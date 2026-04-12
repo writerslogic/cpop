@@ -6,6 +6,7 @@ use crate::store::SecureStore;
 use rusqlite::params;
 use std::path::Path;
 
+#[derive(Debug)]
 /// Cumulative statistics for a tracked document across all sessions.
 pub struct DocumentStats {
     pub file_path: String,

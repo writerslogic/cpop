@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use cpop_protocol::codec::{decode_evidence, encode_evidence};
-use cpop_protocol::rfc::{DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
+use authorproof_protocol::codec::{decode_evidence, encode_evidence};
+use authorproof_protocol::rfc::{DocumentRef, EvidencePacket, HashAlgorithm, HashValue};
 
 #[test]
 fn test_evidence_packet_roundtrip() {
@@ -31,8 +31,8 @@ fn test_evidence_packet_roundtrip() {
     assert_eq!(decoded.packet_id, packet.packet_id);
 }
 
-fn make_test_checkpoint(seq: u64, ts: u64, prev_digest: Vec<u8>) -> cpop_protocol::rfc::Checkpoint {
-    cpop_protocol::rfc::Checkpoint {
+fn make_test_checkpoint(seq: u64, ts: u64, prev_digest: Vec<u8>) -> authorproof_protocol::rfc::Checkpoint {
+    authorproof_protocol::rfc::Checkpoint {
         sequence: seq,
         checkpoint_id: vec![seq as u8; 16],
         timestamp: ts,

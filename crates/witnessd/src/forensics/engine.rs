@@ -28,6 +28,7 @@ pub struct SignalAnalysis {
 }
 
 /// Physical context and cadence analysis engine.
+#[derive(Debug)]
 pub struct ForensicEngine;
 
 impl ForensicEngine {

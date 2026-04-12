@@ -55,6 +55,7 @@ pub trait KeychainBackend: Send + Sync {
     }
 }
 
+#[derive(Debug)]
 /// In-memory backend used by unit tests and when `CPOP_NO_KEYCHAIN=1`.
 /// State is process-global so writes from one call site are observable by
 /// subsequent loads (matching real keychain semantics).
@@ -149,6 +150,7 @@ fn keyring_entry(account: &str) -> Result<Entry> {
 /// Calling any of its methods from a `cargo test` session may surface a
 /// keychain-access prompt, so tests should install `InMemoryBackend` instead.
 #[cfg(target_os = "macos")]
+#[derive(Debug)]
 pub struct MacosKeychainBackend;
 
 #[cfg(target_os = "macos")]
@@ -198,6 +200,7 @@ fn backend() -> &'static dyn KeychainBackend {
 }
 
 /// Platform keychain/keyring abstraction for storing identity secrets.
+#[derive(Debug)]
 pub struct SecureStorage;
 
 impl SecureStorage {

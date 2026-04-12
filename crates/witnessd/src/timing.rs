@@ -86,7 +86,7 @@ pub struct TriggerEvent {
 ///
 /// Uses an O(1) sliding window for entropy estimation via Welford-style
 /// sum/sum-of-squares with VecDeque eviction.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CheckpointTrigger {
     config: Config,
     keystrokes_since_checkpoint: u64,

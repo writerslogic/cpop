@@ -21,6 +21,7 @@ struct ShadowBuffer {
     _size: i64,
 }
 
+#[derive(Debug)]
 /// Manages shadow buffers for unsaved documents
 pub struct ShadowManager {
     base_dir: PathBuf,

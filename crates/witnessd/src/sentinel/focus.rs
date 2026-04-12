@@ -26,6 +26,7 @@ pub trait WindowProvider: Send + Sync + 'static {
     fn get_active_window(&self) -> Option<WindowInfo>;
 }
 
+#[derive(Debug)]
 /// Polling-based focus monitor backed by a `WindowProvider`.
 pub struct PollingSentinelFocusTracker<P: WindowProvider + ?Sized> {
     provider: Arc<P>,

@@ -157,10 +157,25 @@ fn test_export_format_html_is_valid_html() {
         content.contains("</html>"),
         "HTML output must contain closing </html> tag"
     );
-    assert!(
-        !content.contains("<script"),
-        "HTML evidence report must not contain <script> tags (no inline JS allowed)"
-    );
+    // Non-executable script blocks (application/ld+json schema.org metadata,
+    // application/vnd.writerslogic.cpop+cbor evidence embedding) are allowed;
+    // only scripts that browsers would execute as JavaScript are forbidden.
+    let mut remainder = content.as_str();
+    while let Some(idx) = remainder.find("<script") {
+        let tag_start = idx;
+        let tag_end_rel = remainder[tag_start..]
+            .find('>')
+            .expect("unterminated <script tag");
+        let tag = &remainder[tag_start..tag_start + tag_end_rel + 1];
+        let is_safe_type = tag.contains("type=\"application/ld+json\"")
+            || tag.contains("type=\"application/vnd.writerslogic.cpop+cbor\"");
+        assert!(
+            is_safe_type,
+            "HTML evidence report must not contain executable <script> tags; offending tag: {}",
+            tag
+        );
+        remainder = &remainder[tag_start + tag_end_rel + 1..];
+    }
 }
 
 #[test]
@@ -184,8 +199,19 @@ fn test_export_format_html_contains_no_external_resources() {
     let content = fs::read_to_string(&out_path).expect("read html output file");
 
     // Evidence reports must be fully self-contained — no external fetches.
+    // W3C namespace URIs (prov, XMLSchema) are JSON-LD @context identifiers,
+    // not resources; browsers never dereference them. All other http:// is
+    // treated as a fetchable resource and rejected.
+    let allowed_namespaces = [
+        "http://www.w3.org/ns/prov#",
+        "http://www.w3.org/2001/XMLSchema#",
+    ];
+    let mut filtered = content.clone();
+    for ns in allowed_namespaces {
+        filtered = filtered.replace(ns, "");
+    }
     assert!(
-        !content.contains("http://"),
+        !filtered.contains("http://"),
         "HTML evidence report must not reference external http:// resources"
     );
 }

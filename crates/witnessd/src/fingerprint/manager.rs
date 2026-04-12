@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct FingerprintManager {
     pub(crate) config: FingerprintConfig,
     pub(crate) storage: FingerprintStorage,

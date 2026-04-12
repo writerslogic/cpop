@@ -17,6 +17,7 @@ const ANALYSIS_WINDOW_SIZE: usize = 50;
 const MIN_SAMPLES_FOR_ANALYSIS: usize = 10;
 const MAX_PATTERN_REPETITION_RATIO: f64 = 0.8;
 
+#[derive(Debug)]
 /// Sliding-window anomaly detector for synthetic keystroke detection.
 pub struct StatisticalAnomalyDetector {
     iki_window: VecDeque<f64>,
@@ -252,6 +253,7 @@ impl AnomalyFlags {
     }
 }
 
+#[derive(Debug)]
 /// Combines platform-level verification with statistical anomaly detection.
 pub struct SyntheticDetector {
     statistical: StatisticalAnomalyDetector,
@@ -363,6 +365,7 @@ pub enum SyntheticReason {
     ReplayPattern,
 }
 
+#[derive(Debug)]
 /// Long-term typing rhythm analyzer (fatigue detection, WPM estimation).
 pub struct TypingRhythmAnalyzer {
     /// IKI samples bucketed by hour (24 bins)

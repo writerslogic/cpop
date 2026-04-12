@@ -26,6 +26,7 @@ pub enum TimeAnchor {
     Offline,
 }
 
+#[derive(Debug)]
 /// Forensic time source that prefers Roughtime, falling back to VDF-anchored local time.
 pub struct TimeKeeper {
     last_network_sync: Option<DateTime<Utc>>,

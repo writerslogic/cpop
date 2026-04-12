@@ -86,6 +86,7 @@ works without this and does not capture any content information.
 Do you consent to voice fingerprinting? [y/N]
 "#;
 
+#[derive(Debug)]
 /// Persists consent state to `voice_consent.json`.
 pub struct ConsentManager {
     consent_file: PathBuf,

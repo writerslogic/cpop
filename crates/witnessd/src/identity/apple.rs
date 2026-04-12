@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use security_framework::item::{ItemClass, ItemSearchOptions, Limit, Reference, SearchResult};
 use security_framework::key::{Algorithm, SecKey};
 
+#[derive(Debug)]
 /// Handle to an ECDSA signing key stored in the macOS Secure Enclave.
 pub struct SecureEnclaveIdentity {
     /// Reference to the Secure Enclave key.

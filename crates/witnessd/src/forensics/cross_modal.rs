@@ -44,6 +44,7 @@ const JITTER_KS_OPTIMAL: f64 = 0.8;
 const ENTANGLEMENT_MARGINAL_SCORE: f64 = 0.6;
 const ENTANGLEMENT_FAILED_SCORE: f64 = 0.2;
 
+#[derive(Debug)]
 /// Input data for cross-modal consistency analysis.
 pub struct CrossModalInput<'a> {
     /// Edit events captured during the session.
