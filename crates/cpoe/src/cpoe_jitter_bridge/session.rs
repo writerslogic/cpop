@@ -55,6 +55,7 @@ pub struct HybridJitterSession {
     pub(crate) samples: Vec<HybridSample>,
     pub(crate) keystroke_count: u64,
     pub(crate) last_jitter: u32,
+    unique_doc_hashes: std::collections::HashSet<[u8; 32]>,
     loaded_readonly: bool,
     loaded_cpoe_jitter_evidence: Option<String>,
     chain_valid_cache: Option<bool>,
@@ -104,6 +105,7 @@ impl HybridJitterSession {
             samples: Vec::new(),
             keystroke_count: 0,
             last_jitter: 0,
+            unique_doc_hashes: std::collections::HashSet::new(),
             loaded_readonly: false,
             loaded_cpoe_jitter_evidence: None,
             chain_valid_cache: None,
@@ -173,6 +175,7 @@ impl HybridJitterSession {
         };
         sample.hash = sample.compute_hash();
 
+        self.unique_doc_hashes.insert(doc_hash);
         self.samples.push(sample);
         self.last_jitter = jitter;
         self.chain_valid_cache = None;
@@ -322,17 +325,15 @@ impl HybridJitterSession {
             }
         };
 
-        let mut seen = std::collections::HashSet::new();
-        for sample in &self.samples {
-            seen.insert(sample.document_hash);
-        }
-
         let total = i32::try_from(self.samples.len()).unwrap_or_else(|_| {
             log::warn!("sample count {} exceeds i32::MAX", self.samples.len());
             i32::MAX
         });
-        let unique = i32::try_from(seen.len()).unwrap_or_else(|_| {
-            log::warn!("unique_doc_hashes count {} exceeds i32::MAX", seen.len());
+        let unique = i32::try_from(self.unique_doc_hashes.len()).unwrap_or_else(|_| {
+            log::warn!(
+                "unique_doc_hashes count {} exceeds i32::MAX",
+                self.unique_doc_hashes.len()
+            );
             i32::MAX
         });
 
@@ -432,6 +433,8 @@ impl HybridJitterSession {
         let cpoe_jitter_session = PhysSession::new(&secret);
         secret.zeroize();
 
+        let unique_doc_hashes: std::collections::HashSet<[u8; 32]> =
+            data.samples.iter().map(|s| s.document_hash).collect();
         let id_arc: Arc<str> = Arc::from(data.id.as_str());
         Ok(Self {
             cpoe_jitter_session,
@@ -445,6 +448,7 @@ impl HybridJitterSession {
             samples: data.samples,
             keystroke_count: data.keystroke_count,
             last_jitter: data.last_jitter,
+            unique_doc_hashes,
             loaded_readonly: true,
             loaded_cpoe_jitter_evidence: data.cpoe_jitter_evidence,
             chain_valid_cache: Some(true),

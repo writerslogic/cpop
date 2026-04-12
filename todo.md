@@ -1096,7 +1096,7 @@ pub enum SecureChannelSendError {
   <!-- pid:alloc_in_loop | verified:true | first:2026-04-09 -->
   Fix: Throttled via AtomicU64 last-eviction timestamp; runs at most once per 60 seconds.
 
-- [ ] **M-053** `[performance]` `evidence/packet.rs:400`: Full Packet clone (30+ fields, checkpoints Vec) to zero 3 fields before content_hash | **Model:** Sonnet
+- [x] **M-053** `[performance]` `evidence/packet.rs:400`: Full Packet clone (30+ fields, checkpoints Vec) to zero 3 fields before content_hash | **Model:** Sonnet
   <!-- pid:clone_in_loop | verified:true | first:2026-04-09 -->
   Impact: O(n) where n = checkpoint count; called once per sign but expensive for large evidence packets | Fix: Compute hash with selective serialization or field override instead of full clone
 
@@ -1216,7 +1216,7 @@ pub enum SecureChannelSendError {
 ### cpoe_jitter_bridge/session.rs
 - [ ] **M-026** `[error_handling]` `cpoe_jitter_bridge/session.rs:333-336`: try_from().unwrap_or(i32::MAX) silent truncation | **Model:** Haiku
 - [x] **M-027** `[error_handling]` `cpoe_jitter_bridge/session.rs:369-376`: tempfile not synced before persist -- FIXED (sync_all is already called at session.rs:384)
-- [ ] **M-028** `[performance]` `cpoe_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | **Model:** Sonnet
+- [x] **M-028** `[performance]` `cpoe_jitter_bridge/session.rs:326-329`: HashSet rebuilt on every export; not cached | **Model:** Sonnet
 
 ### sealed_chain.rs
 - [ ] **M-029** `[maintainability]` `sealed_chain.rs:180-182`: Header validation duplicated in read_sealed_document_id vs load_sealed_verified | **Model:** Haiku
@@ -1250,13 +1250,13 @@ pub enum SecureChannelSendError {
 - [ ] **M-039** `[architecture]` `declaration/verification.rs:127`: Jitter None vs failed measurement indistinguishable | **Model:** Sonnet
 
 ### continuation.rs
-- [ ] **M-040** `[performance]` `continuation.rs:171`: Vec capacity 128 underestimates; needs ~168-256 bytes | **Model:** Haiku
+- [x] **M-040** `[performance]` `continuation.rs:171`: Vec capacity 128 underestimates; needs ~168-256 bytes | **Model:** Haiku
 - [ ] **M-041** `[maintainability]` `continuation.rs:305`: saturating_add silently caps at u64::MAX with no audit trail | **Model:** Haiku
 
 ### fingerprint modules
 - [x] **M-042** `[security]` `fingerprint/storage.rs:127-151`: plaintext not zeroized on encrypt error path -- FIXED 2026-04-11 (wrap in Zeroizing at construction)
 - [x] **M-043** `[security]` `fingerprint/storage.rs:154-166`: plaintext not zeroized on deserialize error path -- FIXED 2026-04-11 (wrap decrypt output in Zeroizing; load_metadata path also fixed)
-- [ ] **M-044** `[performance]` `fingerprint/activity_collection.rs:59-84`: Hurst exponent recomputed per call; not cached | **Model:** Sonnet
+- [x] **M-044** `[performance]` `fingerprint/activity_collection.rs:59-84`: Hurst exponent recomputed per call; not cached | **Model:** Sonnet
 - [ ] **M-045** `[code_quality]` `fingerprint/activity_analysis.rs:75-82`: partial_cmp unwrap_or(Equal) in percentile selection | **Model:** Haiku
 - [ ] **M-046** `[code_quality]` `fingerprint/comparison.rs:114-118`: Similarity weights hardcoded (0.6/0.4) | **Model:** Haiku
 - [ ] **M-047** `[security]` `fingerprint/voice.rs:372-379`: Unicode normalization missing in keystroke MinHash -- DEFERRED 2026-04-11 (requires unicode-normalization dep; revisit after license/deny.toml review)

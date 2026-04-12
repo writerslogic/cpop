@@ -16,6 +16,7 @@ pub struct ActivityFingerprintAccumulator {
     samples: VecDeque<SimpleJitterSample>,
     max_samples: usize,
     cached_fingerprint: Mutex<Arc<ActivityFingerprint>>,
+    cached_hurst: Mutex<Option<f64>>,
     dirty: AtomicBool,
 }
 
@@ -57,23 +58,30 @@ impl ActivityFingerprintAccumulator {
                 0.0
             },
             hurst: {
-                let intervals: Vec<f64> = self
-                    .samples
-                    .iter()
-                    .zip(self.samples.iter().skip(1))
-                    .filter_map(|(a, b)| {
-                        b.timestamp_ns
-                            .checked_sub(a.timestamp_ns)
-                            .map(|d| d as f64 / 1_000_000.0)
-                    })
-                    .filter(|&i| i > 0.0 && i < 5000.0)
-                    .collect();
-                if intervals.len() >= 20 {
-                    crate::analysis::hurst::compute_hurst_rs(&intervals)
-                        .map(|h| h.exponent)
-                        .unwrap_or(0.5)
+                let mut cached = self.cached_hurst.lock_recover();
+                if let Some(h) = *cached {
+                    h
                 } else {
-                    0.5
+                    let intervals: Vec<f64> = self
+                        .samples
+                        .iter()
+                        .zip(self.samples.iter().skip(1))
+                        .filter_map(|(a, b)| {
+                            b.timestamp_ns
+                                .checked_sub(a.timestamp_ns)
+                                .map(|d| d as f64 / 1_000_000.0)
+                        })
+                        .filter(|&i| i > 0.0 && i < 5000.0)
+                        .collect();
+                    let h = if intervals.len() >= 20 {
+                        crate::analysis::hurst::compute_hurst_rs(&intervals)
+                            .map(|h| h.exponent)
+                            .unwrap_or(0.5)
+                    } else {
+                        0.5
+                    };
+                    *cached = Some(h);
+                    h
                 }
             },
             pause_frequency: fp.pause_signature.sentence_pause_frequency
@@ -90,6 +98,7 @@ impl ActivityFingerprintAccumulator {
             samples: VecDeque::with_capacity(max_samples),
             max_samples,
             cached_fingerprint: Mutex::new(Arc::new(ActivityFingerprint::default())),
+            cached_hurst: Mutex::new(None),
             dirty: AtomicBool::new(false),
         }
     }
@@ -101,6 +110,7 @@ impl ActivityFingerprintAccumulator {
         }
         self.samples.push_back(sample.clone());
         self.dirty.store(true, Ordering::Relaxed);
+        *self.cached_hurst.lock_recover() = None;
     }
 
     /// Recompute fingerprint from buffered samples if dirty, caching the result.
