@@ -983,7 +983,7 @@ impl Sentinel {
                                         let path_hash = {
                                             use sha2::Digest;
                                             let h = sha2::Sha256::digest(path.as_bytes());
-                                            hex::encode(&h[..8])
+                                            crate::utils::short_hex_id(&h)
                                         };
                                         let ext = src
                                             .extension()

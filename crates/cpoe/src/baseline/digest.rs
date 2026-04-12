@@ -64,10 +64,4 @@ pub fn update_digest_in_place(digest: &mut BaselineDigest, summary: &SessionBeha
     digest.computed_at = now_as_secs();
 }
 
-#[inline(always)]
-fn now_as_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
+use crate::utils::now_secs as now_as_secs;

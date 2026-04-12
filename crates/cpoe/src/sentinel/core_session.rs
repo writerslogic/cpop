@@ -341,10 +341,7 @@ impl Sentinel {
 
         if let Some(session) = session {
             // Persist cumulative document stats before tearing down the session.
-            let now_ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
+            let now_ts = crate::utils::now_secs() as i64;
             let elapsed_secs = session.start_time.elapsed().unwrap_or_default().as_secs();
             let first_tracked = session
                 .first_tracked_at

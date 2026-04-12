@@ -511,7 +511,7 @@ fn format_device_id(state: &mut LinuxState) -> String {
         return cached.clone();
     }
     let id = match get_device_id(state) {
-        Ok(raw) => format!("tpm-{}", hex::encode(&raw[..8])),
+        Ok(raw) => format!("tpm-{}", crate::utils::short_hex_id(&raw)),
         Err(_) => return "tpm-unknown".to_string(),
     };
     state.cached_device_id = Some(id.clone());

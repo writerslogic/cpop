@@ -149,7 +149,7 @@ pub fn build_ephemeral_packet(
         let plausible = (1.0..=600.0).contains(&kpm) || total_keystrokes < 10;
 
         Some(KeystrokeEvidence {
-            session_id: hex::encode(&doc_hash[..8]),
+            session_id: crate::utils::short_hex_id(&doc_hash),
             started_at,
             ended_at,
             duration,
@@ -200,7 +200,7 @@ pub fn build_ephemeral_packet(
     let packet = Packet {
         document: DocumentInfo {
             title: context_label.to_string(),
-            path: format!("ephemeral://{}", hex::encode(&doc_hash[..8])),
+            path: format!("ephemeral://{}", crate::utils::short_hex_id(&doc_hash)),
             final_hash: final_hash_hex.to_string(),
             final_size: snapshots.last().map(|s| s.char_count).unwrap_or(0),
         },

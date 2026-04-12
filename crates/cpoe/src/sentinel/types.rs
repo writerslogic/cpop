@@ -510,7 +510,7 @@ pub fn hash_string(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s.as_bytes());
     let result = hasher.finalize();
-    hex::encode(&result[..8])
+    crate::utils::short_hex_id(&result)
 }
 
 pub fn parse_url_parts(url: &str) -> (String, String) {

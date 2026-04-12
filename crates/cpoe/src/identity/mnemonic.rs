@@ -61,7 +61,7 @@ impl MnemonicHandler {
         let seed = Self::derive_silicon_seed(phrase)?;
         let mut hasher = Sha256::new();
         hasher.update(seed.as_ref());
-        Ok(hex::encode(&hasher.finalize()[..8]))
+        Ok(crate::utils::short_hex_id(&hasher.finalize()))
     }
 
     /// Extract raw entropy bytes from a BIP-39 mnemonic phrase.

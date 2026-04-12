@@ -53,7 +53,7 @@ pub fn ffi_create_checkpoint(path: String, message: String) -> FfiResult {
     match store.add_secure_event(&mut event) {
         Ok(_) => FfiResult::ok(format!(
             "Checkpoint created: {}",
-            hex::encode(&content_hash[..8])
+            crate::utils::short_hex_id(&content_hash)
         )),
         Err(e) => FfiResult::err(format!("Failed to create checkpoint: {}", e)),
     }

@@ -59,7 +59,8 @@ impl TbsContext {
 
         match ctx.get_random(16) {
             Ok(random_bytes) => {
-                ctx.device_id = format!("windows-tpm-{}", hex::encode(&random_bytes[..8]));
+                ctx.device_id =
+                    format!("windows-tpm-{}", crate::utils::short_hex_id(&random_bytes));
             }
             Err(_) => {
                 ctx.device_id = format!(

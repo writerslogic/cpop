@@ -190,10 +190,7 @@ pub(crate) fn open_store_at(db_path: &std::path::Path) -> Result<SecureStore, St
                 crate::identity::SecureStorage::reset_hmac_cache();
                 let fresh_key = load_hmac_key();
                 if let Some(k) = fresh_key {
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let timestamp = crate::utils::now_secs();
                     let backup_path = db_path.with_extension(format!("backup-{timestamp}"));
                     log::error!(
                         "CRITICAL: HMAC mismatch unrecoverable; renaming stale database to {}",

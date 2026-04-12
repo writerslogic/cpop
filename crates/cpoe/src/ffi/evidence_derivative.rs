@@ -149,7 +149,7 @@ pub fn ffi_link_derivative(source_path: String, export_path: String, message: St
         Ok(_) => FfiResult::ok(format!(
             "Linked {} to evidence chain (hash: {}...)",
             export.file_name().unwrap_or_default().to_string_lossy(),
-            hex::encode(&export_hash[..8])
+            crate::utils::short_hex_id(&export_hash)
         )),
         Err(e) => FfiResult::err(format!("Failed to save link event: {e}")),
     }

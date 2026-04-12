@@ -721,7 +721,7 @@ impl AnchorProvider for OpenTimestampsProvider {
             match self.submit_to_calendar(url, hash).await {
                 Ok(proof_data) => {
                     return Ok(Proof {
-                        id: format!("ots-{}", hex::encode(&hash[..8])),
+                        id: format!("ots-{}", crate::utils::short_hex_id(hash)),
                         provider: ProviderType::OpenTimestamps,
                         status: ProofStatus::Pending,
                         anchored_hash: *hash,

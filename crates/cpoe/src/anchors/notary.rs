@@ -138,7 +138,7 @@ impl AnchorProvider for NotaryProvider {
 
         Ok(Proof {
             id: if id.is_empty() {
-                format!("notary-{}", hex::encode(&hash[..8]))
+                format!("notary-{}", crate::utils::short_hex_id(hash))
             } else {
                 id.to_string()
             },

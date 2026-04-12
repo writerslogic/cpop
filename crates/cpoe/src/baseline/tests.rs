@@ -55,10 +55,7 @@ fn initial_digest_stats_are_empty() {
 
 #[test]
 fn initial_digest_computed_at_is_recent() {
-    let before = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let before = crate::utils::now_secs();
     let d = compute_initial_digest(vec![]);
     assert!(d.computed_at >= before);
     assert!(d.computed_at <= before + 2);

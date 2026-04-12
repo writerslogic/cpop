@@ -438,7 +438,7 @@ impl SentinelIpcHandler {
                         .map(|ds| ds.total_keystrokes as u64)
                         .unwrap_or(0);
                     (
-                        hex::encode(&latest.hash[..8]),
+                        crate::utils::short_hex_id(&latest.hash),
                         stored_keystrokes,
                         store_events.iter().filter(|e| e.size_delta != 0).count() as u32,
                     )

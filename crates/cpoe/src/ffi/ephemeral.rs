@@ -96,28 +96,10 @@ pub fn shutdown_ephemeral_sessions() {
     }
 }
 
-fn now_ns() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| {
-            let nanos = d.as_nanos();
-            if nanos > i64::MAX as u128 {
-                // Saturate rather than silently truncate — preserves monotonicity
-                i64::MAX
-            } else {
-                nanos as i64
-            }
-        })
-        .unwrap_or_else(|_| {
-            log::warn!("SystemTime before UNIX_EPOCH in now_ns(); falling back to 0");
-            0
-        })
-}
-
 fn generate_session_id(label: &str) -> Result<String, String> {
     let mut hasher = Sha256::new();
     hasher.update(label.as_bytes());
-    hasher.update(now_ns().to_le_bytes());
+    hasher.update(crate::utils::now_ns().to_le_bytes());
     let mut random_bytes = [0u8; 16];
     getrandom::getrandom(&mut random_bytes).map_err(|e| format!("CSPRNG failure: {e}"))?;
     hasher.update(random_bytes);
@@ -128,10 +110,7 @@ fn generate_session_id(label: &str) -> Result<String, String> {
 /// Evict sessions that have been idle longer than `SESSION_TIMEOUT`.
 /// Throttled to run at most once per `EVICTION_INTERVAL_SECS`.
 fn evict_stale_sessions() {
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now_secs = crate::utils::now_secs();
     let last = LAST_EVICTION.load(std::sync::atomic::Ordering::Relaxed);
     if now_secs.saturating_sub(last) < EVICTION_INTERVAL_SECS {
         return;
@@ -192,7 +171,7 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
         EphemeralSession {
             context_label,
             started_at: now,
-            started_at_ns: now_ns(),
+            started_at_ns: crate::utils::now_ns(),
             last_activity: now,
             jitter_intervals: Vec::new(),
             checkpoint_count: 0,
@@ -258,7 +237,7 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
 
     let snapshot_msg = context_note.clone();
     entry.content_snapshots.push(ContentSnapshot {
-        timestamp_ns: now_ns(),
+        timestamp_ns: crate::utils::now_ns(),
         content_hash,
         byte_count,
         _size_delta: size_delta,
@@ -306,7 +285,7 @@ pub fn ffi_ephemeral_checkpoint(session_id: String, content: String, message: St
     let msg = format!(
         "Ephemeral checkpoint #{}: {}",
         checkpoint_num,
-        hex::encode(&content_hash[..8])
+        crate::utils::short_hex_id(&content_hash)
     );
     FfiResult {
         success: true,
@@ -514,7 +493,7 @@ pub fn ffi_ephemeral_checkpoint_hash(
     };
 
     entry.content_snapshots.push(ContentSnapshot {
-        timestamp_ns: now_ns(),
+        timestamp_ns: crate::utils::now_ns(),
         content_hash,
         byte_count,
         _size_delta: size_delta,

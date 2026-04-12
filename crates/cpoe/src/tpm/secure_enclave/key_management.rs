@@ -143,11 +143,11 @@ pub(super) fn load_or_create_attestation_key(
 pub(super) fn load_device_id() -> Result<String, TpmError> {
     if let Some(uuid) = hardware_uuid() {
         let digest = Sha256::digest(uuid.as_bytes());
-        return Ok(format!("se-{}", hex::encode(&digest[..8])));
+        return Ok(format!("se-{}", crate::utils::short_hex_id(&digest)));
     }
     let host = hostname::get().map_err(|_| TpmError::NotAvailable)?;
     let digest = Sha256::digest(format!("cpoe-fallback-{}", host.to_string_lossy()).as_bytes());
-    Ok(format!("se-{}", hex::encode(&digest[..8])))
+    Ok(format!("se-{}", crate::utils::short_hex_id(&digest)))
 }
 
 pub(super) fn load_or_create_key(state: &mut SecureEnclaveState) -> Result<(), TpmError> {

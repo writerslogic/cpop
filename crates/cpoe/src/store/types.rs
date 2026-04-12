@@ -46,16 +46,6 @@ pub struct SecureEvent {
     pub hw_cosign_entropy_bytes: Option<u64>,
 }
 
-fn now_ns() -> i64 {
-    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_nanos().min(i64::MAX as u128) as i64,
-        Err(e) => {
-            log::error!("System clock before Unix epoch: {e}; using fallback timestamp");
-            1
-        }
-    }
-}
-
 impl SecureEvent {
     /// Create a new event with sensible defaults for most fields.
     ///
@@ -71,7 +61,7 @@ impl SecureEvent {
             id: None,
             device_id: [0u8; 16],
             machine_id: String::new(),
-            timestamp_ns: now_ns(),
+            timestamp_ns: crate::utils::now_ns(),
             file_path,
             content_hash,
             file_size,

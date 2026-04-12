@@ -453,7 +453,7 @@ pub fn ffi_get_snapshot_path(file_path: String, checkpoint_ordinal: u64) -> Stri
     let path_hash = {
         use sha2::Digest;
         let h = sha2::Sha256::digest(file_path.as_bytes());
-        hex::encode(&h[..8])
+        crate::utils::short_hex_id(&h)
     };
     let src = std::path::Path::new(&file_path);
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("txt");
