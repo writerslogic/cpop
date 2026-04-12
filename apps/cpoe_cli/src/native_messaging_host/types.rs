@@ -60,6 +60,9 @@ pub(crate) enum Response {
     },
     SessionStopped {
         message: String,
+        /// Ed25519 signature over session-end record (hex).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
     Status {
         initialized: bool,

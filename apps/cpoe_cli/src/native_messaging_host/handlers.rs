@@ -133,6 +133,9 @@ pub(crate) fn handle_start_session(document_url: String, document_title: String)
     let mut genesis_hasher = Sha256::new();
     genesis_hasher.update(session_id.as_bytes());
     genesis_hasher.update(session_nonce);
+    if let Some(ref sk) = signing_key {
+        genesis_hasher.update(sk.verifying_key().as_bytes());
+    }
     genesis_hasher.update(b"genesis");
     let genesis: [u8; 32] = genesis_hasher.finalize().into();
 
@@ -434,11 +437,22 @@ pub(crate) fn handle_stop_session() -> Response {
 
     let _ = std::fs::File::open(&session.evidence_path).and_then(|f| f.sync_all());
 
+    let signature = session.signing_key.as_ref().map(|sk| {
+        let mut payload = Vec::with_capacity(96);
+        payload.extend_from_slice(b"cpoe-session-end-v1");
+        payload.extend_from_slice(session.id.as_bytes());
+        payload.extend_from_slice(&session.checkpoint_count.to_le_bytes());
+        payload.extend_from_slice(&session.prev_commitment);
+        payload.extend_from_slice(&session.jitter_hash);
+        hex::encode(sk.sign(&payload).to_bytes())
+    });
+
     Response::SessionStopped {
         message: format!(
             "Session ended for '{}' with {} checkpoints",
             session.document_title, session.checkpoint_count
         ),
+        signature,
     }
 }
 
