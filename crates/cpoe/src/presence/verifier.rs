@@ -71,7 +71,8 @@ impl Verifier {
         session.end_time = Some(Utc::now());
         session.active = false;
 
-        session.challenges_issued = session.challenges.len() as i32;
+        session.challenges_issued =
+            i32::try_from(session.challenges.len()).unwrap_or(i32::MAX);
         for challenge in &session.challenges {
             match challenge.status {
                 ChallengeStatus::Passed => session.challenges_passed += 1,

@@ -1104,7 +1104,7 @@ pub enum SecureChannelSendError {
   <!-- pid:high_complexity | verified:true | first:2026-04-09 -->
   Fix: Extracted query_store_metrics(), fallback_score(), not_tracking(), format_duration() helpers. Main function reduced to ~70 lines.
 
-- [ ] **M-055** `[error_handling]` `anchors/notary.rs:191`: verify response missing 'valid' field defaults to false via unwrap_or(false) | **Model:** Haiku
+- [x] **M-055** `[error_handling]` `anchors/notary.rs:191`: verify response missing 'valid' field defaults to false via unwrap_or(false) | **Model:** Haiku
   <!-- pid:silent_error | verified:true | first:2026-04-09 -->
   Impact: Malformed API response indistinguishable from "not verified"; caller cannot detect API errors | Fix: Return Result distinguishing verification failure from API malformation
 
@@ -1169,7 +1169,7 @@ pub enum SecureChannelSendError {
   Fix: Added inline comment documenting constant values at the import site.
 
 ### anchors/notary.rs
-- [ ] **M-004** `[error_handling]` `anchors/notary.rs:23`: reqwest::Client::builder().build() failure uses unwrap_or_default | **Model:** Haiku
+- [x] **M-004** `[error_handling]` `anchors/notary.rs:23`: reqwest::Client::builder().build() failure uses unwrap_or_default | **Model:** Haiku
 - [ ] **M-005** `[error_handling]` `anchors/notary.rs:109`: Response "id" field defaults to empty string on missing | **Model:** Haiku
 
 ### sentinel/core_session.rs
@@ -1177,7 +1177,7 @@ pub enum SecureChannelSendError {
 - [ ] **M-007** `[error_handling]` `sentinel/core_session.rs:238`: i64::try_from(raw_size).unwrap_or(i64::MAX) silent cap | **Model:** Haiku
 
 ### analysis modules
-- [ ] **M-008** `[code_quality]` `analysis/labyrinth.rs:392`: sort_by partial_cmp().unwrap_or(Equal) hides NaN | **Model:** Haiku
+- [x] **M-008** `[code_quality]` `analysis/labyrinth.rs:392`: sort_by partial_cmp().unwrap_or(Equal) hides NaN | **Model:** Haiku
 - [ ] **M-009** `[code_quality]` `analysis/lyapunov.rs:193`: linear_regression returns (0.0, _) on degenerate; no failure signal | **Model:** Haiku
 
 ### store/access_log.rs
@@ -1235,11 +1235,11 @@ pub enum SecureChannelSendError {
   Fix: Added sign()/verify() methods making the API complete. serde_bytes_vec no-op replaced with serde_bytes for correct CBOR encoding. Types are public API for C2PA/CAWG integration.
 
 ### trust_policy/evaluation.rs
-- [ ] **M-034** `[performance]` `trust_policy/evaluation.rs:55`: MinimumOfFactors fold with Inf start; NaN factors produce Inf->1.0 | **Model:** Haiku
+- [x] **M-034** `[performance]` `trust_policy/evaluation.rs:55`: MinimumOfFactors fold with Inf start; NaN factors produce Inf->1.0 | **Model:** Haiku
 - [ ] **M-035** `[error_handling]` `trust_policy/evaluation.rs:171`: Threshold name not validated at construction time | **Model:** Haiku
 
 ### presence/verifier.rs
-- [ ] **M-036** `[error_handling]` `presence/verifier.rs:73`: challenges_issued cast to i32 without overflow check | **Model:** Haiku
+- [x] **M-036** `[error_handling]` `presence/verifier.rs:73`: challenges_issued cast to i32 without overflow check | **Model:** Haiku
 
 ### collaboration.rs
 - [x] **M-037** `[maintainability]` `collaboration.rs:243`: Error messages lack valid range info; AUD-187/188 refs incomplete -- FIXED 2026-04-09
