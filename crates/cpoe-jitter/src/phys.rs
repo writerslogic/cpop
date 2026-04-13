@@ -154,7 +154,8 @@ impl PhysJitter {
         }
 
         let n = (samples.len() - 1) as f64;
-        let std_dev = (m2 / n).sqrt();
+        let variance = (m2 / n).max(0.0);
+        let std_dev = variance.sqrt();
 
         if std_dev < 1.0 {
             0
