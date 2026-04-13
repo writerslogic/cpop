@@ -6,7 +6,10 @@
 pub fn mlock(ptr: *const u8, len: usize) {
     #[cfg(unix)]
     unsafe {
-        let _ = libc::mlock(ptr as *const _, len);
+        let result = libc::mlock(ptr as *const _, len);
+        if result != 0 {
+            log::warn!("mlock failed: {}", std::io::Error::last_os_error());
+        }
     }
     #[cfg(not(unix))]
     let _ = (ptr, len);

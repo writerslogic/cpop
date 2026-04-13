@@ -344,7 +344,10 @@ extern "C" fn hid_input_callback(
 
 /// Create a CFString from a Rust string. Caller must CFRelease.
 unsafe fn cfstr(s: &str) -> *mut std::ffi::c_void {
-    let c = CString::new(s).unwrap();
+    let c = match CString::new(s) {
+        Ok(c) => c,
+        Err(_) => return std::ptr::null_mut(),
+    };
     CFStringCreateWithCString(
         kCFAllocatorDefault,
         c.as_ptr(),

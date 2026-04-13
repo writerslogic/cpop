@@ -72,7 +72,11 @@ impl<T: Serialize + for<'de> Deserialize<'de>> Obfuscated<T> {
     pub fn new(val: &T) -> Self {
         let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
         let mut data =
-            bincode::serde::encode_to_vec(val, bincode::config::standard()).unwrap_or_default();
+            bincode::serde::encode_to_vec(val, bincode::config::standard())
+                .unwrap_or_else(|e| {
+                    log::warn!("ObfuscatedString serialization failed: {e}");
+                    Vec::new()
+                });
         apply_mask(&mut data, get_mask(nonce));
         Self {
             nonce,
