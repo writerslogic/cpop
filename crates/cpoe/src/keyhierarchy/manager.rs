@@ -31,7 +31,10 @@ impl SessionManager {
         let identity = derive_master_identity(puf.as_ref())?;
         let document_path = document_path.into();
         let document_path = std::fs::canonicalize(&document_path)
-            .unwrap_or_else(|_| std::path::PathBuf::from(&document_path))
+            .unwrap_or_else(|e| {
+                log::debug!("canonicalize failed for {}: {e}", document_path);
+                std::path::PathBuf::from(&document_path)
+            })
             .to_string_lossy()
             .to_string();
         let doc_hash = crate::crypto::hash_file(Path::new(&document_path))?;

@@ -201,7 +201,13 @@ impl Provider for LinuxTpmProvider {
             .marshall()
             .map_err(|e| TpmError::Signing(format!("sig marshal: {e}").into()))?;
 
-        let counter = increment_counter(&mut state).ok();
+        let counter = match increment_counter(&mut state) {
+            Ok(val) => Some(val),
+            Err(e) => {
+                log::warn!("TPM counter increment failed: {e}");
+                None
+            }
+        };
 
         Ok(Binding {
             version: 1,

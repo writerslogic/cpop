@@ -147,7 +147,7 @@ fn recover_session_with_new_ratchet(
 ) -> Result<Session, KeyHierarchyError> {
     let mut next_ordinal = 0u64;
     if let Some(last) = recovery.signatures.last() {
-        next_ordinal = last.ordinal + 1;
+        next_ordinal = last.ordinal.saturating_add(1);
     }
 
     let challenge = Sha256::digest(b"cpoe-ratchet-continuation-v1");

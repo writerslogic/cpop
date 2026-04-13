@@ -118,7 +118,7 @@ impl Chain {
         let (content_hash, content_size) =
             crate::crypto::hash_file_with_size(Path::new(&self.metadata.document_path))?;
 
-        let ordinal = self.checkpoints.len() as u64;
+        let ordinal = u64::try_from(self.checkpoints.len()).unwrap_or(u64::MAX);
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
@@ -213,6 +213,8 @@ impl Chain {
 
     #[cfg(unix)]
     fn acquire_lock(file: &fs::File) -> Result<()> {
+        // SAFETY: flock() is a POSIX syscall that takes a valid fd and constant flags.
+        // as_raw_fd() returns a valid descriptor while `file` is alive.
         let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
         if ret != 0 {
             return Err(Error::checkpoint("Concurrent commit blocked by file lock"));
@@ -222,6 +224,7 @@ impl Chain {
 
     #[cfg(unix)]
     fn release_lock(file: &fs::File) {
+        // SAFETY: flock(LOCK_UN) releases the advisory lock on a valid fd.
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_UN);
         }

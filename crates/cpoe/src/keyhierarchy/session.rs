@@ -348,7 +348,7 @@ impl Session {
             session_public_key: self.certificate.session_pubkey.to_vec(),
             session_started: self.certificate.created_at,
             session_certificate_raw: self.certificate.signature.to_vec(),
-            ratchet_count: self.signatures.len() as i32,
+            ratchet_count: i32::try_from(self.signatures.len()).unwrap_or(i32::MAX),
             ratchet_public_keys: Vec::new(),
             hardware_attestation: None,
         };

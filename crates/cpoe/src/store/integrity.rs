@@ -7,6 +7,18 @@ use anyhow::anyhow;
 use rusqlite::params;
 use subtle::ConstantTimeEq;
 
+fn has_column(
+    conn: &rusqlite::Connection,
+    table: &str,
+    col: &str,
+) -> anyhow::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let found = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .any(|name| matches!(name.as_deref(), Ok(c) if c == col));
+    Ok(found)
+}
+
 impl SecureStore {
     pub(crate) fn init_schema(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
@@ -76,84 +88,43 @@ impl SecureStore {
             );
 
             CREATE INDEX IF NOT EXISTS idx_secure_events_timestamp ON secure_events(timestamp_ns);
-            CREATE INDEX IF NOT EXISTS idx_secure_events_file ON secure_events(file_path, timestamp_ns);"
+            CREATE INDEX IF NOT EXISTS idx_secure_events_file ON secure_events(file_path, timestamp_ns);
+            CREATE INDEX IF NOT EXISTS idx_secure_events_file_id ON secure_events(file_path, id);"
         )?;
 
         // Migration: add `last_verified_sequence` to pre-existing integrity rows
-        let has_lvs: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(integrity)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("last_verified_sequence")));
-            found
-        };
-        if !has_lvs {
+        if !has_column(&self.conn, "integrity", "last_verified_sequence")? {
             self.conn.execute_batch(
                 "ALTER TABLE integrity ADD COLUMN last_verified_sequence INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
 
         // Migration: add `hardware_counter` to pre-existing schemas
-        let has_column: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("hardware_counter")));
-            found
-        };
-        if !has_column {
+        if !has_column(&self.conn, "secure_events", "hardware_counter")? {
             self.conn
                 .execute_batch("ALTER TABLE secure_events ADD COLUMN hardware_counter INTEGER;")?;
         }
 
         // Migration: add `input_method` to pre-existing schemas
-        let has_input_method: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("input_method")));
-            found
-        };
-        if !has_input_method {
+        if !has_column(&self.conn, "secure_events", "input_method")? {
             self.conn
                 .execute_batch("ALTER TABLE secure_events ADD COLUMN input_method TEXT;")?;
         }
 
         // Migration: add Lamport signature columns to pre-existing schemas
-        let has_lamport: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("lamport_signature")));
-            found
-        };
-        if !has_lamport {
+        if !has_column(&self.conn, "secure_events", "lamport_signature")? {
             self.conn.execute_batch(
                 "ALTER TABLE secure_events ADD COLUMN lamport_signature BLOB;
                  ALTER TABLE secure_events ADD COLUMN lamport_pubkey_fingerprint BLOB;",
             )?;
         }
 
-        let has_challenge: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("challenge_nonce")));
-            found
-        };
-        if !has_challenge {
+        if !has_column(&self.conn, "secure_events", "challenge_nonce")? {
             self.conn
                 .execute_batch("ALTER TABLE secure_events ADD COLUMN challenge_nonce TEXT;")?;
         }
 
-        let has_hw_cosign: bool = {
-            let mut stmt = self.conn.prepare("PRAGMA table_info(secure_events)")?;
-            let found = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .any(|name| matches!(name.as_deref(), Ok("hw_cosign_signature")));
-            found
-        };
-        if !has_hw_cosign {
+        if !has_column(&self.conn, "secure_events", "hw_cosign_signature")? {
             self.conn.execute_batch(
                 "ALTER TABLE secure_events ADD COLUMN hw_cosign_signature BLOB;
                  ALTER TABLE secure_events ADD COLUMN hw_cosign_pubkey BLOB;
