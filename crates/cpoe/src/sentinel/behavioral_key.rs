@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use crate::crypto::mem::ProtectedKey;
+use crate::MutexRecover;
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
@@ -45,7 +46,7 @@ impl BehavioralKey {
     pub fn set_key(&mut self, key: SigningKey) {
         let key_bytes = key.to_bytes();
         self.master_key = Some(ProtectedKey::new(key_bytes));
-        *self.active_key.lock().expect("active_key mutex poisoned") = Some(key);
+        *self.active_key.lock_recover() = Some(key);
         self.last_activity = Instant::now();
     }
 
@@ -59,7 +60,7 @@ impl BehavioralKey {
 
         // If we were locked but have master key, we can try to re-activate.
         // In a real implementation, this might require re-authorizing with the TPM.
-        let mut guard = self.active_key.lock().expect("active_key mutex poisoned");
+        let mut guard = self.active_key.lock_recover();
         if guard.is_none() {
             if let Some(ref mk) = self.master_key {
                 let hk = Hkdf::<Sha256>::new(Some(&self.entropy_pool[..]), mk.as_bytes());
@@ -76,7 +77,7 @@ impl BehavioralKey {
     /// Access the signing key if it's currently hot.
     /// Zeroizes the key material if the lock timeout has elapsed.
     pub fn key(&self) -> Option<SigningKey> {
-        let mut guard = self.active_key.lock().expect("active_key mutex poisoned");
+        let mut guard = self.active_key.lock_recover();
         if self.last_activity.elapsed() > self.lock_timeout {
             if guard.is_some() {
                 log::info!("Behavioral key locked due to inactivity");
@@ -90,7 +91,7 @@ impl BehavioralKey {
     /// Access the signing key and update the lease if it's still valid.
     /// Returns a clone because the key is behind a `Mutex`.
     pub fn get_key(&mut self) -> Option<SigningKey> {
-        let mut guard = self.active_key.lock().expect("active_key mutex poisoned");
+        let mut guard = self.active_key.lock_recover();
         if self.last_activity.elapsed() > self.lock_timeout {
             if guard.is_some() {
                 log::info!("Behavioral key locked due to inactivity");
@@ -104,13 +105,13 @@ impl BehavioralKey {
 
     /// Check if the key is currently locked.
     pub fn is_locked(&self) -> bool {
-        let guard = self.active_key.lock().expect("active_key mutex poisoned");
+        let guard = self.active_key.lock_recover();
         guard.is_none() || self.last_activity.elapsed() > self.lock_timeout
     }
 
     /// Clear all key material and entropy.
     pub fn reset(&mut self) {
-        *self.active_key.lock().expect("active_key mutex poisoned") = None;
+        *self.active_key.lock_recover() = None;
         self.master_key = None;
         self.entropy_pool.zeroize();
     }

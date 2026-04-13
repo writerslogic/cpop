@@ -383,10 +383,15 @@ impl TypingRhythmAnalyzer {
         }
     }
 
+    const MAX_SESSION_IKIS: usize = 100_000;
+    const MAX_HOURLY_IKIS: usize = 50_000;
+
     pub fn add_sample(&mut self, iki_ms: f64, hour: u8) {
         self.total_keystrokes += 1;
-        self.session_ikis.push(iki_ms);
-        if hour < 24 {
+        if self.session_ikis.len() < Self::MAX_SESSION_IKIS {
+            self.session_ikis.push(iki_ms);
+        }
+        if hour < 24 && self.hourly_ikis[hour as usize].len() < Self::MAX_HOURLY_IKIS {
             self.hourly_ikis[hour as usize].push(iki_ms);
         }
     }

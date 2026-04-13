@@ -77,7 +77,7 @@ impl MouseIdleStats {
             0.0
         } else {
             let mean = self.mean_magnitude();
-            (self.sum_magnitude_squared / self.total_events as f64) - (mean * mean)
+            ((self.sum_magnitude_squared / self.total_events as f64) - (mean * mean)).max(0.0)
         }
     }
 
