@@ -41,7 +41,9 @@ pub fn analyze_velocity(sorted: SortedEvents<'_>) -> VelocityMetrics {
 
                 if bps > HUMAN_MAX_BYTES_PER_SEC {
                     let excess = (bps - HUMAN_MAX_BYTES_PER_SEC) * delta_sec;
-                    autocomplete_chars += excess as i64;
+                    if excess.is_finite() && excess < i64::MAX as f64 {
+                        autocomplete_chars += excess as i64;
+                    }
                 }
             }
         }
@@ -136,7 +138,10 @@ pub fn compute_session_stats(sorted: SortedEvents<'_>) -> SessionStats {
     for session in &sessions {
         if let (Some(first), Some(last)) = (session.first(), session.last()) {
             let dur_ns = last.timestamp_ns.saturating_sub(first.timestamp_ns).max(0);
-            total_duration += crate::utils::ns_to_secs(dur_ns);
+            let dur_sec = crate::utils::ns_to_secs(dur_ns);
+            if dur_sec.is_finite() {
+                total_duration += dur_sec;
+            }
         }
     }
 

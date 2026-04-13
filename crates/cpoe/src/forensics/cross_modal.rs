@@ -322,7 +322,7 @@ fn check_temporal_span_alignment(
         1.0
     } else if max_drift <= MAX_TEMPORAL_DRIFT_SEC {
         let denom = (MAX_TEMPORAL_DRIFT_SEC - DRIFT_PERFECT_SEC).max(f64::EPSILON);
-        1.0 - (max_drift - DRIFT_PERFECT_SEC) / denom * DRIFT_MODERATE_PENALTY
+        (1.0 - (max_drift - DRIFT_PERFECT_SEC) / denom * DRIFT_MODERATE_PENALTY).clamp(0.0, 1.0)
     } else {
         (DRIFT_LARGE_MAX_SCORE - (max_drift - MAX_TEMPORAL_DRIFT_SEC) / DRIFT_LARGE_DIVISOR)
             .clamp(0.0, DRIFT_LARGE_MAX_SCORE)
