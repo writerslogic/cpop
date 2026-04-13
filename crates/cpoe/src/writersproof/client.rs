@@ -287,6 +287,34 @@ impl WritersProofClient {
         Self::json_response::<AnchorResponse>(resp).await
     }
 
+    /// Publish evidence to WritersProof and receive a canonical URL.
+    ///
+    /// `POST /v1/publish`
+    pub async fn publish(&self, req: super::types::PublishRequest) -> Result<super::types::PublishResponse> {
+        let url = format!("{}/v1/publish", self.base_url);
+        let mut http_req = self.client.post(&url).json(&req);
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt.as_str());
+        } else {
+            return Err(Error::crypto("publish requires authentication".to_string()));
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("publish request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_else(|e| format!("[unreadable: {e}]"));
+            return Err(Error::crypto(format!(
+                "publish failed: HTTP {status}: {body}"
+            )));
+        }
+
+        Self::json_response::<super::types::PublishResponse>(resp).await
+    }
+
     /// Fetch temporal beacon attestation from WritersProof.
     ///
     /// WritersProof fetches the latest drand round and NIST pulse server-side,
