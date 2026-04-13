@@ -23,7 +23,7 @@ where
 {
     let mut guard = manager_lock()
         .lock()
-        .map_err(|e| format!("Lock poisoned: {e}"))?;
+        .unwrap_or_else(|e| e.into_inner());
 
     if guard.is_none() {
         let data_dir = get_data_dir().ok_or("Cannot determine data directory")?;

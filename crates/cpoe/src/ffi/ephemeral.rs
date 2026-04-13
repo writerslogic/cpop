@@ -502,6 +502,14 @@ pub fn ffi_ephemeral_checkpoint_hash(
     entry.checkpoint_count += 1;
     entry.last_checkpoint_at = Some(Instant::now());
 
+    let checkpoint_count = entry.checkpoint_count;
+    let last_message = entry
+        .content_snapshots
+        .last()
+        .and_then(|s| s.message.clone());
+    let entry_clone = entry.clone();
+    drop(entry); // Release DashMap guard before disk I/O
+
     let ephemeral_path = format!("ephemeral://{session_id}");
     let persist_error = match open_store() {
         Ok(mut store) => {
@@ -509,10 +517,7 @@ pub fn ffi_ephemeral_checkpoint_hash(
                 ephemeral_path,
                 content_hash,
                 byte_count as i64,
-                entry
-                    .content_snapshots
-                    .last()
-                    .and_then(|s| s.message.clone()),
+                last_message,
             );
             event.device_id = device_identity().0;
             event.machine_id = device_identity().1.clone();
@@ -531,11 +536,11 @@ pub fn ffi_ephemeral_checkpoint_hash(
         }
     };
 
-    flush_session_state(&session_id, &entry);
+    flush_session_state(&session_id, &entry_clone);
 
     let msg = format!(
         "Ephemeral checkpoint #{}: {}",
-        entry.checkpoint_count,
+        checkpoint_count,
         &content_hash_hex[..16]
     );
     FfiResult {

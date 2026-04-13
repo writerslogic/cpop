@@ -254,8 +254,8 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         };
         ForensicBreakdown {
             writing_mode: profile.writing_mode().to_string(),
-            cognitive_score: profile.cognitive_score(),
-            writing_mode_confidence: profile.writing_mode_confidence(),
+            cognitive_score: metrics.assessment_score.get(),
+            writing_mode_confidence: if profile.event_count > 20 { 0.8 } else { 0.3 },
             revision_cycle_count: profile.revision_cycle_count(),
             hurst_exponent: None,
             assessment_score: metrics.assessment_score.get(),
@@ -672,7 +672,10 @@ fn compute_report_seal(report: &WarReport, signing_key: &ed25519_dalek::SigningK
     use sha2::{Digest, Sha256};
 
     let pub_key = signing_key.verifying_key();
-    let doc_bytes = hex::decode(&report.document_hash).unwrap_or_default();
+    let doc_bytes = hex::decode(&report.document_hash).unwrap_or_else(|e| {
+        log::warn!("Invalid document_hash hex in report seal: {e}");
+        Vec::new()
+    });
     let chain_hash: [u8; 32] = report
         .checkpoints
         .iter()

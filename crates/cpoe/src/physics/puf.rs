@@ -13,10 +13,7 @@ impl SiliconPUF {
     /// Focuses on stability to ensure persistent identity.
     pub fn generate_fingerprint() -> [u8; 32] {
         let mut hasher = sha2::Sha256::new();
-        let mut sys = System::new_all();
-
-        sys.refresh_cpu_usage();
-        sys.refresh_all();
+        let sys = System::new_all();
 
         for cpu in sys.cpus() {
             sha2::Digest::update(&mut hasher, cpu.brand().as_bytes());
@@ -27,9 +24,8 @@ impl SiliconPUF {
         if let Some(name) = System::name() {
             sha2::Digest::update(&mut hasher, name.as_bytes());
         }
-        if let Some(version) = System::os_version() {
-            sha2::Digest::update(&mut hasher, version.as_bytes());
-        }
+        // os_version intentionally excluded: it changes on OS updates,
+        // breaking fingerprint stability across the same hardware.
 
         #[cfg(target_os = "macos")]
         {

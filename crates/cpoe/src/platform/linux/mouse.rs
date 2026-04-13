@@ -257,7 +257,7 @@ impl MouseCapture for LinuxMouseCapture {
     }
 
     fn reset_idle_stats(&mut self) {
-        *self.stats.write_recover() = MouseIdleStats::default();
+        *self.stats.write_recover() = MouseIdleStats::new();
     }
 
     fn set_stego_params(&mut self, params: MouseStegoParams) {
