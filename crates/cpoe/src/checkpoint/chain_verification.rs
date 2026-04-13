@@ -9,6 +9,79 @@ use super::chain::Chain;
 use super::chain_helpers::{genesis_prev_hash, mix_physics_seed};
 use super::types::*;
 
+/// Verify a single checkpoint's VDF proof against its expected input.
+///
+/// Computes the expected VDF input from the checkpoint's fields and the previous
+/// checkpoint's VDF output (for entangled mode), then verifies the proof.
+fn verify_single_checkpoint_vdf(
+    i: usize,
+    checkpoint: &Checkpoint,
+    prev_vdf_output: Option<[u8; 32]>,
+    mode: EntanglementMode,
+) -> Result<()> {
+    let vdf_proof = match checkpoint.vdf.as_ref() {
+        Some(v) => v,
+        None => return Ok(()),
+    };
+
+    let expected_input = compute_expected_vdf_input(i, checkpoint, prev_vdf_output, mode)?;
+
+    if vdf_proof.input != expected_input {
+        return Err(Error::checkpoint(format!(
+            "checkpoint {i}: VDF input mismatch"
+        )));
+    }
+    if !vdf::verify(vdf_proof) {
+        return Err(Error::checkpoint(format!(
+            "checkpoint {i}: VDF verification failed"
+        )));
+    }
+    Ok(())
+}
+
+/// Compute the expected VDF input for a checkpoint given its mode and predecessors.
+fn compute_expected_vdf_input(
+    i: usize,
+    checkpoint: &Checkpoint,
+    prev_vdf_output: Option<[u8; 32]>,
+    mode: EntanglementMode,
+) -> Result<[u8; 32]> {
+    match mode {
+        EntanglementMode::Legacy => Ok(vdf::chain_input(
+            checkpoint.content_hash,
+            checkpoint.previous_hash,
+            checkpoint.ordinal,
+        )),
+        EntanglementMode::Entangled => {
+            let previous_output = prev_vdf_output.unwrap_or([0u8; 32]);
+
+            let jitter_binding = checkpoint.jitter_binding.as_ref().ok_or_else(|| {
+                Error::checkpoint(format!(
+                    "checkpoint {i}: missing jitter binding (required for entangled mode)"
+                ))
+            })?;
+
+            let base_input = vdf::chain_input_entangled(
+                previous_output,
+                jitter_binding.jitter_hash,
+                checkpoint.content_hash,
+                checkpoint.ordinal,
+            );
+            Ok(mix_physics_seed(base_input, jitter_binding.physics_seed))
+        }
+    }
+}
+
+/// Extract the VDF output from a checkpoint's proof, returning an error if absent.
+fn require_prev_vdf_output(checkpoints: &[Checkpoint], i: usize) -> Result<[u8; 32]> {
+    match checkpoints[i - 1].vdf.as_ref() {
+        Some(v) => Ok(v.output),
+        None => Err(Error::checkpoint(format!(
+            "checkpoint {i}: previous checkpoint missing VDF (required for entangled chain)"
+        ))),
+    }
+}
+
 impl Chain {
     /// Verify the chain, returning `Err` on failure.
     pub fn verify(&self) -> Result<()> {
@@ -180,87 +253,50 @@ impl Chain {
                 }
             }
 
+            // VDF presence checks (mode-specific requirements)
             match self.metadata.entanglement_mode {
-                EntanglementMode::Legacy => {
-                    let require_vdf = i > 0;
-                    match checkpoint.vdf.as_ref() {
-                        None if require_vdf => {
-                            report.fail(format!(
-                                "checkpoint {i}: missing VDF proof (required for time verification)"
-                            ));
-                            return report;
-                        }
-                        None => {
-                            // Genesis without VDF: legacy chain predates genesis-VDF requirement.
-                            report.warnings.push(
-                                "checkpoint 0: no VDF proof; chain predates genesis-VDF requirement".to_string()
-                            );
-                        }
-                        Some(vdf) => {
-                            let expected_input = vdf::chain_input(
-                                checkpoint.content_hash,
-                                checkpoint.previous_hash,
-                                checkpoint.ordinal,
-                            );
-                            if vdf.input != expected_input {
-                                report.fail(format!("checkpoint {i}: VDF input mismatch"));
-                                return report;
-                            }
-                            if !vdf::verify(vdf) {
-                                report.fail(format!("checkpoint {i}: VDF verification failed"));
-                                return report;
-                            }
-                        }
-                    }
+                EntanglementMode::Legacy if checkpoint.vdf.is_none() && i > 0 => {
+                    report.fail(format!(
+                        "checkpoint {i}: missing VDF proof (required for time verification)"
+                    ));
+                    return report;
                 }
-                EntanglementMode::Entangled => {
-                    let vdf = match checkpoint.vdf.as_ref() {
-                        Some(v) => v,
-                        None => {
-                            report.fail(format!(
-                                "checkpoint {i}: missing VDF proof (required for entangled verification)"
-                            ));
-                            return report;
-                        }
-                    };
-
-                    let jitter_binding = match checkpoint.jitter_binding.as_ref() {
-                        Some(j) => j,
-                        None => {
-                            report.fail(format!(
-                                "checkpoint {i}: missing jitter binding (required for entangled mode)"
-                            ));
-                            return report;
-                        }
-                    };
-
-                    let previous_vdf_output = if i > 0 {
-                        match self.checkpoints[i - 1].vdf.as_ref() {
-                            Some(v) => v.output,
-                            None => {
-                                report.fail(format!(
-                                    "checkpoint {i}: previous checkpoint missing VDF (required for entangled chain)"
-                                ));
+                EntanglementMode::Legacy if checkpoint.vdf.is_none() => {
+                    report.warnings.push(
+                        "checkpoint 0: no VDF proof; chain predates genesis-VDF requirement"
+                            .to_string(),
+                    );
+                }
+                EntanglementMode::Entangled if checkpoint.vdf.is_none() => {
+                    report.fail(format!(
+                        "checkpoint {i}: missing VDF proof (required for entangled verification)"
+                    ));
+                    return report;
+                }
+                _ => {
+                    // VDF present; resolve previous VDF output for entangled mode
+                    let prev_vdf_output = if self.metadata.entanglement_mode
+                        == EntanglementMode::Entangled
+                        && i > 0
+                    {
+                        match require_prev_vdf_output(&self.checkpoints, i) {
+                            Ok(out) => Some(out),
+                            Err(e) => {
+                                report.fail(e.to_string());
                                 return report;
                             }
                         }
                     } else {
-                        [0u8; 32]
+                        None
                     };
 
-                    let base_input = vdf::chain_input_entangled(
-                        previous_vdf_output,
-                        jitter_binding.jitter_hash,
-                        checkpoint.content_hash,
-                        checkpoint.ordinal,
-                    );
-                    let expected_input = mix_physics_seed(base_input, jitter_binding.physics_seed);
-                    if vdf.input != expected_input {
-                        report.fail(format!("checkpoint {i}: VDF input mismatch (entangled)"));
-                        return report;
-                    }
-                    if !vdf::verify(vdf) {
-                        report.fail(format!("checkpoint {i}: VDF verification failed"));
+                    if let Err(e) = verify_single_checkpoint_vdf(
+                        i,
+                        checkpoint,
+                        prev_vdf_output,
+                        self.metadata.entanglement_mode,
+                    ) {
+                        report.fail(e.to_string());
                         return report;
                     }
                 }
@@ -341,60 +377,25 @@ impl Chain {
     #[allow(dead_code)]
     pub(crate) fn validate_vdf_proofs(&self) -> Result<()> {
         for (i, checkpoint) in self.checkpoints.iter().enumerate() {
-            let vdf = match checkpoint.vdf.as_ref() {
-                Some(v) => v,
-                None => continue,
-            };
-
-            let expected_input = match self.metadata.entanglement_mode {
-                EntanglementMode::Legacy => vdf::chain_input(
-                    checkpoint.content_hash,
-                    checkpoint.previous_hash,
-                    checkpoint.ordinal,
-                ),
-                EntanglementMode::Entangled => {
-                    let previous_vdf_output = if i > 0 {
-                        match self.checkpoints[i - 1].vdf.as_ref() {
-                            Some(v) => v.output,
-                            None => {
-                                return Err(Error::checkpoint(format!(
-                                    "checkpoint {i}: previous checkpoint missing VDF \
-                                     (required for entangled chain)"
-                                )));
-                            }
-                        }
-                    } else {
-                        [0u8; 32]
-                    };
-
-                    let jitter_binding = checkpoint.jitter_binding.as_ref().ok_or_else(|| {
-                        Error::checkpoint(format!(
-                            "checkpoint {i}: missing jitter binding \
-                             (required for entangled mode)"
-                        ))
-                    })?;
-
-                    let base_input = vdf::chain_input_entangled(
-                        previous_vdf_output,
-                        jitter_binding.jitter_hash,
-                        checkpoint.content_hash,
-                        checkpoint.ordinal,
-                    );
-                    mix_physics_seed(base_input, jitter_binding.physics_seed)
-                }
-            };
-
-            if vdf.input != expected_input {
-                return Err(Error::checkpoint(format!(
-                    "checkpoint {i}: VDF input mismatch on deserialization"
-                )));
+            if checkpoint.vdf.is_none() {
+                continue;
             }
 
-            if !vdf::verify(vdf) {
-                return Err(Error::checkpoint(format!(
-                    "checkpoint {i}: VDF proof invalid on deserialization"
-                )));
-            }
+            let prev_vdf_output = if self.metadata.entanglement_mode
+                == EntanglementMode::Entangled
+                && i > 0
+            {
+                Some(require_prev_vdf_output(&self.checkpoints, i)?)
+            } else {
+                None
+            };
+
+            verify_single_checkpoint_vdf(
+                i,
+                checkpoint,
+                prev_vdf_output,
+                self.metadata.entanglement_mode,
+            )?;
         }
         Ok(())
     }

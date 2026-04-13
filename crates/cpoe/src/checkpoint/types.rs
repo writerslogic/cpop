@@ -328,7 +328,8 @@ impl Checkpoint {
                 if hurst.is_finite() {
                     hasher.update(hurst.to_be_bytes());
                 } else {
-                    log::warn!("Non-finite Hurst exponent {hurst} excluded from checkpoint hash");
+                    log::warn!("Non-finite Hurst exponent {hurst} replaced with sentinel in checkpoint hash");
+                    hasher.update([0xFF; 8]);
                 }
             }
             hasher.update(rfc_jitter.binding_mac.mac);
