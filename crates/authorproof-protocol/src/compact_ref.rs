@@ -6,8 +6,11 @@
 //! document metadata (PDF, EXIF, Office), QR codes, git commit messages,
 //! or protocol headers with size constraints.
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 /// Summary statistics for compact representation.
@@ -83,10 +86,9 @@ impl CompactEvidenceRef {
 
     /// Canonical payload to sign for the `signature` field.
     ///
-    /// Determinism: `serde_json::json!` uses a BTreeMap-backed Map (when the
-    /// `preserve_order` feature is not enabled), which serializes keys in
-    /// sorted order. This produces a canonical byte representation suitable
-    /// for signing. Do not enable `serde_json/preserve_order` in this crate.
+    /// Determinism: keys are inserted into a `BTreeMap` so serialization
+    /// order is always lexicographic, regardless of whether any dependency
+    /// enables `serde_json/preserve_order` via Cargo feature unification.
     /// Returns `Err` if `evidence_uri` is empty, since omitting the retrieval
     /// location would let a forged reference claim validity without a
     /// verifiable evidence source.
@@ -94,22 +96,65 @@ impl CompactEvidenceRef {
         if self.evidence_uri.is_empty() {
             return Err(CompactRefError::MissingEvidenceUri);
         }
-        let payload = serde_json::json!({
-            "packet_id": self.packet_id.to_string(),
-            "chain_hash": self.chain_hash,
-            "document_hash": self.document_hash,
-            "summary": {
-                "checkpoint_count": self.summary.checkpoint_count,
-                "total_chars": self.summary.total_chars,
-                "total_vdf_time_seconds": self.summary.total_vdf_time_seconds,
-                "evidence_tier": self.summary.evidence_tier,
-                "verdict": self.summary.verdict,
-                "confidence_score": self.summary.confidence_score,
-            },
-            "evidence_uri": self.evidence_uri,
-        });
 
-        Ok(payload.to_string().into_bytes())
+        let mut summary = BTreeMap::new();
+        summary.insert(
+            "checkpoint_count".to_string(),
+            Value::from(self.summary.checkpoint_count),
+        );
+        summary.insert(
+            "confidence_score".to_string(),
+            match self.summary.confidence_score {
+                Some(v) => Value::from(v),
+                None => Value::Null,
+            },
+        );
+        summary.insert(
+            "evidence_tier".to_string(),
+            Value::from(self.summary.evidence_tier),
+        );
+        summary.insert(
+            "total_chars".to_string(),
+            Value::from(self.summary.total_chars),
+        );
+        summary.insert("total_vdf_time_seconds".to_string(), {
+            // Truncate f64 to integer seconds for canonical (non-IEEE-754) serialization.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let secs = self.summary.total_vdf_time_seconds as u64;
+            Value::from(secs)
+        });
+        summary.insert(
+            "verdict".to_string(),
+            match &self.summary.verdict {
+                Some(v) => Value::from(v.as_str()),
+                None => Value::Null,
+            },
+        );
+
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "chain_hash".to_string(),
+            Value::from(self.chain_hash.as_str()),
+        );
+        payload.insert(
+            "document_hash".to_string(),
+            Value::from(self.document_hash.as_str()),
+        );
+        payload.insert(
+            "evidence_uri".to_string(),
+            Value::from(self.evidence_uri.as_str()),
+        );
+        payload.insert(
+            "packet_id".to_string(),
+            Value::from(self.packet_id.to_string()),
+        );
+        payload.insert(
+            "summary".to_string(),
+            Value::Object(serde_json::Map::from_iter(summary)),
+        );
+
+        let canonical = Value::Object(serde_json::Map::from_iter(payload));
+        Ok(canonical.to_string().into_bytes())
     }
 
     /// Encode as `cpoe-ref:<base64url>` URI.
