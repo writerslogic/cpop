@@ -87,13 +87,19 @@ impl Packet {
             if i == 0 {
                 // Accept legacy all-zeros OR spec-correct H(document-ref)
                 let is_legacy_zeros = cp.previous_hash == hex::encode([0u8; 32]);
-                let expected_genesis = {
-                    use sha2::{Digest, Sha256};
-                    let mut h = Sha256::new();
-                    h.update(self.document.path.as_bytes());
-                    hex::encode(h.finalize())
-                };
-                let is_doc_ref = cp.previous_hash == expected_genesis;
+                let is_doc_ref = hex::decode(&cp.content_hash)
+                    .ok()
+                    .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                    .and_then(|content_hash| {
+                        crate::checkpoint::genesis_prev_hash(
+                            content_hash,
+                            cp.content_size,
+                            &self.document.path,
+                        )
+                        .ok()
+                    })
+                    .map(|h| cp.previous_hash == hex::encode(h))
+                    .unwrap_or(false);
                 let is_valid_hex = cp.previous_hash.len() == 64
                     && cp.previous_hash.chars().all(|c| c.is_ascii_hexdigit());
                 if !is_legacy_zeros && !is_doc_ref && !is_valid_hex {

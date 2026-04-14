@@ -11,4 +11,5 @@ mod types;
 mod tests;
 
 pub use chain::*;
+pub(crate) use chain_helpers::genesis_prev_hash;
 pub use types::*;
