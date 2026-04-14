@@ -141,11 +141,11 @@
   <!-- pid:ES_CSTRING_SAFETY | batch:3 | verified:true | first:2026-04-11 -->
   Impact: Buffer over-read in all file/process event data | Fix: Use String(bytes:encoding:) with length | Effort: medium
 
-- [ ] **H-007** `[security]` `AuthService+Session.swift:417`: Device binding fails open on IOKit failure
+- [-] **H-007** `[security]` `AuthService+Session.swift:417`: Device binding fails open on IOKit failure
   <!-- pid:FAIL_OPEN | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Auth on wrong device if IOKit returns nil | Fix: Fail closed; require re-authentication | Effort: small
 
-- [ ] **H-008** `[security]` `ReceiptValidation.swift:837`: Keychain error during receipt downgrade check bypasses validation
+- [-] **H-008** `[security]` `ReceiptValidation.swift:837`: Keychain error during receipt downgrade check bypasses validation
   <!-- pid:DOWNGRADE_CHECK_FAIL | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Receipt replay with older versions | Fix: Fail closed on Keychain error | Effort: small
 
@@ -153,15 +153,15 @@
   <!-- pid:SYMLINK_RACE | batch:4 | verified:true | first:2026-04-11 -->
   Impact: API key file written to attacker-controlled location | Fix: Validate parent with resolvingSymlinksInPath() | Effort: medium
 
-- [ ] **H-010** `[security]` `EncryptedSessionStore.swift:168`: Deadlock guard check is inside sync block (already blocked)
+- [-] **H-010** `[security]` `EncryptedSessionStore.swift:168`: Deadlock guard check is inside sync block (already blocked)
   <!-- pid:REENTRANT_DEADLOCK | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Thread deadlocks indefinitely on reentrance | Fix: Check before calling sync | Effort: small
 
-- [ ] **H-011** `[security]` `ReceiptValidation.swift:438`: Partial receipt binding field allows bypass
+- [-] **H-011** `[security]` `ReceiptValidation.swift:438`: Partial receipt binding field allows bypass
   <!-- pid:BINDING_VALIDATION | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Attacker strips one binding field to bypass device check | Fix: Require BOTH fields present AND valid | Effort: small
 
-- [ ] **H-012** `[security]` `CertificateService.swift:223`: Path component bypass via normalization differences
+- [-] **H-012** `[security]` `CertificateService.swift:223`: Path component bypass via normalization differences
   <!-- pid:PATH_COMPONENT_BYPASS | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Sig file written outside allowed directory | Fix: resolveSymlinksInPath() before comparison | Effort: medium
 
@@ -177,7 +177,7 @@
   <!-- pid:KEY_ROTATION_AUDIT | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Silent key confusion on fallback; hard to detect incomplete rotation | Fix: Log which key decrypted | Effort: small
 
-- [ ] **H-016** `[error_handling]` `DeviceAttestationService.swift:373`: Empty publicKeyB64 passes !isEmpty check
+- [-] **H-016** `[error_handling]` `DeviceAttestationService.swift:373`: Empty publicKeyB64 passes !isEmpty check
   <!-- pid:EMPTY_STRING_VALIDATION | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Empty base64 decoded as zero-length data | Fix: Check .isEmpty before decoding | Effort: small
 
@@ -185,23 +185,23 @@
   <!-- pid:ERROR_SWALLOW | batch:5 | verified:true | first:2026-04-11 -->
   Impact: User data loss undetectable; corrupted session files return nil | Fix: Catch specific errors; log all | Effort: small
 
-- [ ] **H-018** `[security]` `ProofCardService.swift:203`: Path validation with string prefix; no symlink resolution
+- [-] **H-018** `[security]` `ProofCardService.swift:203`: Path validation with string prefix; no symlink resolution
   <!-- pid:PATH_TRAVERSAL_PROOF_CARD | batch:5 | verified:true | first:2026-04-11 -->
   Impact: Proof card saved to arbitrary locations | Fix: Canonical path comparison | Effort: small
 
-- [ ] **H-019** `[concurrency]` `DataDirectoryMonitor.swift:189`: FSEvent callback races with monitor stop; use-after-free risk
+- [-] **H-019** `[concurrency]` `DataDirectoryMonitor.swift:189`: FSEvent callback races with monitor stop; use-after-free risk
   <!-- pid:RACE_FSEVENT | batch:5 | verified:true | first:2026-04-11 -->
   Impact: Crash if FSEventStream torn down during background validation | Fix: Capture context; check _isRunning | Effort: medium
 
-- [ ] **H-020** `[security]` `util.rs:82`: Signing key not fully zeroized; seed on stack
+- [-] **H-020** `[security]` `util.rs:82`: Signing key not fully zeroized; seed on stack
   <!-- pid:key_zeroize | batch:1 | verified:true | first:2026-04-11 -->
   Impact: Key material in stack/heap after function returns | Fix: Return Zeroizing<SigningKey> | Effort: medium
 
-- [ ] **H-021** `[security]` `cmd_track/mod.rs:368`: Symlink TOCTOU in session path comparison
+- [-] **H-021** `[security]` `cmd_track/mod.rs:368`: Symlink TOCTOU in session path comparison
   <!-- pid:toctou | batch:1 | verified:true | first:2026-04-11 -->
   Impact: Tracking wrong file via symlink swap | Fix: Canonicalize before comparison | Effort: small
 
-- [ ] **H-022** `[security]` `native_messaging_host/handlers.rs:59`: Unbounded filename length from user-controlled title
+- [-] **H-022** `[security]` `native_messaging_host/handlers.rs:59`: Unbounded filename length from user-controlled title
   <!-- pid:path_traversal | batch:1 | verified:true | first:2026-04-11 -->
   Impact: DoS via extremely long filenames | Fix: Enforce 32-char title limit | Effort: small
 
@@ -213,11 +213,11 @@
   <!-- pid:PASTE_VALIDATION | batch:5 | verified:true | first:2026-04-11 -->
   Impact: User forges authorship by pasting external text | Fix: Validate paste matches recent doc changes | Effort: large
 
-- [ ] **H-025** `[security]` `BrowserExtensionService.swift:574`: Bundled host path returned without existence/signature check
+- [x] **H-025** `[security]` `BrowserExtensionService.swift:574`: Bundled host path returned without existence/signature check
   <!-- pid:BUNDLE_PATH_VERIFY | batch:5 | verified:true | first:2026-04-11 -->
   Impact: Browser ext registered to tampered binary | Fix: Verify existence + code signature | Effort: small
 
-- [ ] **H-026** `[error_handling]` `CrashReportingService.swift:62`: Force unwrap on applicationSupportDirectory
+- [x] **H-026** `[error_handling]` `CrashReportingService.swift:62`: Force unwrap on applicationSupportDirectory
   <!-- pid:force_unwrap | batch:5 | verified:true | first:2026-04-11 -->
   Impact: Crash on launch if dir unavailable | Fix: guard let | Effort: small
 
@@ -229,7 +229,7 @@
   <!-- pid:god_module | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Complex state management; high coupling | Fix: Extract subcontrollers | Effort: large
 
-- [ ] **H-029** `[security]` `WARReportPDFRenderer.swift:190`: Path validation allows symlink-to-Downloads; write outside intended dir
+- [-] **H-029** `[security]` `WARReportPDFRenderer.swift:190`: Path validation allows symlink-to-Downloads; write outside intended dir
   <!-- pid:path_traversal | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Arbitrary file write via symlink | Fix: Validate before resolving symlinks | Effort: small
 
@@ -245,7 +245,7 @@
   <!-- pid:debug_security_downgrade | batch:8 | verified:true | first:2026-04-11 -->
   Impact: DEBUG builds connect to untrusted daemons | Fix: Remove DEBUG bypass | Effort: small
 
-- [ ] **H-033** `[error_handling]` `CPoEBridge.Operations.cs:45`: Logs only ex.Message; stack traces lost
+- [x] **H-033** `[error_handling]` `CPoEBridge.Operations.cs:45`: Logs only ex.Message; stack traces lost
   <!-- pid:unhelpful_error_msg | batch:8 | verified:true | first:2026-04-11 -->
   Impact: Difficult to diagnose IPC failures | Fix: Log ex.ToString() | Effort: small
 
@@ -265,7 +265,7 @@
   <!-- pid:key_zeroize | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Old session keys remain in memory | Fix: Regenerate keys frequently | Effort: large
 
-- [ ] **H-038** `[code_quality]` `background.js:134`: Genesis commitment race; checkpoint sent before genesis computed
+- [x] **H-038** `[code_quality]` `background.js:134`: Genesis commitment race; checkpoint sent before genesis computed
   <!-- pid:race_condition | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Invalid commitment chain with null prevCommitment | Fix: Await genesis before checkpoints | Effort: small
 
@@ -293,7 +293,7 @@
   <!-- pid:plaintext_password_in_memory | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Password recoverable from heap dumps | Fix: Use SecureString | Effort: medium
 
-- [ ] **H-045** `[security]` `LockScreenDialog.xaml.cs:170`: Regex DoS on malformed PBKDF2 hash input
+- [-] **H-045** `[security]` `LockScreenDialog.xaml.cs:170`: Regex DoS on malformed PBKDF2 hash input
   <!-- pid:regex_dos | batch:10 | verified:true | first:2026-04-11 -->
   Impact: UI freeze during lock screen validation | Fix: Length validation before regex; use compiled regex | Effort: small
 
@@ -301,7 +301,7 @@
   <!-- pid:path_traversal | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Monitoring sensitive system folders | Fix: GetFullPath() + resolve all symlinks | Effort: medium
 
-- [ ] **H-047** `[security]` `WatchPathsDialog.xaml.cs:81`: Incomplete system path validation
+- [-] **H-047** `[security]` `WatchPathsDialog.xaml.cs:81`: Incomplete system path validation
   <!-- pid:insufficient_system_path_validation | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Watching AppData, LocalAppData, ProgramData | Fix: Expand to all Environment.SpecialFolder | Effort: small
 
@@ -313,7 +313,7 @@
   <!-- pid:missing_cancellation_token | batch:10 | verified:true | first:2026-04-11 -->
   Impact: NullReferenceException after page navigation | Fix: CancellationTokenSource in OnNavigatedFrom | Effort: medium
 
-- [ ] **H-050** `[concurrency]` `SessionPage.xaml.cs:120`: Timer continues after page navigation
+- [-] **H-050** `[concurrency]` `SessionPage.xaml.cs:120`: Timer continues after page navigation
   <!-- pid:missing_cancellation_token | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Memory leak and battery drain | Fix: Stop timer in OnNavigatedFrom | Effort: medium
 
@@ -372,7 +372,7 @@
 - [ ] **M-020** `[performance]` `DataDirectoryMonitor.swift:122`: Validation triggered per FSEvent batch
 - [ ] **M-021** `[architecture]` `DataDirectoryIntegrityService.swift:382`: Private API (proc_listpids) usage
 - [ ] **M-022** `[concurrency]` `NotificationManager.swift:237`: Tasks cancelled but not awaited
-- [ ] **M-023** `[performance]` `ProofCardService.swift:539`: CIContext created per call; should be cached
+- [x] **M-023** `[performance]` `ProofCardService.swift:539`: CIContext created per call; should be cached
 - [ ] **M-024** `[architecture]` `DataDirectoryIntegrityService+Security.swift:260`: fdesetup blocks main thread
 - [ ] **M-025** `[maintainability]` `BrowserExtensionService.swift:780`: HMAC key cache no TTL
 - [ ] **M-026** `[architecture]` `PopoverComponents.swift:1`: God module; 942 lines mixed UI
@@ -381,14 +381,14 @@
 - [ ] **M-029** `[error_handling]` `DashboardSetupContent.swift:374`: Raw technical details in user alert
 - [ ] **M-030** `[code_quality]` `SettingsAccountTab.swift:463`: Hardcoded URL without constant
 - [ ] **M-031** `[security]` `SettingsUtilities.swift:40`: Path prefix matching without resolution
-- [ ] **M-032** `[error_handling]` `cmd_verify.rs:420`: File sync_all() result silently discarded
+- [-] **M-032** `[error_handling]` `cmd_verify.rs:420`: File sync_all() result silently discarded
 - [ ] **M-033** `[error_handling]` `cmd_track/mod.rs:331`: Mutex poisoning recovery suppressed
-- [ ] **M-034** `[security]` `native_messaging_host/protocol.rs:99`: Domain suffix matching without boundary check
+- [-] **M-034** `[security]` `native_messaging_host/protocol.rs:99`: Domain suffix matching without boundary check
 - [ ] **M-035** `[security]` `native_messaging_host/handlers.rs:275`: 1s clock tolerance allows backwards attacks
 - [ ] **M-036** `[security]` `native_messaging_host/handlers.rs:187`: Timing side-channel in hex validation
 - [ ] **M-037** `[security]` `cmd_track/filesystem.rs:69`: Symlink TOCTOU between classify and checkpoint
-- [ ] **M-038** `[concurrency]` `cmd_track/mod.rs:214`: Ctrl+C handler races with HashMap access
-- [ ] **M-039** `[performance]` `cmd_track/mod.rs:228`: HashMap retain in hot path O(n) per timeout
+- [-] **M-038** `[concurrency]` `cmd_track/mod.rs:214`: Ctrl+C handler races with HashMap access
+- [-] **M-039** `[performance]` `cmd_track/mod.rs:228`: HashMap retain in hot path O(n) per timeout
 - [ ] **M-040** `[code_quality]` `util.rs:262`: Exponential backoff reaches 1.6s with no user feedback
 - [ ] **M-041** `[maintainability]` `cmd_track/mod.rs:1`: 1107 lines; mixed concerns in event loop
 - [ ] **M-042** `[maintainability]` `native_messaging_host/handlers.rs:13`: handle_start_session 171 lines deeply nested
@@ -396,14 +396,14 @@
 - [ ] **M-044** `[architecture]` `cpoe_cli/src/`: Session types incompatible between NMH and CLI
 - [ ] **M-045** `[security]` `AppDelegate.swift:537`: Deep link handler processes before full init
 - [ ] **M-046** `[security]` `AppDelegate.swift:625`: Replay protection lost on app restart
-- [ ] **M-047** `[concurrency]` `CPoEService+Polling.swift:156`: Pulse reset tasks accumulate
+- [-] **M-047** `[concurrency]` `CPoEService+Polling.swift:156`: Pulse reset tasks accumulate
 - [ ] **M-048** `[error_handling]` `CPoEService+Polling.swift:40`: No monotonicity check on status updates
 - [ ] **M-049** `[security]` `CollaborationSession.swift:261`: Fingerprint collision in collaborator revocation
 - [ ] **M-050** `[architecture]` `CollaborationSession.swift:175`: No dedup for collaborator invitations
-- [ ] **M-051** `[performance]` `HistoryPopoverViews.swift:169`: Search debounce leaks tasks
+- [x] **M-051** `[performance]` `HistoryPopoverViews.swift:169`: Search debounce leaks tasks
 - [ ] **M-052** `[security]` `LiveDemoView.swift:9`: TransparencyFeed injectable by any code
 - [ ] **M-053** `[concurrency]` `DataTransparencyView.swift:285`: DateFormatter not thread-safe
-- [ ] **M-054** `[error_handling]` `PaywallView.swift:269`: isPurchasing stuck on throw
+- [-] **M-054** `[error_handling]` `PaywallView.swift:269`: isPurchasing stuck on throw
 - [ ] **M-055** `[security]` `CPoESettings.swift`: UserDefaults settings without encryption
 - [ ] **M-056** `[error_handling]` `AppDelegate.swift:515`: writePID() does not check return value
 - [ ] **M-057** `[error_handling]` `AppDelegate.swift:682`: Retry init without backoff
@@ -411,38 +411,38 @@
 - [ ] **M-059** `[security]` `CodeSigningValidation.swift:152`: Hardcoded team ID
 - [ ] **M-060** `[architecture]` `VerifiableCredentialService.swift:146`: No proof format validation against W3C spec
 - [ ] **M-061** `[performance]` `CPoEBridge.Infrastructure.cs:236`: O(n log n) cache eviction inline
-- [ ] **M-062** `[error_handling]` `ErrorService.cs:164`: async void ShowInlineSuccess
-- [ ] **M-063** `[error_handling]` `FileWatcherService.cs:202`: async void OnWatcherError
+- [x] **M-062** `[error_handling]` `ErrorService.cs:164`: async void ShowInlineSuccess
+- [-] **M-063** `[error_handling]` `FileWatcherService.cs:202`: async void OnWatcherError
 - [ ] **M-064** `[concurrency]` `FileWatcherService.cs:150`: TOCTOU in HandleFileEventAsync
 - [ ] **M-065** `[architecture]` `App.xaml.cs:202`: Fire-and-forget background init hides failures
 - [ ] **M-066** `[security]` `SecurityService.cs:471`: ClearSensitiveString best-effort only
-- [ ] **M-067** `[security]` `SecurityService.cs:154`: No timeout on online cert revocation
+- [x] **M-067** `[security]` `SecurityService.cs:154`: No timeout on online cert revocation
 - [ ] **M-068** `[security]` `CPoEBridge.cs:131`: DEBUG TOFU allows unsigned binaries
 - [ ] **M-069** `[error_handling]` `App.xaml.cs:549`: Unhandled exceptions in async void
-- [ ] **M-070** `[performance]` `SettingsService.cs:74`: Double DPAPI decryption on every load
+- [x] **M-070** `[performance]` `SettingsService.cs:74`: Double DPAPI decryption on every load
 - [ ] **M-071** `[architecture]` `MainWindow.xaml.cs:531`: Protocol verification errors not shown to user
 - [ ] **M-072** `[error_handling]` `App.xaml.cs:474`: Protocol activation rejection gives no feedback
-- [ ] **M-073** `[security]` `ServiceNow/WritersProofAPI.js:52`: No row-level security on session lookup
+- [-] **M-073** `[security]` `ServiceNow/WritersProofAPI.js:52`: No row-level security on session lookup
 - [ ] **M-074** `[code_quality]` `ServiceNow/WritersProofAPI.js:38`: Table allowlist hardcoded
 - [ ] **M-075** `[error_handling]` `EventCapture.ts:129` (Atlassian): Empty versions returns all-zeros metrics
 - [ ] **M-076** `[security]` `WritersProofClient.ts:192` (GWorkspace): Session ID in URL without re-validation
 - [ ] **M-077** `[performance]` `WritersProofClient.ts:360` (GWorkspace): Retry ignores Retry-After header
 - [ ] **M-078** `[code_quality]` `popup.js:189`: 200ms injection race with no handshake
 - [ ] **M-079** `[security]` `secure-channel.js:293`: Commitment concatenation without length prefix
-- [ ] **M-080** `[security]` `background.js:99`: hexToBytes accepts non-hex silently
+- [x] **M-080** `[security]` `background.js:99`: hexToBytes accepts non-hex silently
 - [ ] **M-081** `[error_handling]` `background.js:279`: Commitment failure silently skips checkpoint
-- [ ] **M-082** `[security]` `content.js:347`: Tool name no length validation
+- [-] **M-082** `[security]` `content.js:347`: Tool name no length validation
 - [ ] **M-083** `[performance]` `content.js:162`: DOM traversal per keystroke; no memoization
 - [ ] **M-084** `[code_quality]` `background.js (Safari):304`: Commitment hash uses pipes; not binary-safe
 - [ ] **M-085** `[security]` `resolvers/index.ts:28`: UUID redaction regex matches legitimate content
 - [ ] **M-086** `[error_handling]` `App.tsx:271` (Office365): Batch submission no retry/backoff
-- [ ] **M-087** `[security]` `Code.ts:618` (GWorkspace): Download URL no HTTPS enforcement
+- [-] **M-087** `[security]` `Code.ts:618` (GWorkspace): Download URL no HTTPS enforcement
 - [ ] **M-088** `[error_handling]` `app.ts:190` (HubSpot Legacy): Webhook errors logged but not surfaced
 - [ ] **M-089** `[concurrency]` `DashboardPage.xaml.cs:380`: Heatmap rebuilds 84+ objects per update
 - [ ] **M-090** `[concurrency]` `HistoryPage.xaml.cs:150`: Search debounce race; out-of-order results
 - [ ] **M-091** `[concurrency]` `HistoryPage.BulkActions.cs:85`: Unsynchronized read after Interlocked
 - [ ] **M-092** `[code_quality]` `TimelineDialog.xaml.cs:90`: Estimated entries indistinguishable from real
-- [ ] **M-093** `[code_quality]` `AnnotationDialog.xaml.cs:120`: MaxLength not set despite UI claiming 500
+- [x] **M-093** `[code_quality]` `AnnotationDialog.xaml.cs:120`: MaxLength not set despite UI claiming 500
 - [ ] **M-094** `[code_quality]` `SettingsPage.xaml.cs:255`: Complex _isLoading state machine
 - [ ] **M-095** `[error_handling]` `TimelineDialog.xaml.cs:42`: ContinueWith null exception check missing
 - [ ] **M-096** `[error_handling]` `BatchVerifyDialog.xaml.cs:280`: ObjectDisposedException silently caught
