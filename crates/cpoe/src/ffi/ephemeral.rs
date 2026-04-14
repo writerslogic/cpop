@@ -57,7 +57,6 @@ struct EphemeralSession {
     jitter_intervals: Vec<u64>,
     checkpoint_count: u64,
     keystroke_count: u64,
-    _last_timestamp_ns: i64,
     /// Content hashes from each checkpoint (for chain building).
     content_snapshots: Vec<ContentSnapshot>,
     /// Canary seed from NMH handshake (hex-encoded).
@@ -176,7 +175,8 @@ pub fn ffi_start_ephemeral_session(context_label: String) -> FfiEphemeralSession
             jitter_intervals: Vec::new(),
             checkpoint_count: 0,
             keystroke_count: 0,
-            _last_timestamp_ns: 0,
+
+
             content_snapshots: Vec::new(),
             canary_seed: None,
             last_checkpoint_at: None,

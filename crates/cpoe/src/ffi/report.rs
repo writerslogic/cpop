@@ -52,7 +52,10 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
     });
     let ips = config.vdf.iterations_per_second.max(1);
 
-    let last = events.last().expect("events non-empty (checked above)");
+    let last = match events.last() {
+        Some(e) => e,
+        None => return Err("No events found".to_string()),
+    };
     let doc_hash = hex::encode(last.content_hash);
     let doc_size = last.file_size;
 
@@ -761,7 +764,10 @@ fn build_vc_json(report: &WarReport) -> Option<String> {
         ear_trustworthiness_vector: Some(tv),
         ear_appraisal_policy_id: Some("urn:writerslogic:policy:pop-standard:1.0".to_string()),
         pop_seal: Some(seal),
-        pop_evidence_ref: Some(hex::decode(&report.document_hash).unwrap_or_default()),
+        pop_evidence_ref: Some(hex::decode(&report.document_hash).unwrap_or_else(|e| {
+            log::warn!("Invalid document_hash hex in EAR evidence ref: {e}");
+            Vec::new()
+        })),
         pop_entropy_report: None,
         pop_forgery_cost: None,
         pop_forensic_summary: None,

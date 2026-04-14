@@ -56,7 +56,7 @@ pub fn ffi_get_checkpoint_chain(path: String) -> FfiChainSummary {
         return err("No checkpoints found for this document".to_string());
     }
 
-    let checkpoint_count = events.len() as u32;
+    let checkpoint_count = u32::try_from(events.len()).unwrap_or(u32::MAX);
     let first_ts_ms = events.first().map(|e| e.timestamp_ns / 1_000_000);
     let last_ts_ms = events.last().map(|e| e.timestamp_ns / 1_000_000);
 
@@ -87,7 +87,7 @@ pub fn ffi_get_checkpoint_chain(path: String) -> FfiChainSummary {
             content_hash: hex::encode(ev.content_hash),
             previous_hash: hex::encode(ev.previous_hash),
             checkpoint_hash: hex::encode(ev.event_hash),
-            content_size: ev.file_size as u64,
+            content_size: ev.file_size.max(0) as u64,
             size_delta: ev.size_delta,
             vdf_iterations: ev.vdf_iterations,
             has_jitter_binding: has_jitter,

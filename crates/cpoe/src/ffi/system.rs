@@ -50,8 +50,15 @@ pub fn ffi_init() -> FfiResult {
         if let Err(e) = crate::crypto::restrict_permissions(tmp.path(), 0o600) {
             return FfiResult::err(format!("Failed to set key file permissions: {}", e));
         }
-        if let Err(e) = tmp.persist(&key_path) {
-            return FfiResult::err(format!("Failed to finalize signing key: {}", e));
+        match tmp.persist_noclobber(&key_path) {
+            Ok(_) => {}
+            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Another process created the key first; that's fine.
+                log::info!("Signing key already created by another process");
+            }
+            Err(e) => {
+                return FfiResult::err(format!("Failed to finalize signing key: {}", e.error));
+            }
         }
         // H-016: Verify permissions on final path after atomic rename;
         // some filesystems may not preserve permissions across rename.
@@ -446,6 +453,9 @@ pub fn ffi_set_snapshots_enabled(enabled: bool) {
 /// Returns empty string if no snapshot exists.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_get_snapshot_path(file_path: String, checkpoint_ordinal: u64) -> String {
+    if crate::sentinel::helpers::validate_path(&file_path).is_err() {
+        return String::new();
+    }
     let data_dir = match get_data_dir() {
         Some(d) => d,
         None => return String::new(),

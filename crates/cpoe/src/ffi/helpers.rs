@@ -95,6 +95,11 @@ pub(crate) fn load_signing_key() -> Result<ed25519_dalek::SigningKey, String> {
 
     let data_dir = get_data_dir().ok_or_else(|| "Data directory not found".to_string())?;
     let key_path = data_dir.join("signing_key");
+    let meta = std::fs::symlink_metadata(&key_path)
+        .map_err(|e| format!("Failed to stat signing key: {e}"))?;
+    if !meta.is_file() {
+        return Err("Signing key path is not a regular file".to_string());
+    }
     let key_data = Zeroizing::new(
         std::fs::read(&key_path).map_err(|e| format!("Failed to read signing key: {e}"))?,
     );
@@ -142,7 +147,10 @@ pub(crate) fn load_events_for_path(
     path: &str,
 ) -> Result<(String, SecureStore, Vec<crate::store::SecureEvent>), String> {
     let validated = crate::sentinel::helpers::validate_path(path).map_err(|e| e.to_string())?;
-    let canonical = validated.to_string_lossy().to_string();
+    let canonical = validated
+        .to_str()
+        .ok_or_else(|| "Path contains non-UTF-8 characters".to_string())?
+        .to_string();
     let store = open_store()?;
     let events = store
         .get_events_for_file(&canonical)

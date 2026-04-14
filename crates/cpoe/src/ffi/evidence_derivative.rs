@@ -394,9 +394,10 @@ fn decode_evidence_for_c2pa(
             },
             filename: Some(doc.title.clone()),
             byte_length: doc.final_size,
-            char_count: std::fs::read(&doc.path)
-                .map_err(|e| log::warn!("read file for char count failed: {e}"))
+            char_count: std::fs::metadata(&doc.path)
                 .ok()
+                .filter(|m| m.len() <= 50_000_000) // cap at 50MB to avoid OOM
+                .and_then(|_| std::fs::read(&doc.path).ok())
                 .and_then(|bytes| String::from_utf8(bytes).ok())
                 .map(|s| s.chars().count() as u64)
                 .unwrap_or(doc.final_size),

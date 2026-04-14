@@ -71,8 +71,7 @@ pub fn ffi_anchor_to_writers_proof(document_path: String) -> FfiResult {
     let did = match load_did() {
         Ok(d) => d,
         Err(e) => {
-            log::warn!("DID unavailable for anchor, using placeholder: {e}");
-            "unknown".into()
+            return FfiResult::err(format!("DID identity required for anchor: {e}"));
         }
     };
     let api_key = match load_api_key() {
