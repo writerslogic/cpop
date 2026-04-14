@@ -174,7 +174,10 @@ impl CpopReferenceValues {
 /// Extract an f64 from a CBOR value (Float or Integer).
 fn extract_f64(val: &Value, key: &str) -> Result<f64> {
     match val {
-        Value::Float(f) => Ok(*f),
+        Value::Float(f) if f.is_finite() => Ok(*f),
+        Value::Float(f) => Err(crate::error::Error::evidence(format!(
+            "CoRIM: non-finite float ({f}) for key '{key}'"
+        ))),
         Value::Integer(i) => {
             let n: i128 = (*i).into();
             Ok(n as f64)
