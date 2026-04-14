@@ -46,9 +46,9 @@ impl MnemonicHandler {
             .map_err(|_| anyhow!("Invalid mnemonic phrase"))?;
 
         let raw_seed = Zeroizing::new(mnemonic.to_seed(""));
-        let puf = SiliconPUF::generate_fingerprint();
+        let puf = Zeroizing::new(SiliconPUF::generate_fingerprint());
 
-        let hk = Hkdf::<Sha256>::new(Some(&puf), raw_seed.as_ref());
+        let hk = Hkdf::<Sha256>::new(Some(puf.as_ref()), raw_seed.as_ref());
         let mut out = Zeroizing::new([0u8; 64]);
         hk.expand(b"cpoe-silicon-seed-v1", out.as_mut())
             .map_err(|_| anyhow!("HKDF expand failed for silicon seed"))?;

@@ -313,7 +313,7 @@ impl OpenTimestampsProvider {
                         "Truncated proof: expected 8-byte varint".into(),
                     ));
                 }
-                let v = u64::from_le_bytes([
+                let v64 = u64::from_le_bytes([
                     data[*pos],
                     data[*pos + 1],
                     data[*pos + 2],
@@ -322,7 +322,10 @@ impl OpenTimestampsProvider {
                     data[*pos + 5],
                     data[*pos + 6],
                     data[*pos + 7],
-                ]) as usize;
+                ]);
+                let v = usize::try_from(v64).map_err(|_| {
+                    AnchorError::InvalidFormat("Varint exceeds addressable range".into())
+                })?;
                 *pos += 8;
                 Ok(v)
             }
@@ -333,7 +336,10 @@ impl OpenTimestampsProvider {
     /// advancing `pos` past both the length and the payload.
     fn read_data(data: &[u8], pos: &mut usize) -> Result<Vec<u8>, AnchorError> {
         let len = Self::read_varint(data, pos)?;
-        if *pos + len > data.len() {
+        let end = pos.checked_add(len).ok_or_else(|| {
+            AnchorError::InvalidFormat("Proof data length overflow".into())
+        })?;
+        if end > data.len() {
             return Err(AnchorError::InvalidFormat(format!(
                 "Truncated proof: need {} bytes at offset {}, have {}",
                 len,
@@ -341,7 +347,7 @@ impl OpenTimestampsProvider {
                 data.len() - *pos
             )));
         }
-        let result = data[*pos..*pos + len].to_vec();
+        let result = data[*pos..end].to_vec();
         *pos += len;
         Ok(result)
     }
