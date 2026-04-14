@@ -451,7 +451,9 @@ fn validate_did_host(did: &str) -> Result<(), Error> {
         ".invalid",
     ];
     for blocked in BLOCKED {
-        if host_lower == *blocked || host_lower.ends_with(blocked) {
+        if host_lower == *blocked
+            || (blocked.starts_with('.') && host_lower.ends_with(blocked))
+        {
             return Err(Error::identity(format!(
                 "did:webvh host points to private/reserved name (SSRF risk): {host_lower}"
             )));
@@ -798,11 +800,11 @@ mod tests {
 
     /// Derive with a very long address (1000 chars) should succeed.
     #[test]
-    fn derived_key_long_address() {
+    fn derived_key_long_address_rejected() {
         let master = test_signing_key();
-        let long_addr = "a".repeat(1000);
+        let long_addr = "a".repeat(254);
         let result = derive_webvh_signing_key(&master, &long_addr);
-        assert!(result.is_ok(), "long address must not fail HKDF derivation");
+        assert!(result.is_err(), "address exceeding 253 chars must be rejected");
     }
 
     /// build_did_document() output must contain {SCID} in the id field.
