@@ -66,7 +66,18 @@ const MONOTONIC_APPEND_WEIGHT: f64 = 0.05;
 
 const REVISION_FRACTION_LOW: f64 = 0.02; // transcriptive
 const REVISION_FRACTION_HIGH: f64 = 0.15; // cognitive
-const REVISION_FRACTION_WEIGHT: f64 = 0.10;
+const REVISION_FRACTION_WEIGHT: f64 = 0.07;
+
+const THINKING_PAUSE_RATIO_LOW: f64 = 0.0; // transcriptive: no thinking pauses
+const THINKING_PAUSE_RATIO_HIGH: f64 = 0.08; // cognitive: ~8% of events follow a thinking pause
+const THINKING_PAUSE_RATIO_WEIGHT: f64 = 0.05;
+
+const BURST_LENGTH_CV_LOW: f64 = 0.20; // transcriptive: uniform burst lengths
+const BURST_LENGTH_CV_HIGH: f64 = 0.60; // cognitive: highly variable burst lengths
+const BURST_LENGTH_CV_WEIGHT: f64 = 0.05;
+
+/// Minimum inter-event gap (nanoseconds) to count as a "thinking pause" (2 seconds).
+const THINKING_PAUSE_THRESHOLD_NS: i64 = 2_000_000_000;
 
 /// Cognitive score at or above this threshold classifies as Cognitive.
 const COGNITIVE_THRESHOLD: f64 = 0.65;
@@ -110,6 +121,10 @@ pub struct WritingModeAnalysis {
     pub confidence: f64,
     /// Revision cycle analysis from size_delta sequences.
     pub revision_pattern: RevisionPattern,
+    /// Ratio of events preceded by a thinking pause (>2s gap).
+    pub thinking_pause_ratio: f64,
+    /// Coefficient of variation of burst lengths (higher = more cognitive).
+    pub burst_length_cv: f64,
 }
 
 /// Analysis of revision patterns from consecutive size_delta sequences.
@@ -140,10 +155,14 @@ pub fn classify_writing_mode(
             cognitive_score: 0.0,
             confidence: 0.0,
             revision_pattern: RevisionPattern::default(),
+            thinking_pause_ratio: 0.0,
+            burst_length_cv: 0.0,
         };
     }
 
     let revision = analyze_revision_patterns(sorted);
+    let thinking_pause_ratio = compute_thinking_pause_ratio(sorted);
+    let burst_length_cv = compute_burst_length_cv(sorted);
 
     // Score each signal: 0.0 = transcriptive, 1.0 = cognitive.
     let scores = [
@@ -219,6 +238,22 @@ pub fn classify_writing_mode(
             ),
             REVISION_FRACTION_WEIGHT,
         ),
+        (
+            lerp_score(
+                thinking_pause_ratio,
+                THINKING_PAUSE_RATIO_LOW,
+                THINKING_PAUSE_RATIO_HIGH,
+            ),
+            THINKING_PAUSE_RATIO_WEIGHT,
+        ),
+        (
+            lerp_score(
+                burst_length_cv,
+                BURST_LENGTH_CV_LOW,
+                BURST_LENGTH_CV_HIGH,
+            ),
+            BURST_LENGTH_CV_WEIGHT,
+        ),
     ];
 
     let cognitive_score: f64 = scores.iter().map(|(s, w)| s * w).sum();
@@ -253,6 +288,8 @@ pub fn classify_writing_mode(
         cognitive_score,
         confidence,
         revision_pattern: revision,
+        thinking_pause_ratio,
+        burst_length_cv,
     }
 }
 
@@ -340,6 +377,58 @@ pub fn analyze_revision_patterns(sorted: SortedEvents<'_>) -> RevisionPattern {
         max_append_streak,
         revision_fraction,
     }
+}
+
+/// Compute the ratio of events preceded by a thinking pause (>2s gap).
+/// Cognitive writers pause to think before bursts; transcribers type continuously.
+fn compute_thinking_pause_ratio(sorted: SortedEvents<'_>) -> f64 {
+    if sorted.len() < 2 {
+        return 0.0;
+    }
+    let mut thinking_pauses = 0usize;
+    for pair in sorted.windows(2) {
+        let gap_ns = pair[1].timestamp_ns.saturating_sub(pair[0].timestamp_ns);
+        if gap_ns >= THINKING_PAUSE_THRESHOLD_NS {
+            thinking_pauses += 1;
+        }
+    }
+    thinking_pauses as f64 / (sorted.len() - 1) as f64
+}
+
+/// Compute the coefficient of variation of burst lengths.
+/// Cognitive writers produce bursts of wildly different sizes; transcribers
+/// produce uniform chunks (they're reading and retyping at a steady pace).
+fn compute_burst_length_cv(sorted: SortedEvents<'_>) -> f64 {
+    if sorted.len() < 4 {
+        return 0.0;
+    }
+    let mut burst_lengths: Vec<f64> = Vec::new();
+    let mut current_burst = 0usize;
+    for pair in sorted.windows(2) {
+        let gap_ns = pair[1].timestamp_ns.saturating_sub(pair[0].timestamp_ns);
+        if gap_ns < 500_000_000 {
+            // Within 500ms = same burst
+            current_burst += 1;
+        } else {
+            if current_burst > 0 {
+                burst_lengths.push(current_burst as f64);
+            }
+            current_burst = 1;
+        }
+    }
+    if current_burst > 0 {
+        burst_lengths.push(current_burst as f64);
+    }
+    if burst_lengths.len() < 3 {
+        return 0.0;
+    }
+    let n = burst_lengths.len() as f64;
+    let mean = burst_lengths.iter().sum::<f64>() / n;
+    if mean < f64::EPSILON {
+        return 0.0;
+    }
+    let variance = burst_lengths.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+    variance.sqrt() / mean
 }
 
 #[cfg(test)]
