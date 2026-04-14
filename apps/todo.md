@@ -149,7 +149,7 @@
   <!-- pid:DOWNGRADE_CHECK_FAIL | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Receipt replay with older versions | Fix: Fail closed on Keychain error | Effort: small
 
-- [ ] **H-009** `[security]` `AuthService+OAuth.swift:152`: O_NOFOLLOW on file but parent dir not checked for symlinks
+- [-] **H-009** `[security]` `AuthService+OAuth.swift:152`: O_NOFOLLOW on file but parent dir not checked for symlinks
   <!-- pid:SYMLINK_RACE | batch:4 | verified:true | first:2026-04-11 -->
   Impact: API key file written to attacker-controlled location | Fix: Validate parent with resolvingSymlinksInPath() | Effort: medium
 
@@ -165,11 +165,11 @@
   <!-- pid:PATH_COMPONENT_BYPASS | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Sig file written outside allowed directory | Fix: resolveSymlinksInPath() before comparison | Effort: medium
 
-- [ ] **H-013** `[concurrency]` `AuthService+Session.swift:284`: Session refresh race; two threads both attempt simultaneous refresh
+- [-] **H-013** `[concurrency]` `AuthService+Session.swift:284`: Session refresh race; two threads both attempt simultaneous refresh
   <!-- pid:RACE_CONDITION | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Token written twice; inconsistent state | Fix: Use DispatchSemaphore or async serialization | Effort: medium
 
-- [ ] **H-014** `[security]` `AuthService+Session.swift:182`: Clock rollback detection using manipulable ProcessInfo.systemUptime
+- [-] **H-014** `[security]` `AuthService+Session.swift:182`: Clock rollback detection using manipulable ProcessInfo.systemUptime
   <!-- pid:SYSTEM_TIME_ATTACK | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Attacker resets device binding checks via time adjustment | Fix: Use mach_absolute_time() | Effort: medium
 
@@ -205,11 +205,11 @@
   <!-- pid:path_traversal | batch:1 | verified:true | first:2026-04-11 -->
   Impact: DoS via extremely long filenames | Fix: Enforce 32-char title limit | Effort: small
 
-- [ ] **H-023** `[concurrency]` `native_messaging_host/mod.rs:39`: Infinite loop with no timeout or graceful shutdown
+- [-] **H-023** `[concurrency]` `native_messaging_host/mod.rs:39`: Infinite loop with no timeout or graceful shutdown
   <!-- pid:no_graceful_shutdown | batch:1 | verified:true | first:2026-04-11 -->
   Impact: Native messaging host hangs indefinitely on slow IPC | Fix: Add per-message timeout | Effort: medium
 
-- [ ] **H-024** `[security]` `KeystrokeMonitorService.swift:156`: Paste attribution bypass; pasted content credited to document
+- [-] **H-024** `[security]` `KeystrokeMonitorService.swift:156`: Paste attribution bypass; pasted content credited to document
   <!-- pid:PASTE_VALIDATION | batch:5 | verified:true | first:2026-04-11 -->
   Impact: User forges authorship by pasting external text | Fix: Validate paste matches recent doc changes | Effort: large
 
@@ -221,11 +221,11 @@
   <!-- pid:force_unwrap | batch:5 | verified:true | first:2026-04-11 -->
   Impact: Crash on launch if dir unavailable | Fix: guard let | Effort: small
 
-- [ ] **H-027** `[architecture]` `OnboardingView.swift:6`: God module; 1450 lines mixing permissions, pipeline, async polling, UI
+- [-] **H-027** `[architecture]` `OnboardingView.swift:6`: God module; 1450 lines mixing permissions, pipeline, async polling, UI
   <!-- pid:god_module | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Hard to test/maintain individual concerns | Fix: Extract into separate services | Effort: large
 
-- [ ] **H-028** `[architecture]` `StatusBarController.swift:10`: God module; 983 lines mixing popover, events, hotkeys, animations
+- [-] **H-028** `[architecture]` `StatusBarController.swift:10`: God module; 983 lines mixing popover, events, hotkeys, animations
   <!-- pid:god_module | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Complex state management; high coupling | Fix: Extract subcontrollers | Effort: large
 
@@ -233,11 +233,11 @@
   <!-- pid:path_traversal | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Arbitrary file write via symlink | Fix: Validate before resolving symlinks | Effort: small
 
-- [ ] **H-030** `[concurrency]` `CPoEService+Polling.swift:35`: HMAC race in status polling; stale HMAC causes missed updates
+- [-] **H-030** `[concurrency]` `CPoEService+Polling.swift:35`: HMAC race in status polling; stale HMAC causes missed updates
   <!-- pid:data_race | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Status updates silently dropped or duplicated | Fix: Atomic compare-and-swap for HMAC | Effort: medium
 
-- [ ] **H-031** `[concurrency]` `BatchVerifyView.swift:176`: Biometric auth race; cancelled state unreliable after task group
+- [-] **H-031** `[concurrency]` `BatchVerifyView.swift:176`: Biometric auth race; cancelled state unreliable after task group
   <!-- pid:race_condition | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Biometric prompt lost on timing edge | Fix: Use structured concurrency | Effort: medium
 
@@ -273,7 +273,7 @@
   <!-- pid:log_info_leak | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Information disclosure of internal API details | Fix: Log only status code | Effort: small
 
-- [ ] **H-040** `[architecture]` `resolvers/index.ts:261`: TOCTOU in createCheckpoint; session re-read before send
+- [-] **H-040** `[architecture]` `resolvers/index.ts:261`: TOCTOU in createCheckpoint; session re-read before send
   <!-- pid:toctou | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Checkpoints for already-stopped sessions | Fix: Optimistic locking with version field | Effort: medium
 
@@ -317,11 +317,11 @@
   <!-- pid:missing_cancellation_token | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Memory leak and battery drain | Fix: Stop timer in OnNavigatedFrom | Effort: medium
 
-- [ ] **H-051** `[architecture]` `CollaborativeEvidenceDialog.xaml.cs:450`: God module; 924 lines with 4 tabs in single file
+- [-] **H-051** `[architecture]` `CollaborativeEvidenceDialog.xaml.cs:450`: God module; 924 lines with 4 tabs in single file
   <!-- pid:god_module | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Tight coupling between collaboration features | Fix: Split into per-tab UserControls | Effort: large
 
-- [ ] **H-052** `[code_quality]` `IpcMessage.cs:120`: Version mismatch risk between Rust serde and .NET JSON for byte[]
+- [-] **H-052** `[code_quality]` `IpcMessage.cs:120`: Version mismatch risk between Rust serde and .NET JSON for byte[]
   <!-- pid:version_mismatch_ipc | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Silent data corruption on format change | Fix: Versioned IPC protocol spec | Effort: large
 
