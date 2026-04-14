@@ -117,19 +117,19 @@
   Impact: N/A | Effort: N/A
 
 ## High
-- [ ] **H-001** `[security]` `CPoEEngineFFI.swift:27`: try! in RustBuffer.from() crashes on allocation failure
+- [-] **H-001** `[security]` `CPoEEngineFFI.swift:27`: try! in RustBuffer.from() crashes on allocation failure
   <!-- pid:FFI_TRY_UNWRAP | batch:3 | verified:true | first:2026-04-11 -->
   Impact: Unrecoverable crash in OOM conditions | Fix: Replace try! with proper error propagation | Effort: small
 
-- [ ] **H-002** `[security]` `CPoEEngineFFI.swift:34`: try! in deallocate() crashes on deallocation failure
+- [-] **H-002** `[security]` `CPoEEngineFFI.swift:34`: try! in deallocate() crashes on deallocation failure
   <!-- pid:FFI_TRY_UNWRAP | batch:3 | verified:true | first:2026-04-11 -->
   Impact: Memory leak or crash during cleanup | Fix: Wrap in do/catch and log | Effort: small
 
-- [ ] **H-003** `[security]` `CPoEEngineFFI.swift:90`: Force cast (as!) in readInt for UInt8
+- [-] **H-003** `[security]` `CPoEEngineFFI.swift:90`: Force cast (as!) in readInt for UInt8
   <!-- pid:FFI_CAST_UNSAFE | batch:3 | verified:true | first:2026-04-11 -->
   Impact: Type system violation at FFI boundary | Fix: Use safe cast with guard | Effort: small
 
-- [ ] **H-004** `[error_handling]` `EngineService.swift:134`: validateFFIContract() crashes fatally if FFI incompatible
+- [-] **H-004** `[error_handling]` `EngineService.swift:134`: validateFFIContract() crashes fatally if FFI incompatible
   <!-- pid:INIT_FFI_VALIDATION | batch:3 | verified:true | first:2026-04-11 -->
   Impact: Startup crash with no recovery | Fix: Wrap in try/catch; degrade gracefully | Effort: medium
 
@@ -181,7 +181,7 @@
   <!-- pid:EMPTY_STRING_VALIDATION | batch:4 | verified:true | first:2026-04-11 -->
   Impact: Empty base64 decoded as zero-length data | Fix: Check .isEmpty before decoding | Effort: small
 
-- [ ] **H-017** `[error_handling]` `SafariExtensionShared.swift:599`: Bare catch swallows all errors silently
+- [-] **H-017** `[error_handling]` `SafariExtensionShared.swift:599`: Bare catch swallows all errors silently
   <!-- pid:ERROR_SWALLOW | batch:5 | verified:true | first:2026-04-11 -->
   Impact: User data loss undetectable; corrupted session files return nil | Fix: Catch specific errors; log all | Effort: small
 
@@ -241,7 +241,7 @@
   <!-- pid:race_condition | batch:7 | verified:true | first:2026-04-11 -->
   Impact: Biometric prompt lost on timing edge | Fix: Use structured concurrency | Effort: medium
 
-- [ ] **H-032** `[security]` `IpcClient.cs:617`: DEBUG builds bypass daemon identity verification
+- [-] **H-032** `[security]` `IpcClient.cs:617`: DEBUG builds bypass daemon identity verification
   <!-- pid:debug_security_downgrade | batch:8 | verified:true | first:2026-04-11 -->
   Impact: DEBUG builds connect to untrusted daemons | Fix: Remove DEBUG bypass | Effort: small
 
@@ -249,19 +249,19 @@
   <!-- pid:unhelpful_error_msg | batch:8 | verified:true | first:2026-04-11 -->
   Impact: Difficult to diagnose IPC failures | Fix: Log ex.ToString() | Effort: small
 
-- [ ] **H-034** `[security]` `Code.ts:566`: API key in roaming settings without encryption
+- [-] **H-034** `[security]` `Code.ts:566`: API key in roaming settings without encryption
   <!-- pid:hardcoded_secret | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Unauthorized API requests if document shared | Fix: Migrate to server-only storage | Effort: large
 
-- [ ] **H-035** `[security]` `Code.ts:327`: HMAC tag stored in world-readable DocumentProperties
+- [-] **H-035** `[security]` `Code.ts:327`: HMAC tag stored in world-readable DocumentProperties
   <!-- pid:hardcoded_secret | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Watermark forgery by document collaborators | Fix: Store seed server-side | Effort: large
 
-- [ ] **H-036** `[security]` `WritersProofClient.ts:175` (Office365): API key in plain roaming settings
+- [-] **H-036** `[security]` `WritersProofClient.ts:175` (Office365): API key in plain roaming settings
   <!-- pid:hardcoded_secret | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Keys exposed in multi-user scenarios | Fix: Encrypt at rest | Effort: medium
 
-- [ ] **H-037** `[security]` `secure-channel.js:159`: JS CryptoKey objects cannot be explicitly destroyed; old keys persist
+- [-] **H-037** `[security]` `secure-channel.js:159`: JS CryptoKey objects cannot be explicitly destroyed; old keys persist
   <!-- pid:key_zeroize | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Old session keys remain in memory | Fix: Regenerate keys frequently | Effort: large
 
@@ -277,19 +277,19 @@
   <!-- pid:toctou | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Checkpoints for already-stopped sessions | Fix: Optimistic locking with version field | Effort: medium
 
-- [ ] **H-041** `[security]` `WritersProofClient.ts:141` (Office365): Missing TLS pinning/HSTS enforcement
+- [-] **H-041** `[security]` `WritersProofClient.ts:141` (Office365): Missing TLS pinning/HSTS enforcement
   <!-- pid:missing_security_headers | batch:11 | verified:true | first:2026-04-11 -->
   Impact: MITM in corporate proxy scenarios | Fix: Enforce HSTS; implement cert pinning | Effort: medium
 
-- [ ] **H-042** `[security]` `ExplorerContextMenuHandler.cs:85`: cpoe.exe launched via unverified path search
+- [-] **H-042** `[security]` `ExplorerContextMenuHandler.cs:85`: cpoe.exe launched via unverified path search
   <!-- pid:unverified_executable | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Privilege escalation via malicious cpoe.exe in PATH | Fix: Verify signature before execution | Effort: medium
 
-- [ ] **H-043** `[security]` `CollaborativeEvidenceDialog.xaml.cs:425`: XamlReader.Load() with potentially untrusted input
+- [-] **H-043** `[security]` `CollaborativeEvidenceDialog.xaml.cs:425`: XamlReader.Load() with potentially untrusted input
   <!-- pid:unsafe_deser | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Remote code execution via malicious XAML | Fix: Never use XamlReader.Load() with untrusted input | Effort: large
 
-- [ ] **H-044** `[security]` `LockScreenDialog.xaml.cs:145`: Password stored in plain string before PBKDF2 validation
+- [-] **H-044** `[security]` `LockScreenDialog.xaml.cs:145`: Password stored in plain string before PBKDF2 validation
   <!-- pid:plaintext_password_in_memory | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Password recoverable from heap dumps | Fix: Use SecureString | Effort: medium
 
@@ -325,19 +325,19 @@
   <!-- pid:version_mismatch_ipc | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Silent data corruption on format change | Fix: Versioned IPC protocol spec | Effort: large
 
-- [ ] **H-053** `[security]` `MnemonicRecoveryDialog.xaml.cs:110`: PasswordBox.Password accessed without immediate clearing
+- [-] **H-053** `[security]` `MnemonicRecoveryDialog.xaml.cs:110`: PasswordBox.Password accessed without immediate clearing
   <!-- pid:plaintext_password_in_memory | batch:10 | verified:true | first:2026-04-11 -->
   Impact: Recovery phrase accessible via memory inspection | Fix: Copy to SecureString immediately | Effort: medium
 
-- [ ] **H-054** `[error_handling]` `Code.ts:752`: Event queue truncation silently discards oldest events
+- [-] **H-054** `[error_handling]` `Code.ts:752`: Event queue truncation silently discards oldest events
   <!-- pid:silent_error | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Loss of authoring evidence without user awareness | Fix: Alert user on truncation | Effort: medium
 
-- [ ] **H-055** `[security]` `background.js (Safari):407`: Session state recovered without integrity check
+- [-] **H-055** `[security]` `background.js (Safari):407`: Session state recovered without integrity check
   <!-- pid:missing_validation | batch:11 | verified:true | first:2026-04-11 -->
   Impact: Session nonce modification enables false evidence | Fix: HMAC session state before storage | Effort: medium
 
-- [ ] **H-056** `[error_handling]` `IpcClient.cs:156`: Key confirmation plaintext must match Rust; no compile-time assertion
+- [-] **H-056** `[error_handling]` `IpcClient.cs:156`: Key confirmation plaintext must match Rust; no compile-time assertion
   <!-- pid:hardcoded_config | batch:8 | verified:true | first:2026-04-11 -->
   Impact: Silent MITM if constant diverges | Fix: Add unit test verifying match | Effort: small
 
