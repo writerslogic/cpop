@@ -75,7 +75,7 @@ pub fn compare_profiles(a: TypingProfile, b: TypingProfile) -> f64 {
     let hand_alt_sim = if hand_alt_diff.is_nan() {
         0.0
     } else {
-        1.0 - hand_alt_diff
+        (1.0 - hand_alt_diff).clamp(0.0, 1.0)
     };
 
     COMPARE_WEIGHT_SAME_FINGER * same_finger

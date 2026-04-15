@@ -8,6 +8,7 @@ pub mod mouse;
 pub mod stats;
 pub mod status;
 pub mod window_text;
+pub mod provider;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -31,6 +32,7 @@ pub use mouse::{MouseIdleStats, MouseStegoMode, MouseStegoParams};
 pub use stats::{DualLayerValidation, EventVerificationResult, RejectionReasons, SyntheticStats};
 pub use status::{FocusInfo, PermissionStatus};
 pub use window_text::{WindowText, WindowTextCapture};
+pub use provider::{DefaultPlatformProvider, PlatformProvider};
 
 use anyhow::Result;
 use std::sync::mpsc;

@@ -1,51 +1,51 @@
 /**
  * CPoE Browser Extension — Content Script
  *
- * Monitors document editing in supported web applications:
- * - Google Docs: Watches the editor iframe and contenteditable elements
- * - Overleaf: Watches the CodeMirror editor
- * - Medium: Watches the contenteditable post editor
- * - Notion: Watches the page content blocks
- *
- * Captures:
- * - Content changes via MutationObserver (character count, delta)
- * - Keystroke timing (inter-key intervals for SWF jitter binding)
+ * Monitors document editing in supported web applications.
+ * Captures content changes via MutationObserver and keystroke
+ * timing (inter-key intervals for SWF jitter binding).
  */
 
 (() => {
   "use strict";
 
-  // M-115: Named constants for site detection
   const SITE_GOOGLE_DOCS = "google-docs";
   const SITE_OVERLEAF = "overleaf";
   const SITE_MEDIUM = "medium";
   const SITE_NOTION = "notion";
   const SITE_GENERIC = "generic";
 
-  // M-135: Valid actions accepted from the background script
-  const VALID_CONTENT_ACTIONS = [
+  // O(1) action lookup instead of Array.includes
+  const VALID_CONTENT_ACTIONS = new Set([
     "capture_state", "start", "stop", "stop_witnessing", "get_page_info"
-  ];
+  ]);
 
   let isWitnessing = false;
   let lastCharCount = 0;
   let lastContentHash = "";
-  let keystrokeTimestamps = [];
-  let timerResolution = 0;
   let observerRetries = 0;
+
   const JITTER_BATCH_SIZE = 50;
   const MIN_CHANGE_THRESHOLD = 5;
   const MAX_OBSERVER_RETRIES = 20;
-  const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10 MB — stop traversal beyond this
+  const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
-  // M-091: Cached editor element references, invalidated on stop/start
+  // Reuse encoder across all calls to avoid GC pressure
+  const textEncoder = new TextEncoder();
+
+  // Pre-allocated ring buffer for keystroke timestamps.
+  // Avoids dynamic array growth on every keydown event.
+  const jitterBuffer = new Float64Array(JITTER_BATCH_SIZE + 1);
+  let jitterIndex = 0;
+
+  let timerResolution = 0;
   let cachedEditorElements = null;
+  let cachedSiteId = undefined; // undefined = not yet detected
 
   function storageKey() {
     return `witnessing_${window.location.origin}${window.location.pathname}`;
   }
 
-  // Domains that get site-specific editor detection logic
   const KNOWN_SITES = {
     "docs.google.com": { id: SITE_GOOGLE_DOCS, pathPrefix: "/document/" },
     "www.overleaf.com": { id: SITE_OVERLEAF, pathPrefix: "/project/" },
@@ -54,7 +54,6 @@
     "www.notion.so": { id: SITE_NOTION },
   };
 
-  // Domains that use the generic contenteditable/textarea detector
   const GENERIC_DOMAINS = [
     "www.craft.do", "coda.io", "app.clickup.com", "app.nuclino.com",
     "stackedit.io", "hackmd.io", "hemingwayapp.com", "quillbot.com",
@@ -62,60 +61,75 @@
     "wordpress.com", "ghost.io", "substack.com",
   ];
 
+  let customDomainsList = [];
+
+  chrome.storage.local.get(["customDomains"], (result) => {
+    customDomainsList = result.customDomains || [];
+  });
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.customDomains) {
+      customDomainsList = changes.customDomains.newValue || [];
+      cachedSiteId = undefined;
+    }
+  });
+
   function detectSite() {
+    // Cache: hostname never changes within a page lifecycle
+    if (cachedSiteId !== undefined) return cachedSiteId;
+
     const hostname = window.location.hostname;
     const pathname = window.location.pathname;
 
-    // Check known sites with specific editor logic
     const known = KNOWN_SITES[hostname];
     if (known) {
       if (!known.pathPrefix || pathname.startsWith(known.pathPrefix)) {
-        return known.id;
+        cachedSiteId = known.id;
+        return cachedSiteId;
       }
     }
 
-    // Check generic domains (exact or subdomain match)
     for (const domain of GENERIC_DOMAINS) {
       if (hostname === domain || hostname.endsWith("." + domain)) {
-        return SITE_GENERIC;
+        cachedSiteId = SITE_GENERIC;
+        return cachedSiteId;
       }
     }
 
-    return null;
+    for (const domain of customDomainsList) {
+      const pattern = domain.replace(/\*/g, "");
+      if (hostname === pattern || hostname.endsWith("." + pattern) || hostname.endsWith(pattern)) {
+        cachedSiteId = SITE_GENERIC;
+        return cachedSiteId;
+      }
+    }
+
+    cachedSiteId = null;
+    return cachedSiteId;
   }
 
-  /** Invalidate cached editor elements (call on start/stop witnessing). */
   function invalidateEditorCache() {
     cachedEditorElements = null;
   }
 
-  /**
-   * Measures the resolution of performance.now().
-   * Browsers often jitter/clamp this (e.g. to 5ms) to prevent side-channels.
-   * Native host needs to know this to properly weigh jitter entropy.
-   */
+  let timerCalibrated = false;
+
   function calibrateTimer() {
-    const samples = [];
+    if (timerCalibrated) return;
+    timerCalibrated = true;
+    const samples = new Float64Array(10);
     let last = performance.now();
     for (let i = 0; i < 10; i++) {
       let current = performance.now();
       while (current === last) {
         current = performance.now();
       }
-      samples.push(current - last);
+      samples[i] = current - last;
       last = current;
     }
     timerResolution = Math.min(...samples);
-    console.log(`[CPoE] Timer resolution detected: ${timerResolution.toFixed(4)}ms`);
   }
 
-  /**
-   * M-091: Returns cached editor element references when available.
-   * Cache is invalidated on start/stop witnessing and when elements are
-   * detached from the DOM.
-   */
   function getEditorElement() {
-    // Return cache if elements are still attached to the DOM
     if (cachedEditorElements && cachedEditorElements.length > 0) {
       if (cachedEditorElements[0].isConnected) {
         return cachedEditorElements;
@@ -136,26 +150,21 @@
             );
         break;
       }
-
       case SITE_OVERLEAF:
         elements = document.querySelectorAll(".cm-content");
         break;
-
       case SITE_MEDIUM:
         elements = document.querySelectorAll(
           'article [contenteditable="true"], .postArticle [contenteditable="true"], [role="textbox"]'
         );
         break;
-
       case SITE_NOTION:
         elements = document.querySelectorAll(
           '.notion-page-content [contenteditable="true"]'
         );
         break;
-
       case SITE_GENERIC:
       default:
-        // Generic: find any contenteditable, CodeMirror, Monaco, or textarea
         elements = document.querySelectorAll(
           '[contenteditable="true"], .cm-content, .monaco-editor textarea, ' +
           '.ProseMirror, .ql-editor, .trix-content, textarea.editor, ' +
@@ -169,11 +178,6 @@
     return elements;
   }
 
-  /**
-   * Collects text from editor elements with bounded memory.
-   * Walks the DOM incrementally and stops once MAX_DOCUMENT_SIZE is reached,
-   * preventing OOM on malicious pages with huge content.
-   */
   function getDocumentText() {
     const elements = getEditorElement();
     if (!elements || elements.length === 0) return "";
@@ -207,7 +211,6 @@
     return chunks.join("");
   }
 
-  /** Returns only the character count without building a full string. */
   function getDocumentCharCount() {
     const elements = getEditorElement();
     if (!elements || elements.length === 0) return 0;
@@ -215,16 +218,13 @@
     let total = 0;
     for (const el of elements) {
       if (total >= MAX_DOCUMENT_SIZE) break;
-
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node;
       while ((node = walker.nextNode())) {
         const value = node.nodeValue;
         if (!value) continue;
         total += value.length;
-        if (total >= MAX_DOCUMENT_SIZE) {
-          return MAX_DOCUMENT_SIZE;
-        }
+        if (total >= MAX_DOCUMENT_SIZE) return MAX_DOCUMENT_SIZE;
       }
     }
     return total;
@@ -232,7 +232,6 @@
 
   function getDocumentTitle() {
     const site = detectSite();
-
     switch (site) {
       case SITE_GOOGLE_DOCS: {
         const titleEl = document.querySelector(".docs-title-input input");
@@ -255,26 +254,38 @@
     }
   }
 
+  // Pre-allocated lookup table for hex encoding (avoids toString(16) per byte)
+  const HEX_CHARS = [];
+  for (let i = 0; i < 256; i++) {
+    HEX_CHARS[i] = i.toString(16).padStart(2, "0");
+  }
+
   async function sha256(text) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
+    const data = textEncoder.encode(text);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = new Uint8Array(hashBuffer);
-    
-    let hashHex = "";
+    let hex = "";
     for (let i = 0; i < hashArray.length; i++) {
-      hashHex += hashArray[i].toString(16).padStart(2, "0");
+      hex += HEX_CHARS[hashArray[i]];
     }
-    return hashHex;
+    return hex;
   }
 
   let changeDebounceTimer = null;
+  let pendingMutationCount = 0;
 
-  async function handleContentChange() {
+  function handleContentChange() {
     if (!isWitnessing) return;
 
+    pendingMutationCount++;
     clearTimeout(changeDebounceTimer);
+
+    // Adaptive debounce: longer delay for rapid-fire mutations (e.g. paste),
+    // shorter for normal typing to stay responsive
+    const delay = pendingMutationCount > 10 ? 3000 : 2000;
+
     changeDebounceTimer = setTimeout(async () => {
+      pendingMutationCount = 0;
       try {
         const text = getDocumentText();
         const charCount = text.length;
@@ -295,10 +306,10 @@
           charCount,
           delta: charCount - previousCount,
         });
-      } catch (e) {
-        console.warn("CPoE: content change handling failed:", e);
+      } catch (_) {
+        // Will retry on next mutation
       }
-    }, 2000);
+    }, delay);
   }
 
   let observer = null;
@@ -315,8 +326,16 @@
     }
     observerRetries = 0;
 
+    // Batch multiple synchronous mutations into a single callback via microtask
+    let mutationScheduled = false;
     observer = new MutationObserver(() => {
-      handleContentChange();
+      if (!mutationScheduled) {
+        mutationScheduled = true;
+        queueMicrotask(() => {
+          mutationScheduled = false;
+          handleContentChange();
+        });
+      }
     });
 
     elements.forEach((el) => {
@@ -341,20 +360,22 @@
     }
   }
 
-  function handleKeyDown(event) {
+  function handleKeyDown() {
     if (!isWitnessing) return;
 
-    const now = performance.now();
-    keystrokeTimestamps.push(now);
+    jitterBuffer[jitterIndex++] = performance.now();
 
-    if (keystrokeTimestamps.length >= JITTER_BATCH_SIZE) {
-      const intervals = [];
-      for (let i = 1; i < keystrokeTimestamps.length; i++) {
-        intervals.push(
-          Math.round((keystrokeTimestamps[i] - keystrokeTimestamps[i - 1]) * 1000)
+    if (jitterIndex > JITTER_BATCH_SIZE) {
+      // Build intervals from ring buffer (avoid allocating intermediate array)
+      const intervals = new Array(JITTER_BATCH_SIZE - 1);
+      for (let i = 1; i < jitterIndex; i++) {
+        intervals[i - 1] = Math.round(
+          (jitterBuffer[i] - jitterBuffer[i - 1]) * 1000
         );
       }
-      keystrokeTimestamps = [keystrokeTimestamps[keystrokeTimestamps.length - 1]];
+      // Keep last timestamp as start of next batch
+      jitterBuffer[0] = jitterBuffer[jitterIndex - 1];
+      jitterIndex = 1;
 
       chrome.runtime.sendMessage({
         action: "keystroke_jitter",
@@ -370,7 +391,7 @@
     isWitnessing = true;
     invalidateEditorCache();
 
-    chrome.storage.local.set({ [`${storageKey()}`]: true });
+    chrome.storage.local.set({ [storageKey()]: true });
 
     startObserving();
     document.addEventListener("keydown", handleKeyDown, { passive: true });
@@ -379,7 +400,7 @@
       action: "start_witnessing",
       url: window.location.href,
       title: getDocumentTitle(),
-      timerResolution: timerResolution,
+      timerResolution,
     });
   }
 
@@ -388,26 +409,20 @@
     isWitnessing = false;
     invalidateEditorCache();
 
-    chrome.storage.local.remove([`${storageKey()}`]);
+    chrome.storage.local.remove([storageKey()]);
 
     stopObserving();
     document.removeEventListener("keydown", handleKeyDown);
-    keystrokeTimestamps = [];
+    jitterIndex = 0;
+    pendingMutationCount = 0;
 
     chrome.runtime.sendMessage({ action: "stop_witnessing" });
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // SYS-019/M-135: Validate sender is our own extension
-    if (sender.id !== chrome.runtime.id) {
-      return;
-    }
-
-    // SYS-019: Validate message structure and action
-    if (!message || typeof message !== "object" || typeof message.action !== "string") {
-      return;
-    }
-    if (!VALID_CONTENT_ACTIONS.includes(message.action)) {
+    if (sender.id !== chrome.runtime.id) return;
+    if (!message || typeof message !== "object" || typeof message.action !== "string") return;
+    if (!VALID_CONTENT_ACTIONS.has(message.action)) {
       sendResponse({ ok: false, error: "Unknown action" });
       return true;
     }
@@ -417,18 +432,15 @@
         handleContentChange();
         sendResponse({ ok: true });
         break;
-
       case "start":
         startWitnessing();
         sendResponse({ ok: true });
         break;
-
       case "stop":
       case "stop_witnessing":
         stopWitnessing();
         sendResponse({ ok: true });
         break;
-
       case "get_page_info":
         sendResponse({
           ok: true,
@@ -438,18 +450,47 @@
           isWitnessing,
         });
         break;
-
       default:
         sendResponse({ ok: false, error: "Unknown action" });
     }
     return true;
   });
 
-  chrome.storage.local.get([`${storageKey()}`, "autoWitness"], (result) => {
-    if (result[`${storageKey()}`] || (result.autoWitness && detectSite())) {
-      setTimeout(() => {
-        startWitnessing();
-      }, 3000);
+  window.addEventListener("beforeunload", () => {
+    clearTimeout(changeDebounceTimer);
+    stopObserving();
+  });
+
+  // SPA navigation: detect URL changes without full page reload (Notion, Coda, etc.)
+  let lastWitnessedURL = window.location.href;
+  const spaNavHandler = () => {
+    if (!isWitnessing) return;
+    const newURL = window.location.href;
+    if (newURL !== lastWitnessedURL) {
+      stopWitnessing();
+      lastWitnessedURL = newURL;
+      cachedSiteId = undefined;
+      invalidateEditorCache();
+      if (detectSite()) {
+        setTimeout(startWitnessing, 1000);
+      }
+    }
+  };
+  window.addEventListener("popstate", spaNavHandler);
+  const origPushState = history.pushState;
+  history.pushState = function (...args) {
+    origPushState.apply(this, args);
+    spaNavHandler();
+  };
+  const origReplaceState = history.replaceState;
+  history.replaceState = function (...args) {
+    origReplaceState.apply(this, args);
+    spaNavHandler();
+  };
+
+  chrome.storage.local.get([storageKey(), "autoWitness"], (result) => {
+    if (result[storageKey()] || (result.autoWitness && detectSite())) {
+      setTimeout(startWitnessing, 3000);
     }
   });
 })();

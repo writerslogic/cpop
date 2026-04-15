@@ -21,10 +21,16 @@ impl std::fmt::Debug for Mmr {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Peak {
+    index: u64,
+    hash: [u8; 32],
+}
+
 #[derive(Debug)]
 struct MmrState {
     size: u64,
-    peaks: Vec<u64>,
+    peaks: Vec<Peak>,
 }
 
 impl Mmr {
@@ -33,7 +39,16 @@ impl Mmr {
         let peaks = if size == 0 {
             Vec::new()
         } else {
-            find_peaks(size)
+            let indices = find_peaks(size);
+            let mut peaks = Vec::with_capacity(indices.len());
+            for idx in indices {
+                let node = store.get(idx)?;
+                peaks.push(Peak {
+                    index: idx,
+                    hash: node.hash,
+                });
+            }
+            peaks
         };
         Ok(Self {
             store,
@@ -49,19 +64,49 @@ impl Mmr {
         state.size += 1;
 
         loop {
-            let peaks = find_peaks(state.size);
-            if peaks.len() < 2 {
-                state.peaks = peaks;
+            let peak_indices = find_peaks(state.size);
+            if peak_indices.len() < 2 {
+                // If only one peak remains, we need its hash.
+                // It's either the leaf we just added or a new internal node.
+                // For simplicity, we just rebuild the peak list here if it changed size or if we are at size 1.
+                if state.peaks.len() != peak_indices.len() || state.size == 1 {
+                    let mut new_peaks = Vec::with_capacity(peak_indices.len());
+                    for idx in peak_indices {
+                        // If it's the leaf we just appended, we have its hash.
+                        // But wait, it might be an internal node.
+                        let node = self.store.get(idx)?;
+                        new_peaks.push(Peak {
+                            index: idx,
+                            hash: node.hash,
+                        });
+                    }
+                    state.peaks = new_peaks;
+                }
                 break;
             }
-            let last_idx = peaks[peaks.len() - 1];
-            let prev_idx = peaks[peaks.len() - 2];
+
+            let last_idx = peak_indices[peak_indices.len() - 1];
+            let prev_idx = peak_indices[peak_indices.len() - 2];
+
+            // Optimization: check if we can merge the last two peaks.
+            // We need their heights.
             let last = self.store.get(last_idx)?;
             let prev = self.store.get(prev_idx)?;
+
             if last.height != prev.height {
-                state.peaks = peaks;
+                // Cannot merge, update cached peaks and break.
+                let mut new_peaks = Vec::with_capacity(peak_indices.len());
+                for idx in peak_indices {
+                    let node = self.store.get(idx)?;
+                    new_peaks.push(Peak {
+                        index: idx,
+                        hash: node.hash,
+                    });
+                }
+                state.peaks = new_peaks;
                 break;
             }
+
             let new_node = Node::new_internal(state.size, last.height + 1, &prev, &last);
             self.store.append(&new_node)?;
             state.size += 1;
@@ -71,29 +116,22 @@ impl Mmr {
     }
 
     pub fn get_peaks(&self) -> Result<Vec<[u8; 32]>, MmrError> {
-        let size = self.state.read_recover().size;
-        if size == 0 {
-            return Ok(Vec::new());
-        }
-        let peaks = find_peaks(size);
-        let mut hashes = Vec::with_capacity(peaks.len());
-        for idx in peaks {
-            hashes.push(self.store.get(idx)?.hash);
-        }
-        Ok(hashes)
+        let state = self.state.read_recover();
+        Ok(state.peaks.iter().map(|p| p.hash).collect())
     }
 
     pub fn get_root(&self) -> Result<[u8; 32], MmrError> {
-        let peaks = self.get_peaks()?;
+        let state = self.state.read_recover();
+        let peaks = &state.peaks;
         if peaks.is_empty() {
             return Err(MmrError::Empty);
         }
         if peaks.len() == 1 {
-            return Ok(peaks[0]);
+            return Ok(peaks[0].hash);
         }
-        let mut root = peaks[peaks.len() - 1];
+        let mut root = peaks[peaks.len() - 1].hash;
         for i in (0..peaks.len() - 1).rev() {
-            root = crate::mmr::node::hash_internal(peaks[i], root);
+            root = crate::mmr::node::hash_internal(peaks[i].hash, root);
         }
         Ok(root)
     }

@@ -143,24 +143,42 @@ impl PhysJitter {
 
         let mut mean = 0.0f64;
         let mut m2 = 0.0f64;
+        let mut deltas = Vec::with_capacity(samples.len() - 1);
+        let mut zero_deltas = 0;
 
-        for (i, w) in samples.windows(2).enumerate() {
-            let delta = w[1].wrapping_sub(w[0]) as i64 as f64;
+        for w in samples.windows(2) {
+            let delta = w[1].wrapping_sub(w[0]) as i64;
+            if delta == 0 {
+                zero_deltas += 1;
+            }
+            deltas.push(delta);
+        }
+
+        // If more than 10% of deltas are zero, the timer is too coarse.
+        if zero_deltas > deltas.len() / 10 {
+            return 0;
+        }
+
+        for (i, &delta) in deltas.iter().enumerate() {
+            let x = delta as f64;
             let k = (i + 1) as f64;
-            let d1 = delta - mean;
+            let d1 = x - mean;
             mean += d1 / k;
-            let d2 = delta - mean;
+            let d2 = x - mean;
             m2 += d1 * d2;
         }
 
-        let n = (samples.len() - 1) as f64;
+        let n = deltas.len() as f64;
         let variance = (m2 / n).max(0.0);
         let std_dev = variance.sqrt();
 
-        if std_dev < 1.0 {
+        // Conservative estimate: floor(log2(std_dev)) and then apply a 1-bit safety margin.
+        // This is more conservative than ceil(log2(std_dev)).
+        if std_dev < 2.0 {
             0
         } else {
-            (std_dev.log2().ceil() as u8).min(MAX_ENTROPY_BITS)
+            let raw_bits = std_dev.log2().floor() as u8;
+            raw_bits.saturating_sub(1).min(MAX_ENTROPY_BITS)
         }
     }
 }

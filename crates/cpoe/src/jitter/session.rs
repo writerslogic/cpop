@@ -259,11 +259,11 @@ impl Session {
             .unwrap_or(Duration::from_secs(0));
 
         let keystrokes_per_min = {
-            let minutes = duration.as_secs_f64() / 60.0;
-            if minutes > 0.0 {
-                self.keystroke_count as f64 / minutes
-            } else {
+            let secs = duration.as_secs_f64();
+            if secs < 1.0 {
                 0.0
+            } else {
+                self.keystroke_count as f64 / (secs / 60.0)
             }
         };
 

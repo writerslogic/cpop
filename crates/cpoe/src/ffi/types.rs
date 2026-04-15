@@ -199,9 +199,22 @@ pub struct FfiWitnessingStatus {
     pub forensic_score: f64,
     pub last_paste_chars: i64,
     pub event_confidence: f64,
+    /// Whether the tracked document currently has window focus.
+    pub document_has_focus: bool,
     /// Whether keystroke capture is active. When false, the sentinel is running
     /// in degraded (focus-only) mode — keystrokes are not being counted.
     pub keystroke_capture_active: bool,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiPublishResult {
+    pub success: bool,
+    pub canonical_url: Option<String>,
+    pub record_id: Option<String>,
+    pub verification_passed: bool,
+    pub checkpoint_count: u64,
     pub error_message: Option<String>,
 }
 

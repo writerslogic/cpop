@@ -3,6 +3,7 @@
 use super::core::EVENT_CHANNEL_BUFFER;
 use super::error::{Result, SentinelError};
 use super::focus::SentinelFocusTracker;
+use super::types::{ChangeEvent, FocusEvent};
 use super::Sentinel;
 use crate::platform::{KeystrokeCapture, MouseCapture};
 use crate::MutexRecover;
@@ -14,12 +15,10 @@ impl Sentinel {
     /// Create the platform focus monitor, verify availability, start it,
     /// and return the monitor along with its event receivers.
     #[allow(clippy::type_complexity)]
-    pub(super) fn setup_focus(
-        &self,
-    ) -> Result<(
+    pub(super) fn setup_focus_tracker(&self) -> Result<(
         Box<dyn SentinelFocusTracker>,
-        mpsc::Receiver<super::types::FocusEvent>,
-        mpsc::Receiver<super::types::ChangeEvent>,
+        mpsc::Receiver<FocusEvent>,
+        mpsc::Receiver<ChangeEvent>,
     )> {
         #[cfg(target_os = "macos")]
         let focus_monitor: Box<dyn SentinelFocusTracker> =
@@ -58,16 +57,7 @@ impl Sentinel {
             tokio::sync::mpsc::channel::<crate::platform::KeystrokeEvent>(EVENT_CHANNEL_BUFFER);
         let keystroke_running = Arc::clone(running);
 
-        #[cfg(target_os = "macos")]
-        let capture_result = crate::platform::macos::MacOSKeystrokeCapture::new();
-        #[cfg(target_os = "windows")]
-        let capture_result = crate::platform::windows::WindowsKeystrokeCapture::new();
-        #[cfg(target_os = "linux")]
-        let capture_result = crate::platform::linux::LinuxKeystrokeCapture::new();
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let capture_result: anyhow::Result<Box<dyn crate::platform::KeystrokeCapture>> = Err(
-            anyhow::anyhow!("Keystroke capture not supported on this platform"),
-        );
+        let capture_result = self.platform.create_keystroke_capture();
 
         let keystroke_active = Arc::clone(&self.keystroke_capture_active);
         let keystroke_capture_store = Arc::clone(&self.keystroke_capture);
@@ -103,7 +93,7 @@ impl Sentinel {
                                                     || dropped_count.is_power_of_two()
                                                 {
                                                     log::warn!(
-                                                        "keystroke channel full, \
+                                                        "keystroke channel full, \ 
                                                          {} events dropped",
                                                         dropped_count
                                                     );
@@ -129,7 +119,7 @@ impl Sentinel {
             },
             Err(e) => {
                 log::warn!(
-                    "Keystroke capture unavailable: {e}; \
+                    "Keystroke capture unavailable: {e}; \ 
                      running in degraded mode (focus-only)"
                 );
             }
@@ -152,16 +142,7 @@ impl Sentinel {
             tokio::sync::mpsc::channel::<crate::platform::MouseEvent>(EVENT_CHANNEL_BUFFER);
         let mouse_running = Arc::clone(running);
 
-        #[cfg(target_os = "macos")]
-        let capture_result = crate::platform::macos::MacOSMouseCapture::new();
-        #[cfg(target_os = "linux")]
-        let capture_result = crate::platform::linux::LinuxMouseCapture::new();
-        #[cfg(target_os = "windows")]
-        let capture_result = crate::platform::windows::WindowsMouseCapture::new();
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        let capture_result: anyhow::Result<Box<dyn crate::platform::MouseCapture>> = Err(
-            anyhow::anyhow!("Mouse capture not supported on this platform"),
-        );
+        let capture_result = self.platform.create_mouse_capture();
 
         let mouse_capture_store = Arc::clone(&self.mouse_capture);
         match capture_result {
@@ -199,8 +180,8 @@ impl Sentinel {
             },
             Err(e) => {
                 log::warn!(
-                    "Mouse capture unavailable: {e}; \
-                     running in degraded mode (focus-only)"
+                    "Mouse capture unavailable: {e}; \ 
+                     running in degraded mode"
                 );
             }
         }

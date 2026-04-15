@@ -24,7 +24,7 @@ pub(crate) enum Request {
         document_url: String,
         document_title: String,
         #[serde(default)]
-        protocol_version: Option<String>,
+        protocol_version: Option<u32>,
     },
     Checkpoint {
         content_hash: String,
@@ -44,7 +44,7 @@ pub(crate) enum Request {
     },
     Ping {
         #[serde(default)]
-        protocol_version: Option<String>,
+        protocol_version: Option<u32>,
     },
 }
 

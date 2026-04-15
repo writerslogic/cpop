@@ -6,13 +6,16 @@ pub mod mlock;
 pub mod probability;
 pub mod stats;
 pub mod time;
+pub(crate) mod lock;
+pub mod telemetry;
 
 pub use probability::Probability;
 pub use stats::{
     coefficient_of_variation, lerp_score, mean, mean_and_sample_std_dev, mean_and_sample_variance,
     mean_and_std_dev, mean_and_variance, median, std_dev,
 };
-pub use time::{duration_to_ms, now_ns, now_secs, ns_elapsed, ns_to_ms, ns_to_secs};
+pub use time::{duration_to_ms, now_ns, now_secs, ns_elapsed, ns_to_ms, ns_to_secs, DateTimeNanosExt};
+pub(crate) use lock::{MutexRecover, RwLockRecover};
 
 /// Hash a filesystem path (its UTF-8 string representation) with SHA-256.
 pub fn sha256_of_path(path: &std::path::Path) -> [u8; 32] {

@@ -73,6 +73,12 @@ pub fn decode_sample_binary(data: &[u8]) -> crate::error::Result<Sample> {
     let mut previous_hash = [0u8; 32];
     previous_hash.copy_from_slice(&data[offset..offset + 32]);
 
+    if timestamp_nanos > i64::MAX as u64 {
+        return Err(Error::validation(format!(
+            "timestamp_nanos {timestamp_nanos} exceeds i64::MAX"
+        )));
+    }
+
     Ok(Sample {
         timestamp: DateTime::<Utc>::from(
             SystemTime::UNIX_EPOCH + Duration::from_nanos(timestamp_nanos),

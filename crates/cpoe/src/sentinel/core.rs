@@ -138,11 +138,21 @@ pub struct Sentinel {
     pub(crate) tpm_provider: Option<Arc<dyn crate::tpm::Provider>>,
     /// Client for WritersProof service (freshness nonces, attestation).
     pub(crate) writersproof_client: Arc<crate::writersproof::WritersProofClient>,
+    /// Platform-specific hardware and OS feature provider.
+    pub(crate) platform: Arc<dyn crate::platform::PlatformProvider>,
 }
 
 impl Sentinel {
-    /// Create a new sentinel from the given configuration.
+    /// Create a new sentinel from the given configuration using the default platform provider.
     pub fn new(config: SentinelConfig) -> Result<Self> {
+        Self::with_platform(config, Arc::new(crate::platform::DefaultPlatformProvider))
+    }
+
+    /// Create a new sentinel from the given configuration and a custom platform provider.
+    pub fn with_platform(
+        config: SentinelConfig,
+        platform: Arc<dyn crate::platform::PlatformProvider>,
+    ) -> Result<Self> {
         config
             .validate()
             .map_err(|e| SentinelError::InvalidConfig(e.to_string()))?;
@@ -159,17 +169,7 @@ impl Sentinel {
 
         let snapshots_default = config.snapshots_enabled;
 
-        let tpm_provider: Option<Arc<dyn crate::tpm::Provider>> = {
-            #[cfg(target_os = "macos")]
-            {
-                crate::tpm::secure_enclave::try_init()
-                    .map(|p| Arc::new(p) as Arc<dyn crate::tpm::Provider>)
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                Some(Arc::new(crate::tpm::SoftwareProvider::new()) as Arc<dyn crate::tpm::Provider>)
-            }
-        };
+        let tpm_provider = platform.get_tpm_provider();
 
         let writersproof_client = Arc::new(
             crate::writersproof::WritersProofClient::new(
@@ -211,6 +211,7 @@ impl Sentinel {
             stopping: Arc::new(AtomicBool::new(false)),
             tpm_provider,
             writersproof_client,
+            platform,
         };
         mouse_stego_seed.zeroize();
         Ok(sentinel)

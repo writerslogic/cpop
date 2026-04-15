@@ -39,9 +39,48 @@ impl ForensicVerdict {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ForensicFlag {
+    /// HMAC causality lock broken.
+    CausalityBroken,
+    /// Timing intervals are perfectly uniform.
+    AdversarialCollapse,
+    /// Timing entropy is too low (mechanical regularity).
+    LowEntropy,
+    /// Timing entropy is too high (noise injection).
+    HighEntropy,
+    /// Timing lacks long-range dependence (white noise).
+    WhiteNoiseTiming,
+    /// Timing is too predictable (scripted).
+    PredictableTiming,
+    /// High linearity in interaction patterns.
+    HighLinearity,
+    /// Interaction patterns indicate transcription.
+    TranscriptionPattern,
+    /// Insufficient data for full analysis.
+    InsufficientData,
+}
+
+impl ForensicFlag {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ForensicFlag::CausalityBroken => "CAUSALITY_BROKEN",
+            ForensicFlag::AdversarialCollapse => "ADVERSARIAL_COLLAPSE",
+            ForensicFlag::LowEntropy => "LOW_ENTROPY",
+            ForensicFlag::HighEntropy => "HIGH_ENTROPY",
+            ForensicFlag::WhiteNoiseTiming => "WHITE_NOISE",
+            ForensicFlag::PredictableTiming => "PREDICTABLE_TIMING",
+            ForensicFlag::HighLinearity => "HIGH_LINEARITY",
+            ForensicFlag::TranscriptionPattern => "TRANSCRIPTION_PATTERN",
+            ForensicFlag::InsufficientData => "INSUFFICIENT_DATA",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForensicAnalysis {
     pub verdict: ForensicVerdict,
+    pub flags: Vec<ForensicFlag>,
     pub coefficient_of_variation: f64,
     pub linearity_score: Option<f64>,
     pub hurst_exponent: Option<f64>,
@@ -60,6 +99,7 @@ impl ForensicAnalysis {
     ) -> Self {
         Self {
             verdict,
+            flags: Vec::new(),
             coefficient_of_variation: cv,
             linearity_score: None,
             hurst_exponent: None,
@@ -67,6 +107,11 @@ impl ForensicAnalysis {
             chain_duration_secs,
             explanation: explanation.into(),
         }
+    }
+
+    fn with_flags(mut self, flags: Vec<ForensicFlag>) -> Self {
+        self.flags = flags;
+        self
     }
 
     fn with_hurst(mut self, h: Option<f64>) -> Self {
@@ -146,21 +191,29 @@ impl ForensicsEngine {
         let checkpoint_count = self.inter_checkpoint_intervals.len() + 1;
         let dur_ms = self.inter_checkpoint_intervals.iter().sum::<f64>().max(0.0);
         let dur = (dur_ms / 1000.0) as u64;
-        let fa = |v, cv, msg: String| ForensicAnalysis::new(v, cv, checkpoint_count, dur, msg);
+        let fa = |v, cv, msg: String, flags: Vec<ForensicFlag>| {
+            ForensicAnalysis::new(v, cv, checkpoint_count, dur, msg).with_flags(flags)
+        };
+
+        let mut flags = Vec::new();
 
         // Phase 1: structural checks (causality, minimum data)
         if !self.causality_chain_valid {
+            flags.push(ForensicFlag::CausalityBroken);
             return fa(
                 ForensicVerdict::V5ConfirmedForgery,
                 0.0,
                 "HMAC causality lock broken".into(),
+                flags,
             );
         }
         if self.inter_checkpoint_intervals.len() < 3 {
+            flags.push(ForensicFlag::InsufficientData);
             return fa(
                 ForensicVerdict::V6InsufficientData,
                 0.0,
                 "Insufficient checkpoints for full forensic analysis".into(),
+                flags,
             );
         }
 
@@ -183,16 +236,25 @@ impl ForensicsEngine {
             return result;
         }
 
-        // Phase 5: minor anomaly downgrade or full pass
-        let has_minor_anomalies = hurst
-            .is_some_and(|h| !(HURST_IDEAL_MIN..=HURST_IDEAL_MAX).contains(&h))
-            || linearity.is_some_and(|l| l > LINEARITY_ANOMALY);
+        // Phase 5: minor anomaly detection
+        if hurst.is_some_and(|h| !(HURST_IDEAL_MIN..=HURST_IDEAL_MAX).contains(&h)) {
+            let h = hurst.unwrap();
+            if h < HURST_IDEAL_MIN {
+                flags.push(ForensicFlag::WhiteNoiseTiming);
+            } else if h > HURST_IDEAL_MAX {
+                flags.push(ForensicFlag::PredictableTiming);
+            }
+        }
+        if linearity.is_some_and(|l| l > LINEARITY_ANOMALY) {
+            flags.push(ForensicFlag::HighLinearity);
+        }
 
-        if has_minor_anomalies {
+        if !flags.is_empty() {
             return fa(
                 ForensicVerdict::V2LikelyHuman,
                 cv,
                 "Timing consistent with human composition, minor anomalies noted".into(),
+                flags,
             )
             .with_hurst(hurst)
             .with_linearity(linearity);
@@ -202,19 +264,23 @@ impl ForensicsEngine {
             ForensicVerdict::V1VerifiedHuman,
             cv,
             "High entropy, valid causality, non-linear composition confirmed".into(),
+            Vec::new(),
         )
         .with_hurst(hurst)
         .with_linearity(linearity)
     }
 
     fn check_timing_distribution(&self, cv: f64, n: usize, dur: u64) -> Option<ForensicAnalysis> {
-        let fa = |v, cv, msg: String| ForensicAnalysis::new(v, cv, n, dur, msg);
+        let fa = |v, cv, msg: String, flags: Vec<ForensicFlag>| {
+            ForensicAnalysis::new(v, cv, n, dur, msg).with_flags(flags)
+        };
 
         if self.detect_adversarial_collapse() {
             return Some(fa(
                 ForensicVerdict::V4LikelySynthetic,
                 cv,
                 "Adversarial collapse: timing intervals are uniform (non-human)".into(),
+                vec![ForensicFlag::AdversarialCollapse],
             ));
         }
         if cv < CV_MIN {
@@ -225,6 +291,7 @@ impl ForensicsEngine {
                     "Timing entropy too low (CV={:.3}): automated generation",
                     cv
                 ),
+                vec![ForensicFlag::LowEntropy],
             ));
         }
         if cv > CV_MAX {
@@ -232,6 +299,7 @@ impl ForensicsEngine {
                 ForensicVerdict::V3Suspicious,
                 cv,
                 format!("Timing entropy too high (CV={:.3}): noise injection", cv),
+                vec![ForensicFlag::HighEntropy],
             ));
         }
         None
@@ -253,27 +321,27 @@ impl ForensicsEngine {
         dur: u64,
     ) -> Option<ForensicAnalysis> {
         let h = hurst?;
-        let fa = |v, cv, msg: String| ForensicAnalysis::new(v, cv, n, dur, msg);
+        let fa = |v, cv, msg: String, flags: Vec<ForensicFlag>| {
+            ForensicAnalysis::new(v, cv, n, dur, msg)
+                .with_flags(flags)
+                .with_hurst(Some(h))
+        };
 
         if h < HURST_MIN {
-            return Some(
-                fa(
-                    ForensicVerdict::V3Suspicious,
-                    cv,
-                    format!("White-noise timing (H={:.3}): non-human composition", h),
-                )
-                .with_hurst(Some(h)),
-            );
+            return Some(fa(
+                ForensicVerdict::V3Suspicious,
+                cv,
+                format!("White-noise timing (H={:.3}): non-human composition", h),
+                vec![ForensicFlag::WhiteNoiseTiming],
+            ));
         }
         if h > HURST_MAX {
-            return Some(
-                fa(
-                    ForensicVerdict::V3Suspicious,
-                    cv,
-                    format!("Highly predictable timing (H={:.3}): scripted input", h),
-                )
-                .with_hurst(Some(h)),
-            );
+            return Some(fa(
+                ForensicVerdict::V3Suspicious,
+                cv,
+                format!("Highly predictable timing (H={:.3}): scripted input", h),
+                vec![ForensicFlag::PredictableTiming],
+            ));
         }
         None
     }
@@ -313,7 +381,11 @@ impl ForensicsEngine {
                     "High linearity ({:.3}) with long bursts ({:.1}): transcription",
                     lin, avg_burst
                 ),
-            );
+            )
+            .with_flags(vec![
+                ForensicFlag::HighLinearity,
+                ForensicFlag::TranscriptionPattern,
+            ]);
             return Some(fa.with_hurst(hurst).with_linearity(Some(lin)));
         }
         None

@@ -277,8 +277,7 @@ pub fn ffi_sentinel_witnessing_status() -> FfiWitnessingStatus {
 
     let host_paste_chars = sentinel.take_last_paste_chars();
 
-    let doc_samples = sentinel.document_jitter_samples(&session.path);
-    let cadence_score = crate::forensics::cadence_score_from_samples(&doc_samples);
+    let cadence_score = sentinel.document_cadence_score(&session.path);
 
     let focus = crate::forensics::analysis::analyze_focus_patterns(
         &Vec::from(session.focus_switches.clone()),

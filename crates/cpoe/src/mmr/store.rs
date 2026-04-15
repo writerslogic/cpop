@@ -23,7 +23,10 @@ pub struct FileStore {
     writer: RwLock<BufWriter<File>>,
     size: RwLock<u64>,
     cache: RwLock<HashMap<u64, Node>>,
+    append_count: std::sync::atomic::AtomicU32,
 }
+
+const AUTO_SYNC_THRESHOLD: u32 = 100;
 
 impl FileStore {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, MmrError> {
@@ -48,6 +51,7 @@ impl FileStore {
             writer: RwLock::new(BufWriter::with_capacity(4096, append_file)),
             size: RwLock::new(node_count),
             cache: RwLock::new(HashMap::new()),
+            append_count: std::sync::atomic::AtomicU32::new(0),
         })
     }
 }
@@ -62,6 +66,17 @@ impl Store for FileStore {
         writer.write_all(&node.serialize())?;
         self.cache.write_recover().insert(node.index, node.clone());
         *size += 1;
+
+        if self
+            .append_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            >= AUTO_SYNC_THRESHOLD
+        {
+            drop(writer);
+            drop(size);
+            self.sync()?;
+        }
+
         Ok(())
     }
 
@@ -95,6 +110,8 @@ impl Store for FileStore {
             writer.flush()?;
         }
         self.cache.write_recover().clear();
+        self.append_count
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         let file = self.file.read_recover();
         file.sync_all()?;
         Ok(())

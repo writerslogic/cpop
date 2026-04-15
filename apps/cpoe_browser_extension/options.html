@@ -7,36 +7,36 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <div class="container">
+  <div class="container" role="main">
     <h1>WritersProof Settings</h1>
 
-    <section class="setting-group">
-      <h2>General</h2>
+    <section class="setting-group" aria-labelledby="heading-general">
+      <h2 id="heading-general">General</h2>
       <label class="setting">
         <span class="setting-info">
           <span class="setting-label">Auto-witness on supported sites</span>
-          <span class="setting-description">Automatically start witnessing when you open a supported document editor</span>
+          <span class="setting-description" id="desc-auto-witness">Automatically start witnessing when you open a supported document editor</span>
         </span>
-        <input type="checkbox" id="auto-witness">
+        <input type="checkbox" id="auto-witness" aria-describedby="desc-auto-witness">
       </label>
 
       <label class="setting">
         <span class="setting-info">
           <span class="setting-label">Checkpoint interval (seconds)</span>
-          <span class="setting-description">How often to create automatic checkpoints during editing</span>
+          <span class="setting-description" id="desc-interval">How often to create automatic checkpoints during editing</span>
         </span>
-        <input type="number" id="checkpoint-interval" min="10" max="300" step="5" value="30">
+        <input type="number" id="checkpoint-interval" min="10" max="300" step="5" value="30" aria-describedby="desc-interval">
       </label>
     </section>
 
-    <section class="setting-group">
-      <h2>Evidence</h2>
+    <section class="setting-group" aria-labelledby="heading-evidence">
+      <h2 id="heading-evidence">Evidence</h2>
       <label class="setting">
         <span class="setting-info">
           <span class="setting-label">Content tier</span>
-          <span class="setting-description">Level of forensic detail captured per checkpoint</span>
+          <span class="setting-description" id="desc-tier">Level of forensic detail captured per checkpoint</span>
         </span>
-        <select id="content-tier">
+        <select id="content-tier" aria-describedby="desc-tier">
           <option value="core">Core (hash chain + SWF proofs)</option>
           <option value="enhanced" selected>Enhanced (+ behavioral entropy)</option>
           <option value="maximum">Maximum (+ entangled MACs)</option>
@@ -46,31 +46,31 @@
       <label class="setting">
         <span class="setting-info">
           <span class="setting-label">Capture keystroke timing</span>
-          <span class="setting-description">Record inter-key intervals for SWF jitter binding (timing only, never key values)</span>
+          <span class="setting-description" id="desc-jitter">Record inter-key intervals for SWF jitter binding (timing only, never key values)</span>
         </span>
-        <input type="checkbox" id="capture-jitter" checked>
+        <input type="checkbox" id="capture-jitter" checked aria-describedby="desc-jitter">
       </label>
     </section>
 
-    <section class="setting-group">
-      <h2>Supported Sites</h2>
+    <section class="setting-group" aria-labelledby="heading-sites">
+      <h2 id="heading-sites">Supported Sites</h2>
       <p class="setting-description">Enable or disable witnessing on built-in supported editors.</p>
-      <div class="site-list" id="site-list"></div>
+      <div class="site-list" id="site-list" role="group" aria-label="Supported site toggles"></div>
     </section>
 
-    <section class="setting-group">
-      <h2>Custom Domains</h2>
-      <p class="setting-description">Add your own domains for web editors not in the built-in list. WritersProof will inject its content script on any page matching these domains.</p>
-      <div class="custom-domains-input-row">
-        <input type="text" id="custom-domain-input" placeholder="e.g. docs.example.com" spellcheck="false">
-        <button id="btn-add-domain" class="btn btn-secondary">Add</button>
+    <section class="setting-group" aria-labelledby="heading-custom">
+      <h2 id="heading-custom">Custom Domains</h2>
+      <p class="setting-description" id="desc-custom-domains">Add your own domains for web editors not in the built-in list. WritersProof will attempt to detect editors on pages matching these domains.</p>
+      <div class="custom-domains-input-row" role="group" aria-label="Add custom domain">
+        <input type="text" id="custom-domain-input" placeholder="e.g. docs.example.com" spellcheck="false" aria-describedby="desc-custom-domains" aria-label="Domain name">
+        <button id="btn-add-domain" class="btn btn-secondary" type="button">Add</button>
       </div>
-      <div id="custom-domains-list" class="custom-domains-list"></div>
+      <div id="custom-domains-list" class="custom-domains-list" role="list" aria-label="Custom domains" aria-live="polite"></div>
     </section>
 
     <div class="actions">
-      <button id="btn-save" class="btn btn-primary">Save Settings</button>
-      <span id="save-status" class="save-status"></span>
+      <button id="btn-save" class="btn btn-primary" type="button">Save Settings</button>
+      <span id="save-status" class="save-status" role="status" aria-live="polite"></span>
     </div>
   </div>
 

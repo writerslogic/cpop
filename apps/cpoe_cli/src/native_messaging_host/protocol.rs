@@ -7,7 +7,7 @@ use super::types::{Request, Response};
 /// Maximum allowed message length (1 MiB).
 pub(crate) const MAX_MESSAGE_LENGTH: usize = 1_048_576;
 
-pub(crate) const PROTOCOL_VERSION: &str = "1.0";
+pub(crate) const PROTOCOL_VERSION: u32 = 1;
 
 /// Allowed domains for browser extension sessions.
 pub(crate) const ALLOWED_DOMAINS: &[&str] = &[
@@ -69,7 +69,7 @@ pub(crate) fn write_message_to<W: Write>(writer: &mut W, response: &Response) ->
     if let Some(obj) = map.as_object_mut() {
         obj.insert(
             "protocol_version".to_string(),
-            serde_json::Value::String(PROTOCOL_VERSION.to_string()),
+            serde_json::json!(PROTOCOL_VERSION),
         );
     }
     let json =

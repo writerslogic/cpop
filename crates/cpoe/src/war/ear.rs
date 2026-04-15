@@ -229,6 +229,13 @@ pub struct EarToken {
 }
 
 impl EarToken {
+    /// Verify that the token was issued within the given maximum age.
+    pub fn verify_freshness(&self, max_age: std::time::Duration) -> bool {
+        let now = crate::utils::now_secs() as i64;
+        let age_secs = now.saturating_sub(self.iat);
+        age_secs >= 0 && age_secs <= max_age.as_secs() as i64
+    }
+
     pub fn overall_status(&self) -> Ar4siStatus {
         self.submods
             .values()

@@ -299,6 +299,17 @@ pub struct EarToken {
 }
 
 impl EarToken {
+    /// Verify that the token was issued within the given maximum age.
+    pub fn verify_freshness(&self, max_age: std::time::Duration) -> bool {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let age_secs = now.saturating_sub(self.iat);
+        age_secs >= 0 && age_secs <= max_age.as_secs() as i64
+    }
+
     /// Overall status: the worst (highest severity) status across all submodule appraisals.
     ///
     /// AR4SI status values increase with severity, so the maximum value

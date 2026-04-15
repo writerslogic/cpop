@@ -62,20 +62,26 @@ class SecureChannel {
    * @returns {Promise<boolean>} true if handshake succeeded
    */
   async performHandshake(sendRaw) {
+    if (this._handshakeTimeout) {
+      clearTimeout(this._handshakeTimeout);
+    }
     await this.generateKeyPair();
     const clientPubKey = await this.getPublicKeyBase64();
 
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      this._handshakeTimeout = setTimeout(() => {
+        this._handshakeTimeout = null;
         reject(new Error("Handshake timed out (3s)"));
       }, 3000);
 
       this._handshakeResolve = (serverMsg) => {
-        clearTimeout(timeout);
+        clearTimeout(this._handshakeTimeout);
+        this._handshakeTimeout = null;
         resolve(serverMsg);
       };
       this._handshakeReject = (err) => {
-        clearTimeout(timeout);
+        clearTimeout(this._handshakeTimeout);
+        this._handshakeTimeout = null;
         reject(err);
       };
 
@@ -94,9 +100,7 @@ class SecureChannel {
    * @param {Function} sendRaw - function to send raw JSON to native port
    */
   async handleHelloAccept(message, sendRaw) {
-    // Guard: reject replayed hello_accept after handshake is complete
     if (this.handshakeComplete) {
-      console.warn("Ignoring replayed hello_accept: handshake already complete");
       return;
     }
 
@@ -325,7 +329,7 @@ class SecureChannel {
     let parsed;
     try {
       parsed = JSON.parse(new TextDecoder().decode(plaintext));
-    } catch (e) {
+    } catch (_) {
       throw new Error("Decrypted payload is not valid JSON");
     }
 
@@ -425,6 +429,9 @@ class SecureChannel {
    * canary = HMAC-SHA256(canary_seed, ordinal_le64 || content_hash_bytes)[0..4] as u32 LE
    */
   async computeCanary(ordinal, contentHashHex) {
+    if (!this.canarySeed) {
+      throw new Error("Canary seed not initialized");
+    }
     const key = await crypto.subtle.importKey(
       "raw",
       this.canarySeed,
@@ -486,7 +493,15 @@ function uint8ToBase64(bytes) {
 }
 
 function base64ToUint8(b64) {
-  const binary = atob(b64);
+  if (typeof b64 !== "string" || b64.length === 0) {
+    throw new Error("Invalid base64 input");
+  }
+  let binary;
+  try {
+    binary = atob(b64);
+  } catch (_) {
+    throw new Error("Invalid base64 encoding");
+  }
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);

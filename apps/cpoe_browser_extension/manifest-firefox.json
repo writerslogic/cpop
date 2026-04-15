@@ -9,6 +9,12 @@
     "scripting",
     "storage"
   ],
+  "optional_permissions": [
+    "activeTab"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "host_permissions": [
     "https://docs.google.com/*",
     "https://www.overleaf.com/*",
@@ -44,8 +50,7 @@
     }
   },
   "background": {
-    "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": ["standalone.js", "secure-channel.js", "background.js"]
   },
   "content_scripts": [
     {
@@ -94,5 +99,8 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'"
   }
 }

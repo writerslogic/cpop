@@ -50,7 +50,7 @@ const elements = {
 let currentCustomDomains = [];
 
 function renderBuiltinSites(enabledSites) {
-  elements.siteList.innerHTML = "";
+  elements.siteList.replaceChildren();
   for (const [key, info] of Object.entries(DEFAULT_SITES)) {
     const label = document.createElement("label");
     label.className = "site-toggle";
@@ -65,10 +65,11 @@ function renderBuiltinSites(enabledSites) {
 }
 
 function renderCustomDomains() {
-  elements.customDomainsList.innerHTML = "";
+  elements.customDomainsList.replaceChildren();
   for (const domain of currentCustomDomains) {
     const row = document.createElement("div");
     row.className = "custom-domain-row";
+    row.setAttribute("role", "listitem");
 
     const span = document.createElement("span");
     span.className = "custom-domain-name";
@@ -76,7 +77,9 @@ function renderCustomDomains() {
 
     const btn = document.createElement("button");
     btn.className = "btn-remove";
+    btn.type = "button";
     btn.textContent = "\u00d7";
+    btn.setAttribute("aria-label", "Remove " + domain);
     btn.title = "Remove " + domain;
     btn.addEventListener("click", () => {
       currentCustomDomains = currentCustomDomains.filter((d) => d !== domain);
@@ -89,24 +92,46 @@ function renderCustomDomains() {
   }
 }
 
-function addCustomDomain() {
+async function addCustomDomain() {
   let raw = elements.customDomainInput.value.trim();
   if (!raw) return;
 
   // Normalize: strip protocol, trailing slashes
   raw = raw.replace(/^https?:\/\//, "").replace(/\/+$/, "");
 
-  // Basic validation: must look like a domain
-  if (!/^[a-zA-Z0-9*][a-zA-Z0-9.*-]+\.[a-zA-Z]{2,}$/.test(raw)) {
-    elements.saveStatus.textContent = "Invalid domain";
+  // Validate: optional leading *. then valid domain segments
+  if (!/^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(raw)) {
+    elements.saveStatus.textContent = "Invalid domain format";
     setTimeout(() => { elements.saveStatus.textContent = ""; }, 2000);
     return;
   }
 
-  if (!currentCustomDomains.includes(raw)) {
-    currentCustomDomains.push(raw);
-    renderCustomDomains();
+  if (currentCustomDomains.includes(raw)) {
+    elements.saveStatus.textContent = "Domain already added";
+    setTimeout(() => { elements.saveStatus.textContent = ""; }, 2000);
+    elements.customDomainInput.value = "";
+    return;
   }
+
+  // Build host permission pattern; wildcard only at subdomain level
+  const pattern = raw.startsWith("*.")
+    ? `https://*.${raw.slice(2)}/*`
+    : `https://${raw}/*`;
+  let granted = false;
+  try {
+    granted = await chrome.permissions.request({ origins: [pattern] });
+  } catch {
+    granted = false;
+  }
+
+  if (!granted) {
+    elements.saveStatus.textContent = "Permission denied for " + raw;
+    setTimeout(() => { elements.saveStatus.textContent = ""; }, 3000);
+    return;
+  }
+
+  currentCustomDomains.push(raw);
+  renderCustomDomains();
   elements.customDomainInput.value = "";
 }
 
@@ -133,8 +158,8 @@ async function saveSettings() {
 
   const settings = {
     autoWitness: elements.autoWitness.checked,
-    checkpointInterval: parseInt(elements.checkpointInterval.value, 10) || 30,
-    contentTier: elements.contentTier.value,
+    checkpointInterval: Math.max(10, Math.min(300, parseInt(elements.checkpointInterval.value, 10) || 30)),
+    contentTier: ["core", "enhanced", "maximum"].includes(elements.contentTier.value) ? elements.contentTier.value : "enhanced",
     captureJitter: elements.captureJitter.checked,
     enabledSites,
     customDomains: currentCustomDomains,

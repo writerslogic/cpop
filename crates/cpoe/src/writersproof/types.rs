@@ -153,6 +153,28 @@ pub struct SignedTreeHead {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PublishRequest {
+    pub evidence_hash: String,
+    pub author_did: String,
+    pub signature: String,
+    pub attestation: String,
+    pub checkpoint_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_declaration: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishResponse {
+    pub record_id: String,
+    pub canonical_url: String,
+    pub published_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerifyResponse {
     pub verdict: String,
     pub confidence: f64,

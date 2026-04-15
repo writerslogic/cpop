@@ -156,6 +156,15 @@ pub struct DocumentRef {
     pub char_count: u64,
 }
 
+impl DocumentRef {
+    pub fn compute_hash(&self) -> Result<HashValue, String> {
+        let mut buf = Vec::new();
+        ciborium::into_writer(self, &mut buf)
+            .map_err(|e| format!("CBOR encode document-ref: {e}"))?;
+        Ok(crate::crypto::hash_sha256(&buf))
+    }
+}
+
 /// Single checkpoint in the causality chain, binding content state to a timestamp.
 ///
 /// **Algorithm assumption:** All hash fields (content_hash, prev_hash, checkpoint_hash,

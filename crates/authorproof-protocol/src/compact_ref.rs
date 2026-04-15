@@ -86,75 +86,19 @@ impl CompactEvidenceRef {
 
     /// Canonical payload to sign for the `signature` field.
     ///
-    /// Determinism: keys are inserted into a `BTreeMap` so serialization
-    /// order is always lexicographic, regardless of whether any dependency
-    /// enables `serde_json/preserve_order` via Cargo feature unification.
-    /// Returns `Err` if `evidence_uri` is empty, since omitting the retrieval
-    /// location would let a forged reference claim validity without a
-    /// verifiable evidence source.
+    /// Determinism: Uses CBOR encoding for a stable byte representation.
+    /// Returns `Err` if `evidence_uri` is empty.
     pub fn signable_payload(&self) -> Result<Vec<u8>, CompactRefError> {
         if self.evidence_uri.is_empty() {
             return Err(CompactRefError::MissingEvidenceUri);
         }
 
-        let mut summary = BTreeMap::new();
-        summary.insert(
-            "checkpoint_count".to_string(),
-            Value::from(self.summary.checkpoint_count),
-        );
-        summary.insert(
-            "confidence_score".to_string(),
-            match self.summary.confidence_score {
-                Some(v) => Value::from(v),
-                None => Value::Null,
-            },
-        );
-        summary.insert(
-            "evidence_tier".to_string(),
-            Value::from(self.summary.evidence_tier),
-        );
-        summary.insert(
-            "total_chars".to_string(),
-            Value::from(self.summary.total_chars),
-        );
-        summary.insert("total_vdf_time_seconds".to_string(), {
-            // Truncate f64 to integer seconds for canonical (non-IEEE-754) serialization.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let secs = self.summary.total_vdf_time_seconds as u64;
-            Value::from(secs)
-        });
-        summary.insert(
-            "verdict".to_string(),
-            match &self.summary.verdict {
-                Some(v) => Value::from(v.as_str()),
-                None => Value::Null,
-            },
-        );
-
-        let mut payload = BTreeMap::new();
-        payload.insert(
-            "chain_hash".to_string(),
-            Value::from(self.chain_hash.as_str()),
-        );
-        payload.insert(
-            "document_hash".to_string(),
-            Value::from(self.document_hash.as_str()),
-        );
-        payload.insert(
-            "evidence_uri".to_string(),
-            Value::from(self.evidence_uri.as_str()),
-        );
-        payload.insert(
-            "packet_id".to_string(),
-            Value::from(self.packet_id.to_string()),
-        );
-        payload.insert(
-            "summary".to_string(),
-            Value::Object(serde_json::Map::from_iter(summary)),
-        );
-
-        let canonical = Value::Object(serde_json::Map::from_iter(payload));
-        Ok(canonical.to_string().into_bytes())
+        // We sign a versioned CBOR structure for maximum stability and compactness.
+        let mut buf = Vec::new();
+        // Version prefix
+        buf.push(0x01);
+        ciborium::into_writer(self, &mut buf).map_err(|_| CompactRefError::InvalidJson)?;
+        Ok(buf)
     }
 
     /// Encode as `cpoe-ref:<base64url>` URI.

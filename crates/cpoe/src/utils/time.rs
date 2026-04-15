@@ -57,3 +57,15 @@ pub fn ns_elapsed(end_ns: i64, start_ns: i64) -> u64 {
 pub fn duration_to_ms(dur: Duration) -> u64 {
     dur.as_millis().min(u64::MAX as u128) as u64
 }
+
+pub(crate) trait DateTimeNanosExt {
+    fn timestamp_nanos_safe(&self) -> i64;
+}
+
+impl DateTimeNanosExt for chrono::DateTime<chrono::Utc> {
+    #[inline]
+    fn timestamp_nanos_safe(&self) -> i64 {
+        self.timestamp_nanos_opt()
+            .unwrap_or_else(|| self.timestamp_millis().saturating_mul(1_000_000))
+    }
+}

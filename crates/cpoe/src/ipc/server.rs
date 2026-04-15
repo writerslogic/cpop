@@ -321,6 +321,7 @@ async fn handle_connection<H: IpcMessageHandler>(
     // H-012: reject connections from different UIDs on Unix sockets.
     match stream.peer_cred() {
         Ok(cred) => {
+            // SAFETY: getuid() is a no-arg POSIX syscall with no preconditions.
             let my_uid = unsafe { libc::getuid() };
             let peer_uid = cred.uid();
             if peer_uid != my_uid {

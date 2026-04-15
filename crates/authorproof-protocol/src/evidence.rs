@@ -17,10 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
 
 fn hash_document_ref(doc: &DocumentRef) -> Result<HashValue> {
-    let mut buf = Vec::new();
-    ciborium::into_writer(doc, &mut buf)
-        .map_err(|e| Error::Protocol(format!("CBOR encode document-ref: {e}")))?;
-    Ok(hash_sha256(&buf))
+    doc.compute_hash()
+        .map_err(|e| Error::Protocol(e))
 }
 
 fn now_millis() -> Result<u64> {

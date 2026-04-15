@@ -7,14 +7,37 @@
  * (no VDF proofs, no hardware attestation, no Secure Enclave) but still
  * provides a hash-chained, timestamped record of the writing process.
  *
+ * Anti-forgery measures in standalone mode:
+ *  - HMAC-SHA256 integrity tags on each checkpoint (keyed by session nonce)
+ *  - Monotonic timestamp enforcement (rejects backward jumps)
+ *  - Minimum checkpoint interval (rate-limits rapid-fire fakes)
+ *  - Jitter-content binding (keystroke timing hashed into chain)
+ *  - Delta plausibility checks (flag impossible char-count jumps)
+ *  - Trust level metadata on export (standalone < native < hardware)
+ *
  * When the desktop app IS installed, this module is not used — the
  * background script routes everything through native messaging instead.
  */
 
 const DB_NAME = "writersproof-evidence";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_SESSIONS = "sessions";
 const STORE_CHECKPOINTS = "checkpoints";
+const STORE_JITTER = "jitter";
+
+const DST_GENESIS = "CPoE-StandaloneGenesis-v1";
+const DST_CHAIN = "CPoE-StandaloneChain-v1";
+const DST_HMAC = "CPoE-StandaloneHMAC-v1";
+const DST_JITTER_BIND = "CPoE-StandaloneJitterBind-v1";
+
+const MIN_CHECKPOINT_INTERVAL_MS = 5000;
+const MAX_PLAUSIBLE_DELTA = 50000;
+
+// Pre-allocated hex lookup table
+const SA_HEX = [];
+for (let i = 0; i < 256; i++) SA_HEX[i] = i.toString(16).padStart(2, "0");
+
+const saEncoder = new TextEncoder();
 
 let db = null;
 
@@ -24,15 +47,27 @@ async function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
-      if (!d.objectStoreNames.contains(STORE_SESSIONS)) {
+      const oldVersion = e.oldVersion;
+
+      // v0 -> v1: create sessions and checkpoints stores
+      if (oldVersion < 1) {
         d.createObjectStore(STORE_SESSIONS, { keyPath: "id" });
-      }
-      if (!d.objectStoreNames.contains(STORE_CHECKPOINTS)) {
-        const store = d.createObjectStore(STORE_CHECKPOINTS, {
+        const cpStore = d.createObjectStore(STORE_CHECKPOINTS, {
           keyPath: "id",
           autoIncrement: true,
         });
-        store.createIndex("sessionId", "sessionId", { unique: false });
+        cpStore.createIndex("sessionId", "sessionId", { unique: false });
+      }
+
+      // v1 -> v2: add jitter store, new checkpoint fields (hmacTag, jitterBinding, flags)
+      if (oldVersion < 2) {
+        if (!d.objectStoreNames.contains(STORE_JITTER)) {
+          const jStore = d.createObjectStore(STORE_JITTER, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          jStore.createIndex("sessionId", "sessionId", { unique: false });
+        }
       }
     };
     req.onsuccess = (e) => {
@@ -46,18 +81,57 @@ async function openDB() {
 function generateId() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) hex += SA_HEX[bytes[i]];
+  return hex;
 }
 
 async function sha256Hex(data) {
-  const encoded =
-    typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const encoded = typeof data === "string" ? saEncoder.encode(data) : data;
   const hash = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const arr = new Uint8Array(hash);
+  let hex = "";
+  for (let i = 0; i < arr.length; i++) hex += SA_HEX[arr[i]];
+  return hex;
+}
+
+// In-memory HMAC CryptoKey cache, keyed by session nonce.
+// The key is non-extractable and never stored in IndexedDB.
+const hmacKeyCache = new Map();
+
+async function getHmacKey(nonce) {
+  if (hmacKeyCache.has(nonce)) return hmacKeyCache.get(nonce);
+  if (hmacKeyCache.size >= 50) {
+    hmacKeyCache.delete(hmacKeyCache.keys().next().value);
+  }
+  const keyMaterial = await sha256Hex(`${DST_HMAC}:${nonce}`);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    hexToBytes(keyMaterial),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  hmacKeyCache.set(nonce, key);
+  return key;
+}
+
+async function hmacSha256Hex(nonce, data) {
+  const key = await getHmacKey(nonce);
+  const encoded = typeof data === "string" ? saEncoder.encode(data) : data;
+  const sig = await crypto.subtle.sign("HMAC", key, encoded);
+  const arr = new Uint8Array(sig);
+  let hex = "";
+  for (let i = 0; i < arr.length; i++) hex += SA_HEX[arr[i]];
+  return hex;
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  }
+  return bytes;
 }
 
 // --- Public API (called from background.js) ---
@@ -68,7 +142,7 @@ async function standaloneStartSession(url, title) {
   const nonce = generateId();
   const now = Date.now();
 
-  const genesisInput = `CPoE-StandaloneGenesis-v1:${nonce}`;
+  const genesisInput = `${DST_GENESIS}:${nonce}`;
   const genesisHash = await sha256Hex(genesisInput);
 
   const session = {
@@ -78,6 +152,7 @@ async function standaloneStartSession(url, title) {
     nonce,
     startedAt: now,
     lastCheckpointAt: now,
+    lastJitterHash: null,
     checkpointCount: 0,
     prevHash: genesisHash,
     mode: "standalone",
@@ -109,9 +184,38 @@ async function standaloneCheckpoint(sessionId, contentHash, charCount, delta) {
   const ordinal = session.checkpointCount + 1;
   const now = Date.now();
 
-  // Chain: SHA-256(prevHash || contentHash || ordinal || timestamp)
-  const chainInput = `${session.prevHash}:${contentHash}:${ordinal}:${now}`;
+  // Monotonic timestamp enforcement
+  if (now < session.lastCheckpointAt) {
+    return {
+      type: "error",
+      code: "TIMESTAMP_REGRESSION",
+      message: "Clock moved backward; checkpoint rejected",
+    };
+  }
+
+  // Rate limiting: reject checkpoints faster than minimum interval
+  if (ordinal > 1 && (now - session.lastCheckpointAt) < MIN_CHECKPOINT_INTERVAL_MS) {
+    return {
+      type: "error",
+      code: "RATE_LIMITED",
+      message: "Checkpoint too soon; wait a few seconds",
+    };
+  }
+
+  // Delta plausibility: flag impossible character-count jumps
+  let flags = 0;
+  if (Math.abs(delta) > MAX_PLAUSIBLE_DELTA) {
+    flags |= 1; // FLAG_LARGE_DELTA
+  }
+
+  // Chain: SHA-256(DST || prevHash || contentHash || ordinal || timestamp || jitterBinding)
+  const jitterBinding = session.lastJitterHash || "0".repeat(64);
+  const chainInput = `${DST_CHAIN}:${session.prevHash}:${contentHash}:${ordinal}:${now}:${jitterBinding}`;
   const checkpointHash = await sha256Hex(chainInput);
+
+  // HMAC integrity tag derived from session nonce (key never stored in IndexedDB)
+  const hmacInput = `${checkpointHash}:${ordinal}:${now}:${contentHash}:${charCount}:${delta}`;
+  const hmacTag = await hmacSha256Hex(session.nonce, hmacInput);
 
   const checkpoint = {
     sessionId,
@@ -120,8 +224,11 @@ async function standaloneCheckpoint(sessionId, contentHash, charCount, delta) {
     contentHash,
     charCount,
     delta,
+    flags,
     prevHash: session.prevHash,
     checkpointHash,
+    jitterBinding,
+    hmacTag,
   };
 
   cpStore.put(checkpoint);
@@ -161,6 +268,36 @@ async function standaloneStopSession(sessionId) {
   };
 }
 
+async function standaloneRecordJitter(sessionId, intervals) {
+  if (!sessionId || !intervals || intervals.length === 0) return;
+
+  const d = await openDB();
+
+  // Compute jitter hash to bind into next checkpoint
+  const jitterInput = `${DST_JITTER_BIND}:${intervals.join(",")}`;
+  const jitterHash = await sha256Hex(jitterInput);
+
+  const tx = d.transaction([STORE_SESSIONS, STORE_JITTER], "readwrite");
+
+  // Update session's jitter binding for next checkpoint
+  const sessionStore = tx.objectStore(STORE_SESSIONS);
+  const session = await storeGet(sessionStore, sessionId);
+  if (session) {
+    // Chain jitter hashes: SHA-256(prev_jitter_hash || new_jitter_hash)
+    const prevJitter = session.lastJitterHash || "0".repeat(64);
+    session.lastJitterHash = await sha256Hex(`${prevJitter}:${jitterHash}`);
+    sessionStore.put(session);
+  }
+
+  tx.objectStore(STORE_JITTER).put({
+    sessionId,
+    timestamp: Date.now(),
+    intervals,
+    jitterHash,
+  });
+  await txComplete(tx);
+}
+
 async function standaloneGetStatus(sessionId) {
   if (!sessionId) {
     return {
@@ -189,7 +326,7 @@ async function standaloneGetStatus(sessionId) {
 
 async function standaloneExportEvidence(sessionId) {
   const d = await openDB();
-  const tx = d.transaction([STORE_SESSIONS, STORE_CHECKPOINTS]);
+  const tx = d.transaction([STORE_SESSIONS, STORE_CHECKPOINTS, STORE_JITTER]);
   const session = await storeGet(
     tx.objectStore(STORE_SESSIONS),
     sessionId
@@ -202,9 +339,30 @@ async function standaloneExportEvidence(sessionId) {
     sessionId
   );
 
-  return {
-    version: 1,
+  const jitterBatches = await storeGetAllByIndex(
+    tx.objectStore(STORE_JITTER),
+    "sessionId",
+    sessionId
+  );
+
+  // Verify chain integrity before export
+  checkpoints.sort((a, b) => a.ordinal - b.ordinal);
+  let chainValid = true;
+  let expectedPrev = await sha256Hex(`${DST_GENESIS}:${session.nonce}`);
+  for (const cp of checkpoints) {
+    if (cp.prevHash !== expectedPrev) {
+      chainValid = false;
+      break;
+    }
+    expectedPrev = cp.checkpointHash;
+  }
+
+  const evidence = {
+    version: 2,
     mode: "standalone",
+    trustLevel: "browser-only",
+    trustDescription: "SHA-256 hash chain with HMAC integrity; no hardware attestation or VDF proofs. Install the WritersProof desktop app for stronger evidence.",
+    chainIntegrity: chainValid ? "verified" : "broken",
     session: {
       id: session.id,
       url: session.url,
@@ -219,10 +377,31 @@ async function standaloneExportEvidence(sessionId) {
       contentHash: cp.contentHash,
       charCount: cp.charCount,
       delta: cp.delta,
+      flags: cp.flags || 0,
       prevHash: cp.prevHash,
       checkpointHash: cp.checkpointHash,
+      jitterBinding: cp.jitterBinding,
+      hmacTag: cp.hmacTag,
     })),
+    keystrokeJitter: jitterBatches.map((jb) => ({
+      timestamp: jb.timestamp,
+      intervals: jb.intervals,
+      jitterHash: jb.jitterHash,
+    })),
+    exportSeal: null,
   };
+
+  // HMAC seal over the payload so verifiers can detect post-export tampering.
+  // A verifier re-derives the key from session.nonce using DST_HMAC.
+  const sealInput = JSON.stringify({
+    session: evidence.session,
+    checkpoints: evidence.checkpoints,
+    keystrokeJitter: evidence.keystrokeJitter,
+    chainIntegrity: evidence.chainIntegrity,
+  });
+  evidence.exportSeal = await hmacSha256Hex(session.nonce, sealInput);
+
+  return evidence;
 }
 
 // --- IndexedDB helpers ---
