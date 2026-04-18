@@ -18,12 +18,12 @@ fn test_zone_tracking_engine() {
     let mut engine = ZoneTrackingEngine::new();
 
     let trans = engine.record_keycode(0x0C);
-    assert_eq!(trans, 0xFF);
+    assert_eq!(trans, None);
 
     let trans = engine.record_keycode(0x0D);
-    assert_ne!(trans, 0xFF);
+    assert!(trans.is_some());
 
-    let (from, to) = decode_zone_transition(trans);
+    let (from, to) = decode_zone_transition(trans.unwrap());
     assert_eq!(from, 0);
     assert_eq!(to, 1);
 
@@ -286,9 +286,9 @@ fn test_zone_engine_prev_zone_initial() {
 #[test]
 fn test_zone_engine_negative_zone_returns_0xff() {
     let mut engine = ZoneTrackingEngine::new();
-    // record_zone with negative zone should return 0xFF
+    // record_zone with negative zone should return None
     let result = engine.record_zone(-1);
-    assert_eq!(result, 0xFF);
+    assert_eq!(result, None);
     assert_eq!(
         engine.prev_zone(),
         -1,
@@ -315,15 +315,18 @@ fn test_zone_engine_profile_histogram_population() {
 fn test_interval_to_bucket_boundaries() {
     use crate::cpoe_jitter_bridge::helpers::interval_to_bucket;
 
-    assert_eq!(interval_to_bucket(Duration::from_millis(0)), 0);
-    assert_eq!(interval_to_bucket(Duration::from_millis(25)), 0);
-    assert_eq!(interval_to_bucket(Duration::from_millis(50)), 1);
-    assert_eq!(interval_to_bucket(Duration::from_millis(99)), 1);
-    assert_eq!(interval_to_bucket(Duration::from_millis(100)), 2);
-    assert_eq!(interval_to_bucket(Duration::from_millis(450)), 9);
-    // Anything >= 500ms clamps to bucket 9
-    assert_eq!(interval_to_bucket(Duration::from_millis(500)), 9);
-    assert_eq!(interval_to_bucket(Duration::from_millis(10_000)), 9);
+    assert_eq!(interval_to_bucket(Duration::from_millis(0)), Some(0));
+    assert_eq!(interval_to_bucket(Duration::from_millis(25)), Some(0));
+    assert_eq!(interval_to_bucket(Duration::from_millis(50)), Some(1));
+    assert_eq!(interval_to_bucket(Duration::from_millis(99)), Some(1));
+    assert_eq!(interval_to_bucket(Duration::from_millis(100)), Some(2));
+    assert_eq!(interval_to_bucket(Duration::from_millis(450)), Some(9));
+    // 500ms-30s clamps to bucket 9
+    assert_eq!(interval_to_bucket(Duration::from_millis(500)), Some(9));
+    assert_eq!(interval_to_bucket(Duration::from_millis(10_000)), Some(9));
+    // Beyond 30s is not typing behavior
+    assert_eq!(interval_to_bucket(Duration::from_millis(30_001)), None);
+    assert_eq!(interval_to_bucket(Duration::from_secs(3600)), None);
 }
 
 #[test]

@@ -29,7 +29,8 @@ impl HybridSample {
     pub fn compute_hash(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(b"cpoe-hybrid-sample-v2");
+        hasher.update(b"cpoe-hybrid-sample-v3");
+        hasher.update((self.session_id.len() as u64).to_be_bytes());
         hasher.update(self.session_id.as_bytes());
         hasher.update(self.timestamp.timestamp_nanos_safe().to_be_bytes());
         hasher.update(self.keystroke_count.to_be_bytes());

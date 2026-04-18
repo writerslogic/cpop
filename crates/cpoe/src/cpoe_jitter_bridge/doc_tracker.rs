@@ -17,10 +17,9 @@ impl DocumentTracker {
         let abs_path =
             fs::canonicalize(path.as_ref()).map_err(|e| format!("invalid document path: {e}"))?;
 
-        let path_str = abs_path.to_string_lossy();
-        if path_str.contains('\u{FFFD}') {
-            log::warn!("document path contains non-UTF-8 bytes, lossy conversion applied");
-        }
+        let path_str = abs_path
+            .to_str()
+            .ok_or("document path contains non-UTF-8 bytes")?;
 
         Ok(Self {
             path: path_str.to_string(),
@@ -31,22 +30,38 @@ impl DocumentTracker {
     }
 
     pub fn hash(&mut self) -> Result<[u8; 32], String> {
-        let metadata = fs::metadata(&self.path).map_err(|e| e.to_string())?;
-        let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let size = metadata.len();
+        let pre_meta = fs::metadata(&self.path).map_err(|e| e.to_string())?;
+        let pre_mtime = pre_meta
+            .modified()
+            .map_err(|e| format!("filesystem does not support mtime: {e}"))?;
+        let pre_size = pre_meta.len();
 
         if let (Some(last_mtime), Some(last_size), Some(last_hash)) =
             (self.last_mtime, self.last_size, self.last_hash)
         {
-            if mtime == last_mtime && size == last_size {
+            if pre_mtime == last_mtime && pre_size == last_size {
                 return Ok(last_hash);
             }
         }
 
         let hash = crate::crypto::hash_file(Path::new(&self.path)).map_err(|e| e.to_string())?;
 
-        self.last_mtime = Some(mtime);
-        self.last_size = Some(size);
+        // Re-stat to detect concurrent modification during hashing
+        let post_meta = fs::metadata(&self.path).map_err(|e| e.to_string())?;
+        let post_mtime = post_meta
+            .modified()
+            .map_err(|e| format!("filesystem does not support mtime: {e}"))?;
+        let post_size = post_meta.len();
+
+        if pre_mtime != post_mtime || pre_size != post_size {
+            self.last_mtime = None;
+            self.last_size = None;
+            self.last_hash = None;
+            return Err("document modified during hashing, retry".to_string());
+        }
+
+        self.last_mtime = Some(post_mtime);
+        self.last_size = Some(post_size);
         self.last_hash = Some(hash);
 
         Ok(hash)

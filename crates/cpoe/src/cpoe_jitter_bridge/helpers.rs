@@ -2,15 +2,22 @@
 
 use std::time::Duration;
 
-const INTERVAL_BUCKET_SIZE_MS: i64 = 50;
-const NUM_INTERVAL_BUCKETS: i64 = 10;
+const INTERVAL_BUCKET_SIZE_MS: u64 = 50;
+const NUM_INTERVAL_BUCKETS: u64 = 10;
+/// Intervals beyond this threshold are not typing behavior and should be discarded.
+const MAX_TYPING_INTERVAL_MS: u64 = 30_000;
 
 /// Map a duration to a 50ms-wide histogram bucket index (0-9).
-pub fn interval_to_bucket(duration: Duration) -> u8 {
-    let ms = duration.as_millis() as i64;
-    let mut bucket = ms / INTERVAL_BUCKET_SIZE_MS;
-    if bucket >= NUM_INTERVAL_BUCKETS {
-        bucket = NUM_INTERVAL_BUCKETS - 1;
+/// Returns `None` for intervals beyond 30 seconds (not typing behavior).
+pub fn interval_to_bucket(duration: Duration) -> Option<u8> {
+    let ms = duration.as_millis();
+    if ms > MAX_TYPING_INTERVAL_MS as u128 {
+        return None;
     }
-    bucket as u8
+    let bucket = (ms as u64) / INTERVAL_BUCKET_SIZE_MS;
+    if bucket >= NUM_INTERVAL_BUCKETS {
+        Some((NUM_INTERVAL_BUCKETS - 1) as u8)
+    } else {
+        Some(bucket as u8)
+    }
 }

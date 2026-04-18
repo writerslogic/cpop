@@ -47,7 +47,7 @@ pub struct TypingProfile {
     /// Total number of zone transitions recorded.
     pub total_transitions: u64,
     #[serde(skip)]
-    pub(super) alternating_count: u64,
+    pub(crate) alternating_count: u64,
 }
 
 /// Real-time zone-committed jitter engine for keystroke monitoring sessions.

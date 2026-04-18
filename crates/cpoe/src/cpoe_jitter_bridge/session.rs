@@ -140,7 +140,7 @@ impl HybridJitterSession {
 
         let doc_hash = self.document_tracker.hash()?;
         let now = Utc::now();
-        let zone_transition = self.zone_engine.record_keycode(keycode);
+        let zone_transition = self.zone_engine.record_keycode(keycode).unwrap_or(0xFF);
 
         let mut input = Vec::with_capacity(64);
         input.extend_from_slice(&self.keystroke_count.to_be_bytes());

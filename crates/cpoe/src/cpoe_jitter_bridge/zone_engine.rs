@@ -2,16 +2,16 @@
 
 use crate::cpoe_jitter_bridge::helpers::interval_to_bucket;
 use crate::jitter::{encode_zone_transition, keycode_to_zone, TypingProfile, ZoneTransition};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::time::Instant;
 
 /// Track keyboard zone transitions and build a typing profile histogram.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneTrackingEngine {
     pub(crate) prev_zone: i32,
     pub(crate) profile: TypingProfile,
-    pub(crate) prev_time: DateTime<Utc>,
+    #[serde(skip)]
+    pub(crate) prev_instant: Option<Instant>,
 }
 
 impl Default for ZoneTrackingEngine {
@@ -25,36 +25,38 @@ impl ZoneTrackingEngine {
         Self {
             prev_zone: -1,
             profile: TypingProfile::default(),
-            prev_time: Utc::now(),
+            prev_instant: None,
         }
     }
 
-    pub fn record_keycode(&mut self, keycode: u16) -> u8 {
+    pub fn record_keycode(&mut self, keycode: u16) -> Option<u8> {
         let zone = keycode_to_zone(keycode);
         self.record_zone(zone)
     }
 
-    pub fn record_zone(&mut self, zone: i32) -> u8 {
+    pub fn record_zone(&mut self, zone: i32) -> Option<u8> {
         if zone < 0 {
-            return 0xFF;
+            return None;
         }
 
-        let now = Utc::now();
+        let now = Instant::now();
         let zone_transition = if self.prev_zone >= 0 {
-            let encoded = encode_zone_transition(self.prev_zone, zone);
-            let interval = now.signed_duration_since(self.prev_time);
-            if interval.num_nanoseconds().unwrap_or(-1) < 0 {
-                return 0xFF;
+            if let Some(prev) = self.prev_instant {
+                let interval = now.duration_since(prev);
+                let encoded = encode_zone_transition(self.prev_zone, zone);
+                if let Some(bucket) = interval_to_bucket(interval) {
+                    self.update_profile(self.prev_zone, zone, bucket);
+                }
+                Some(encoded)
+            } else {
+                None
             }
-            let bucket = interval_to_bucket(interval.to_std().unwrap_or(Duration::from_secs(0)));
-            self.update_profile(self.prev_zone, zone, bucket);
-            encoded
         } else {
-            0xFF
+            None
         };
 
         self.prev_zone = zone;
-        self.prev_time = now;
+        self.prev_instant = Some(now);
         zone_transition
     }
 
@@ -83,18 +85,11 @@ impl ZoneTrackingEngine {
         } else {
             self.profile.alternating_hist[idx] =
                 self.profile.alternating_hist[idx].saturating_add(1);
+            self.profile.alternating_count = self.profile.alternating_count.saturating_add(1);
         }
 
         self.profile.total_transitions += 1;
-        if self.profile.total_transitions > 0 {
-            let alternating_count: u64 = self
-                .profile
-                .alternating_hist
-                .iter()
-                .map(|&x| x as u64)
-                .sum();
-            self.profile.hand_alternation =
-                alternating_count as f32 / self.profile.total_transitions as f32;
-        }
+        self.profile.hand_alternation =
+            self.profile.alternating_count as f32 / self.profile.total_transitions as f32;
     }
 }
