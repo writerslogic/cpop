@@ -273,6 +273,12 @@ impl EvidencePacketWire {
         for (i, cp) in self.checkpoints.iter().enumerate() {
             cp.validate()
                 .map_err(|e| CodecError::Validation(format!("checkpoint[{}]: {}", i, e)))?;
+            if cp.sequence != i as u64 {
+                return Err(CodecError::Validation(format!(
+                    "checkpoint[{}] has sequence {} (expected monotonic {})",
+                    i, cp.sequence, i
+                )));
+            }
         }
 
         if let Some(ref pl) = self.physical_liveness {
@@ -303,6 +309,48 @@ impl EvidencePacketWire {
                 return Err(CodecError::Validation(
                     "author_did must start with 'did:'".into(),
                 ));
+            }
+        }
+
+        // Validate embedded document: content hash must match if present
+        if let Some(ref content) = self.document_content {
+            if content.len() > 100_000_000 {
+                return Err(CodecError::Validation(format!(
+                    "document_content too large: {} bytes (max 100MB)",
+                    content.len()
+                )));
+            }
+            use sha2::{Digest, Sha256};
+            let hash: [u8; 32] = Sha256::digest(content.as_ref()).into();
+            if self.document.content_hash.digest.len() == 32
+                && hash[..] != self.document.content_hash.digest[..]
+            {
+                return Err(CodecError::Validation(
+                    "document_content hash does not match document.content_hash".into(),
+                ));
+            }
+        }
+
+        if let Some(ref name) = self.document_filename {
+            if name.len() > MAX_STRING_LEN {
+                return Err(CodecError::Validation(format!(
+                    "document_filename too long: {} (max {})",
+                    name.len(), MAX_STRING_LEN
+                )));
+            }
+            if name.contains('/') || name.contains('\\') || name.contains("..") {
+                return Err(CodecError::Validation(
+                    "document_filename contains path traversal characters".into(),
+                ));
+            }
+        }
+
+        if let Some(ref pf) = self.project_files {
+            if pf.len() > 1000 {
+                return Err(CodecError::Validation(format!(
+                    "too many project_files: {} (max 1000)",
+                    pf.len()
+                )));
             }
         }
 

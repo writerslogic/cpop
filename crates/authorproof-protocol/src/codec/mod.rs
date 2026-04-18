@@ -44,8 +44,8 @@ impl Format {
     /// Return the MIME type for this format.
     pub fn mime_type(&self) -> &'static str {
         match self {
-            Format::Cbor => "application/cpoe+cbor",
-            Format::CborWar => "application/cwar+cbor",
+            Format::Cbor => "application/vnd.writersproof.cpoe+cbor",
+            Format::CborWar => "application/vnd.writersproof.cwar+cbor",
             Format::Json => "application/json",
         }
     }

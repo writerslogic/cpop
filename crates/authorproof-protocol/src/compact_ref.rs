@@ -93,11 +93,16 @@ impl CompactEvidenceRef {
             return Err(CompactRefError::MissingEvidenceUri);
         }
 
-        // We sign a versioned CBOR structure for maximum stability and compactness.
+        // Sign only the non-signature fields to avoid circular dependency.
+        // Uses deterministic CBOR encoding for cross-platform reproducibility.
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("packet_id", serde_json::json!(self.packet_id.to_string()));
+        map.insert("chain_hash", serde_json::json!(&self.chain_hash));
+        map.insert("document_hash", serde_json::json!(&self.document_hash));
+        map.insert("evidence_uri", serde_json::json!(&self.evidence_uri));
         let mut buf = Vec::new();
-        // Version prefix
-        buf.push(0x01);
-        ciborium::into_writer(self, &mut buf).map_err(|_| CompactRefError::InvalidJson)?;
+        buf.push(0x01); // version prefix
+        ciborium::into_writer(&map, &mut buf).map_err(|_| CompactRefError::InvalidJson)?;
         Ok(buf)
     }
 

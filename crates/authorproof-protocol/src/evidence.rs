@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// CPoP profile URI per IETF draft specification.
-const PROFILE_URI: &str = "urn:ietf:params:pop:profile:1.0";
+const PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
 
 fn hash_document_ref(doc: &DocumentRef) -> Result<HashValue> {
     doc.compute_hash()
