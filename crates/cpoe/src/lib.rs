@@ -46,6 +46,7 @@ pub mod ipc;
 pub mod platform;
 pub mod sentinel;
 pub mod serde_utils;
+pub mod snapshot;
 pub mod store;
 pub mod timing;
 pub mod utils;

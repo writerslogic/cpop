@@ -960,10 +960,10 @@ impl Sentinel {
                                     })
                                 };
                                 if let Some((total_ks, focus_ms, session_num, duration_secs,
-                                             first_at, ordinal, has_hw_sched, _session_id)) = session_snapshot
+                                             first_at, _ordinal, has_hw_sched, _session_id)) = session_snapshot
                                 {
                                     // Persist cumulative keystroke count (no lock held)
-                                    if let Some(sk) = sk_opt {
+                                    if let Some(ref sk) = sk_opt {
                                         let db = writersproof_dir.join("events.db");
                                         if let Ok(store) =
                                             crate::store::open_store_with_signing_key(&sk, &db)
@@ -991,32 +991,26 @@ impl Sentinel {
                                     if snapshots_flag.load(Ordering::SeqCst)
                                         && !path.starts_with("shadow://")
                                     {
-                                        let src = std::path::Path::new(path);
-                                        let path_hash = {
-                                            use sha2::Digest;
-                                            let h = sha2::Sha256::digest(path.as_bytes());
-                                            crate::utils::short_hex_id(&h)
-                                        };
-                                        let ext = src
-                                            .extension()
-                                            .and_then(|e| e.to_str())
-                                            .unwrap_or("txt");
-                                        let snap_dir =
-                                            writersproof_dir.join("snapshots").join(&path_hash);
-                                        if let Err(e) = std::fs::create_dir_all(&snap_dir) {
-                                            log::warn!(
-                                                "Failed to create snapshot dir {}: {e}",
-                                                snap_dir.display()
-                                            );
-                                        }
-                                        let snap_name =
-                                            format!("{:06}.{}", ordinal, ext);
-                                        let snap_path = snap_dir.join(&snap_name);
-                                        if let Err(e) = std::fs::copy(src, &snap_path) {
-                                            log::debug!(
-                                                "Snapshot save failed for {}: {e}",
-                                                path
-                                            );
+                                        if let Some(ref sk) = sk_opt {
+                                            let snap_db = writersproof_dir.join("snapshots.db");
+                                            match crate::snapshot::SnapshotStore::open(&snap_db, sk) {
+                                                Ok(mut snap_store) => {
+                                                    let src = std::path::Path::new(path);
+                                                    match std::fs::read_to_string(src) {
+                                                        Ok(content) => {
+                                                            if let Err(e) = snap_store.save(path, &content, false) {
+                                                                log::debug!("Snapshot save failed for {path}: {e}");
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            log::debug!("Snapshot read failed for {path}: {e}");
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("Failed to open snapshot store: {e}");
+                                                }
+                                            }
                                         }
                                     }
 
