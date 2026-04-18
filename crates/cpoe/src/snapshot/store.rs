@@ -372,6 +372,17 @@ impl SnapshotStore {
         Ok(restored)
     }
 
+    /// Get the document path associated with a snapshot meta id.
+    pub fn get_document_path(&self, snapshot_id: i64) -> Result<String, String> {
+        self.conn
+            .query_row(
+                "SELECT document_path FROM snapshot_meta WHERE id = ?",
+                params![snapshot_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("snapshot not found: {e}"))
+    }
+
     fn blob_exists(&self, content_hash: &[u8; 32]) -> Result<bool, String> {
         self.conn
             .query_row(
