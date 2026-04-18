@@ -195,7 +195,7 @@ pub fn analyze_forensics_ext_with_focus(
     let sorted = SortedEvents::new(&sorted_buf);
 
     if let (Some(model), Some(text)) = (perplexity_model, document_text) {
-        let score = model.compute_perplexity(text);
+        let score = model.perplexity_or_default(text);
         metrics.perplexity_score = if score.is_finite() {
             score
         } else {
