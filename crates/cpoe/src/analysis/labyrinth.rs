@@ -40,7 +40,7 @@ pub struct LabyrinthAnalysis {
     pub is_valid: bool,
     pub confidence: f64,
     pub lyapunov_exponent: f64,
-    pub shannon_entropy: f64,
+    pub rqa_entropy: f64,
     pub quantization_index: f64,
 }
 
@@ -84,6 +84,9 @@ pub(crate) struct RqaResult {
 }
 
 const MIN_LABYRINTH_DATA_POINTS: usize = 50;
+/// Cap input to avoid O(N²) in RQA and Lyapunov. 1000 points = 1M distance
+/// comparisons, which completes in ~5ms. 10,000 would take 500ms+.
+const MAX_LABYRINTH_DATA_POINTS: usize = 1000;
 
 /// Analyze keystroke timing and optional mouse trajectory via Takens' embedding.
 pub fn analyze_labyrinth(
@@ -101,7 +104,13 @@ pub fn analyze_labyrinth(
     let dim = params.max_embedding_dim.clamp(2, 10);
     let delay = params.max_delay.clamp(1, 50);
 
-    let k_norm = normalize(keystroke_deltas);
+    // Truncate to cap O(N²) RQA/Lyapunov at ~1M distance comparisons
+    let capped = if keystroke_deltas.len() > MAX_LABYRINTH_DATA_POINTS {
+        &keystroke_deltas[keystroke_deltas.len() - MAX_LABYRINTH_DATA_POINTS..]
+    } else {
+        keystroke_deltas
+    };
+    let k_norm = normalize(capped);
     let has_mouse = mouse_coords.len() >= MIN_LABYRINTH_DATA_POINTS;
 
     let embed = if has_mouse {
@@ -132,7 +141,7 @@ pub fn analyze_labyrinth(
         is_valid,
         confidence: (keystroke_deltas.len() as f64 / 1000.0).min(1.0),
         lyapunov_exponent: lyapunov,
-        shannon_entropy: rqa.laminarity,
+        rqa_entropy: rqa.laminarity,
         quantization_index: q_index,
     })
 }
@@ -143,7 +152,9 @@ pub fn analyze_labyrinth(
 
 fn normalize(data: &[f64]) -> Vec<f64> {
     if data.iter().any(|v| !v.is_finite()) {
-        return data.to_vec();
+        // Reject non-finite values instead of silently propagating them
+        log::warn!("labyrinth normalize: non-finite values in input, replacing with zeros");
+        return data.iter().map(|v| if v.is_finite() { *v } else { 0.0 }).collect();
     }
     let (min, max) = data
         .iter()

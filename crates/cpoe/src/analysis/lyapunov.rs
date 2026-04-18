@@ -42,6 +42,9 @@ impl std::error::Error for LyapunovError {}
 /// Minimum data points for Lyapunov analysis.
 const MIN_DATA_POINTS: usize = 100;
 
+/// Cap input to avoid O(N²) nearest-neighbor search in phase space.
+const MAX_DATA_POINTS: usize = 1000;
+
 /// Embedding dimension for phase-space reconstruction.
 const EMBED_DIM: usize = 5;
 
@@ -82,12 +85,19 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
         });
     }
 
-    if crate::utils::require_all_finite(iki_intervals_ns, "lyapunov").is_err() {
+    // Truncate to cap O(N²) nearest-neighbor search at ~1M comparisons
+    let data = if iki_intervals_ns.len() > MAX_DATA_POINTS {
+        &iki_intervals_ns[iki_intervals_ns.len() - MAX_DATA_POINTS..]
+    } else {
+        iki_intervals_ns
+    };
+
+    if crate::utils::require_all_finite(data, "lyapunov").is_err() {
         return Err(LyapunovError::NonFiniteValues);
     }
 
     // Normalize data
-    let (mean, std_dev) = crate::utils::stats::mean_and_std_dev(iki_intervals_ns);
+    let (mean, std_dev) = crate::utils::stats::mean_and_std_dev(data);
 
     if std_dev < 1e-10 {
         // Zero variance → perfectly periodic → flagged
@@ -98,7 +108,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
         });
     }
 
-    let normalized: Vec<f64> = iki_intervals_ns
+    let normalized: Vec<f64> = data
         .iter()
         .map(|&x| (x - mean) / std_dev)
         .collect();
@@ -196,7 +206,7 @@ pub fn analyze_lyapunov(iki_intervals_ns: &[f64]) -> Result<LyapunovAnalysis, Ly
     // Correct for using ln(sq_dist) instead of ln(dist): ln(d²) = 2*ln(d), so divide slope by 2
     let exponent = slope / 2.0;
 
-    let confidence = (iki_intervals_ns.len() as f64 / 500.0).min(1.0);
+    let confidence = (data.len() as f64 / 500.0).min(1.0);
     let flagged = exponent <= PERIODIC_THRESHOLD || exponent > NOISE_THRESHOLD;
 
     Ok(LyapunovAnalysis {

@@ -217,10 +217,18 @@ fn fft_radix2(real: &mut [f64], imag: &mut [f64]) {
     while len <= n {
         let half = len / 2;
         let angle_step = -2.0 * PI / len as f64;
+        // Precompute twiddle factors to avoid cos/sin in the inner loop.
+        // Trigonometric functions are expensive at the instruction level;
+        // computing them once per stage and indexing is ~10x faster.
+        let twiddle: Vec<(f64, f64)> = (0..half)
+            .map(|k| {
+                let angle = angle_step * k as f64;
+                (angle.cos(), angle.sin())
+            })
+            .collect();
         for start in (0..n).step_by(len) {
             for k in 0..half {
-                let angle = angle_step * k as f64;
-                let (cos_a, sin_a) = (angle.cos(), angle.sin());
+                let (cos_a, sin_a) = twiddle[k];
                 let i = start + k;
                 let j = start + k + half;
                 let tr = real[j] * cos_a - imag[j] * sin_a;
