@@ -85,8 +85,7 @@ impl Packet {
         let mut prev_hash = String::new();
         for (i, cp) in self.checkpoints.iter().enumerate() {
             if i == 0 {
-                // Accept legacy all-zeros OR spec-correct H(document-ref)
-                let is_legacy_zeros = cp.previous_hash == hex::encode([0u8; 32]);
+                // Accept spec-correct H(document-ref) genesis
                 let is_doc_ref = hex::decode(&cp.content_hash)
                     .ok()
                     .and_then(|b| <[u8; 32]>::try_from(b).ok())
@@ -95,6 +94,7 @@ impl Packet {
                             content_hash,
                             cp.content_size,
                             &self.document.path,
+                            None,
                         )
                         .ok()
                     })
@@ -102,12 +102,12 @@ impl Packet {
                     .unwrap_or(false);
                 let is_valid_hex = cp.previous_hash.len() == 64
                     && cp.previous_hash.chars().all(|c| c.is_ascii_hexdigit());
-                if !is_legacy_zeros && !is_doc_ref && !is_valid_hex {
+                if !is_doc_ref && !is_valid_hex {
                     return Err(Error::evidence(
                         "checkpoint 0: invalid genesis previous hash",
                     ));
                 }
-                if !is_legacy_zeros && !is_doc_ref && is_valid_hex {
+                if !is_doc_ref && is_valid_hex {
                     log::warn!(
                         "checkpoint 0: genesis hash is valid hex but does not match document ref"
                     );

@@ -122,7 +122,7 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path)?,
+            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
         };
 
         let mut checkpoint =
@@ -306,7 +306,7 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path)?,
+            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
         };
 
         let previous_vdf_output = match last_cp {
@@ -464,7 +464,7 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path)?,
+            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
         };
 
         let physics_seed = if self.metadata.entanglement_mode == EntanglementMode::Entangled {

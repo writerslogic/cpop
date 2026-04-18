@@ -115,21 +115,17 @@ impl Chain {
                     )));
                 }
             } else {
-                // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
-                let is_legacy_zeros = cp.previous_hash == [0u8; 32];
                 let is_spec_genesis = genesis_prev_hash(
                     cp.content_hash,
                     cp.content_size,
                     &self.metadata.document_path,
+                    None,
                 )
                 .map(|h| cp.previous_hash == h)
                 .unwrap_or(false);
-                if is_legacy_zeros {
-                    log::warn!("Legacy all-zeros genesis hash accepted; consider re-chaining");
-                } else if !is_spec_genesis {
+                if !is_spec_genesis {
                     return Err(Error::checkpoint(
-                        "checkpoint 0: invalid genesis previous_hash \
-                         (neither all-zeros nor spec-correct H(document-ref))",
+                        "checkpoint 0: invalid genesis previous_hash",
                     ));
                 }
             }
@@ -195,18 +191,15 @@ impl Chain {
                     return report;
                 }
             } else {
-                // Genesis: accept legacy all-zeros OR spec-correct H(document-ref)
-                let is_legacy_zeros = checkpoint.previous_hash == [0u8; 32];
                 let is_spec_genesis = genesis_prev_hash(
                     checkpoint.content_hash,
                     checkpoint.content_size,
                     &self.metadata.document_path,
+                    None,
                 )
                 .map(|h| checkpoint.previous_hash == h)
                 .unwrap_or(false);
-                if is_legacy_zeros {
-                    log::warn!("Legacy all-zeros genesis hash accepted; consider re-chaining");
-                } else if !is_spec_genesis {
+                if !is_spec_genesis {
                     report.fail("checkpoint 0: invalid genesis prev-hash".into());
                     return report;
                 }
