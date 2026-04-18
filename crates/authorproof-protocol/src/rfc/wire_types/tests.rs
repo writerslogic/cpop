@@ -165,6 +165,9 @@ fn create_test_evidence_packet() -> EvidencePacketWire {
         physical_liveness: None,
         baseline_verification: None,
         author_did: None,
+        document_content: None,
+        document_filename: None,
+        project_files: None,
     }
 }
 

@@ -18,7 +18,7 @@ const PROFILE_URI: &str = "urn:ietf:params:rats:eat:profile:pop:1.0";
 
 fn hash_document_ref(doc: &DocumentRef) -> Result<HashValue> {
     doc.compute_hash()
-        .map_err(|e| Error::Protocol(e))
+        .map_err(Error::Protocol)
 }
 
 fn now_millis() -> Result<u64> {

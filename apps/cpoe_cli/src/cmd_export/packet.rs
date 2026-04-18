@@ -290,6 +290,9 @@ pub(super) fn build_wire_packet_from_events(
                     steps: iterations,
                     waypoint_interval: None,
                     waypoint_memory: None,
+                    reads_per_step: None,
+                    challenges: None,
+                    recursion_depth: None,
                 },
                 input,
                 merkle_root,
@@ -340,6 +343,7 @@ pub(super) fn build_wire_packet_from_events(
                 verifier_nonce: None,
                 lamport_signature: None,
                 lamport_pubkey_fingerprint: None,
+                posme_proof: None,
             };
             wire.checkpoint_hash = wire.compute_hash().map_err(|e| anyhow::anyhow!(e))?;
             Ok(wire)
@@ -377,6 +381,9 @@ pub(super) fn build_wire_packet_from_events(
         physical_liveness: None,
         baseline_verification: None,
         author_did: None,
+        document_content: None,
+        document_filename: None,
+        project_files: None,
     })
 }
 
