@@ -276,7 +276,7 @@ impl Verifier {
                         ))
                     })?;
                     let signed_digest: crate::baseline::BaselineDigest =
-                        ciborium::from_reader(&payload[..]).map_err(|e| {
+                        crate::codec::cbor::decode(&payload).map_err(|e| {
                             Error::Validation(format!(
                                 "Baseline digest_signature payload decode failed: {e}"
                             ))

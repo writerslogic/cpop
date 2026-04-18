@@ -312,7 +312,9 @@ impl EvidencePacketWire {
             }
         }
 
-        // Validate embedded document: content hash must match if present
+        // Validate embedded document: content hash must match if present.
+        // Only SHA-256 is supported — reject other algorithms to prevent
+        // hash comparison bypass via non-32-byte digest lengths.
         if let Some(ref content) = self.document_content {
             if content.len() > 100_000_000 {
                 return Err(CodecError::Validation(format!(
@@ -320,11 +322,16 @@ impl EvidencePacketWire {
                     content.len()
                 )));
             }
+            if self.document.content_hash.algorithm != super::enums::HashAlgorithm::Sha256 {
+                return Err(CodecError::Validation(
+                    "document_content requires SHA-256 content_hash for verification".into(),
+                ));
+            }
             use sha2::{Digest, Sha256};
             let hash: [u8; 32] = Sha256::digest(content.as_ref()).into();
-            if self.document.content_hash.digest.len() == 32
-                && hash[..] != self.document.content_hash.digest[..]
-            {
+            // Constant-time comparison to prevent oracle-based probing
+            use subtle::ConstantTimeEq;
+            if hash.ct_eq(&self.document.content_hash.digest).unwrap_u8() == 0 {
                 return Err(CodecError::Validation(
                     "document_content hash does not match document.content_hash".into(),
                 ));
