@@ -326,7 +326,7 @@ impl Sentinel {
     /// Rejects all-zero keys as invalid (likely uninitialized).
     pub fn set_signing_key(&self, key: SigningKey) {
         if key.to_bytes().iter().all(|&b| b == 0) {
-            log::warn!("Rejected all-zero signing key — likely uninitialized");
+            log::error!("Rejected all-zero signing key — likely uninitialized; evidence will not be signed");
             return;
         }
         let mut key_bytes = key.to_bytes();
@@ -593,10 +593,16 @@ impl Sentinel {
                         };
                         activity_accumulator.write_recover().add_sample(&sample);
 
-                        // EH-041: Add behavioral entropy to signing key to keep it hot
+                        // EH-041: Add behavioral entropy to signing key to keep it hot.
+                        // Hash the timestamp with a domain separator before feeding as
+                        // entropy to prevent raw timestamp recovery from signing outputs.
                         {
-                            let jitter_bytes = event.timestamp_ns.to_le_bytes();
-                            signing_key.write_recover().add_entropy(&jitter_bytes);
+                            use sha2::{Digest, Sha256};
+                            let mut hasher = Sha256::new();
+                            hasher.update(b"witnessd-keystroke-entropy-v1");
+                            hasher.update(&event.timestamp_ns.to_le_bytes());
+                            let entropy_hash = hasher.finalize();
+                            signing_key.write_recover().add_entropy(&entropy_hash[..8]);
                         }
 
                         if let Some(ref mut collector) = *voice_collector.write_recover() {
@@ -1032,13 +1038,10 @@ impl Sentinel {
                                                     }
                                                 }
                                             };
-                                            let store_and_path = signing_key_for_cp
-                                                .read_recover()
-                                                .key()
-                                                .and_then(|sk| {
-                                                    let db = writersproof_dir.join("events.db");
-                                                    crate::store::open_store_with_signing_key(&sk, &db).ok()
-                                                });
+                                            let store_and_path = sk_opt.as_ref().and_then(|sk| {
+                                                let db = writersproof_dir.join("events.db");
+                                                crate::store::open_store_with_signing_key(sk, &db).ok()
+                                            });
 
                                             let nonce_bytes_opt = challenge_nonce.as_ref().and_then(|nonce_hex| {
                                                 match hex::decode(nonce_hex) {
@@ -1397,17 +1400,17 @@ impl Drop for Sentinel {
             let _ = cap.stop();
         }
 
-        // Join bridge threads with a timeout to avoid blocking the tokio runtime.
-        // Bridge threads check the running flag on 100ms recv_timeout, so 200ms
-        // is sufficient for them to notice and exit.
+        // Join bridge threads with a tight timeout to minimize async runtime blocking.
+        // Bridge threads check the running flag on 100ms recv_timeout, so 50ms
+        // after signalling is sufficient for the in-flight recv to return.
         for handle in self.bridge_threads.lock_recover().drain(..) {
             let start = std::time::Instant::now();
             while !handle.is_finished() {
-                if start.elapsed() > std::time::Duration::from_millis(200) {
-                    log::warn!("Bridge thread did not exit within 200ms; detaching");
+                if start.elapsed() > std::time::Duration::from_millis(50) {
+                    log::warn!("Bridge thread did not exit within 50ms; detaching");
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
             if handle.is_finished() {
                 let _ = handle.join();
