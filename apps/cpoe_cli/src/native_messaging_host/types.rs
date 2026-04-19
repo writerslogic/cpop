@@ -46,6 +46,19 @@ pub(crate) enum Request {
         #[serde(default)]
         protocol_version: Option<u32>,
     },
+    SnapshotSave {
+        document_url: String,
+        content_hash: String,
+        char_count: u64,
+    },
+    AiContentCopied {
+        source: String,
+        char_count: u64,
+        timestamp: u64,
+    },
+    OpenView {
+        view: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +111,15 @@ pub(crate) enum Response {
     },
     Pong {
         version: String,
+    },
+    SnapshotSaved {
+        message: String,
+    },
+    AiCopyRecorded {
+        message: String,
+    },
+    ViewOpened {
+        message: String,
     },
     Error {
         message: String,

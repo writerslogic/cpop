@@ -636,3 +636,120 @@ pub(crate) fn handle_inject_jitter(intervals: Vec<u64>) -> Response {
 
     Response::JitterReceived { count: stored }
 }
+
+pub(crate) fn handle_snapshot_save(
+    document_url: String,
+    content_hash: String,
+    char_count: u64,
+) -> Response {
+    if let Err(e) = validate_content_hash(&content_hash) {
+        return Response::Error {
+            message: e,
+            code: "INVALID_HASH".into(),
+        };
+    }
+
+    // Browser snapshots: we only have the hash, not the plaintext.
+    // Record the hash + char count + URL as a checkpoint context note
+    // in the active session's evidence chain, not the snapshot store
+    // (which requires plaintext for encryption and version diffing).
+    let guard = session().lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(ref session) = *guard {
+        let note = format!(
+            "browser-snapshot url={} hash={} chars={}",
+            document_url,
+            &content_hash[..16],
+            char_count
+        );
+        let wal_path = session.evidence_path.join("browser_snapshots.jsonl");
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&wal_path)
+        {
+            let entry = serde_json::json!({
+                "document_url": document_url,
+                "content_hash": content_hash,
+                "char_count": char_count,
+                "timestamp": now_nanos(),
+                "session_id": session.id,
+                "checkpoint_count": session.checkpoint_count,
+            });
+            let _ = writeln!(f, "{}", entry);
+        }
+        Response::SnapshotSaved { message: note }
+    } else {
+        Response::Error {
+            message: "No active session".into(),
+            code: "NO_SESSION".into(),
+        }
+    }
+}
+
+pub(crate) fn handle_ai_content_copied(
+    source: String,
+    char_count: u64,
+    timestamp: u64,
+) -> Response {
+    // Record AI tool usage as a context note in the next checkpoint.
+    // This is part of the creative control attestation: declaring tool use
+    // strengthens the author's claim of editorial control.
+    let guard = session().lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(ref session) = *guard {
+        // Write to session evidence directory (included in evidence export)
+        let wal_path = session.evidence_path.join("tool_usage.jsonl");
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&wal_path)
+        {
+            let entry = serde_json::json!({
+                "type": "ai_content_copied",
+                "source": source,
+                "char_count": char_count,
+                "timestamp": timestamp,
+                "session_id": session.id,
+                "checkpoint_ordinal": session.checkpoint_count,
+            });
+            let _ = writeln!(f, "{}", entry);
+        }
+
+        // Notify the sentinel for real-time tracking
+        cpoe::ffi::sentinel_es::ffi_sentinel_es_ai_tool_detected(
+            source.clone(),
+            0,
+            0,
+            String::new(),
+        );
+
+        Response::AiCopyRecorded {
+            message: format!("Tool usage recorded: {source} ({char_count} chars)"),
+        }
+    } else {
+        Response::AiCopyRecorded {
+            message: "No active session; tool usage noted".into(),
+        }
+    }
+}
+
+pub(crate) fn handle_open_view(view: String) -> Response {
+    // Open the desktop app to a specific view via URL scheme
+    let url = format!("writersproof://view/{}", view);
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
+    Response::ViewOpened {
+        message: format!("Opening {view}"),
+    }
+}

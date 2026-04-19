@@ -10,12 +10,44 @@ pub(crate) const MAX_MESSAGE_LENGTH: usize = 1_048_576;
 pub(crate) const PROTOCOL_VERSION: u32 = 1;
 
 /// Allowed domains for browser extension sessions.
+/// Must match the host_permissions in the browser extension manifest.
 pub(crate) const ALLOWED_DOMAINS: &[&str] = &[
+    // Editors
     "docs.google.com",
     "www.overleaf.com",
     "medium.com",
     "notion.so",
     "www.notion.so",
+    "www.craft.do",
+    "coda.io",
+    "app.clickup.com",
+    "app.nuclino.com",
+    "stackedit.io",
+    "hackmd.io",
+    // Publishing
+    "substack.com",
+    "wordpress.com",
+    "ghost.io",
+    "write.as",
+    "www.wattpad.com",
+    "archiveofourown.org",
+    "www.scribophile.com",
+    // Writing tools
+    "hemingwayapp.com",
+    "quillbot.com",
+    "prowritingaid.com",
+    "app.grammarly.com",
+    "languagetool.org",
+    "www.deepl.com",
+    "www.writefull.com",
+    // Office
+    "docs.google.com",
+    "www.office.com",
+    "onedrive.live.com",
+    "www.icloud.com",
+    "www.dropbox.com",
+    // Collaboration
+    "pad.riseup.net",
 ];
 
 /// Return request type name without PII (document URLs/titles).
@@ -30,6 +62,9 @@ pub(crate) fn request_type_name(req: &Request) -> &'static str {
         Request::GetStatus => "GetStatus",
         Request::InjectJitter { .. } => "InjectJitter",
         Request::Ping { .. } => "Ping",
+        Request::SnapshotSave { .. } => "SnapshotSave",
+        Request::AiContentCopied { .. } => "AiContentCopied",
+        Request::OpenView { .. } => "OpenView",
     }
 }
 

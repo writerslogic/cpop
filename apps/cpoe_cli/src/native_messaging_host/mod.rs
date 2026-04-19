@@ -16,8 +16,8 @@ mod tests;
 pub(crate) mod types;
 
 use handlers::{
-    handle_checkpoint, handle_get_status, handle_inject_jitter, handle_start_session,
-    handle_stop_session,
+    handle_ai_content_copied, handle_checkpoint, handle_get_status, handle_inject_jitter,
+    handle_open_view, handle_snapshot_save, handle_start_session, handle_stop_session,
 };
 use protocol::{read_message, request_type_name, write_message, PROTOCOL_VERSION};
 use types::{Request, Response};
@@ -97,6 +97,17 @@ fn main() {
             Request::StopSession => handle_stop_session(),
             Request::GetStatus => handle_get_status(),
             Request::InjectJitter { intervals } => handle_inject_jitter(intervals),
+            Request::SnapshotSave {
+                document_url,
+                content_hash,
+                char_count,
+            } => handle_snapshot_save(document_url, content_hash, char_count),
+            Request::AiContentCopied {
+                source,
+                char_count,
+                timestamp,
+            } => handle_ai_content_copied(source, char_count, timestamp),
+            Request::OpenView { view } => handle_open_view(view),
             Request::Ping { protocol_version } => {
                 if let Some(v) = protocol_version {
                     if v != PROTOCOL_VERSION {
@@ -249,6 +260,17 @@ fn decrypt_and_dispatch(payload_b64: &str) -> anyhow::Result<Response> {
         Request::StopSession => handle_stop_session(),
         Request::GetStatus => handle_get_status(),
         Request::InjectJitter { intervals } => handle_inject_jitter(intervals),
+        Request::SnapshotSave {
+            document_url,
+            content_hash,
+            char_count,
+        } => handle_snapshot_save(document_url, content_hash, char_count),
+        Request::AiContentCopied {
+            source,
+            char_count,
+            timestamp,
+        } => handle_ai_content_copied(source, char_count, timestamp),
+        Request::OpenView { view } => handle_open_view(view),
         Request::Ping { .. } => Response::Pong {
             version: env!("CARGO_PKG_VERSION").into(),
         },
