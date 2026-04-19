@@ -272,6 +272,31 @@ header {
   background: var(--surface-hover);
 }
 
+/* Export button group */
+.export-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.export-group .btn-secondary {
+  flex: 1;
+  margin-bottom: 0;
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+/* Desktop mode link */
+.desktop-link {
+  color: var(--success);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.desktop-link:hover {
+  text-decoration: underline;
+}
+
 /* Standalone upgrade notice */
 .upgrade-notice {
   background: rgba(255, 167, 38, 0.06);
@@ -350,6 +375,18 @@ header {
   color: var(--text-muted);
   line-height: 1.4;
   margin-bottom: 0;
+}
+
+.desktop-link {
+  font-size: 11px;
+  color: var(--success);
+  text-decoration: none;
+  margin-top: 6px;
+  display: inline-block;
+}
+
+.desktop-link:hover {
+  text-decoration: underline;
 }
 
 /* System Status */

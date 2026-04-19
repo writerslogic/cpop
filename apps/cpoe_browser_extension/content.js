@@ -15,6 +15,17 @@
   const SITE_NOTION = "notion";
   const SITE_GENERIC = "generic";
 
+  // AI tool hostnames for copy-paste attribution tracking.
+  // Detecting copies from these sites lets the writer declare AI tool usage
+  // as part of their creative control attestation (not punitive).
+  const AI_TOOL_HOSTS = {
+    "chat.openai.com": "chatgpt",
+    "chatgpt.com": "chatgpt",
+    "claude.ai": "claude",
+    "gemini.google.com": "gemini",
+    "copilot.microsoft.com": "copilot",
+  };
+
   // O(1) action lookup instead of Array.includes
   const VALID_CONTENT_ACTIONS = new Set([
     "capture_state", "start", "stop", "stop_witnessing", "get_page_info"
@@ -24,6 +35,7 @@
   let lastCharCount = 0;
   let lastContentHash = "";
   let observerRetries = 0;
+  let contentTier = "enhanced"; // "core" | "enhanced" | "maximum"
 
   const JITTER_BATCH_SIZE = 50;
   const MIN_CHANGE_THRESHOLD = 5;
@@ -63,13 +75,20 @@
 
   let customDomainsList = [];
 
-  chrome.storage.local.get(["customDomains"], (result) => {
+  chrome.storage.local.get(["customDomains", "contentTier"], (result) => {
     customDomainsList = result.customDomains || [];
+    if (result.contentTier === "core" || result.contentTier === "maximum") {
+      contentTier = result.contentTier;
+    }
   });
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.customDomains) {
       customDomainsList = changes.customDomains.newValue || [];
       cachedSiteId = undefined;
+    }
+    if (changes.contentTier) {
+      const val = changes.contentTier.newValue;
+      contentTier = (val === "core" || val === "maximum") ? val : "enhanced";
     }
   });
 
@@ -96,10 +115,18 @@
     }
 
     for (const domain of customDomainsList) {
-      const pattern = domain.replace(/\*/g, "");
-      if (hostname === pattern || hostname.endsWith("." + pattern) || hostname.endsWith(pattern)) {
-        cachedSiteId = SITE_GENERIC;
-        return cachedSiteId;
+      if (domain.startsWith("*.")) {
+        const suffix = domain.slice(2);
+        if (suffix.split(".").length < 2) continue;
+        if (hostname === suffix || hostname.endsWith("." + suffix)) {
+          cachedSiteId = SITE_GENERIC;
+          return cachedSiteId;
+        }
+      } else {
+        if (hostname === domain) {
+          cachedSiteId = SITE_GENERIC;
+          return cachedSiteId;
+        }
       }
     }
 
@@ -274,6 +301,10 @@
   let changeDebounceTimer = null;
   let pendingMutationCount = 0;
 
+  // Maximum tier: mutation rate tracking
+  let mutationRateWindow = [];
+  const MUTATION_RATE_WINDOW_MS = 10_000;
+
   function handleContentChange() {
     if (!isWitnessing) return;
 
@@ -300,12 +331,23 @@
         const previousCount = lastCharCount;
         lastCharCount = charCount;
 
-        chrome.runtime.sendMessage({
+        const msg = {
           action: "content_changed",
           contentHash,
           charCount,
           delta: charCount - previousCount,
-        });
+        };
+
+        if (contentTier === "maximum") {
+          msg.documentTitle = getDocumentTitle();
+          const now = Date.now();
+          mutationRateWindow.push(now);
+          const cutoff = now - MUTATION_RATE_WINDOW_MS;
+          mutationRateWindow = mutationRateWindow.filter((t) => t > cutoff);
+          msg.mutationRate = mutationRateWindow.length;
+        }
+
+        chrome.runtime.sendMessage(msg);
       } catch (_) {
         // Will retry on next mutation
       }
@@ -361,7 +403,7 @@
   }
 
   function handleKeyDown() {
-    if (!isWitnessing) return;
+    if (!isWitnessing || contentTier === "core") return;
 
     jitterBuffer[jitterIndex++] = performance.now();
 
@@ -487,6 +529,23 @@
     origReplaceState.apply(this, args);
     spaNavHandler();
   };
+
+  // AI tool copy attribution: record when the user copies text from an AI site.
+  // This is declarative, not punitive — it documents tool usage for the attestation.
+  const aiSiteId = AI_TOOL_HOSTS[window.location.hostname];
+  if (aiSiteId) {
+    document.addEventListener("copy", () => {
+      const sel = window.getSelection();
+      const charCount = sel ? sel.toString().length : 0;
+      if (charCount === 0) return;
+      chrome.runtime.sendMessage({
+        action: "ai_content_copied",
+        source: aiSiteId,
+        charCount,
+        timestamp: Date.now(),
+      }).catch(() => {});
+    }, { passive: true });
+  }
 
   chrome.storage.local.get([storageKey(), "autoWitness"], (result) => {
     if (result[storageKey()] || (result.autoWitness && detectSite())) {

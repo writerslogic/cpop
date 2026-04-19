@@ -22,11 +22,11 @@
     <!-- First-run welcome (shown once, dismissed permanently) -->
     <section id="welcome" class="card welcome-card" hidden aria-label="Welcome">
       <div class="welcome-header">
-        <p class="welcome-heading">Prove you wrote it.</p>
+        <p class="welcome-heading">Build your authorship attestation.</p>
         <button id="welcome-dismiss" class="btn-dismiss" type="button" aria-label="Dismiss welcome">&times;</button>
       </div>
-      <p class="welcome-text">WritersProof captures cryptographic evidence of your writing process. Navigate to a supported editor (Google Docs, Overleaf, Medium, Notion, and more) and click <strong>Start Witnessing</strong>.</p>
-      <p class="welcome-text">Every keystroke interval and content change is hash-chained into tamper-proof evidence that you are the original author.</p>
+      <p class="welcome-text">WritersProof documents your creative control over your work. Navigate to a supported editor (Google Docs, Overleaf, Medium, Notion, and more) and click <strong>Start Witnessing</strong>.</p>
+      <p class="welcome-text">Every keystroke interval and content change is hash-chained into a cryptographic attestation of your authorship process.</p>
     </section>
 
     <!-- Desktop mode evidence strength (shown when connected to desktop app) -->
@@ -37,8 +37,9 @@
         </svg>
       </div>
       <div class="notice-content">
-        <p class="notice-title desktop-title">Full protection active</p>
+        <p class="notice-title desktop-title">Full attestation active</p>
         <p class="notice-text desktop-text">Hardware attestation, VDF time-proofs, Ed25519 signatures, and Secure Enclave binding via the desktop app.</p>
+        <a href="#" id="view-history" class="desktop-link">View Version History</a>
       </div>
     </div>
 
@@ -104,18 +105,26 @@
       </div>
       <div class="notice-content">
         <p class="notice-title">Browser-only mode</p>
-        <p class="notice-text">Evidence is stored locally with SHA-256 hash chains. For stronger proof with hardware attestation, VDF time-proofs, and Secure Enclave signing:</p>
+        <p class="notice-text">Lightweight browser-based attestation with SHA-256 hash chains. For hardware-backed attestation with VDF time-proofs and Secure Enclave signing:</p>
         <a href="https://writerslogic.com/download" target="_blank" rel="noopener" class="btn btn-upgrade">Get the Desktop App</a>
       </div>
     </aside>
 
     <!-- Export (standalone only) -->
-    <button id="btn-export" class="btn btn-secondary" type="button" hidden>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2"/>
-      </svg>
-      Export Evidence (JSON)
-    </button>
+    <div id="export-group" class="export-group" hidden>
+      <button id="btn-export" class="btn btn-secondary" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2"/>
+        </svg>
+        Export JSON
+      </button>
+      <button id="btn-export-html" class="btn btn-secondary" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M2 1h12v14H2zM5 5h6M5 8h6M5 11h4"/>
+        </svg>
+        Export HTML Report
+      </button>
+    </div>
 
     <!-- System Status -->
     <section class="system-status" aria-label="System statistics">

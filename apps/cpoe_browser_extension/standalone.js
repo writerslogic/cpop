@@ -298,6 +298,20 @@ async function standaloneRecordJitter(sessionId, intervals) {
   await txComplete(tx);
 }
 
+async function standaloneRecordAiCopy(sessionId, source, charCount, timestamp) {
+  if (!sessionId || !source) return;
+  const d = await openDB();
+  const tx = d.transaction(STORE_JITTER, "readwrite");
+  tx.objectStore(STORE_JITTER).put({
+    sessionId,
+    timestamp: timestamp || Date.now(),
+    type: "ai_copy",
+    source,
+    charCount: charCount || 0,
+  });
+  await txComplete(tx);
+}
+
 async function standaloneGetStatus(sessionId) {
   if (!sessionId) {
     return {
@@ -360,8 +374,8 @@ async function standaloneExportEvidence(sessionId) {
   const evidence = {
     version: 2,
     mode: "standalone",
-    trustLevel: "browser-only",
-    trustDescription: "SHA-256 hash chain with HMAC integrity; no hardware attestation or VDF proofs. Install the WritersProof desktop app for stronger evidence.",
+    trustLevel: "browser-attestation",
+    trustDescription: "Browser-based authorship attestation using SHA-256 hash chain with HMAC integrity and keystroke timing entropy. For hardware-backed attestation with Ed25519 signatures and VDF time-proofs, install the WritersProof desktop app.",
     chainIntegrity: chainValid ? "verified" : "broken",
     session: {
       id: session.id,

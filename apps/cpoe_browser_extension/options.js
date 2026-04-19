@@ -99,9 +99,16 @@ async function addCustomDomain() {
   // Normalize: strip protocol, trailing slashes
   raw = raw.replace(/^https?:\/\//, "").replace(/\/+$/, "");
 
-  // Validate: optional leading *. then valid domain segments
+  // Validate: optional leading *. then at least 2 non-wildcard domain segments
+  // (e.g., *.example.com is ok; *.com, *.*, or bare TLDs are rejected)
   if (!/^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(raw)) {
     elements.saveStatus.textContent = "Invalid domain format";
+    setTimeout(() => { elements.saveStatus.textContent = ""; }, 2000);
+    return;
+  }
+  const nonWildcard = raw.replace(/^\*\./, "");
+  if (nonWildcard.split(".").length < 2) {
+    elements.saveStatus.textContent = "Domain too broad (need at least name.tld)";
     setTimeout(() => { elements.saveStatus.textContent = ""; }, 2000);
     return;
   }

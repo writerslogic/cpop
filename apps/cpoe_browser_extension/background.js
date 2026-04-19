@@ -15,16 +15,19 @@ importScripts("secure-channel.js");
 const NATIVE_HOST_NAME = "com.writerslogic.witnessd";
 const PROTOCOL_VERSION = 1;
 const MIN_NATIVE_PROTOCOL_VERSION = 1;
-const CHECKPOINT_INTERVAL_MS = 30_000;
+const DEFAULT_CHECKPOINT_INTERVAL_MS = 30_000;
+const MIN_CHECKPOINT_INTERVAL_MS = 10_000;
+const MAX_CHECKPOINT_INTERVAL_MS = 300_000;
 const GENESIS_COMMITMENT_PREFIX = "CPoE-Genesis-v1";
 const COMMITMENT_CHAIN_INITIAL_ORDINAL = 2;
+const MAX_REHANDSHAKE_ATTEMPTS = 3;
 
 const CONTENT_ACTIONS = new Set([
   "start_witnessing", "stop_witnessing", "content_changed", "keystroke_jitter"
 ]);
 const VALID_ACTIONS = new Set([
   "start_witnessing", "stop_witnessing", "content_changed", "keystroke_jitter",
-  "get_status", "popup_connect", "export_evidence"
+  "ai_content_copied", "get_status", "popup_connect", "export_evidence", "open_desktop_app"
 ]);
 
 let nativePort = null;
@@ -36,6 +39,8 @@ let checkpointTimer = null;
 let operatingMode = "detecting";
 let standaloneSessionId = null;
 let nativeHostVersion = null;
+let checkpointIntervalMs = DEFAULT_CHECKPOINT_INTERVAL_MS;
+let rehandshakeAttempts = 0;
 
 // Feature capabilities — populated from native host handshake or defaults
 let capabilities = {
@@ -73,7 +78,7 @@ function detectNativeHost() {
           setStandaloneMode();
           broadcastToPopup({
             type: "error",
-            message: "Desktop app is outdated. Please update for full protection.",
+            message: "Desktop app is outdated. Please update for full attestation.",
           });
           return;
         }
@@ -137,7 +142,42 @@ function connectToNativeHost() {
       nativePort = null;
       isConnected = false;
       isConnecting = false;
-      updateBadge("!", "#e74c3c");
+      secureChannel = null;
+      rehandshakeAttempts = 0;
+
+      if (activeTabId && operatingMode === "native") {
+        console.warn("[CPoE] Native host disconnected mid-session; switching to standalone mode");
+        operatingMode = "standalone";
+        capabilities = {
+          hardwareAttestation: false,
+          vdfProofs: false,
+          secureEnclave: false,
+          secureChannel: false,
+          ed25519Signatures: false,
+          hashChain: true,
+          keystrokeJitter: true,
+        };
+        stopCheckpointTimer();
+        chrome.tabs.get(activeTabId, (tab) => {
+          const url = tab?.url || "";
+          const title = tab?.title || "";
+          standaloneStartSession(url, title).then((result) => {
+            standaloneSessionId = result.session_id;
+            chrome.storage.local.set({
+              _standaloneSessionId: standaloneSessionId,
+              _standaloneTabId: activeTabId,
+              _sessionStartTime: Date.now(),
+            });
+            startCheckpointTimer();
+            updateBadge("S", "#f39c12");
+            broadcastToPopup({ type: "session_update", ...result, active: true, mode: "standalone" });
+          }).catch(() => {
+            updateBadge("!", "#e74c3c");
+          });
+        });
+      } else {
+        updateBadge("!", "#e74c3c");
+      }
     });
 
     isConnected = true;
@@ -215,8 +255,30 @@ function handleNativeMessage(message) {
     case "encrypted":
       if (secureChannel && secureChannel.handshakeComplete) {
         secureChannel.decrypt(message).then((inner) => {
+          rehandshakeAttempts = 0;
           handleNativeMessage(inner);
-        }).catch(() => {});
+        }).catch((err) => {
+          const msg = err?.message || "";
+          const isDesync = msg.includes("Ratchet count desync")
+            || msg.includes("Sequence mismatch")
+            || msg.includes("decrypt");
+          if (isDesync && nativePort && rehandshakeAttempts < MAX_REHANDSHAKE_ATTEMPTS) {
+            rehandshakeAttempts++;
+            console.warn(
+              `[CPoE] Secure channel decrypt failed (attempt ${rehandshakeAttempts}/${MAX_REHANDSHAKE_ATTEMPTS}), re-handshaking: ${msg}`
+            );
+            secureChannel.destroy();
+            secureChannel = new SecureChannel();
+            secureChannel.performHandshake((m) => nativePort.postMessage(m)).catch(() => {
+              secureChannel = null;
+            });
+          } else if (rehandshakeAttempts >= MAX_REHANDSHAKE_ATTEMPTS) {
+            console.error("[CPoE] Secure channel re-handshake limit reached; falling back to plaintext");
+            secureChannel.destroy();
+            secureChannel = null;
+            rehandshakeAttempts = 0;
+          }
+        });
       }
       break;
 
@@ -236,6 +298,14 @@ function handleNativeMessage(message) {
     case "checkpoint_created":
       if (message.commitment) {
         prevCommitment = message.commitment;
+      }
+      if (message.document_url && message.content_hash) {
+        sendNativeMessage({
+          type: "snapshot_save",
+          document_url: message.document_url,
+          content_hash: message.content_hash,
+          char_count: message.char_count || 0,
+        });
       }
       updateBadge(String(message.checkpoint_count), "#2ecc71");
       broadcastToPopup({ type: "checkpoint_update", ...message });
@@ -340,11 +410,27 @@ chrome.storage.onChanged.addListener((changes) => {
     loadCustomDomains();
     syncCustomContentScripts(changes.customDomains.newValue || []);
   }
+  if (changes.checkpointInterval) {
+    const raw = changes.checkpointInterval.newValue;
+    const ms = typeof raw === "number"
+      ? Math.max(MIN_CHECKPOINT_INTERVAL_MS, Math.min(MAX_CHECKPOINT_INTERVAL_MS, raw * 1000))
+      : DEFAULT_CHECKPOINT_INTERVAL_MS;
+    checkpointIntervalMs = ms;
+    if (checkpointTimer) {
+      startCheckpointTimer();
+    }
+  }
 });
 
 loadCustomDomains();
-chrome.storage.local.get(["customDomains"], (result) => {
+chrome.storage.local.get(["customDomains", "checkpointInterval"], (result) => {
   syncCustomContentScripts(result.customDomains || []);
+  if (typeof result.checkpointInterval === "number") {
+    checkpointIntervalMs = Math.max(
+      MIN_CHECKPOINT_INTERVAL_MS,
+      Math.min(MAX_CHECKPOINT_INTERVAL_MS, result.checkpointInterval * 1000)
+    );
+  }
 });
 
 function isAllowedOrigin(url) {
@@ -372,6 +458,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabUrl = sender.tab?.url || sender.url || "";
     if (!sender.tab || !isAllowedOrigin(tabUrl)) {
       sendResponse({ ok: false, error: "Unauthorized origin" });
+      return true;
+    }
+  }
+
+  if (message.action === "ai_content_copied") {
+    if (!sender.tab) {
+      sendResponse({ ok: false, error: "Unauthorized sender" });
       return true;
     }
   }
@@ -446,6 +539,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
 
+    case "ai_content_copied":
+      sendNativeMessage({
+        type: "ai_content_copied",
+        source: message.source,
+        char_count: message.charCount,
+        timestamp: message.timestamp,
+      });
+      sendResponse({ ok: true });
+      break;
+
     case "get_status":
       sendNativeMessage({ type: "get_status" });
       sendResponse({ ok: true, connected: isConnected, mode: "native", capabilities });
@@ -458,6 +561,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case "export_evidence":
       sendResponse({ ok: false, error: "Export not available in native mode; use the desktop app" });
+      break;
+
+    case "open_desktop_app":
+      sendNativeMessage({ type: "open_view", view: message.view || "main" });
+      sendResponse({ ok: true });
       break;
 
     default:
@@ -475,7 +583,7 @@ function startCheckpointTimer() {
         stopCheckpointTimer();
       });
     }
-  }, CHECKPOINT_INTERVAL_MS);
+  }, checkpointIntervalMs);
 }
 
 function stopCheckpointTimer() {
@@ -630,6 +738,13 @@ async function handleStandaloneActionInner(message, sender, sendResponse) {
     case "keystroke_jitter":
       if (standaloneSessionId && message.intervals) {
         await standaloneRecordJitter(standaloneSessionId, message.intervals);
+      }
+      sendResponse({ ok: true, mode: "standalone" });
+      break;
+
+    case "ai_content_copied":
+      if (standaloneSessionId) {
+        await standaloneRecordAiCopy(standaloneSessionId, message.source, message.charCount, message.timestamp);
       }
       sendResponse({ ok: true, mode: "standalone" });
       break;
