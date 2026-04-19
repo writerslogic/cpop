@@ -52,9 +52,18 @@ pub(crate) fn handle_start_session(document_url: String, document_title: String)
         };
     }
 
+    let mut session_nonce = [0u8; 16];
+    if let Err(e) = getrandom::getrandom(&mut session_nonce) {
+        return Response::Error {
+            message: format!("CSPRNG failure: {e}"),
+            code: "CRYPTO_ERROR".into(),
+        };
+    }
+
     let mut hasher = Sha256::new();
     hasher.update(document_url.as_bytes());
     hasher.update(now_nanos().to_le_bytes());
+    hasher.update(session_nonce);
     let hash = hasher.finalize();
     let session_id = hex::encode(&hash[..8]);
 
@@ -116,14 +125,6 @@ pub(crate) fn handle_start_session(document_url: String, document_title: String)
                 .error_message
                 .unwrap_or_else(|| "initial checkpoint failed".into()),
             code: "CHECKPOINT_FAILED".into(),
-        };
-    }
-
-    let mut session_nonce = [0u8; 16];
-    if let Err(e) = getrandom::getrandom(&mut session_nonce) {
-        return Response::Error {
-            message: format!("CSPRNG failure: {e}"),
-            code: "CRYPTO_ERROR".into(),
         };
     }
 
@@ -657,6 +658,11 @@ pub(crate) fn handle_snapshot_save(
 
     let guard = session().lock().unwrap_or_else(|p| p.into_inner());
     if let Some(ref session) = *guard {
+        if session.document_url != document_url {
+            eprintln!(
+                "Warning: snapshot document_url differs from session (browser may have navigated)"
+            );
+        }
         let note = format!(
             "browser-snapshot url={} hash={} chars={}",
             document_url,
@@ -664,6 +670,13 @@ pub(crate) fn handle_snapshot_save(
             char_count
         );
         let wal_path = session.evidence_path.join("browser_snapshots.jsonl");
+        const MAX_JSONL_SIZE: u64 = 10 * 1024 * 1024;
+        if std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0) >= MAX_JSONL_SIZE {
+            return Response::Error {
+                message: "Snapshot buffer full".into(),
+                code: "BUFFER_FULL".into(),
+            };
+        }
         let entry = serde_json::json!({
             "document_url": document_url,
             "content_hash": content_hash,
@@ -706,10 +719,27 @@ pub(crate) fn handle_ai_content_copied(
         .find(|s| source.eq_ignore_ascii_case(s))
         .map(|s| s.to_string())
         .unwrap_or_else(|| "unknown".to_string());
+    let now_ns = now_nanos();
+    let timestamp = {
+        let one_day_ago = now_ns.saturating_sub(86_400_000_000_000);
+        let one_min_ahead = now_ns.saturating_add(60_000_000_000);
+        if timestamp < one_day_ago || timestamp > one_min_ahead {
+            now_ns
+        } else {
+            timestamp
+        }
+    };
     let guard = session().lock().unwrap_or_else(|p| p.into_inner());
     if let Some(ref session) = *guard {
         // Write to session evidence directory (included in evidence export)
         let wal_path = session.evidence_path.join("tool_usage.jsonl");
+        const MAX_JSONL_SIZE: u64 = 10 * 1024 * 1024;
+        if std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0) >= MAX_JSONL_SIZE {
+            return Response::Error {
+                message: "Snapshot buffer full".into(),
+                code: "BUFFER_FULL".into(),
+            };
+        }
         let entry = serde_json::json!({
             "type": "ai_content_copied",
             "source": sanitized_source,
