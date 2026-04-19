@@ -315,7 +315,7 @@ pub fn generate_pink_noise(length: usize, seed: u64) -> Vec<f64> {
     let mut state = seed;
     let mut next_random = || {
         state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        ((state >> 33) as f64 / u32::MAX as f64) * 2.0 - 1.0
+        (state >> 33) as f64 / ((1u64 << 30) as f64) - 1.0
     };
 
     let num_octaves = 8;
