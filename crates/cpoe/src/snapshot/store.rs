@@ -97,9 +97,21 @@ impl SnapshotStore {
         let word_count = count_words(plaintext);
         let mut timestamp_ns = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
-        // Ensure monotonicity: if clock went backward, use last timestamp + 1
-        let last_ts: i64 = self
-            .conn
+        // Encrypt outside the transaction (CPU-bound, don't hold the DB lock).
+        // Deterministic encryption means same content always produces the same
+        // ciphertext, so INSERT OR IGNORE safely handles concurrent inserts.
+        let encrypted = crypto::encrypt_blob(
+            &self.signing_key_bytes,
+            &content_hash,
+            plaintext_bytes,
+        )?;
+
+        // Atomic: monotonicity check + blob insert + meta insert
+        let tx = self.conn.transaction()
+            .map_err(|e| format!("transaction begin failed: {e}"))?;
+
+        // Monotonicity inside transaction to prevent concurrent timestamp collisions
+        let last_ts: i64 = tx
             .query_row(
                 "SELECT MAX(timestamp_ns) FROM snapshot_meta WHERE document_path = ?",
                 params![document_path],
@@ -110,44 +122,18 @@ impl SnapshotStore {
             timestamp_ns = last_ts + 1;
         }
 
-        // Encrypt outside the transaction (CPU-bound, don't hold the DB lock)
-        let blob_exists: bool = self
-            .conn
-            .query_row(
-                "SELECT 1 FROM snapshot_blobs WHERE content_hash = ?",
-                params![&content_hash[..]],
-                |_| Ok(true),
-            )
-            .unwrap_or(false);
-
-        let encrypted = if !blob_exists {
-            Some(crypto::encrypt_blob(
-                &self.signing_key_bytes,
-                &content_hash,
-                plaintext_bytes,
-            )?)
-        } else {
-            None
-        };
-
-        // Atomic: blob insert (if needed) + meta insert
-        let tx = self.conn.transaction()
-            .map_err(|e| format!("transaction begin failed: {e}"))?;
-
-        if let Some(ref enc) = encrypted {
-            tx.execute(
-                "INSERT OR IGNORE INTO snapshot_blobs \
-                 (content_hash, encrypted_data, original_size, compressed_size) \
-                 VALUES (?, ?, ?, ?)",
-                params![
-                    &content_hash[..],
-                    enc.as_slice(),
-                    plaintext_bytes.len() as i64,
-                    enc.len() as i64,
-                ],
-            )
-            .map_err(|e| format!("blob insert failed: {e}"))?;
-        }
+        tx.execute(
+            "INSERT OR IGNORE INTO snapshot_blobs \
+             (content_hash, encrypted_data, original_size, compressed_size) \
+             VALUES (?, ?, ?, ?)",
+            params![
+                &content_hash[..],
+                encrypted.as_slice(),
+                plaintext_bytes.len() as i64,
+                encrypted.len() as i64,
+            ],
+        )
+        .map_err(|e| format!("blob insert failed: {e}"))?;
 
         tx.execute(
             "INSERT INTO snapshot_meta \
@@ -189,10 +175,13 @@ impl SnapshotStore {
         let mapped = stmt
             .query_map(params![document_path], |row| {
                 let hash_vec: Vec<u8> = row.get(2)?;
-                let mut content_hash = [0u8; 32];
-                if hash_vec.len() == 32 {
-                    content_hash.copy_from_slice(&hash_vec);
+                if hash_vec.len() != 32 {
+                    return Err(rusqlite::Error::InvalidColumnType(
+                        2, "content_hash".into(), rusqlite::types::Type::Blob,
+                    ));
                 }
+                let mut content_hash = [0u8; 32];
+                content_hash.copy_from_slice(&hash_vec);
                 Ok(SnapshotMeta {
                     id: row.get(0)?,
                     document_path: row.get(1)?,
@@ -330,38 +319,28 @@ impl SnapshotStore {
 
         let now_ns = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
-        // Encrypt blobs outside transaction
-        let current_enc = if !self.blob_exists(&current_hash)? {
-            Some(crypto::encrypt_blob(&self.signing_key_bytes, &current_hash, current_bytes)?)
-        } else {
-            None
-        };
-        let restored_enc = if !self.blob_exists(&restored_hash)? {
-            Some(crypto::encrypt_blob(&self.signing_key_bytes, &restored_hash, restored_bytes)?)
-        } else {
-            None
-        };
+        // Encrypt outside transaction (CPU-bound). Deterministic encryption
+        // means INSERT OR IGNORE safely handles concurrent inserts.
+        let current_enc = crypto::encrypt_blob(&self.signing_key_bytes, &current_hash, current_bytes)?;
+        let restored_enc = crypto::encrypt_blob(&self.signing_key_bytes, &restored_hash, restored_bytes)?;
 
-        // Atomic: insert both blobs (if needed) + both meta rows
+        // Atomic: both blobs + both meta rows
         let tx = self.conn.transaction()
             .map_err(|e| format!("restore transaction begin failed: {e}"))?;
 
-        if let Some(ref enc) = current_enc {
-            tx.execute(
-                "INSERT OR IGNORE INTO snapshot_blobs \
-                 (content_hash, encrypted_data, original_size, compressed_size) \
-                 VALUES (?, ?, ?, ?)",
-                params![&current_hash[..], enc.as_slice(), current_bytes.len() as i64, enc.len() as i64],
-            ).map_err(|e| format!("restore: current blob insert failed: {e}"))?;
-        }
-        if let Some(ref enc) = restored_enc {
-            tx.execute(
-                "INSERT OR IGNORE INTO snapshot_blobs \
-                 (content_hash, encrypted_data, original_size, compressed_size) \
-                 VALUES (?, ?, ?, ?)",
-                params![&restored_hash[..], enc.as_slice(), restored_bytes.len() as i64, enc.len() as i64],
-            ).map_err(|e| format!("restore: target blob insert failed: {e}"))?;
-        }
+        tx.execute(
+            "INSERT OR IGNORE INTO snapshot_blobs \
+             (content_hash, encrypted_data, original_size, compressed_size) \
+             VALUES (?, ?, ?, ?)",
+            params![&current_hash[..], current_enc.as_slice(), current_bytes.len() as i64, current_enc.len() as i64],
+        ).map_err(|e| format!("restore: current blob insert failed: {e}"))?;
+
+        tx.execute(
+            "INSERT OR IGNORE INTO snapshot_blobs \
+             (content_hash, encrypted_data, original_size, compressed_size) \
+             VALUES (?, ?, ?, ?)",
+            params![&restored_hash[..], restored_enc.as_slice(), restored_bytes.len() as i64, restored_enc.len() as i64],
+        ).map_err(|e| format!("restore: target blob insert failed: {e}"))?;
 
         // Pre-restore save (is_restore=false)
         tx.execute(

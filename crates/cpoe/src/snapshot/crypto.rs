@@ -38,6 +38,11 @@ pub fn encrypt_blob(
     content_hash: &[u8; 32],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, String> {
+    const MAX_SNAPSHOT_SIZE: usize = 100 * 1024 * 1024;
+    if plaintext.len() > MAX_SNAPSHOT_SIZE {
+        return Err("snapshot too large (>100 MB)".to_string());
+    }
+
     let actual_hash: [u8; 32] = Sha256::digest(plaintext).into();
     if actual_hash != *content_hash {
         return Err("content hash does not match plaintext".to_string());
@@ -80,8 +85,13 @@ pub fn decrypt_blob(
 
     key.zeroize();
 
+    const MAX_SNAPSHOT_SIZE: usize = 100 * 1024 * 1024;
     let plaintext = zstd::decode_all(compressed.as_slice())
         .map_err(|e| format!("zstd decompress failed: {e}"))?;
+
+    if plaintext.len() > MAX_SNAPSHOT_SIZE {
+        return Err("decompressed snapshot exceeds size limit".to_string());
+    }
 
     let actual_hash: [u8; 32] = Sha256::digest(&plaintext).into();
     if actual_hash != *content_hash {
