@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WritersProof</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container" role="main">
+    <header role="banner">
+      <div class="logo">
+        <img src="icons/icon-32.png" alt="WritersProof" width="24" height="24">
+        <h1>WritersProof</h1>
+      </div>
+      <div class="header-badges" aria-live="polite">
+        <span id="mode-badge" class="badge" role="status" aria-label="Operating mode"></span>
+        <span id="connection-badge" class="badge disconnected" role="status" aria-label="Connection status">Detecting...</span>
+      </div>
+    </header>
+
+    <!-- First-run welcome (shown once, dismissed permanently) -->
+    <section id="welcome" class="card welcome-card" hidden aria-label="Welcome">
+      <div class="welcome-header">
+        <p class="welcome-heading">Build your authorship attestation.</p>
+        <button id="welcome-dismiss" class="btn-dismiss" type="button" aria-label="Dismiss welcome">&times;</button>
+      </div>
+      <p class="welcome-text">WritersProof documents your creative control over your work. Navigate to a supported editor (Google Docs, Overleaf, Medium, Notion, and more) and click <strong>Start Witnessing</strong>.</p>
+      <p class="welcome-text">Every keystroke interval and content change is hash-chained into a cryptographic attestation of your authorship process.</p>
+    </section>
+
+    <!-- Desktop mode evidence strength (shown when connected to desktop app) -->
+    <div id="desktop-notice" class="notice desktop-notice" hidden role="note" aria-label="Desktop mode active">
+      <div class="notice-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm1 11H7v2h2v-2zm0-8H7v6h2V3z"/>
+        </svg>
+      </div>
+      <div class="notice-content">
+        <p class="notice-title desktop-title">Full attestation active</p>
+        <p class="notice-text desktop-text">Hardware attestation, VDF time-proofs, Ed25519 signatures, and Secure Enclave binding via the desktop app.</p>
+        <a href="#" id="view-history" class="desktop-link">View Version History</a>
+      </div>
+    </div>
+
+    <!-- Status Section -->
+    <section id="status-section" aria-label="Session status">
+      <div id="no-session" class="card" role="status">
+        <p class="muted">No active witnessing session</p>
+        <p class="hint">Navigate to a supported document editor to begin.</p>
+      </div>
+
+      <div id="active-session" class="card" hidden role="status" aria-live="polite">
+        <div class="session-header">
+          <span class="dot active" aria-hidden="true"></span>
+          <span id="session-title" class="session-title">Untitled</span>
+        </div>
+        <div class="stats" role="group" aria-label="Session statistics">
+          <div class="stat">
+            <span class="stat-value" id="checkpoint-count" aria-describedby="lbl-checkpoints">0</span>
+            <span class="stat-label" id="lbl-checkpoints">Checkpoints</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="char-count" aria-describedby="lbl-characters">0</span>
+            <span class="stat-label" id="lbl-characters">Characters</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session summary (shown after stopping) -->
+      <div id="session-summary" class="card summary-card" hidden role="status" aria-live="polite">
+        <p class="summary-heading">Session complete</p>
+        <div class="summary-stats">
+          <span id="summary-checkpoints">0 checkpoints</span>
+          <span class="summary-sep" aria-hidden="true">&middot;</span>
+          <span id="summary-duration">0 min</span>
+        </div>
+        <p class="summary-detail" id="summary-evidence-note"></p>
+      </div>
+    </section>
+
+    <!-- Controls -->
+    <section class="controls" aria-label="Witnessing controls">
+      <button id="btn-start" class="btn btn-primary" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M4 2l10 6-10 6V2z"/>
+        </svg>
+        Start Witnessing
+      </button>
+      <button id="btn-stop" class="btn btn-danger" type="button" hidden>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <rect x="3" y="3" width="10" height="10" rx="1"/>
+        </svg>
+        Stop Witnessing
+      </button>
+    </section>
+
+    <!-- Standalone upgrade prompt (always visible in standalone mode) -->
+    <aside id="standalone-notice" class="notice upgrade-notice" hidden role="note" aria-label="Standalone mode notice">
+      <div class="notice-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1a1 1 0 0 1 .78.375l6 7.5A1 1 0 0 1 14 10.5H2a1 1 0 0 1-.78-1.625l6-7.5A1 1 0 0 1 8 1z"/>
+          <rect x="7" y="11.5" width="2" height="3.5" rx="1"/>
+        </svg>
+      </div>
+      <div class="notice-content">
+        <p class="notice-title">Browser-only mode</p>
+        <p class="notice-text">Lightweight browser-based attestation with SHA-256 hash chains. For hardware-backed attestation with VDF time-proofs and Secure Enclave signing:</p>
+        <a href="https://writerslogic.com/download" target="_blank" rel="noopener" class="btn btn-upgrade">Get the Desktop App</a>
+      </div>
+    </aside>
+
+    <!-- Export (standalone only) -->
+    <div id="export-group" class="export-group" hidden>
+      <button id="btn-export" class="btn btn-secondary" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 1v9M4 6l4 4 4-4M2 12v2h12v-2"/>
+        </svg>
+        Export JSON
+      </button>
+      <button id="btn-export-html" class="btn btn-secondary" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M2 1h12v14H2zM5 5h6M5 8h6M5 11h4"/>
+        </svg>
+        Export HTML Report
+      </button>
+    </div>
+
+    <!-- System Status -->
+    <section class="system-status" aria-label="System statistics">
+      <div class="status-row">
+        <span class="status-label" id="lbl-total-files">Total files tracked</span>
+        <span class="status-value" id="total-files" aria-labelledby="lbl-total-files">--</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label" id="lbl-total-checkpoints">Total checkpoints</span>
+        <span class="status-value" id="total-checkpoints" aria-labelledby="lbl-total-checkpoints">--</span>
+      </div>
+    </section>
+
+    <!-- Error Display -->
+    <div id="error-banner" class="error-banner" hidden role="alert" aria-live="assertive">
+      <span id="error-message"></span>
+      <button id="error-dismiss" class="btn-dismiss" type="button" aria-label="Dismiss error">&times;</button>
+    </div>
+
+    <footer role="contentinfo">
+      <a href="#" id="open-options">Settings</a>
+      <a href="https://writerslogic.com/help" target="_blank" rel="noopener" class="footer-link">Help</a>
+      <span class="version" id="ext-version" aria-label="Extension version"></span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

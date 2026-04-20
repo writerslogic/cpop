@@ -1,0 +1,141 @@
+{
+  "manifest_version": 3,
+  "name": "WritersProof",
+  "version": "1.0.0",
+  "description": "Prove you wrote it. WritersProof captures cryptographic evidence of your writing process in Google Docs, Overleaf, Medium, and more.",
+  "homepage_url": "https://writerslogic.com",
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "host_permissions": [
+    "https://docs.google.com/*",
+    "https://www.overleaf.com/*",
+    "https://medium.com/*",
+    "https://notion.so/*",
+    "https://www.notion.so/*",
+    "https://www.craft.do/*",
+    "https://coda.io/*",
+    "https://app.clickup.com/*",
+    "https://app.nuclino.com/*",
+    "https://stackedit.io/*",
+    "https://hackmd.io/*",
+    "https://hemingwayapp.com/*",
+    "https://quillbot.com/*",
+    "https://prowritingaid.com/*",
+    "https://app.prowritingaid.com/*",
+    "https://app.grammarly.com/*",
+    "https://languagetool.org/*",
+    "https://www.deepl.com/write*",
+    "https://writefull.com/*",
+    "https://www.jasper.ai/*",
+    "https://app.copy.ai/*",
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://www.bing.com/chat*",
+    "https://copilot.microsoft.com/*",
+    "https://docs.google.com/*",
+    "https://www.icloud.com/pages/*",
+    "https://www.office.com/*",
+    "https://onedrive.live.com/*",
+    "https://www.dropbox.com/scl/*",
+    "https://www.wattpad.com/*",
+    "https://archiveofourown.org/*",
+    "https://www.scribophile.com/*",
+    "https://reedsy.com/*",
+    "https://www.penana.com/*",
+    "https://prosemirror.net/*",
+    "https://*.etherpad.org/*",
+    "https://pad.riseup.net/*",
+    "https://write.as/*",
+    "https://wordpress.com/*",
+    "https://*.wordpress.com/*",
+    "https://*.ghost.io/*",
+    "https://substack.com/*",
+    "https://*.substack.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://docs.google.com/document/*",
+        "https://www.overleaf.com/project/*",
+        "https://medium.com/p/*",
+        "https://medium.com/new-story*",
+        "https://notion.so/*",
+        "https://www.notion.so/*",
+        "https://www.craft.do/*",
+        "https://coda.io/d/*",
+        "https://app.clickup.com/*/docs/*",
+        "https://app.nuclino.com/*",
+        "https://stackedit.io/app*",
+        "https://hackmd.io/*",
+        "https://hemingwayapp.com/*",
+        "https://quillbot.com/*",
+        "https://prowritingaid.com/*",
+        "https://app.prowritingaid.com/*",
+        "https://app.grammarly.com/*",
+        "https://languagetool.org/*",
+        "https://www.deepl.com/write*",
+        "https://writefull.com/*",
+        "https://www.jasper.ai/*",
+        "https://app.copy.ai/*",
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://www.bing.com/chat*",
+        "https://copilot.microsoft.com/*",
+        "https://www.icloud.com/pages/*",
+        "https://www.office.com/*",
+        "https://onedrive.live.com/*",
+        "https://www.dropbox.com/scl/*",
+        "https://www.wattpad.com/*",
+        "https://archiveofourown.org/*",
+        "https://www.scribophile.com/*",
+        "https://reedsy.com/*",
+        "https://www.penana.com/*",
+        "https://*.etherpad.org/p/*",
+        "https://pad.riseup.net/p/*",
+        "https://write.as/*",
+        "https://wordpress.com/post/*",
+        "https://*.wordpress.com/wp-admin/post*",
+        "https://*.ghost.io/ghost/*",
+        "https://*.substack.com/publish/post/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'none'; object-src 'none'; base-uri 'none'"
+  }
+}
