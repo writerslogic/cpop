@@ -192,11 +192,18 @@ impl HybridEngine {
         }
     }
 
+    /// Set the minimum entropy bits required for hardware sampling.
+    ///
+    /// Values above hardware capability cause `sample()` to always use pure fallback.
     pub fn with_min_entropy(mut self, bits: u8) -> Self {
         self.min_phys_entropy = bits;
         self
     }
 
+    /// Sample jitter, preferring hardware entropy with pure HMAC fallback.
+    ///
+    /// Returns `(jitter_us, evidence)`. Falls back to pure jitter when hardware
+    /// entropy is unavailable or below [`with_min_entropy`](Self::with_min_entropy).
     pub fn sample(&self, secret: &[u8; 32], inputs: &[u8]) -> Result<(Jitter, Evidence), Error> {
         match self.phys.sample(inputs) {
             Ok(entropy)
@@ -216,6 +223,9 @@ impl HybridEngine {
         }
     }
 
+    /// Probe whether the hardware entropy source is available.
+    ///
+    /// Performs one sample attempt and returns `true` on success.
     pub fn phys_available(&self) -> bool {
         self.phys.sample(b"probe").is_ok()
     }
@@ -277,8 +287,7 @@ impl Session {
     }
 
     pub fn validate(&self) -> ValidationResult {
-        let jitters: Vec<Jitter> = self.evidence.records().iter().map(|e| e.jitter()).collect();
-        self.model.validate(&jitters)
+        self.model.validate_records(self.evidence.records())
     }
 
     pub fn phys_ratio(&self) -> f64 {

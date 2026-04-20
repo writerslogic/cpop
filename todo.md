@@ -1873,3 +1873,239 @@ pub enum SecureChannelSendError {
 - [x] **M-107** `[security]` `ffi/sentinel.rs:110`: std::mem::take on Zeroizing<Vec<u8>> -- FIXED 2026-04-11 (changed set_hmac_key to accept Zeroizing<Vec<u8>>; callers pass the wrapper directly)
   <!-- pid:key_zeroize_inconsistency | first:2026-04-08 -->
   Impact: `mem::take` moves the inner `Vec` out of the `Zeroizing` wrapper; the wrapper's drop now zeroizes an empty allocation. The actual HMAC key bytes are only zeroized if `SecureStore` explicitly does so. | Fix: Pass the key by reference if `SecureStore::open` accepts `&[u8]`; otherwise manually call `.zeroize()` after the key has been consumed.
+
+---
+
+## Delta Scan: 2026-04-20 (24 changed files, 6 batches)
+
+### CRITICAL-007: Integer underflow in posme verifier on step_id=0
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/posme/src/verifier.rs:206`
+- **Severity:** CRITICAL | **Leverage:** HIGH | **Status:** rejected 2026-04-20 (false positive: derive_challenges() line 52 generates step=val+1, always >=1; line 149 equality check rejects any proof with non-matching step_ids)
+- **Description:** `step as usize - 1` panics when step_id is 0. Untrusted proof can craft step_id=0 to crash verifier.
+- **Root cause:** No bounds validation on step_id before subtraction.
+- **Fix:** Add bounds check: `if sp.step_id < 1 || sp.step_id > ctx.k { return Err(...) }` or use `checked_sub(1)`.
+
+---
+
+### CRITICAL-008: Panic on malformed proof in posme verifier unwrap
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/posme/src/verifier.rs:174`
+- **Severity:** CRITICAL | **Leverage:** HIGH | **Status:** rejected 2026-04-20 (false positive: sorted_transcripts built from proof.challenged_steps at line 158-160; find() at line 173 searches same collection for element that came from it; always succeeds)
+- **Description:** `.find(...).unwrap()` panics if proof.challenged_steps doesn't contain expected step_id. Untrusted proof data triggers panic.
+- **Root cause:** Missing error handling at trust boundary.
+- **Fix:** Replace `.unwrap()` with `.ok_or_else(|| PosmeError::VerificationFailed(...))?`
+
+---
+
+### CRITICAL-009: Intermediate HMAC key hash not zeroized in crypto.rs
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/crypto.rs:73`
+- **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: key parameter is packet_id per comment line 60-61, not secret material; SHA-256 of non-secret input has no confidentiality requirement)
+- **Description:** `Sha256::digest(key)` intermediate GenericArray is not zeroized before moving into `Zeroizing`. Hash of key material persists in memory.
+- **Root cause:** Sha256::digest returns temporary that lives until end of statement but isn't explicitly wiped.
+- **Fix:** Use `Sha256::new().chain_update(key).finalize()` with explicit zeroize, or wrap entire derivation in Zeroizing scope.
+
+---
+
+### SYS-032: FFI unwrap on PathBuf::to_str() (3 instances)
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/cpoe/src/ffi/sentinel_config.rs:135,167,206`
+- **Severity:** CRITICAL | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: all 3 sites are inside #[cfg(test)] mod tests at line 126; test code panicking is standard Rust practice)
+- **Description:** `.unwrap()` on `PathBuf::to_str()` in FFI functions. Non-UTF8 paths cause panic across FFI boundary (UB).
+- **Fix:** Replace with `.map_err()` returning `FfiResult::err()`.
+- **Closes:** 3 per-site instances
+
+---
+
+### H-181: Non-constant-time enum comparison in ct_eq
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/rfc/mod.rs:121`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** rejected 2026-04-20 (false positive: algorithm is public metadata, not secret; timing on 1-byte enum discriminant reveals nothing attacker doesn't already know from serialized structure)
+- **Description:** `ct_eq()` uses `==` for algorithm enum before constant-time digest comparison. Side-channel leaks algorithm selection.
+- **Fix:** Compare algorithm discriminant in constant-time: `(self.algorithm as u64).ct_eq(&(other.algorithm as u64))`
+
+---
+
+### H-182: Unbounded CBOR deserialization in COSE verification
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/crypto.rs:156`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Description:** `CoseSign1::from_slice()` deserializes untrusted CBOR without size limit. Oversized payloads cause OOM/DoS.
+- **Fix:** Add size check before parsing: reject if `cose_data.len() > MAX_COSE_SIZE` (e.g., 1MB).
+
+---
+
+### H-183: Float division bounds in VDF spec validation
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/rfc/vdf.rs:97`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: both operands guaranteed >0 by prior match guard line 91 `Some(v) if v > 0` and line 94 check; division of positive u64-as-f64 cannot produce NaN/-Inf)
+- **Description:** Division in `is_duration_within_spec_bounds()` can produce -Infinity/NaN if expected becomes negative after unsigned wrap.
+- **Fix:** Add guard: `if expected <= 0 { return false; }`
+
+---
+
+### H-184: Validation bypass via usize::MAX fallback in packet.rs
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/authorproof-protocol/src/rfc/packet.rs:496`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: logic reversed; unwrap_or(usize::MAX) causes size check to ALWAYS trigger on serialization failure, correctly rejecting unserializable extensions)
+- **Description:** `serde_json::to_vec(v).unwrap_or(usize::MAX)` silently accepts extensions that cannot be serialized. Validation bypass.
+- **Fix:** Return error on JSON encoding failure instead of falling through.
+
+---
+
+### H-185: expect() panic in cpoe-jitter HMAC evidence chain (2 sites)
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/cpoe-jitter/src/evidence.rs:301,329`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: HMAC-SHA256 accepts ANY key size per RFC 2104; with &[u8; 32] input this is provably infallible; .expect() documents an invariant)
+- **Description:** `.expect("HMAC accepts any key size")` in append() and verify_integrity(). Library panic on construction; no_std makes panics fatal.
+- **Fix:** Replace with `debug_assert!` or propagate Result. HMAC key size is guaranteed valid, but library code must not panic.
+
+---
+
+### H-186: Non-constant-time comparisons in posme verifier (2 sites)
+
+- **Model:** Sonnet | **Scope:** security
+- **Files:** `crates/posme/src/verifier.rs:34,149`
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** rejected 2026-04-20 (false positive: both compared values are public/deterministic; Merkle commitment is in the proof; challenge indices are derived from public data; no secret to leak via timing)
+- **Description:** Merkle root comparison and proof step_ids comparison use `==` (early-exit). Timing side-channel leaks proof structure.
+- **Fix:** Use `subtle::ConstantTimeEq` for hash comparisons and proof data.
+
+---
+
+### H-187: Integer overflow in posme prover/verifier capacity (2 sites)
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/posme/src/prover.rs:215`, `crates/posme/src/verifier.rs:76`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-20 (added MAX_TOTAL_STEPS = 1<<28 bound in params.validate(); prevents OOM/overflow at parameter validation time before any allocation)
+- **Description:** `k as usize + 1` without overflow check. If k = u32::MAX, panic or memory exhaustion.
+- **Fix:** Use `k.checked_add(1).ok_or_else(|| PosmeError::InvalidParams(...))?`
+
+---
+
+### H-188: Silent corruption skip in snapshot store
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/cpoe/src/snapshot/store.rs:201`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Description:** Corrupt snapshot rows silently skipped with log::warn(). Caller cannot distinguish empty result from partial corruption.
+- **Fix:** Return corruption count in result or propagate error.
+
+---
+
+### H-189: Timestamp fallback to 0 in snapshot store (2 sites)
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/cpoe/src/snapshot/store.rs:98,320`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: timestamp_nanos_opt() returns None only for dates outside 1677-2262; cannot fail for current date; monotonicity safety net at line 121 provides additional protection)
+- **Description:** `timestamp_nanos_opt().unwrap_or(0)` loses ordering info. Snapshots with timestamp=0 break monotonicity checks.
+- **Fix:** Return Err() if timestamp acquisition fails.
+
+---
+
+### H-190: Unbounded base64 deserialization in compact_ref
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/compact_ref.rs:133`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: CompactRef has fixed-shape struct with no Vec/HashMap; deserialization is naturally bounded by struct schema; malformed JSON fails immediately)
+- **Description:** `from_base64_uri` decodes and deserializes without size limit. Oversized URIs cause OOM.
+- **Fix:** Add size check: reject if `decoded.len() > MAX_COMPACT_REF_SIZE` (e.g., 10KB).
+
+---
+
+### H-191: No entropy_bits bounds validation on deserialized evidence
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/cpoe-jitter/src/evidence.rs:196`
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: entropy_bits is informational metadata covered by HMAC integrity verification; can't be modified without invalidating chain; informational only, doesn't control allocations or security decisions)
+- **Description:** TryFrom validation doesn't check entropy_bits bounds. Untrusted deserialized data could claim 255 bits.
+- **Fix:** Add bounds check: `if record.entropy_bits > 64 { return Err(...) }`
+
+---
+
+### H-192: Unbounded entropy estimate without clamp
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/cpoe-jitter/src/phys.rs:258,308`
+- **Severity:** HIGH | **Leverage:** LOW | **Status:** rejected 2026-04-20 (false positive: caller at line 186 already applies .min(MAX_ENTROPY_BITS) after taking minimum of both estimates; bounding is the caller's responsibility and is implemented)
+- **Description:** `mcv_min_entropy()` and `markov_min_entropy()` return `-log2(p)` without upper bound clamp. Can exceed 64 bits.
+- **Fix:** Add `.min(64.0)` clamp before returning.
+
+---
+
+### M-108: Misleading error type in compact_ref CBOR encoding
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/authorproof-protocol/src/compact_ref.rs:115`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** CBOR encoding error mapped to `InvalidJson` variant. Confusing diagnostic for ciborium failures.
+- **Fix:** Add `CborEncoding` variant or rename to `SerializationError`.
+
+---
+
+### M-109: Unchecked string slice in EAR header parsing
+
+- **Model:** Haiku | **Scope:** code_quality
+- **Files:** `crates/authorproof-protocol/src/war/ear.rs:176`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** `part[label.len()..]` could panic if part is shorter than label. Relies on implicit guard.
+- **Fix:** Use `part.strip_prefix(label)?` instead of manual slicing.
+
+---
+
+### M-110: Unbounded timestamp in VC profile creation
+
+- **Model:** Haiku | **Scope:** security
+- **Files:** `crates/authorproof-protocol/src/war/profiles/vc.rs:126`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** `ear.iat` not validated for reasonable bounds. Malicious EAR with far-future timestamp creates misleading VC.
+- **Fix:** Validate timestamp within ±2 hours or document acceptable range.
+
+---
+
+### M-111: Silent timestamp fallback in cpoe-jitter evidence
+
+- **Model:** Haiku | **Scope:** error_handling
+- **Files:** `crates/cpoe-jitter/src/evidence.rs:400`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** `unwrap_or_default()` on SystemTime makes timestamp 0 silently. Breaks monotonicity.
+- **Fix:** Return Result or explicit error.
+
+---
+
+### M-112: Missing serialization stability test for compact_ref
+
+- **Model:** Haiku | **Scope:** code_quality
+- **Files:** `crates/authorproof-protocol/src/compact_ref.rs:125`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** `to_base64_uri()` relies on stable serde field ordering. No regression test pins expected output.
+- **Fix:** Add `test_compact_ref_serialization_stability()` with pinned expected base64.
+
+---
+
+### M-113: posme verifier verify_step function complexity (85 lines)
+
+- **Model:** Haiku | **Scope:** architecture
+- **Files:** `crates/posme/src/verifier.rs:195`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** 85-line function with multiple nested conditionals in crypto verification path. Hard to audit.
+- **Fix:** Split into sub-functions: verify_root_chain_step(), verify_pointer_chase(), verify_symbiotic_write().
+
+---
+
+### M-114: Magic statistical thresholds in cpoe-jitter model
+
+- **Model:** Haiku | **Scope:** code_quality
+- **Files:** `crates/cpoe-jitter/src/model.rs:26,28`
+- **Severity:** MEDIUM | **Status:** open
+- **Description:** MIN_STD_DEV_THRESHOLD_US=50, MIN_IKI_STD_DEV_THRESHOLD_US=5000 (100x difference), CONFIDENCE_PENALTY_PER_ANOMALY=0.25 without justification.
+- **Fix:** Add detailed comments explaining threshold rationale and baseline references.

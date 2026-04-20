@@ -59,34 +59,39 @@ impl VdfProofRfc {
     }
 
     /// Compute the minimum expected wall time from calibration data.
-    pub fn minimum_elapsed_ms(&self) -> u64 {
-        // Integer arithmetic avoids f64 precision / NaN edge cases
-        if self.calibration.iterations_per_second > 0 {
+    /// Returns `None` when `iterations_per_second` is zero (invalid calibration).
+    pub fn minimum_elapsed_ms(&self) -> Option<u64> {
+        if self.calibration.iterations_per_second == 0 {
+            return None;
+        }
+        Some(
             self.iterations
                 .saturating_mul(1000)
                 .checked_div(self.calibration.iterations_per_second)
-                .unwrap_or(self.duration_ms)
-        } else {
-            self.duration_ms
-        }
+                .unwrap_or(u64::MAX),
+        )
     }
 
     /// Return `true` if claimed duration is consistent with calibration (5% tolerance).
+    /// Returns `false` when calibration is invalid (zero IPS).
     pub fn is_duration_consistent(&self) -> bool {
-        let minimum = self.minimum_elapsed_ms();
+        let minimum = match self.minimum_elapsed_ms() {
+            Some(v) => v,
+            None => return false,
+        };
         // 5% tolerance for timing variance
         let threshold = minimum.saturating_sub(minimum / 20);
         self.duration_ms >= threshold
     }
 
     /// IETF-mandated `[SWF_MIN_DURATION_FACTOR, SWF_MAX_DURATION_FACTOR]` bounds check.
-    ///
-    /// Note: the f64 division may lose precision for very large u64 values (> 2^53),
-    /// but this is acceptable since real-world durations and iteration counts are
-    /// well within f64's exact integer range.
+    /// Returns `false` when calibration is invalid (zero IPS).
     pub fn is_duration_within_spec_bounds(&self) -> bool {
-        let expected = self.minimum_elapsed_ms();
-        if expected == 0 || self.duration_ms == 0 {
+        let expected = match self.minimum_elapsed_ms() {
+            Some(v) if v > 0 => v,
+            _ => return false,
+        };
+        if self.duration_ms == 0 {
             return false;
         }
         let ratio = self.duration_ms as f64 / expected as f64;
@@ -140,12 +145,12 @@ impl VdfProofRfc {
                 errors.push(format!(
                     "duration_ms ({}) is inconsistent with expected minimum ({} ms) based on calibration",
                     self.duration_ms,
-                    self.minimum_elapsed_ms()
+                    self.minimum_elapsed_ms().unwrap_or(0)
                 ));
             }
             if !self.is_duration_within_spec_bounds() {
-                let expected = self.minimum_elapsed_ms();
-                let ratio = self.duration_ms as f64 / expected as f64;
+                let expected = self.minimum_elapsed_ms().unwrap_or(0);
+                let ratio = if expected > 0 { self.duration_ms as f64 / expected as f64 } else { 0.0 };
                 errors.push(format!(
                     "duration ratio {ratio:.2}x outside spec bounds [{SWF_MIN_DURATION_FACTOR}x, {SWF_MAX_DURATION_FACTOR}x]",
                 ));
@@ -320,7 +325,7 @@ mod tests {
 
         let proof = VdfProofRfc::new([0u8; 32], [0u8; 64], 2_000_000, 2500, calibration);
 
-        assert_eq!(proof.minimum_elapsed_ms(), 2000);
+        assert_eq!(proof.minimum_elapsed_ms(), Some(2000));
         assert!(proof.is_duration_consistent());
     }
 

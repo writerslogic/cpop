@@ -21,11 +21,11 @@ fn sqrt(x: f64) -> f64 {
 
 use crate::{Evidence, Jitter};
 
-const MIN_STD_DEV_THRESHOLD: f64 = 50.0;
-const MIN_IKI_STD_DEV_THRESHOLD: f64 = 5000.0;
+/// Integer thresholds for deterministic cross-platform comparisons.
+/// All anomaly decisions use integer math; f64 is only for display.
+const MIN_STD_DEV_THRESHOLD_US: u64 = 50;
+const MIN_IKI_STD_DEV_THRESHOLD_US: u64 = 5000;
 const CONFIDENCE_PENALTY_PER_ANOMALY: f64 = 0.25;
-const MIN_HUMAN_CONFIDENCE: f64 = 0.5;
-const REPEATING_PATTERN_THRESHOLD: f64 = 0.8;
 const MIN_PATTERN_CHECKS_EXCLUSIVE: usize = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,15 +151,18 @@ impl HumanModel {
             self.jitter_max_us as u64,
             "jitter",
         );
-        let perfect_ratio = self.compute_perfect_ratio_jitters(jitters);
+        let (perfect_count, perfect_pairs) = self.compute_perfect_counts_jitters(jitters);
         let pattern = self.detect_repeating_pattern_jitters(jitters);
+        let (stats, variance_n2) = self.compute_stats(jitters.iter().copied());
         self.validate_inner(
             jitters.len(),
-            self.compute_stats(jitters.iter().copied()),
+            stats,
+            variance_n2,
             oor,
-            perfect_ratio,
+            perfect_count,
+            perfect_pairs,
             pattern,
-            MIN_STD_DEV_THRESHOLD,
+            MIN_STD_DEV_THRESHOLD_US,
         )
     }
 
@@ -172,15 +175,18 @@ impl HumanModel {
             self.jitter_max_us as u64,
             "jitter",
         );
-        let perfect_ratio = self.compute_perfect_ratio_records(records);
+        let (perfect_count, perfect_pairs) = self.compute_perfect_counts_records(records);
         let pattern = self.detect_repeating_pattern_records(records);
+        let (stats, variance_n2) = self.compute_stats(records.iter().map(|e| e.jitter()));
         self.validate_inner(
             records.len(),
-            self.compute_stats(records.iter().map(|e| e.jitter())),
+            stats,
+            variance_n2,
             oor,
-            perfect_ratio,
+            perfect_count,
+            perfect_pairs,
             pattern,
-            MIN_STD_DEV_THRESHOLD,
+            MIN_STD_DEV_THRESHOLD_US,
         )
     }
 
@@ -197,27 +203,37 @@ impl HumanModel {
             .map(|&v| v.min(u32::MAX as u64) as u32)
             .collect();
 
-        let perfect_ratio = self.compute_perfect_ratio_jitters(&capped);
+        let (perfect_count, perfect_pairs) = self.compute_perfect_counts_jitters(&capped);
         let pattern = self.detect_repeating_pattern_jitters(&capped);
+        let (stats, variance_n2) = self.compute_stats(capped.into_iter());
 
         self.validate_inner(
-            capped.len(),
-            self.compute_stats(capped.into_iter()),
+            stats.count,
+            stats,
+            variance_n2,
             oor,
-            perfect_ratio,
+            perfect_count,
+            perfect_pairs,
             pattern,
-            MIN_IKI_STD_DEV_THRESHOLD,
+            MIN_IKI_STD_DEV_THRESHOLD_US,
         )
     }
 
+    /// All threshold comparisons use integer arithmetic for cross-platform
+    /// determinism. The f64 fields in SequenceStats and confidence are
+    /// derived from integer accumulators for display only and do not
+    /// influence the is_human verdict.
+    #[allow(clippy::too_many_arguments)]
     fn validate_inner(
         &self,
         len: usize,
         stats: SequenceStats,
+        variance_n2: u128,
         out_of_range: Option<Anomaly>,
-        perfect_ratio: f64,
+        perfect_count: usize,
+        perfect_pairs: usize,
         repeating_pattern_len: Option<usize>,
-        std_dev_threshold: f64,
+        std_dev_threshold_us: u64,
     ) -> ValidationResult {
         if len < self.min_sequence_length {
             return ValidationResult {
@@ -234,7 +250,10 @@ impl HumanModel {
 
         let mut anomalies = Vec::new();
 
-        if stats.std_dev < std_dev_threshold {
+        // std_dev < threshold ⟺ variance_n2 < (threshold × n)²
+        let n = stats.count as u128;
+        let threshold_n = std_dev_threshold_us as u128 * n;
+        if variance_n2 < threshold_n * threshold_n {
             anomalies.push(Anomaly {
                 kind: AnomalyKind::LowVariance,
                 position: 0,
@@ -242,12 +261,18 @@ impl HumanModel {
             });
         }
 
-        if perfect_ratio > self.max_perfect_ratio {
-            anomalies.push(Anomaly {
-                kind: AnomalyKind::PerfectTiming,
-                position: 0,
-                detail: format!("Too many perfect timings: {:.1}%", perfect_ratio * 100.0),
-            });
+        // perfect_count / perfect_pairs > max_perfect_ratio
+        // ⟺ perfect_count × 10000 > round(max_perfect_ratio × 10000) × perfect_pairs
+        if perfect_pairs > 0 {
+            let ratio_bps = libm::round(self.max_perfect_ratio * 10000.0) as u64;
+            if (perfect_count as u64) * 10000 > ratio_bps * (perfect_pairs as u64) {
+                let pct = perfect_count as f64 / perfect_pairs as f64 * 100.0;
+                anomalies.push(Anomaly {
+                    kind: AnomalyKind::PerfectTiming,
+                    position: 0,
+                    detail: format!("Too many perfect timings: {:.1}%", pct),
+                });
+            }
         }
 
         if let Some(pattern_len) = repeating_pattern_len {
@@ -264,40 +289,26 @@ impl HumanModel {
         let confidence = base_confidence.clamp(0.0, 1.0);
 
         ValidationResult {
-            is_human: anomalies.is_empty() && confidence > MIN_HUMAN_CONFIDENCE,
+            is_human: anomalies.is_empty(),
             confidence,
             anomalies,
             stats,
         }
     }
 
-    fn compute_stats<I: Iterator<Item = Jitter>>(&self, mut jitters: I) -> SequenceStats {
-        let first = match jitters.next() {
-            Some(j) => j,
-            None => {
-                return SequenceStats {
-                    count: 0,
-                    mean: 0.0,
-                    std_dev: 0.0,
-                    min: 0,
-                    max: 0,
-                };
-            }
-        };
-
-        // Single-pass Welford's with min/max tracking
-        let mut n: u64 = 1;
-        let mut m = first as f64;
-        let mut s = 0.0_f64;
-        let mut lo = first;
-        let mut hi = first;
+    /// Returns (display stats, n²×variance) where the u128 is used for
+    /// deterministic integer threshold comparisons.
+    fn compute_stats<I: Iterator<Item = Jitter>>(&self, jitters: I) -> (SequenceStats, u128) {
+        let mut n: u64 = 0;
+        let mut sum: u128 = 0;
+        let mut sum_sq: u128 = 0;
+        let mut lo = u32::MAX;
+        let mut hi = 0u32;
 
         for j in jitters {
             n += 1;
-            let x = j as f64;
-            let delta = x - m;
-            m += delta / n as f64;
-            s += delta * (x - m);
+            sum += j as u128;
+            sum_sq += (j as u128) * (j as u128);
             if j < lo {
                 lo = j;
             }
@@ -306,34 +317,51 @@ impl HumanModel {
             }
         }
 
-        SequenceStats {
-            count: n as usize,
-            mean: m,
-            std_dev: sqrt(s / n as f64),
-            min: lo,
-            max: hi,
+        if n == 0 {
+            return (
+                SequenceStats {
+                    count: 0,
+                    mean: 0.0,
+                    std_dev: 0.0,
+                    min: 0,
+                    max: 0,
+                },
+                0,
+            );
         }
+
+        let nn = n as u128;
+        // n * sum_sq - sum² = n² × population_variance (exact integer)
+        let variance_n2 = nn * sum_sq - sum * sum;
+        let mean = sum as f64 / n as f64;
+        let variance = variance_n2 as f64 / (nn * nn) as f64;
+
+        (
+            SequenceStats {
+                count: n as usize,
+                mean,
+                std_dev: sqrt(variance.max(0.0)),
+                min: lo,
+                max: hi,
+            },
+            variance_n2,
+        )
     }
 
-    fn compute_perfect_ratio_jitters(&self, jitters: &[Jitter]) -> f64 {
+    /// Returns (perfect_count, total_pairs) for integer ratio comparison.
+    fn compute_perfect_counts_jitters(&self, jitters: &[Jitter]) -> (usize, usize) {
         let perfect_count = jitters.windows(2).filter(|w| w[0] == w[1]).count();
-        if jitters.len() > 1 {
-            perfect_count as f64 / (jitters.len() - 1) as f64
-        } else {
-            0.0
-        }
+        let pairs = if jitters.len() > 1 { jitters.len() - 1 } else { 0 };
+        (perfect_count, pairs)
     }
 
-    fn compute_perfect_ratio_records(&self, records: &[Evidence]) -> f64 {
+    fn compute_perfect_counts_records(&self, records: &[Evidence]) -> (usize, usize) {
         let perfect_count = records
             .windows(2)
             .filter(|w| w[0].jitter() == w[1].jitter())
             .count();
-        if records.len() > 1 {
-            perfect_count as f64 / (records.len() - 1) as f64
-        } else {
-            0.0
-        }
+        let pairs = if records.len() > 1 { records.len() - 1 } else { 0 };
+        (perfect_count, pairs)
     }
 
     fn detect_repeating_pattern_jitters(&self, jitters: &[Jitter]) -> Option<usize> {
@@ -359,9 +387,8 @@ impl HumanModel {
                 }
             }
 
-            if checks > MIN_PATTERN_CHECKS_EXCLUSIVE
-                && matches as f64 / checks as f64 > REPEATING_PATTERN_THRESHOLD
-            {
+            // matches / checks > 4/5 ⟺ matches * 5 > checks * 4
+            if checks > MIN_PATTERN_CHECKS_EXCLUSIVE && matches * 5 > checks * 4 {
                 return Some(pattern_len);
             }
         }
@@ -395,9 +422,7 @@ impl HumanModel {
                 }
             }
 
-            if checks > MIN_PATTERN_CHECKS_EXCLUSIVE
-                && matches as f64 / checks as f64 > REPEATING_PATTERN_THRESHOLD
-            {
+            if checks > MIN_PATTERN_CHECKS_EXCLUSIVE && matches * 5 > checks * 4 {
                 return Some(pattern_len);
             }
         }

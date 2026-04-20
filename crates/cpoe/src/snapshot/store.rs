@@ -375,18 +375,6 @@ impl SnapshotStore {
             .map_err(|e| format!("snapshot not found: {e}"))
     }
 
-    fn blob_exists(&self, content_hash: &[u8; 32]) -> Result<bool, String> {
-        self.conn
-            .query_row(
-                "SELECT 1 FROM snapshot_blobs WHERE content_hash = ?",
-                params![&content_hash[..]],
-                |_| Ok(true),
-            )
-            .or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(false),
-                other => Err(format!("blob exists check failed: {other}")),
-            })
-    }
 
     /// Total encrypted blob storage size and whether it exceeds the warning threshold.
     pub fn storage_size(&self) -> Result<StoreSizeInfo, String> {

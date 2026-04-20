@@ -6,6 +6,7 @@ use crate::block::LAMBDA;
 use crate::error::{PosmeError, Result};
 use crate::hash::{addr_from, i2osp, posme_hash, DST_CAUSAL, DST_FIAT_SHAMIR, DST_INIT, DST_TRANSCRIPT};
 use crate::merkle;
+use crate::params::PosmeParams;
 use crate::proof::{PosmeProof, StepProof, INIT_WITNESS_COUNT, PROOF_ALGORITHM_POSME, PROOF_ALGORITHM_POSME_ENTANGLED};
 
 fn verify_root_chain_path(
@@ -36,17 +37,20 @@ fn verify_root_chain_path(
 fn derive_challenges(
     final_transcript: &[u8; LAMBDA],
     root_chain_commitment: &[u8; LAMBDA],
-    q: u16,
-    k: u32,
+    params: &PosmeParams,
 ) -> Vec<u32> {
-    let sigma = posme_hash(&[DST_FIAT_SHAMIR, final_transcript, root_chain_commitment]);
+    let param_bytes = params.to_challenge_bytes();
+    let sigma = posme_hash(&[DST_FIAT_SHAMIR, final_transcript, root_chain_commitment, &param_bytes]);
+    let q = params.challenges;
+    let k = params.total_steps;
+    let mut seen = std::collections::BTreeSet::new();
     let mut challenges = Vec::with_capacity(q as usize);
     let mut counter = 0u32;
     while challenges.len() < q as usize {
         let h = posme_hash(&[&sigma, &i2osp(counter)]);
         let val = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) % k;
         let step = val + 1;
-        if !challenges.contains(&step) {
+        if seen.insert(step) {
             challenges.push(step);
         }
         counter += 1;
@@ -139,8 +143,7 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
     let expected_challenges = derive_challenges(
         &proof.final_transcript,
         &proof.root_chain_commitment,
-        proof.params.challenges,
-        k,
+        &proof.params,
     );
     let proof_step_ids: Vec<u32> = proof.challenged_steps.iter().map(|s| s.step_id).collect();
     if proof_step_ids != expected_challenges {
@@ -160,7 +163,7 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
     // Step 6: Cross-check transcript chain between consecutive challenged steps.
     // If step c produces T_c, and step c' = c+1 is also challenged,
     // then cursor_in of c' must equal T_c (possibly after entanglement).
-    let entangle_map: std::collections::HashMap<u32, [u8; 32]> = proof.entanglement_points
+    let entangle_map: std::collections::BTreeMap<u32, [u8; 32]> = proof.entanglement_points
         .iter().copied().collect();
     let mut sorted_transcripts = step_transcripts.clone();
     sorted_transcripts.sort_by_key(|&(step, _)| step);

@@ -450,6 +450,7 @@ impl ForensicsEngine {
         while block_size <= n / 2 {
             let num_blocks = n / block_size;
             let mut rs_sum = 0.0;
+            let mut valid_blocks = 0usize;
 
             for b in 0..num_blocks {
                 let block = &data[b * block_size..(b + 1) * block_size];
@@ -476,11 +477,12 @@ impl ForensicsEngine {
 
                 if std_dev > 0.0 {
                     rs_sum += range / std_dev;
+                    valid_blocks += 1;
                 }
             }
 
-            if num_blocks > 0 {
-                let avg_rs = rs_sum / num_blocks as f64;
+            if valid_blocks > 0 {
+                let avg_rs = rs_sum / valid_blocks as f64;
                 if avg_rs > 0.0 {
                     log_n_values.push((block_size as f64).ln());
                     log_rs_values.push(avg_rs.ln());

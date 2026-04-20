@@ -100,62 +100,31 @@ impl EvidenceSigner for SigningKey {
 }
 
 pub fn sign_evidence_cose(payload: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec<u8>> {
-    cose_sign1(payload, signer, coset::Header::default())
+    cose_sign1(payload, signer, coset::Header::default(), coset::Header::default())
+}
+
+/// C2PA 2.4 COSE_Sign1: x5chain in protected header per spec requirement.
+pub(crate) fn cose_sign1_c2pa(payload: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec<u8>> {
+    let mut protected_extra = coset::Header::default();
+    protected_extra.rest.push((
+        coset::Label::Int(33), // x5chain, RFC 9360
+        ciborium::Value::Bytes(signer.public_key()),
+    ));
+    cose_sign1(payload, signer, protected_extra, coset::Header::default())
 }
 
 pub(crate) fn cose_sign1(
     payload: &[u8],
     signer: &dyn EvidenceSigner,
+    protected_extra: coset::Header,
     unprotected: coset::Header,
 ) -> Result<Vec<u8>> {
-    let protected = HeaderBuilder::new().algorithm(signer.algorithm()).build();
+    let mut protected = HeaderBuilder::new().algorithm(signer.algorithm()).build();
+    protected.rest.extend(protected_extra.rest);
 
-    // Build a temporary structure to compute the sig_data (ToBeSigned),
-    // then sign it separately to avoid error smuggling through a closure.
     let mut builder = CoseSign1Builder::new()
         .protected(protected)
         .unprotected(unprotected)
-        .payload(payload.to_vec());
-
-    // Use create_signature to get the sig_data bytes, capture errors cleanly.
-    let mut sign_error: Option<Error> = None;
-    builder = builder.create_signature(&[], |sig_data| match signer.sign(sig_data) {
-        Ok(sig) => sig,
-        Err(e) => {
-            sign_error = Some(e);
-            Vec::new()
-        }
-    });
-
-    if let Some(e) = sign_error {
-        return Err(e);
-    }
-
-    let sign1 = builder.build();
-
-    if sign1.signature.is_empty() {
-        return Err(Error::Crypto(
-            "COSE signing produced empty signature".to_string(),
-        ));
-    }
-
-    sign1
-        .to_vec()
-        .map_err(|e| Error::Crypto(format!("COSE encoding error: {}", e)))
-}
-
-/// C2PA 2.4 COSE_Sign1: x5chain in protected header per spec requirement.
-pub(crate) fn cose_sign1_c2pa(payload: &[u8], signer: &dyn EvidenceSigner) -> Result<Vec<u8>> {
-    let pk = signer.public_key();
-    let mut protected = HeaderBuilder::new().algorithm(signer.algorithm()).build();
-    protected.rest.push((
-        coset::Label::Int(33), // x5chain, RFC 9360
-        ciborium::Value::Bytes(pk),
-    ));
-
-    let mut builder = CoseSign1Builder::new()
-        .protected(protected)
-        .unprotected(coset::Header::default())
         .payload(payload.to_vec());
 
     let mut sign_error: Option<Error> = None;

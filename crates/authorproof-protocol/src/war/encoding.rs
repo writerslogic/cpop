@@ -78,11 +78,8 @@ impl Block {
         let mut verifier_nonce: Option<[u8; 32]> = None;
         let mut header_end = start + 1;
 
-        // Limitation: blank-line detection uses `is_empty()`, so a line containing
-        // only whitespace will be treated as a header line rather than the
-        // header/body separator.
         for (i, line) in lines[start + 1..end].iter().enumerate() {
-            if line.is_empty() {
+            if line.trim().is_empty() {
                 header_end = start + 1 + i;
                 break;
             }

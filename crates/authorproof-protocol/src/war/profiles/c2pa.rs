@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, String>;
-use crate::war::ear::EarToken;
+use crate::war::ear::{EarToken, TrustVectorProjection};
 
 /// C2PA assertion label for WritersLogic PoP attestation.
 pub const ASSERTION_LABEL: &str = "com.writerslogic.pop-attestation.v1";
@@ -23,7 +23,7 @@ pub struct C2paAssertionData {
     pub ear_profile: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trustworthiness_vector: Option<TrustVectorJson>,
+    pub trustworthiness_vector: Option<TrustVectorProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seal: Option<SealJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,19 +33,6 @@ pub struct C2paAssertionData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chain_duration_secs: Option<u64>,
     pub verifier_id: VerifierIdJson,
-}
-
-/// JSON representation of the trust vector for C2PA.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrustVectorJson {
-    pub instance_identity: i8,
-    pub configuration: i8,
-    pub executables: i8,
-    pub file_system: i8,
-    pub hardware: i8,
-    pub runtime_opaque: i8,
-    pub storage_opaque: i8,
-    pub sourced_data: i8,
 }
 
 /// JSON representation of seal for C2PA.
@@ -86,16 +73,7 @@ pub fn to_c2pa_assertion(ear: &EarToken) -> Result<C2paAssertion> {
     let tv_json = appr
         .ear_trustworthiness_vector
         .as_ref()
-        .map(|tv| TrustVectorJson {
-            instance_identity: tv.instance_identity,
-            configuration: tv.configuration,
-            executables: tv.executables,
-            file_system: tv.file_system,
-            hardware: tv.hardware,
-            runtime_opaque: tv.runtime_opaque,
-            storage_opaque: tv.storage_opaque,
-            sourced_data: tv.sourced_data,
-        });
+        .map(TrustVectorProjection::from);
 
     let seal_json = appr.pop_seal.as_ref().map(|s| SealJson {
         h1: hex::encode(s.h1),

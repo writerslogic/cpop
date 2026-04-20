@@ -53,21 +53,27 @@ impl RootChain {
     }
 }
 
-/// Derive Q unique Fiat-Shamir challenge step indices from (T_K, C_roots).
+/// Derive Q unique Fiat-Shamir challenge step indices from (T_K, C_roots, params).
+///
+/// The params are bound into sigma so that a proof generated at one difficulty
+/// tier cannot be replayed as a proof for a different tier.
 pub(crate) fn derive_challenges(
     final_transcript: &[u8; LAMBDA],
     root_chain_commitment: &[u8; LAMBDA],
-    q: u16,
-    k: u32,
+    params: &PosmeParams,
 ) -> Vec<u32> {
-    let sigma = posme_hash(&[DST_FIAT_SHAMIR, final_transcript, root_chain_commitment]);
+    let param_bytes = params.to_challenge_bytes();
+    let sigma = posme_hash(&[DST_FIAT_SHAMIR, final_transcript, root_chain_commitment, &param_bytes]);
+    let q = params.challenges;
+    let k = params.total_steps;
+    let mut seen = std::collections::BTreeSet::new();
     let mut challenges = Vec::with_capacity(q as usize);
     let mut counter = 0u32;
     while challenges.len() < q as usize {
         let h = posme_hash(&[&sigma, &i2osp(counter)]);
         let val = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) % k;
         let step = val + 1;
-        if !challenges.contains(&step) {
+        if seen.insert(step) {
             challenges.push(step);
         }
         counter += 1;
@@ -226,8 +232,7 @@ pub fn execute(seed: &[u8], params: &PosmeParams) -> Result<PosmeProof> {
     let challenges = derive_challenges(
         &final_transcript,
         &root_chain_commitment,
-        params.challenges,
-        k,
+        params,
     );
 
     // Phase 5: Replay challenged steps to build proofs.
@@ -346,8 +351,7 @@ pub fn execute_entangled(
     let challenges = derive_challenges(
         &final_transcript,
         &root_chain_commitment,
-        params.challenges,
-        k,
+        params,
     );
 
     let mut sorted_challenges: Vec<(usize, u32)> = challenges.iter().enumerate().map(|(i, &s)| (i, s)).collect();

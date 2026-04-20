@@ -37,11 +37,23 @@ pub(crate) fn hmac_jitter(
     jmin.saturating_add(jitter)
 }
 
+/// Hardware entropy abstraction for timing-based entropy collection.
+///
+/// Implementations sample physical timing jitter and return a hash with an
+/// entropy estimate. `validate` checks whether a sample meets sufficiency
+/// thresholds.
 pub trait EntropySource {
+    /// Collect a hardware entropy sample, mixing `inputs` into the result.
     fn sample(&self, inputs: &[u8]) -> Result<PhysHash, Error>;
+    /// Return `true` if `hash` meets the minimum entropy threshold.
     fn validate(&self, hash: PhysHash) -> bool;
 }
 
+/// Compute deterministic jitter from a secret, caller inputs, and an entropy hash.
+///
+/// The output is a jitter value in microseconds, derived via HMAC so that
+/// identical inputs always produce the same result.
 pub trait JitterEngine {
+    /// Compute jitter in microseconds from `secret`, `inputs`, and `entropy`.
     fn compute_jitter(&self, secret: &[u8; 32], inputs: &[u8], entropy: PhysHash) -> Jitter;
 }

@@ -31,6 +31,8 @@ use std::collections::BTreeMap;
 use super::fixed_point::{Centibits, Decibits, Millibits, RhoMillibits, SlopeDecibits};
 use super::serde_helpers::{hex_bytes_vec, hex_bytes_vec_opt};
 
+const MAX_EXTENSION_JSON_DEPTH: usize = 8;
+
 /// RFC-compliant evidence packet structure.
 ///
 /// Uses integer keys (1-19) for compact CBOR encoding per the CDDL schema.
@@ -477,7 +479,6 @@ impl PacketRfc {
         const MAX_EXTENSIONS: usize = 32;
         const MAX_EXTENSION_KEY_LEN: usize = 128;
         const MAX_EXTENSION_VALUE_BYTES: usize = 4096;
-        const MAX_EXTENSION_JSON_DEPTH: usize = 8;
         if self.extensions.len() > MAX_EXTENSIONS {
             errors.push(format!(
                 "extensions count {} exceeds maximum {}",
@@ -516,9 +517,28 @@ impl PacketRfc {
 }
 
 fn json_depth(v: &serde_json::Value) -> usize {
+    json_depth_bounded(v, 0)
+}
+
+fn json_depth_bounded(v: &serde_json::Value, current: usize) -> usize {
+    if current > MAX_EXTENSION_JSON_DEPTH {
+        return current;
+    }
     match v {
-        serde_json::Value::Array(arr) => 1 + arr.iter().map(json_depth).max().unwrap_or(0),
-        serde_json::Value::Object(map) => 1 + map.values().map(json_depth).max().unwrap_or(0),
+        serde_json::Value::Array(arr) => {
+            1 + arr
+                .iter()
+                .map(|item| json_depth_bounded(item, current + 1))
+                .max()
+                .unwrap_or(0)
+        }
+        serde_json::Value::Object(map) => {
+            1 + map
+                .values()
+                .map(|item| json_depth_bounded(item, current + 1))
+                .max()
+                .unwrap_or(0)
+        }
         _ => 0,
     }
 }

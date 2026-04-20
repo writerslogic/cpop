@@ -173,7 +173,7 @@ impl TrustworthinessVector {
         let labels = ["II=", "CO=", "EX=", "FS=", "HW=", "RO=", "SO=", "SD="];
         for (i, label) in labels.iter().enumerate() {
             let part = s.split_whitespace().find(|p| p.starts_with(label))?;
-            vals[i] = part[label.len()..].parse().ok()?;
+            vals[i] = part.strip_prefix(label)?.parse().ok()?;
         }
         Some(Self {
             instance_identity: vals[0],
@@ -185,6 +185,34 @@ impl TrustworthinessVector {
             storage_opaque: vals[6],
             sourced_data: vals[7],
         })
+    }
+}
+
+/// JSON-serializable projection of the trust vector for profile output (VC, C2PA).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrustVectorProjection {
+    pub instance_identity: i8,
+    pub configuration: i8,
+    pub executables: i8,
+    pub file_system: i8,
+    pub hardware: i8,
+    pub runtime_opaque: i8,
+    pub storage_opaque: i8,
+    pub sourced_data: i8,
+}
+
+impl From<&TrustworthinessVector> for TrustVectorProjection {
+    fn from(tv: &TrustworthinessVector) -> Self {
+        Self {
+            instance_identity: tv.instance_identity,
+            configuration: tv.configuration,
+            executables: tv.executables,
+            file_system: tv.file_system,
+            hardware: tv.hardware,
+            runtime_opaque: tv.runtime_opaque,
+            storage_opaque: tv.storage_opaque,
+            sourced_data: tv.sourced_data,
+        }
     }
 }
 
@@ -210,19 +238,19 @@ impl Default for VerifierId {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealClaims {
     /// H1: document/checkpoint/declaration binding hash
-    #[serde(with = "hex_bytes_32")]
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h1: [u8; 32],
     /// H2: jitter/identity binding hash
-    #[serde(with = "hex_bytes_32")]
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h2: [u8; 32],
     /// H3: VDF/document binding hash (signed)
-    #[serde(with = "hex_bytes_32")]
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h3: [u8; 32],
     /// Ed25519 signature over H3
-    #[serde(with = "hex_bytes_64")]
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub signature: [u8; 64],
     /// Author's Ed25519 public key
-    #[serde(with = "hex_bytes_32")]
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub public_key: [u8; 32],
 }
 
@@ -325,56 +353,6 @@ impl EarToken {
 
     pub fn pop_appraisal(&self) -> Option<&EarAppraisal> {
         self.submods.get("pop")
-    }
-}
-
-mod hex_bytes_32 {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(bytes))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        if bytes.len() != 32 {
-            return Err(serde::de::Error::custom("expected 32 bytes"));
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
-    }
-}
-
-mod hex_bytes_64 {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(bytes))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        if bytes.len() != 64 {
-            return Err(serde::de::Error::custom("expected 64 bytes"));
-        }
-        let mut arr = [0u8; 64];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
     }
 }
 

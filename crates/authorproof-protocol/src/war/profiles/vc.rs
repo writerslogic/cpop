@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, String>;
-use crate::war::ear::{Ar4siStatus, EarToken};
+use crate::war::ear::{Ar4siStatus, EarToken, TrustVectorProjection};
 
 /// W3C Verifiable Credential 2.0 structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,26 +41,13 @@ pub struct CredentialSubject {
 pub struct ProcessAttestation {
     pub status: String,
     #[serde(rename = "trustVector", skip_serializing_if = "Option::is_none")]
-    pub trust_vector: Option<TrustVectorVc>,
+    pub trust_vector: Option<TrustVectorProjection>,
     #[serde(rename = "documentRef", skip_serializing_if = "Option::is_none")]
     pub document_ref: Option<String>,
     #[serde(rename = "chainDuration", skip_serializing_if = "Option::is_none")]
     pub chain_duration: Option<String>,
     #[serde(rename = "attestationTier", skip_serializing_if = "Option::is_none")]
     pub attestation_tier: Option<String>,
-}
-
-/// Trust vector in VC JSON-LD format.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrustVectorVc {
-    pub instance_identity: i8,
-    pub configuration: i8,
-    pub executables: i8,
-    pub file_system: i8,
-    pub hardware: i8,
-    pub runtime_opaque: i8,
-    pub storage_opaque: i8,
-    pub sourced_data: i8,
 }
 
 /// Evidence entry in the VC.
@@ -105,16 +92,7 @@ pub fn to_verifiable_credential(
     let tv_vc = appr
         .ear_trustworthiness_vector
         .as_ref()
-        .map(|tv| TrustVectorVc {
-            instance_identity: tv.instance_identity,
-            configuration: tv.configuration,
-            executables: tv.executables,
-            file_system: tv.file_system,
-            hardware: tv.hardware,
-            runtime_opaque: tv.runtime_opaque,
-            storage_opaque: tv.storage_opaque,
-            sourced_data: tv.sourced_data,
-        });
+        .map(TrustVectorProjection::from);
 
     let document_ref = appr.pop_evidence_ref.as_ref().map(hex::encode);
 

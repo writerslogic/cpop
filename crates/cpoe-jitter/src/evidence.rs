@@ -10,6 +10,9 @@ use zeroize::Zeroizing;
 
 use crate::{Jitter, PhysHash};
 
+/// A single jitter evidence record, either hardware-bound (`Phys`) with a
+/// physical hash or software-only (`Pure`). Use `Phys` when HID/hardware
+/// entropy is available; fall back to `Pure` for keystroke-only capture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Evidence {
@@ -119,7 +122,8 @@ impl Evidence {
         }
     }
 
-    /// Constant-time recomputation check.
+    /// Recompute the jitter value and compare in constant time via `subtle::ConstantTimeEq`.
+    /// Returns `true` if the stored jitter matches the recomputed value.
     pub fn verify<E: crate::JitterEngine>(
         &self,
         secret: &[u8; 32],
@@ -146,6 +150,11 @@ impl Evidence {
 pub const MAX_EVIDENCE_RECORDS: usize = 100_000;
 
 /// Append-only chain of evidence records with HMAC integrity protection.
+///
+/// In keyed mode (`with_secret`), each link is HMAC-SHA256(prev_mac || record).
+/// In unkeyed mode (`new`), each link is SHA-256(prev_hash || record).
+/// The `secret` field is `#[serde(skip)]`; after deserialization, call
+/// `verify_integrity()` with the secret or `verify_integrity_unkeyed()`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "EvidenceChainRaw")]
 pub struct EvidenceChain {
@@ -307,6 +316,8 @@ impl EvidenceChain {
         Ok(())
     }
 
+    /// Verify the HMAC chain in constant time. Replays every record's MAC and
+    /// compares the final value against the stored `chain_mac` via `subtle`.
     pub fn verify_integrity(&self, secret: &[u8; 32]) -> bool {
         use hmac::{Hmac, Mac};
         use subtle::ConstantTimeEq;
@@ -325,6 +336,7 @@ impl EvidenceChain {
         expected_mac.ct_eq(&self.chain_mac).into()
     }
 
+    /// Verify the SHA-256 hash chain in constant time for unkeyed chains.
     pub fn verify_integrity_unkeyed(&self) -> bool {
         use sha2::{Digest, Sha256};
         use subtle::ConstantTimeEq;

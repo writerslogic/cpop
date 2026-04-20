@@ -49,7 +49,7 @@ fn main() {
 
     println!("\nTamper detection demo...");
     let mut tampered_chain = chain.clone();
-    if let Some(Evidence::Pure { jitter, .. }) = tampered_chain.records.get_mut(2) {
+    if let Some(Evidence::Pure { jitter, .. }) = tampered_chain.records_mut().get_mut(2) {
         *jitter = 9999;
     }
     let tamper_detected = !tampered_chain.verify_integrity(&secret);

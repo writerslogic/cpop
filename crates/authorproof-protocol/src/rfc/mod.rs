@@ -134,11 +134,9 @@ impl HashValue {
     }
 }
 
-// PartialEq/Eq for non-security-critical uses (serialization, tests).
-// Security-critical verification must use ct_eq().
 impl PartialEq for HashValue {
     fn eq(&self, other: &Self) -> bool {
-        self.algorithm == other.algorithm && self.digest == other.digest
+        self.ct_eq(other)
     }
 }
 

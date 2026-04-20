@@ -57,81 +57,22 @@ pub struct Block {
 }
 
 /// The cryptographic seal binding all evidence together.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Seal {
     /// H1: SHA-256(doc || checkpoint_root || declaration)
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h1: [u8; 32],
     /// H2: SHA-256(H1 || jitter || pubkey)
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h2: [u8; 32],
     /// H3: SHA-256(H2 || vdf_output || doc)
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub h3: [u8; 32],
     /// H4: Ed25519 signature of H3
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub signature: [u8; 64],
+    #[serde(with = "crate::rfc::serde_helpers::hex_bytes")]
     pub public_key: [u8; 32],
-}
-
-impl Serialize for Seal {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Seal", 5)?;
-        state.serialize_field("h1", &hex::encode(self.h1))?;
-        state.serialize_field("h2", &hex::encode(self.h2))?;
-        state.serialize_field("h3", &hex::encode(self.h3))?;
-        state.serialize_field("signature", &hex::encode(self.signature))?;
-        state.serialize_field("public_key", &hex::encode(self.public_key))?;
-        state.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Seal {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct SealHelper {
-            h1: String,
-            h2: String,
-            h3: String,
-            signature: String,
-            public_key: String,
-        }
-
-        let helper = SealHelper::deserialize(deserializer)?;
-
-        let h1 = hex::decode(&helper.h1).map_err(serde::de::Error::custom)?;
-        let h2 = hex::decode(&helper.h2).map_err(serde::de::Error::custom)?;
-        let h3 = hex::decode(&helper.h3).map_err(serde::de::Error::custom)?;
-        let signature = hex::decode(&helper.signature).map_err(serde::de::Error::custom)?;
-        let public_key = hex::decode(&helper.public_key).map_err(serde::de::Error::custom)?;
-
-        if h1.len() != 32 || h2.len() != 32 || h3.len() != 32 {
-            return Err(serde::de::Error::custom("hash must be 32 bytes"));
-        }
-        if signature.len() != 64 {
-            return Err(serde::de::Error::custom("signature must be 64 bytes"));
-        }
-        if public_key.len() != 32 {
-            return Err(serde::de::Error::custom("public key must be 32 bytes"));
-        }
-
-        let mut seal = Seal {
-            h1: [0u8; 32],
-            h2: [0u8; 32],
-            h3: [0u8; 32],
-            signature: [0u8; 64],
-            public_key: [0u8; 32],
-        };
-        seal.h1.copy_from_slice(&h1);
-        seal.h2.copy_from_slice(&h2);
-        seal.h3.copy_from_slice(&h3);
-        seal.signature.copy_from_slice(&signature);
-        seal.public_key.copy_from_slice(&public_key);
-        Ok(seal)
-    }
 }
 
 /// Result of WAR block verification.

@@ -24,6 +24,11 @@ const MIN_ARENA_BLOCKS: u32 = 1 << 10; // 64 KiB (relaxed for testing)
 const MIN_READS_PER_STEP: u8 = 4;
 const MIN_CHALLENGES: u16 = 2;
 const MIN_RECURSION_DEPTH: u8 = 1;
+// Maximum bounds to prevent OOM on untrusted proofs.
+// Arena: 2^26 blocks = 4 GiB arena (4x headroom over MAXIMUM tier).
+// Steps: 2^28 = ~8 GB of roots (4x headroom over MAXIMUM tier).
+const MAX_ARENA_BLOCKS: u32 = 1 << 26;
+const MAX_TOTAL_STEPS: u32 = 1 << 28;
 
 impl PosmeParams {
     /// Validate parameters against minimum bounds.
@@ -31,6 +36,12 @@ impl PosmeParams {
         if self.arena_blocks < MIN_ARENA_BLOCKS {
             return Err(PosmeError::InvalidParams(format!(
                 "arena_blocks {} < minimum {MIN_ARENA_BLOCKS}",
+                self.arena_blocks
+            )));
+        }
+        if self.arena_blocks > MAX_ARENA_BLOCKS {
+            return Err(PosmeError::InvalidParams(format!(
+                "arena_blocks {} > maximum {MAX_ARENA_BLOCKS}",
                 self.arena_blocks
             )));
         }
@@ -44,6 +55,12 @@ impl PosmeParams {
             return Err(PosmeError::InvalidParams(format!(
                 "total_steps {} < arena_blocks {} (rho must be >= 1)",
                 self.total_steps, self.arena_blocks
+            )));
+        }
+        if self.total_steps > MAX_TOTAL_STEPS {
+            return Err(PosmeError::InvalidParams(format!(
+                "total_steps {} > maximum {MAX_TOTAL_STEPS}",
+                self.total_steps
             )));
         }
         if self.reads_per_step < MIN_READS_PER_STEP {
@@ -119,6 +136,18 @@ impl PosmeParams {
         }
     }
 
+    /// Deterministic byte encoding of all parameters for Fiat-Shamir binding.
+    /// Layout: N (4B) || K (4B) || d (1B) || Q (2B) || R (1B) = 12 bytes.
+    pub fn to_challenge_bytes(&self) -> [u8; 12] {
+        let mut buf = [0u8; 12];
+        buf[0..4].copy_from_slice(&self.arena_blocks.to_be_bytes());
+        buf[4..8].copy_from_slice(&self.total_steps.to_be_bytes());
+        buf[8] = self.reads_per_step;
+        buf[9..11].copy_from_slice(&self.challenges.to_be_bytes());
+        buf[11] = self.recursion_depth;
+        buf
+    }
+
     /// Small parameters for testing (fast execution).
     pub fn test() -> Self {
         Self {
@@ -166,6 +195,21 @@ mod tests {
     fn reject_rho_below_one() {
         let mut p = PosmeParams::test();
         p.total_steps = p.arena_blocks - 1;
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn reject_total_steps_above_max() {
+        let mut p = PosmeParams::test();
+        p.total_steps = (1 << 28) + 1;
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn reject_arena_blocks_above_max() {
+        let mut p = PosmeParams::test();
+        p.arena_blocks = 1 << 27; // exceeds MAX_ARENA_BLOCKS (1 << 26)
+        p.total_steps = p.arena_blocks; // satisfy rho >= 1
         assert!(p.validate().is_err());
     }
 }

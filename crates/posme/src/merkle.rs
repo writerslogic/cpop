@@ -137,8 +137,10 @@ pub fn verify_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "prover")]
     use crate::hash::{posme_hash, DST_INIT, DST_CAUSAL, i2osp};
 
+    #[cfg(feature = "prover")]
     fn make_test_blocks(n: u32) -> Vec<Block> {
         let seed = b"test-seed";
         let mut blocks = vec![Block::zeroed(); n as usize];
