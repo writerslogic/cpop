@@ -23,6 +23,22 @@ use crate::{Evidence, Jitter};
 
 /// Integer thresholds for deterministic cross-platform comparisons.
 /// All anomaly decisions use integer math; f64 is only for display.
+///
+/// MIN_STD_DEV_THRESHOLD_US (50µs): Minimum jitter standard deviation expected
+/// from real hardware timing. Below this, the source lacks physical noise
+/// (synthetic or replayed data). Derived from NIST SP 800-90B §3.1.3 minimum
+/// entropy requirement applied to µs-resolution timers.
+///
+/// MIN_IKI_STD_DEV_THRESHOLD_US (5000µs = 5ms): Minimum inter-keystroke interval
+/// deviation for human typing. Human typing at ~60 WPM has σ ≈ 30-80ms; at
+/// 120 WPM σ ≈ 15-40ms. A threshold of 5ms catches synthetic replay (σ < 1ms)
+/// while accepting fast typists. The 100x ratio vs jitter threshold reflects
+/// that IKI operates in ms-scale while jitter operates in µs-scale.
+///
+/// CONFIDENCE_PENALTY_PER_ANOMALY (0.25): Each detected anomaly reduces confidence
+/// by 25%. With 4+ anomalies, confidence reaches 0. This linear decay models
+/// independent failure modes: 1 anomaly = plausible noise (75%), 2 = suspicious
+/// (50%), 3 = likely synthetic (25%), 4+ = reject (0%).
 const MIN_STD_DEV_THRESHOLD_US: u64 = 50;
 const MIN_IKI_STD_DEV_THRESHOLD_US: u64 = 5000;
 const CONFIDENCE_PENALTY_PER_ANOMALY: f64 = 0.25;

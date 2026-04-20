@@ -153,7 +153,17 @@ pub(crate) fn cose_sign1(
         .map_err(|e| Error::Crypto(format!("COSE encoding error: {}", e)))
 }
 
+/// Maximum COSE_Sign1 input size (1 MiB) to prevent OOM on oversized payloads.
+const MAX_COSE_INPUT_SIZE: usize = 1024 * 1024;
+
 pub fn verify_evidence_cose(cose_data: &[u8], verifying_key: &VerifyingKey) -> Result<Vec<u8>> {
+    if cose_data.len() > MAX_COSE_INPUT_SIZE {
+        return Err(Error::Crypto(format!(
+            "COSE input too large: {} bytes (max {})",
+            cose_data.len(),
+            MAX_COSE_INPUT_SIZE
+        )));
+    }
     let sign1 = coset::CoseSign1::from_slice(cose_data)
         .map_err(|e| Error::Crypto(format!("COSE decoding error: {}", e)))?;
 

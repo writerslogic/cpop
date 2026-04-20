@@ -192,6 +192,33 @@ struct VerifyCtx {
     t_0: [u8; LAMBDA],
 }
 
+/// Verify the symbiotic write: address derivation, old block Merkle proof,
+/// new block content, and new block Merkle proof.
+fn verify_symbiotic_write(
+    sp: &StepProof,
+    step: u32,
+    n: u32,
+    d: u8,
+    cursor: &[u8; LAMBDA],
+) -> std::result::Result<(), PosmeError> {
+    let expected_addr = addr_from(cursor, u32::from(d), n);
+    if expected_addr != sp.write.address {
+        return Err(PosmeError::WriteMismatch { step_id: step });
+    }
+    if !merkle::verify_path(&sp.root_before, sp.write.address, &sp.write.old_block, &sp.write.merkle_path, n) {
+        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
+    }
+    let expected_data = posme_hash(&[&sp.write.old_block.data, cursor, &sp.write.old_block.causal]);
+    let expected_causal = posme_hash(&[&sp.write.old_block.causal, cursor, &i2osp(step)]);
+    if sp.write.new_block.data != expected_data || sp.write.new_block.causal != expected_causal {
+        return Err(PosmeError::WriteMismatch { step_id: step });
+    }
+    if !merkle::verify_path(&sp.root_after, sp.write.address, &sp.write.new_block, &sp.write.merkle_path, n) {
+        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
+    }
+    Ok(())
+}
+
 /// Verify a single step proof. Returns the computed transcript value for cross-checking.
 fn verify_step(
     sp: &StepProof,
@@ -239,21 +266,7 @@ fn verify_step(
     }
 
     // D. Verify symbiotic write.
-    let expected_w = addr_from(&cursor, u32::from(ctx.d), n);
-    if expected_w != sp.write.address {
-        return Err(PosmeError::WriteMismatch { step_id: step });
-    }
-    if !merkle::verify_path(&sp.root_before, sp.write.address, &sp.write.old_block, &sp.write.merkle_path, n) {
-        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
-    }
-    let expected_data = posme_hash(&[&sp.write.old_block.data, &cursor, &sp.write.old_block.causal]);
-    let expected_causal = posme_hash(&[&sp.write.old_block.causal, &cursor, &i2osp(step)]);
-    if sp.write.new_block.data != expected_data || sp.write.new_block.causal != expected_causal {
-        return Err(PosmeError::WriteMismatch { step_id: step });
-    }
-    if !merkle::verify_path(&sp.root_after, sp.write.address, &sp.write.new_block, &sp.write.merkle_path, n) {
-        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
-    }
+    verify_symbiotic_write(sp, step, n, ctx.d, &cursor)?;
 
     // E. Compute transcript value.
     let expected_transcript = posme_hash(&[&cursor_in, &i2osp(step), &cursor, &sp.root_after]);

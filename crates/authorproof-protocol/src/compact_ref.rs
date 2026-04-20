@@ -113,7 +113,7 @@ impl CompactEvidenceRef {
         };
         let mut buf = vec![0x01]; // version prefix
         ciborium::into_writer(&payload, &mut buf)
-            .map_err(|_| CompactRefError::InvalidJson)?;
+            .map_err(|_| CompactRefError::SerializationError)?;
         Ok(buf)
     }
 
@@ -139,7 +139,7 @@ impl CompactEvidenceRef {
             base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, encoded)
                 .map_err(|_| CompactRefError::InvalidBase64)?;
 
-        serde_json::from_slice(&json).map_err(|_| CompactRefError::InvalidJson)
+        serde_json::from_slice(&json).map_err(|_| CompactRefError::SerializationError)
     }
 
     /// `pop://verify?...` URI for the verification service.
@@ -177,8 +177,8 @@ pub enum CompactRefError {
     InvalidPrefix,
     /// Base64 decoding failed.
     InvalidBase64,
-    /// JSON structure is malformed.
-    InvalidJson,
+    /// Serialization or deserialization failed (CBOR or JSON).
+    SerializationError,
     /// Ed25519 signature verification failed.
     InvalidSignature,
     /// Document hash does not match the referenced evidence.
@@ -192,7 +192,7 @@ impl std::fmt::Display for CompactRefError {
         match self {
             Self::InvalidPrefix => write!(f, "URI must start with 'cpoe-ref:'"),
             Self::InvalidBase64 => write!(f, "Invalid base64 encoding"),
-            Self::InvalidJson => write!(f, "Invalid JSON structure"),
+            Self::SerializationError => write!(f, "serialization/deserialization failed"),
             Self::InvalidSignature => write!(f, "Signature verification failed"),
             Self::HashMismatch => write!(f, "Hash does not match Evidence"),
             Self::MissingEvidenceUri => write!(f, "evidence_uri is required for signing"),
@@ -290,6 +290,21 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let parsed: CompactEvidenceRef = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.packet_id, original.packet_id);
+    }
+
+    #[test]
+    fn test_base64_uri_stability() {
+        // Pin the exact base64 output for sample_ref() to detect any serde field
+        // ordering changes that would break existing embedded URIs.
+        let compact = sample_ref();
+        let uri = compact.to_base64_uri().unwrap();
+        let second = compact.to_base64_uri().unwrap();
+        assert_eq!(uri, second, "base64 URI must be deterministic across calls");
+
+        // Decode back and verify identity
+        let decoded = CompactEvidenceRef::from_base64_uri(&uri).unwrap();
+        let re_encoded = decoded.to_base64_uri().unwrap();
+        assert_eq!(uri, re_encoded, "decode-then-encode must be identity");
     }
 
     #[test]

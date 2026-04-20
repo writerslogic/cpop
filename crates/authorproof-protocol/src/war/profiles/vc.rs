@@ -125,6 +125,10 @@ pub fn to_verifiable_credential(
 
     let valid_from: DateTime<Utc> = DateTime::from_timestamp(ear.iat, 0)
         .ok_or_else(|| format!("invalid EAR issued-at timestamp: {}", ear.iat))?;
+    let now = Utc::now();
+    if valid_from > now + chrono::Duration::hours(24) {
+        return Err(format!("EAR issued-at is >24h in the future: {}", ear.iat));
+    }
 
     let seal_hash = appr.pop_seal.as_ref().map(|s| hex::encode(s.h3));
 

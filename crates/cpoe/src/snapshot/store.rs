@@ -194,13 +194,21 @@ impl SnapshotStore {
             })
             .map_err(|e| format!("list query failed: {e}"))?;
 
+        let mut skipped = 0u32;
         for row_result in mapped {
             match row_result {
                 Ok(meta) => rows.push(meta),
                 Err(e) => {
+                    skipped += 1;
                     log::warn!("skipping corrupt snapshot row: {e}");
                 }
             }
+        }
+        if skipped > 0 {
+            log::error!(
+                "snapshot list for {document_path}: {skipped} corrupt row(s) skipped, {} returned",
+                rows.len()
+            );
         }
 
         // Compute session groups (30-min gap) and word count deltas

@@ -511,6 +511,6 @@ fn test_compact_ref_invalid_json() {
     );
     assert_eq!(
         CompactEvidenceRef::from_base64_uri(&format!("cpoe-ref:{}", encoded)).unwrap_err(),
-        CompactRefError::InvalidJson
+        CompactRefError::SerializationError
     );
 }

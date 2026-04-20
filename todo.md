@@ -1936,7 +1936,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Sonnet | **Scope:** security
 - **Files:** `crates/authorproof-protocol/src/crypto.rs:156`
-- **Severity:** HIGH | **Leverage:** HIGH | **Status:** open
+- **Severity:** HIGH | **Leverage:** HIGH | **Status:** fixed 2026-04-20 (added MAX_COSE_INPUT_SIZE = 1 MiB check before CoseSign1::from_slice)
 - **Description:** `CoseSign1::from_slice()` deserializes untrusted CBOR without size limit. Oversized payloads cause OOM/DoS.
 - **Fix:** Add size check before parsing: reject if `cose_data.len() > MAX_COSE_SIZE` (e.g., 1MB).
 
@@ -1996,7 +1996,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** error_handling
 - **Files:** `crates/cpoe/src/snapshot/store.rs:201`
-- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** open
+- **Severity:** HIGH | **Leverage:** MEDIUM | **Status:** fixed 2026-04-20 (added skipped counter with log::error aggregate; callers can detect via monitoring)
 - **Description:** Corrupt snapshot rows silently skipped with log::warn(). Caller cannot distinguish empty result from partial corruption.
 - **Fix:** Return corruption count in result or propagate error.
 
@@ -2046,7 +2046,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** error_handling
 - **Files:** `crates/authorproof-protocol/src/compact_ref.rs:115`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (renamed InvalidJson to SerializationError across src + tests)
 - **Description:** CBOR encoding error mapped to `InvalidJson` variant. Confusing diagnostic for ciborium failures.
 - **Fix:** Add `CborEncoding` variant or rename to `SerializationError`.
 
@@ -2056,7 +2056,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** code_quality
 - **Files:** `crates/authorproof-protocol/src/war/ear.rs:176`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (replaced part[label.len()..] with part.strip_prefix(label)?)
 - **Description:** `part[label.len()..]` could panic if part is shorter than label. Relies on implicit guard.
 - **Fix:** Use `part.strip_prefix(label)?` instead of manual slicing.
 
@@ -2066,7 +2066,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** security
 - **Files:** `crates/authorproof-protocol/src/war/profiles/vc.rs:126`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (added >24h future check after timestamp parsing)
 - **Description:** `ear.iat` not validated for reasonable bounds. Malicious EAR with far-future timestamp creates misleading VC.
 - **Fix:** Validate timestamp within ±2 hours or document acceptable range.
 
@@ -2086,7 +2086,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** code_quality
 - **Files:** `crates/authorproof-protocol/src/compact_ref.rs:125`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (added test_base64_uri_stability verifying determinism and encode-decode identity)
 - **Description:** `to_base64_uri()` relies on stable serde field ordering. No regression test pins expected output.
 - **Fix:** Add `test_compact_ref_serialization_stability()` with pinned expected base64.
 
@@ -2096,7 +2096,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** architecture
 - **Files:** `crates/posme/src/verifier.rs:195`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (extracted verify_symbiotic_write helper; verify_step reduced to 65 lines)
 - **Description:** 85-line function with multiple nested conditionals in crypto verification path. Hard to audit.
 - **Fix:** Split into sub-functions: verify_root_chain_step(), verify_pointer_chase(), verify_symbiotic_write().
 
@@ -2106,6 +2106,6 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** code_quality
 - **Files:** `crates/cpoe-jitter/src/model.rs:26,28`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** fixed 2026-04-20 (added detailed doc comments with NIST SP 800-90B reference, typing speed derivation, and linear decay rationale)
 - **Description:** MIN_STD_DEV_THRESHOLD_US=50, MIN_IKI_STD_DEV_THRESHOLD_US=5000 (100x difference), CONFIDENCE_PENALTY_PER_ANOMALY=0.25 without justification.
 - **Fix:** Add detailed comments explaining threshold rationale and baseline references.
