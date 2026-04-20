@@ -26,6 +26,7 @@ extern crate alloc;
 
 use zeroize::Zeroizing;
 
+pub mod cognitive;
 pub mod evidence;
 pub mod model;
 #[cfg(feature = "std")]
