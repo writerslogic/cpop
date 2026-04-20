@@ -189,6 +189,160 @@ pub fn word_frequency_tier(word: &str) -> u8 {
 }
 
 // ---------------------------------------------------------------------------
+// Error Fingerprinting
+// ---------------------------------------------------------------------------
+
+/// Type of correction observed during editing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CorrectionType {
+    /// Single character typo (backspace + retype). Motor error.
+    SingleCharTypo,
+    /// Multiple characters deleted and retyped with different content. Semantic revision.
+    SemanticRevision,
+    /// Word-level deletion (whole word removed). Cognitive restructuring.
+    WordDeletion,
+    /// Characters deleted match a visually similar pattern (rn→m, cl→d). Reading error.
+    VisualConfusion,
+    /// Skipped content then backfilled. Buffer underrun from copying.
+    BackfillInsertion,
+}
+
+/// Correction event captured during editing.
+#[derive(Debug, Clone)]
+pub struct CorrectionEvent {
+    pub correction_type: CorrectionType,
+    /// Number of characters involved in the correction.
+    pub char_count: usize,
+}
+
+/// Error fingerprint analysis result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorFingerprint {
+    /// Proportion of corrections that are semantic (word+ deletions, restructuring).
+    /// Cognitive: > 0.4, Transcriptive: < 0.15.
+    pub semantic_ratio: f64,
+    /// Proportion that are single-char typos.
+    /// Both modes produce these; not discriminative alone.
+    pub typo_ratio: f64,
+    /// Proportion that are visual confusion or backfill.
+    /// Cognitive: < 0.05, Transcriptive: > 0.15.
+    pub visual_error_ratio: f64,
+    /// Mean characters per correction. Cognitive: > 4, Transcriptive: < 2.
+    pub mean_correction_size: f64,
+    /// Cognitive probability from error patterns [0, 1].
+    pub cognitive_probability: f64,
+    pub total_corrections: usize,
+}
+
+/// Analyze correction patterns to distinguish cognitive vs transcriptive errors.
+///
+/// Requires at least 5 corrections for meaningful analysis.
+pub fn analyze_error_fingerprint(corrections: &[CorrectionEvent]) -> Option<ErrorFingerprint> {
+    if corrections.len() < 5 {
+        return None;
+    }
+
+    let total = corrections.len() as f64;
+    let semantic_count = corrections.iter().filter(|c| matches!(
+        c.correction_type,
+        CorrectionType::SemanticRevision | CorrectionType::WordDeletion
+    )).count() as f64;
+    let visual_count = corrections.iter().filter(|c| matches!(
+        c.correction_type,
+        CorrectionType::VisualConfusion | CorrectionType::BackfillInsertion
+    )).count() as f64;
+    let typo_count = corrections.iter().filter(|c|
+        c.correction_type == CorrectionType::SingleCharTypo
+    ).count() as f64;
+
+    let semantic_ratio = semantic_count / total;
+    let visual_error_ratio = visual_count / total;
+    let typo_ratio = typo_count / total;
+    let mean_correction_size = corrections.iter().map(|c| c.char_count as f64).sum::<f64>() / total;
+
+    // Cognitive: high semantic ratio + large corrections + few visual errors.
+    let semantic_score = 1.0 / (1.0 + (-8.0 * (semantic_ratio - 0.25)).exp());
+    let size_score = 1.0 / (1.0 + (-(mean_correction_size - 3.0)).exp());
+    let visual_penalty = 1.0 - (1.0 / (1.0 + (-10.0 * (visual_error_ratio - 0.1)).exp()));
+
+    let cognitive_probability = semantic_score * 0.45 + size_score * 0.30 + visual_penalty * 0.25;
+
+    Some(ErrorFingerprint {
+        semantic_ratio,
+        typo_ratio,
+        visual_error_ratio,
+        mean_correction_size,
+        cognitive_probability,
+        total_corrections: corrections.len(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Personal Baseline Model
+// ---------------------------------------------------------------------------
+
+/// Per-writer baseline statistics accumulated over multiple sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonalBaseline {
+    /// Mean sentence initiation ratio for this writer.
+    pub mean_sid_ratio: f64,
+    /// Standard deviation of SID ratio across sessions.
+    pub std_sid_ratio: f64,
+    /// Mean bigram fluency ratio.
+    pub mean_bigram_fluency: f64,
+    /// Mean LRD correlation.
+    pub mean_lrd_correlation: f64,
+    /// Mean non-append ratio.
+    pub mean_non_append_ratio: f64,
+    /// Number of sessions contributing to this baseline.
+    pub session_count: u32,
+}
+
+/// Compare a session's metrics against a personal baseline.
+///
+/// Returns a deviation score [0, 1] where 0 = perfectly consistent with baseline,
+/// 1 = extreme deviation (possible impostor or mode switch).
+pub fn compute_baseline_deviation(
+    baseline: &PersonalBaseline,
+    temporal: Option<&cpoe_jitter::cognitive::CognitiveTemporalMetrics>,
+    content: Option<&CognitiveContentMetrics>,
+) -> f64 {
+    if baseline.session_count < 3 {
+        return 0.0; // Insufficient baseline data.
+    }
+
+    let mut deviations: Vec<f64> = Vec::new();
+
+    if let Some(t) = temporal {
+        // How many standard deviations away from personal baseline?
+        if baseline.std_sid_ratio > 0.1 {
+            let z_sid = ((t.sentence_initiation_ratio - baseline.mean_sid_ratio)
+                / baseline.std_sid_ratio).abs();
+            deviations.push(z_sid);
+        }
+        let z_bigram = (t.bigram_fluency_ratio - baseline.mean_bigram_fluency).abs();
+        deviations.push(z_bigram);
+    }
+
+    if let Some(c) = content {
+        let z_lrd = (c.lrd_correlation - baseline.mean_lrd_correlation).abs() * 3.0;
+        let z_nar = (c.non_append_ratio - baseline.mean_non_append_ratio).abs() * 5.0;
+        deviations.push(z_lrd);
+        deviations.push(z_nar);
+    }
+
+    if deviations.is_empty() {
+        return 0.0;
+    }
+
+    // Max deviation across all metrics (most anomalous dimension).
+    let max_z = deviations.iter().cloned().fold(0.0f64, f64::max);
+
+    // Map z-score to [0, 1]: z < 1.5 = normal, z > 3.0 = extreme.
+    1.0 / (1.0 + (-2.0 * (max_z - 2.0)).exp())
+}
+
+// ---------------------------------------------------------------------------
 // Unified Writing Mode Classifier
 // ---------------------------------------------------------------------------
 
@@ -211,6 +365,9 @@ pub struct WritingModeVerdict {
     pub cognitive_score: f64,
     /// Confidence in the verdict [0, 1] based on data sufficiency.
     pub confidence: f64,
+    /// Joint inconsistency score [0, 1]. High values indicate selective spoofing:
+    /// one signal layer was faked but others weren't kept consistent.
+    pub spoofing_indicator: f64,
     /// Which signal layers contributed to the verdict.
     pub layers_used: Vec<String>,
 }
@@ -259,14 +416,24 @@ pub fn classify_writing_mode(
             mode: WritingMode::Indeterminate,
             cognitive_score: 0.5,
             confidence: 0.0,
+            spoofing_indicator: 0.0,
             layers_used: layers,
         };
     }
 
     let cognitive_score = weighted_sum / total_weight;
-    let confidence = (total_weight / 1.0).min(1.0) * (layers.len() as f64 / 3.0);
 
-    let mode = if cognitive_score > 0.65 && confidence > 0.4 {
+    // Joint consistency check: detect spoofing via signal disagreement.
+    // If signals strongly disagree (one says cognitive, another says transcriptive),
+    // that's harder to produce naturally than through selective faking.
+    let spoofing_penalty = compute_spoofing_penalty(temporal, content, transcription);
+    let confidence = ((total_weight / 1.0).min(1.0) * (layers.len() as f64 / 3.0))
+        * (1.0 - spoofing_penalty);
+
+    let mode = if spoofing_penalty > 0.5 {
+        // Strong disagreement between signals: likely spoofing attempt.
+        WritingMode::Indeterminate
+    } else if cognitive_score > 0.65 && confidence > 0.4 {
         WritingMode::Cognitive
     } else if cognitive_score < 0.35 && confidence > 0.4 {
         WritingMode::Transcriptive
@@ -278,7 +445,56 @@ pub fn classify_writing_mode(
         mode,
         cognitive_score,
         confidence,
+        spoofing_indicator: spoofing_penalty,
         layers_used: layers,
+    }
+}
+
+/// Detect joint inconsistency between signal layers.
+///
+/// A skilled forger can fake one signal (e.g., add artificial pauses before sentences)
+/// but maintaining consistency across ALL signals simultaneously is exponentially harder.
+/// Signal disagreement indicates selective spoofing.
+///
+/// Returns a penalty in [0, 1]: 0 = consistent, 1 = strong disagreement.
+fn compute_spoofing_penalty(
+    temporal: Option<&cpoe_jitter::cognitive::CognitiveTemporalMetrics>,
+    content: Option<&CognitiveContentMetrics>,
+    transcription: Option<&super::transcription::TranscriptionAnalysis>,
+) -> f64 {
+    let mut scores: Vec<f64> = Vec::new();
+
+    if let Some(t) = temporal {
+        scores.push(t.cognitive_probability);
+    }
+    if let Some(c) = content {
+        scores.push(c.cognitive_probability);
+    }
+    if let Some(tr) = transcription {
+        scores.push(if tr.is_transcription { 0.1 } else { 0.85 });
+    }
+
+    if scores.len() < 2 {
+        return 0.0;
+    }
+
+    // Compute max disagreement between any two layers.
+    let mut max_disagreement = 0.0f64;
+    for i in 0..scores.len() {
+        for j in (i + 1)..scores.len() {
+            let disagreement = (scores[i] - scores[j]).abs();
+            if disagreement > max_disagreement {
+                max_disagreement = disagreement;
+            }
+        }
+    }
+
+    // Disagreement > 0.5 is suspicious. > 0.7 is almost certainly spoofing.
+    // Map: 0.0-0.4 → 0, 0.4-0.8 → 0-1 (sigmoid).
+    if max_disagreement < 0.4 {
+        0.0
+    } else {
+        1.0 / (1.0 + (-8.0 * (max_disagreement - 0.6)).exp())
     }
 }
 
@@ -471,5 +687,121 @@ mod tests {
         let verdict = classify_writing_mode(None, None, None);
         assert_eq!(verdict.mode, WritingMode::Indeterminate);
         assert_eq!(verdict.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_spoofing_detected() {
+        use cpoe_jitter::cognitive::CognitiveTemporalMetrics;
+        use super::super::transcription::TranscriptionAnalysis;
+
+        // Temporal says cognitive (faked pauses) but structural says transcriptive.
+        let temporal = CognitiveTemporalMetrics {
+            sentence_initiation_ratio: 15.0,
+            sentence_initiation_variance: 30.0,
+            bigram_fluency_ratio: 1.1, // But bigrams don't match (uniform speed)
+            iki_modality_score: 0.3,   // And distribution is unimodal
+            cognitive_probability: 0.85, // Faked SID dominates
+            sentence_count: 5,
+            bigram_pairs_analyzed: 100,
+        };
+        let transcription = TranscriptionAnalysis {
+            linearity_score: 0.97,
+            revision_density: 0.8,
+            nonlinearity_index: 0.2,
+            avg_burst_length: 30.0,
+            is_transcription: true,
+            explanation: String::new(),
+        };
+
+        let verdict = classify_writing_mode(Some(&temporal), None, Some(&transcription));
+        // Should detect disagreement (temporal=0.85, structural=0.1).
+        assert!(verdict.spoofing_indicator > 0.3,
+            "spoofing={}", verdict.spoofing_indicator);
+    }
+
+    #[test]
+    fn test_error_fingerprint_cognitive() {
+        let corrections = vec![
+            CorrectionEvent { correction_type: CorrectionType::WordDeletion, char_count: 7 },
+            CorrectionEvent { correction_type: CorrectionType::SemanticRevision, char_count: 12 },
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+            CorrectionEvent { correction_type: CorrectionType::SemanticRevision, char_count: 8 },
+            CorrectionEvent { correction_type: CorrectionType::WordDeletion, char_count: 5 },
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+            CorrectionEvent { correction_type: CorrectionType::SemanticRevision, char_count: 15 },
+        ];
+        let fp = analyze_error_fingerprint(&corrections).unwrap();
+        assert!(fp.semantic_ratio > 0.5, "semantic={}", fp.semantic_ratio);
+        assert!(fp.mean_correction_size > 4.0, "size={}", fp.mean_correction_size);
+        assert!(fp.cognitive_probability > 0.6, "prob={}", fp.cognitive_probability);
+    }
+
+    #[test]
+    fn test_error_fingerprint_transcriptive() {
+        let corrections = vec![
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+            CorrectionEvent { correction_type: CorrectionType::VisualConfusion, char_count: 2 },
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+            CorrectionEvent { correction_type: CorrectionType::BackfillInsertion, char_count: 3 },
+            CorrectionEvent { correction_type: CorrectionType::SingleCharTypo, char_count: 1 },
+        ];
+        let fp = analyze_error_fingerprint(&corrections).unwrap();
+        assert!(fp.visual_error_ratio > 0.2, "visual={}", fp.visual_error_ratio);
+        assert!(fp.mean_correction_size < 2.0, "size={}", fp.mean_correction_size);
+        assert!(fp.cognitive_probability < 0.4, "prob={}", fp.cognitive_probability);
+    }
+
+    #[test]
+    fn test_baseline_deviation_normal() {
+        use cpoe_jitter::cognitive::CognitiveTemporalMetrics;
+
+        let baseline = PersonalBaseline {
+            mean_sid_ratio: 10.0,
+            std_sid_ratio: 3.0,
+            mean_bigram_fluency: 2.5,
+            mean_lrd_correlation: 0.35,
+            mean_non_append_ratio: 0.18,
+            session_count: 10,
+        };
+        let temporal = CognitiveTemporalMetrics {
+            sentence_initiation_ratio: 11.0, // Within 1 std dev
+            sentence_initiation_variance: 20.0,
+            bigram_fluency_ratio: 2.3,
+            iki_modality_score: 0.8,
+            cognitive_probability: 0.75,
+            sentence_count: 5,
+            bigram_pairs_analyzed: 100,
+        };
+
+        let deviation = compute_baseline_deviation(&baseline, Some(&temporal), None);
+        assert!(deviation < 0.3, "deviation={deviation}");
+    }
+
+    #[test]
+    fn test_baseline_deviation_anomalous() {
+        use cpoe_jitter::cognitive::CognitiveTemporalMetrics;
+
+        let baseline = PersonalBaseline {
+            mean_sid_ratio: 10.0,
+            std_sid_ratio: 2.0,
+            mean_bigram_fluency: 2.5,
+            mean_lrd_correlation: 0.35,
+            mean_non_append_ratio: 0.18,
+            session_count: 10,
+        };
+        // Sudden shift: SID dropped to 3.0 (3.5 std devs from baseline).
+        let temporal = CognitiveTemporalMetrics {
+            sentence_initiation_ratio: 3.0,
+            sentence_initiation_variance: 2.0,
+            bigram_fluency_ratio: 1.2,
+            iki_modality_score: 0.2,
+            cognitive_probability: 0.2,
+            sentence_count: 5,
+            bigram_pairs_analyzed: 100,
+        };
+
+        let deviation = compute_baseline_deviation(&baseline, Some(&temporal), None);
+        assert!(deviation > 0.6, "deviation={deviation}");
     }
 }
