@@ -12,7 +12,10 @@ fn test_config_defaults() {
     assert_eq!(config.data_dir, dir.path());
     assert_eq!(config.retention_days, 30);
     assert!(config.vdf.iterations_per_second > 0);
-    assert!(!config.sentinel.allowed_apps.is_empty());
+    assert!(config.sentinel.allowed_apps.is_empty());
+    assert!(config.sentinel.track_unknown_apps);
+    assert!(!config.sentinel.excluded_paths.is_empty());
+    assert!(!config.sentinel.allowed_extensions.is_empty());
 }
 
 #[test]

@@ -11,15 +11,18 @@ use tokio::sync::broadcast;
 #[test]
 fn test_config_default() {
     let config = SentinelConfig::default();
-    assert!(!config.allowed_apps.is_empty());
+    assert!(config.allowed_apps.is_empty());
     assert!(!config.blocked_apps.is_empty());
     assert!(config.track_unknown_apps);
+    assert!(!config.excluded_paths.is_empty());
+    assert!(!config.allowed_extensions.is_empty());
 }
 
 #[test]
 fn test_config_app_allowed() {
     let config = SentinelConfig::default();
 
+    // With empty allowed_apps + track_unknown_apps=true, all non-blocked apps are allowed
     assert!(config.is_app_allowed("com.microsoft.VSCode", "Visual Studio Code"));
     assert!(!config.is_app_allowed("com.apple.finder", "Finder"));
 }
@@ -237,7 +240,8 @@ type FocusTestHarness = (
 
 fn make_focus_test_harness() -> FocusTestHarness {
     let sessions = Arc::new(RwLock::new(HashMap::new()));
-    let config = SentinelConfig::default();
+    let mut config = SentinelConfig::default();
+    config.excluded_paths.clear(); // Tests use /tmp paths; don't exclude them
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let shadow = Arc::new(ShadowManager::new(temp_dir.path()).expect("shadow manager"));
     let signing_key = Arc::new(RwLock::new(super::behavioral_key::BehavioralKey::new(

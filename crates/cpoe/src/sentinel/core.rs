@@ -723,6 +723,7 @@ impl Sentinel {
                         handle_change_event_sync(
                             &event,
                             &sessions,
+                            &config,
                             &signing_key,
                             &wal_dir,
                             &session_events_tx,

@@ -77,6 +77,23 @@ pub fn handle_focus_event_sync(
         return;
     }
 
+    // Opt-out filtering: exclude paths and non-allowed extensions.
+    // Virtual paths (title://, shadow://) and empty paths always pass.
+    if !event.path.is_empty()
+        && !event.path.starts_with("title://")
+        && !event.path.starts_with("shadow://")
+    {
+        let p = Path::new(&event.path);
+        if config.is_path_excluded(p) {
+            super::trace!("[FOCUS] EXCLUDED path={:?}", event.path);
+            return;
+        }
+        if !config.is_extension_allowed(p) {
+            super::trace!("[FOCUS] EXTENSION NOT ALLOWED path={:?}", event.path);
+            return;
+        }
+    }
+
     match event.event_type {
         FocusEventType::FocusGained => {
             let doc_path = if event.path.is_empty() {
@@ -385,11 +402,26 @@ pub fn unfocus_document_sync(
 pub fn handle_change_event_sync(
     event: &ChangeEvent,
     sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
+    config: &SentinelConfig,
     signing_key: &Arc<RwLock<super::behavioral_key::BehavioralKey>>,
     wal_dir: &Path,
     session_events_tx: &broadcast::Sender<SessionEvent>,
     current_focus_opt: Option<&Arc<RwLock<Option<String>>>>,
 ) {
+    // Opt-out filtering: exclude paths and non-allowed extensions.
+    if !event.path.is_empty()
+        && !event.path.starts_with("title://")
+        && !event.path.starts_with("shadow://")
+    {
+        let p = Path::new(&event.path);
+        if config.is_path_excluded(p) {
+            return;
+        }
+        if !config.is_extension_allowed(p) {
+            return;
+        }
+    }
+
     // Acquire signing_key before sessions to match lock order in focus_document_sync
     let key = signing_key.read_recover().key();
     let mut sessions_map = sessions.write_recover();

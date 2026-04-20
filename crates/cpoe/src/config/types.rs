@@ -239,6 +239,8 @@ pub struct SentinelConfig {
     pub allowed_apps: Vec<String>,
     pub blocked_apps: Vec<String>,
     pub track_unknown_apps: bool,
+    pub excluded_paths: Vec<PathBuf>,
+    pub allowed_extensions: Vec<String>,
     pub hash_on_focus: bool,
     pub hash_on_save: bool,
     pub poll_interval_ms: u64,
@@ -279,57 +281,7 @@ impl Default for SentinelConfig {
             recursive_watch: true,
             idle_timeout_secs: 1800,
             idle_check_interval_secs: 60,
-            allowed_apps: vec![
-                // macOS native
-                "com.apple.TextEdit".to_string(),
-                "com.apple.iWork.Pages".to_string(),
-                "com.apple.iWork.Numbers".to_string(),
-                "com.apple.iWork.Keynote".to_string(),
-                "com.apple.dt.Xcode".to_string(),
-                // MS Office
-                "com.microsoft.Word".to_string(),
-                "com.microsoft.Excel".to_string(),
-                "com.microsoft.Powerpoint".to_string(),
-                // Editors / IDEs
-                "code".to_string(),
-                "com.microsoft.VSCode".to_string(),
-                "com.microsoft.VSCodeInsiders".to_string(),
-                "com.todesktop.230313mzl4w4u92".to_string(), // Cursor
-                "com.sublimetext.4".to_string(),
-                "com.sublimetext.3".to_string(),
-                "com.jetbrains.intellij".to_string(),
-                "com.jetbrains.WebStorm".to_string(),
-                "com.jetbrains.pycharm".to_string(),
-                "com.jetbrains.CLion".to_string(),
-                "com.jetbrains.goland".to_string(),
-                "com.jetbrains.rider".to_string(),
-                "com.googlecode.iterm2".to_string(),
-                "org.vim.MacVim".to_string(),
-                "com.github.atom".to_string(),
-                "com.panic.Nova".to_string(),
-                "com.barebones.bbedit".to_string(),
-                "com.coteditor.CotEditor".to_string(),
-                // Writing tools
-                "com.typora.Typora".to_string(),
-                "md.obsidian".to_string(),
-                "com.notion.Notion".to_string(),
-                "com.notion.id".to_string(),
-                "com.literatureandlatte.scrivener3".to_string(),
-                "com.ulyssesapp.mac".to_string(),
-                "net.shinyfrog.bear".to_string(),
-                "com.reederapp.5.macOS".to_string(),
-                "pro.writer.mac".to_string(), // iA Writer
-                "com.omnigroup.OmniOutliner5".to_string(),
-                // Browser-based (matched by app_name, handled by extension)
-                "Google Docs".to_string(),
-                // Office suites
-                "org.libreoffice.LibreOffice".to_string(),
-                "org.openoffice.script".to_string(),
-                // Linux editors
-                "org.gnome.gedit".to_string(),
-                "org.gnome.TextEditor".to_string(),
-                "org.kde.kate".to_string(),
-            ],
+            allowed_apps: Vec::new(),
             blocked_apps: vec![
                 // File managers
                 "com.apple.finder".to_string(),
@@ -343,6 +295,38 @@ impl Default for SentinelConfig {
                 "org.kde.konsole".to_string(),
             ],
             track_unknown_apps: true,
+            excluded_paths: vec![
+                PathBuf::from("/tmp"),
+                PathBuf::from("/var"),
+                PathBuf::from("/private/tmp"),
+                dirs::home_dir().unwrap_or_default().join("Library"),
+                PathBuf::from("node_modules"),
+                PathBuf::from(".git"),
+                PathBuf::from("DerivedData"),
+                PathBuf::from("build"),
+                PathBuf::from("target"),
+                PathBuf::from("dist"),
+                PathBuf::from(".venv"),
+            ],
+            allowed_extensions: vec![
+                // Plain text
+                "txt", "md", "markdown", "text", "rtf",
+                // Writing apps
+                "scriv", "scrivx", "fdx", "fountain", "mmd",
+                // Document formats
+                "doc", "docx", "odt", "pages",
+                // Markup
+                "tex", "latex", "org", "rst", "adoc", "asciidoc",
+                // Web writing
+                "html", "htm",
+                // Code (writers who code)
+                "rs", "py", "js", "ts", "go", "java", "swift", "c", "cpp",
+                "h", "rb", "php", "sh", "css", "json", "yaml", "yml",
+                "toml", "xml",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             hash_on_focus: true,
             hash_on_save: true,
             poll_interval_ms: 100,
@@ -381,6 +365,44 @@ impl SentinelConfig {
             }
         }
         self.track_unknown_apps
+    }
+
+    /// Check whether a filesystem path is excluded from sentinel tracking.
+    ///
+    /// Absolute excluded paths match via `starts_with`. Single-component
+    /// excluded paths (e.g. "node_modules") match any path component.
+    pub fn is_path_excluded(&self, path: &Path) -> bool {
+        for excluded in &self.excluded_paths {
+            if path.starts_with(excluded) {
+                return true;
+            }
+            // Single-component excludes match anywhere in the path.
+            if excluded.components().count() == 1
+                && path
+                    .components()
+                    .any(|c| c.as_os_str() == excluded.as_os_str())
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check whether a file extension is in the allowed set.
+    ///
+    /// Empty `allowed_extensions` means all extensions are allowed.
+    /// Extensionless files are always allowed (unsaved documents, Makefile, etc.).
+    pub fn is_extension_allowed(&self, path: &Path) -> bool {
+        if self.allowed_extensions.is_empty() {
+            return true;
+        }
+        match path.extension().and_then(|e| e.to_str()) {
+            Some(ext) => self
+                .allowed_extensions
+                .iter()
+                .any(|a| a.eq_ignore_ascii_case(ext)),
+            None => true,
+        }
     }
 
     /// Validate sentinel config values (nonzero intervals, consistent bounds).
