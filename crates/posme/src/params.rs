@@ -75,6 +75,12 @@ impl PosmeParams {
                 self.challenges
             )));
         }
+        if u32::from(self.challenges) > self.total_steps {
+            return Err(PosmeError::InvalidParams(format!(
+                "challenges {} > total_steps {} (pigeonhole: not enough unique steps)",
+                self.challenges, self.total_steps
+            )));
+        }
         if self.recursion_depth < MIN_RECURSION_DEPTH {
             return Err(PosmeError::InvalidParams(format!(
                 "recursion_depth {} < minimum {MIN_RECURSION_DEPTH}",
@@ -202,6 +208,13 @@ mod tests {
     fn reject_total_steps_above_max() {
         let mut p = PosmeParams::test();
         p.total_steps = (1 << 28) + 1;
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn reject_challenges_exceed_total_steps() {
+        let mut p = PosmeParams::test();
+        p.challenges = (p.total_steps + 1) as u16;
         assert!(p.validate().is_err());
     }
 

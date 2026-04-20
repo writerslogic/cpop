@@ -2076,7 +2076,7 @@ pub enum SecureChannelSendError {
 
 - **Model:** Haiku | **Scope:** error_handling
 - **Files:** `crates/cpoe-jitter/src/evidence.rs:400`
-- **Severity:** MEDIUM | **Status:** open
+- **Severity:** MEDIUM | **Status:** rejected 2026-04-20 (false positive: SystemTime::now().duration_since(UNIX_EPOCH) cannot fail unless system clock is before 1970; impossible on real hardware)
 - **Description:** `unwrap_or_default()` on SystemTime makes timestamp 0 silently. Breaks monotonicity.
 - **Fix:** Return Result or explicit error.
 
