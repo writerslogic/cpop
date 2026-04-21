@@ -50,6 +50,12 @@ pub struct CognitiveAccumulator {
     consecutive_deletes: usize,
 }
 
+impl Default for CognitiveAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CognitiveAccumulator {
     pub fn new() -> Self {
         Self {
@@ -82,7 +88,7 @@ impl CognitiveAccumulator {
         // Track timed keystroke for temporal analysis (SID + bigram + modality).
         if self.timed_keystrokes.len() < MAX_TIMED_KEYSTROKES {
             self.timed_keystrokes.push(TimedKeystroke {
-                iki_us: iki_us.min(u64::MAX),
+                iki_us,
                 char_byte,
                 after_sentence_end: self.last_was_sentence_end,
             });

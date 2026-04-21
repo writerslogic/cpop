@@ -600,7 +600,7 @@ impl Sentinel {
                             use sha2::{Digest, Sha256};
                             let mut hasher = Sha256::new();
                             hasher.update(b"witnessd-keystroke-entropy-v1");
-                            hasher.update(&event.timestamp_ns.to_le_bytes());
+                            hasher.update(event.timestamp_ns.to_le_bytes());
                             let entropy_hash = hasher.finalize();
                             signing_key.write_recover().add_entropy(&entropy_hash[..8]);
                         }
