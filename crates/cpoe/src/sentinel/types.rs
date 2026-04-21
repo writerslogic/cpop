@@ -258,6 +258,8 @@ pub struct DocumentSession {
     pub window_title: ObfuscatedString,
     /// Per-document jitter samples for forensic analysis.
     pub jitter_samples: Vec<crate::jitter::SimpleJitterSample>,
+    /// Cognitive writing signal accumulator (word boundaries, edit ops, corrections).
+    pub cognitive: crate::forensics::cognitive_accumulator::CognitiveAccumulator,
     /// Focus loss events during this session (timestamps when user switched away).
     pub focus_switches: VecDeque<FocusSwitchRecord>,
     /// AI tools detected by Endpoint Security during this session.
@@ -306,6 +308,7 @@ impl Clone for DocumentSession {
             app_name: self.app_name.clone(),
             window_title: self.window_title.clone(),
             jitter_samples: self.jitter_samples.clone(),
+            cognitive: self.cognitive.clone(),
             focus_switches: self.focus_switches.clone(),
             ai_tools_detected: self.ai_tools_detected.clone(),
             capture_gaps: self.capture_gaps,
@@ -353,6 +356,7 @@ impl DocumentSession {
             app_name,
             window_title,
             jitter_samples: Vec::new(),
+            cognitive: crate::forensics::cognitive_accumulator::CognitiveAccumulator::new(),
             focus_switches: VecDeque::new(),
             ai_tools_detected: Vec::new(),
             capture_gaps: 0,

@@ -125,7 +125,21 @@ pub fn ffi_get_forensic_breakdown(path: String) -> FfiForensicBreakdown {
     }
 
     let profile = crate::forensics::ForensicEngine::evaluate_authorship(&path, &events);
-    let (metrics, _regions) = crate::ffi::helpers::run_full_forensics(&events);
+    let (mut metrics, _regions) = crate::ffi::helpers::run_full_forensics(&events);
+
+    // Enrich writing mode with cognitive layer from live session if available.
+    if let Some(sentinel) = super::sentinel::get_sentinel() {
+        for session in sentinel.sessions() {
+            if session.path == path {
+                if let Some(layer) = session.cognitive.analyze() {
+                    if let Some(ref mut wm) = metrics.writing_mode {
+                        wm.cognitive_layer = Some(layer);
+                    }
+                }
+                break;
+            }
+        }
+    }
 
     let protocol_verdict = metrics.map_to_protocol_verdict();
 

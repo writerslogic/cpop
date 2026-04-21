@@ -17,6 +17,7 @@ pub(crate) mod analysis;
 mod assessment;
 mod cadence;
 mod comparison;
+pub mod cognitive_accumulator;
 mod correlation;
 pub mod cross_modal;
 pub mod dictation;

@@ -636,6 +636,13 @@ impl Sentinel {
                                 if session.jitter_samples.len() < MAX_DOCUMENT_JITTER_SAMPLES {
                                     session.jitter_samples.push(sample.clone());
                                 }
+                                session.cognitive.record_keystroke(
+                                    event.char_value,
+                                    event.timestamp_ns,
+                                    duration_since_last_ns,
+                                    0, // size_delta populated at checkpoint time
+                                    0, // file_size populated at checkpoint time
+                                );
 
                                 let validation = crate::forensics::validate_keystroke_event(
                                     event.timestamp_ns,
