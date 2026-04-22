@@ -67,8 +67,7 @@
       "id": "cpoe@writerslogic.com",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
-        "health_report_upload_enabled": false,
-        "usage_reporting_enabled": false
+        "required": ["none"]
       }
     }
   },
