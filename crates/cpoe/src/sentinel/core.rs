@@ -660,15 +660,20 @@ impl Sentinel {
                                         "[KEYSTROKE] REJECTED conf={:.2}", validation.confidence
                                     );
                                 } else {
-                                    // Advance incremental jitter hash chain for each accepted sample.
+                                    // Advance incremental jitter hash chain only for accepted
+                                    // samples that were actually buffered. When the buffer is
+                                    // full (was_buffered = false) we skip the update so that
+                                    // jitter_hash_state stays in sync with jitter_samples.
                                     // step: SHA256(prev || timestamp_ns_be || duration_ns_be || zone)
-                                    let mut h = sha2::Sha256::new();
-                                    use sha2::Digest as _;
-                                    h.update(session.jitter_hash_state);
-                                    h.update(sample.timestamp_ns.to_be_bytes());
-                                    h.update(sample.duration_since_last_ns.to_be_bytes());
-                                    h.update([sample.zone]);
-                                    session.jitter_hash_state = h.finalize().into();
+                                    if was_buffered {
+                                        let mut h = sha2::Sha256::new();
+                                        use sha2::Digest as _;
+                                        h.update(session.jitter_hash_state);
+                                        h.update(sample.timestamp_ns.to_be_bytes());
+                                        h.update(sample.duration_since_last_ns.to_be_bytes());
+                                        h.update([sample.zone]);
+                                        session.jitter_hash_state = h.finalize().into();
+                                    }
 
                                     if let Some(ref tpm) = tpm_provider_for_loop {
                                         // Lazily initialize scheduler on first accepted keystroke.

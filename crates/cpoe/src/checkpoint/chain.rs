@@ -238,14 +238,41 @@ impl Chain {
     /// Save the chain and write an HMAC-SHA256 sidecar (`{path}.mac`) over the
     /// serialized bytes.  The sidecar lets `load_with_mac` detect offline edits
     /// to the chain JSON before deserializing.
+    ///
+    /// Both the chain file and the sidecar are written atomically via temp-file
+    /// rename so a crash between the two writes cannot leave them inconsistent.
     pub fn save_with_mac(&mut self, path: impl AsRef<Path>, mac_key: &[u8]) -> Result<()> {
         let path = path.as_ref();
-        self.save(path)?;
-        let data = fs::read(path)
-            .map_err(|e| Error::checkpoint(format!("failed to read chain for MAC: {e}")))?;
+        self.storage_path = Some(path.to_path_buf());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        // Serialize once; compute MAC on the same bytes we will write.
+        let data = serde_json::to_vec_pretty(self)
+            .map_err(|e| Error::checkpoint(format!("failed to marshal chain: {e}")))?;
         let mac = compute_chain_mac(mac_key, &data)?;
-        fs::write(mac_sidecar_path(path), mac)
-            .map_err(|e| Error::checkpoint(format!("failed to write chain MAC: {e}")))?;
+
+        let rand_suffix = format!("{:08x}", rand::random::<u32>());
+        let tmp_chain = PathBuf::from(format!("{}.{}.tmp", path.display(), rand_suffix));
+        let mac_path = mac_sidecar_path(path);
+        let tmp_mac = PathBuf::from(format!("{}.{}.tmp", mac_path.display(), rand_suffix));
+
+        fs::write(&tmp_chain, &data)?;
+        fs::File::open(&tmp_chain)?.sync_all()?;
+        fs::write(&tmp_mac, mac)?;
+        fs::File::open(&tmp_mac)?.sync_all()?;
+
+        // Commit sidecar first so load_with_mac never sees a chain without
+        // a matching sidecar (the converse is acceptable: MAC but no chain).
+        fs::rename(&tmp_mac, &mac_path)
+            .map_err(|e| Error::checkpoint(format!("failed to commit chain MAC: {e}")))?;
+        fs::rename(&tmp_chain, path)
+            .map_err(|e| Error::checkpoint(format!("failed to commit chain: {e}")))?;
+        if let Some(parent) = path.parent() {
+            if let Ok(dir) = fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
         Ok(())
     }
 
