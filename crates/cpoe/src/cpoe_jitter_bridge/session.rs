@@ -19,13 +19,14 @@ use zeroize::{Zeroize, Zeroizing};
 
 /// Verify hash chain integrity, timestamp monotonicity, and keystroke count monotonicity.
 fn verify_sample_chain(samples: &[HybridSample]) -> Result<(), String> {
+    use subtle::ConstantTimeEq;
     for (i, sample) in samples.iter().enumerate() {
-        if sample.compute_hash() != sample.hash {
+        if !bool::from(sample.compute_hash().ct_eq(&sample.hash)) {
             return Err(format!("sample {i}: hash mismatch"));
         }
         if i > 0 {
             let prev = &samples[i - 1];
-            if sample.previous_hash != prev.hash {
+            if !bool::from(sample.previous_hash.ct_eq(&prev.hash)) {
                 return Err(format!("sample {i}: broken chain link"));
             }
             if sample.timestamp <= prev.timestamp {
@@ -145,11 +146,12 @@ impl HybridJitterSession {
             0xFF
         });
 
-        let mut input = Vec::with_capacity(64);
-        input.extend_from_slice(&self.keystroke_count.to_be_bytes());
-        input.extend_from_slice(&doc_hash);
-        input.extend_from_slice(&[zone_transition]);
-        input.extend_from_slice(&now.timestamp_nanos_safe().to_be_bytes());
+        // Fixed-size buffer avoids per-keystroke heap allocation.
+        let mut input = [0u8; 49]; // 8 (count) + 32 (hash) + 1 (zone) + 8 (timestamp)
+        input[..8].copy_from_slice(&self.keystroke_count.to_be_bytes());
+        input[8..40].copy_from_slice(&doc_hash);
+        input[40] = zone_transition;
+        input[41..49].copy_from_slice(&now.timestamp_nanos_safe().to_be_bytes());
 
         let jitter = self
             .cpoe_jitter_session
