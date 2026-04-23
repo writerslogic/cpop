@@ -63,7 +63,11 @@ pub fn calibrate(duration: Duration) -> Result<Parameters, String> {
     } else {
         0.0
     };
-    let iterations_per_second = if rate.is_finite() { rate.round() as u64 } else { 0 };
+    let iterations_per_second = if rate.is_finite() {
+        rate.round() as u64
+    } else {
+        0
+    };
 
     if iterations_per_second < CALIBRATION_MIN_ITERS_PER_SEC {
         return Err(format!(

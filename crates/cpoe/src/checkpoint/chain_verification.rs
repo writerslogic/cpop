@@ -344,9 +344,7 @@ impl Chain {
                     }
                 };
                 if let Err(e) = proof.params.validate() {
-                    report.fail(format!(
-                        "checkpoint {i}: PoSME params invalid: {e}"
-                    ));
+                    report.fail(format!("checkpoint {i}: PoSME params invalid: {e}"));
                     return report;
                 }
                 // Duration plausibility: reject proofs that claim to have run
@@ -354,9 +352,7 @@ impl Chain {
                 // CORE (256 MiB) needs ~0.5s minimum on modern hardware;
                 // use 100ms floor as conservative lower bound.
                 let min_duration_ms = 100u128;
-                if proof.claimed_duration.as_millis() < min_duration_ms
-                    && checkpoint.ordinal > 0
-                {
+                if proof.claimed_duration.as_millis() < min_duration_ms && checkpoint.ordinal > 0 {
                     report.warnings.push(format!(
                         "checkpoint {i}: PoSME claimed_duration {}ms below \
                          plausibility floor ({min_duration_ms}ms)",
@@ -411,14 +407,12 @@ impl Chain {
                 continue;
             }
 
-            let prev_vdf_output = if self.metadata.entanglement_mode
-                == EntanglementMode::Entangled
-                && i > 0
-            {
-                Some(require_prev_vdf_output(&self.checkpoints, i)?)
-            } else {
-                None
-            };
+            let prev_vdf_output =
+                if self.metadata.entanglement_mode == EntanglementMode::Entangled && i > 0 {
+                    Some(require_prev_vdf_output(&self.checkpoints, i)?)
+                } else {
+                    None
+                };
 
             verify_single_checkpoint_vdf(
                 i,

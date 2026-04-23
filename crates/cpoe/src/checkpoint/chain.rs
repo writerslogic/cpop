@@ -137,7 +137,12 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
+            None => genesis_prev_hash(
+                content_hash,
+                content_size,
+                &self.metadata.document_path,
+                None,
+            )?,
         };
 
         let mut checkpoint =
@@ -195,10 +200,10 @@ impl Chain {
         }
         if let Some(mmr) = &self.mmr {
             let append = mmr.finalize_checkpoint(&mut checkpoint)?;
-            checkpoint.mmr_inclusion_proof = Some(
-                append.proof().serialize()
-                    .map_err(|e| Error::checkpoint(format!("MMR proof serialization failed: {e}")))?
-            );
+            checkpoint.mmr_inclusion_proof =
+                Some(append.proof().serialize().map_err(|e| {
+                    Error::checkpoint(format!("MMR proof serialization failed: {e}"))
+                })?);
         } else {
             checkpoint.hash = checkpoint.compute_hash();
         }
@@ -303,8 +308,9 @@ impl Chain {
         // Atomically try to read the MAC file; if NotFound, fall back to legacy load.
         // If it exists but fails to read, propagate the error.
         let stored_mac: [u8; 32] = match fs::read(&mac_path) {
-            Ok(data) => data.try_into()
-                .map_err(|_| Error::checkpoint("chain MAC file has wrong length (expected 32 bytes)"))?,
+            Ok(data) => data.try_into().map_err(|_| {
+                Error::checkpoint("chain MAC file has wrong length (expected 32 bytes)")
+            })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Self::load(path); // No MAC sidecar → legacy fallback
             }
@@ -423,7 +429,12 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
+            None => genesis_prev_hash(
+                content_hash,
+                content_size,
+                &self.metadata.document_path,
+                None,
+            )?,
         };
 
         let previous_vdf_output = match last_cp {
@@ -618,7 +629,12 @@ impl Chain {
         let last_cp = self.checkpoints.last();
         let previous_hash = match last_cp {
             Some(cp) => cp.hash,
-            None => genesis_prev_hash(content_hash, content_size, &self.metadata.document_path, None)?,
+            None => genesis_prev_hash(
+                content_hash,
+                content_size,
+                &self.metadata.document_path,
+                None,
+            )?,
         };
 
         let physics_seed = if self.metadata.entanglement_mode == EntanglementMode::Entangled {
@@ -713,9 +729,10 @@ impl Chain {
             .map(|j| j.entropy_commitment.hash)
             .unwrap_or(content_hash);
 
-        let intervals_cbor = rfc_jitter.as_ref().map(|jb| {
-            authorproof_protocol::codec::cbor::encode(&jb.summary.sample_count)
-        }).transpose()
+        let intervals_cbor = rfc_jitter
+            .as_ref()
+            .map(|jb| authorproof_protocol::codec::cbor::encode(&jb.summary.sample_count))
+            .transpose()
             .map_err(|e| Error::checkpoint(format!("SWF intervals CBOR: {e}")))?;
 
         #[cfg(feature = "posme")]
@@ -753,10 +770,8 @@ impl Chain {
                     vdf::swf_posme::compute_entangled(posme_seed, tier, hashes)
                         .map_err(|e| Error::checkpoint(format!("PoSME entangled: {e}")))?
                 }
-                _ => {
-                    vdf::swf_posme::compute(posme_seed, tier)
-                        .map_err(|e| Error::checkpoint(format!("PoSME: {e}")))?
-                }
+                _ => vdf::swf_posme::compute(posme_seed, tier)
+                    .map_err(|e| Error::checkpoint(format!("PoSME: {e}")))?,
             };
             (None, Some(proof_bytes))
         };
@@ -802,8 +817,7 @@ impl Chain {
         checkpoint.argon2_swf = argon2_swf;
         checkpoint.posme_swf = posme_swf;
         if challenge_nonce.is_some() {
-            checkpoint.challenge_nonce =
-                challenge_nonce.map(hex::encode);
+            checkpoint.challenge_nonce = challenge_nonce.map(hex::encode);
         }
 
         self.commit_finish(checkpoint)

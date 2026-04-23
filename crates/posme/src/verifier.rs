@@ -4,10 +4,15 @@
 
 use crate::block::LAMBDA;
 use crate::error::{PosmeError, Result};
-use crate::hash::{addr_from, i2osp, posme_hash, DST_CAUSAL, DST_FIAT_SHAMIR, DST_INIT, DST_TRANSCRIPT};
+use crate::hash::{
+    addr_from, i2osp, posme_hash, DST_CAUSAL, DST_FIAT_SHAMIR, DST_INIT, DST_TRANSCRIPT,
+};
 use crate::merkle;
 use crate::params::PosmeParams;
-use crate::proof::{PosmeProof, StepProof, INIT_WITNESS_COUNT, PROOF_ALGORITHM_POSME, PROOF_ALGORITHM_POSME_ENTANGLED};
+use crate::proof::{
+    PosmeProof, StepProof, INIT_WITNESS_COUNT, PROOF_ALGORITHM_POSME,
+    PROOF_ALGORITHM_POSME_ENTANGLED,
+};
 use subtle::ConstantTimeEq;
 
 fn verify_root_chain_path(
@@ -41,7 +46,12 @@ fn derive_challenges(
     params: &PosmeParams,
 ) -> Vec<u32> {
     let param_bytes = params.to_challenge_bytes();
-    let sigma = posme_hash(&[DST_FIAT_SHAMIR, final_transcript, root_chain_commitment, &param_bytes]);
+    let sigma = posme_hash(&[
+        DST_FIAT_SHAMIR,
+        final_transcript,
+        root_chain_commitment,
+        &param_bytes,
+    ]);
     let q = params.challenges;
     let k = params.total_steps;
     let mut seen = std::collections::BTreeSet::new();
@@ -68,20 +78,25 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
         && proof.proof_algorithm != PROOF_ALGORITHM_POSME_ENTANGLED
     {
         return Err(PosmeError::VerificationFailed(format!(
-            "unknown proof algorithm: {}", proof.proof_algorithm
+            "unknown proof algorithm: {}",
+            proof.proof_algorithm
         )));
     }
 
     let n = proof.params.arena_blocks;
     let k = proof.params.total_steps;
     let d = proof.params.reads_per_step;
-    let total_roots = (k as usize).checked_add(1).ok_or_else(|| {
-        PosmeError::InvalidParams("total_steps overflow in root count".into())
-    })?;
+    let total_roots = (k as usize)
+        .checked_add(1)
+        .ok_or_else(|| PosmeError::InvalidParams("total_steps overflow in root count".into()))?;
 
     // Step 1: Verify root_0 is in the root chain.
     if !verify_root_chain_path(
-        &proof.root_chain_commitment, 0, &proof.root_0, &proof.root_0_path, total_roots,
+        &proof.root_chain_commitment,
+        0,
+        &proof.root_0,
+        &proof.root_0_path,
+        total_roots,
     ) {
         return Err(PosmeError::RootChainFailed { step_id: 0 });
     }
@@ -111,7 +126,8 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
     for (w, &expected_idx) in proof.init_witnesses.iter().zip(&expected_indices) {
         if w.index != expected_idx {
             return Err(PosmeError::VerificationFailed(format!(
-                "init witness index mismatch: got {}, expected {expected_idx}", w.index
+                "init witness index mismatch: got {}, expected {expected_idx}",
+                w.index
             )));
         }
         // Verify block data matches deterministic init.
@@ -126,17 +142,21 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
         let expected_causal = posme_hash(&[DST_CAUSAL, seed, &i2osp(w.index)]);
         if w.index == 0 && bool::from(w.block.data.ct_ne(&expected_data)) {
             return Err(PosmeError::VerificationFailed(
-                "init block 0 data mismatch".into()
+                "init block 0 data mismatch".into(),
             ));
         }
         if bool::from(w.block.causal.ct_ne(&expected_causal)) {
             return Err(PosmeError::VerificationFailed(format!(
-                "init block {} causal mismatch", w.index
+                "init block {} causal mismatch",
+                w.index
             )));
         }
         // Verify Merkle path against root_0.
         if !merkle::verify_path(&proof.root_0, w.index, &w.block, &w.merkle_path, n) {
-            return Err(PosmeError::MerkleVerifyFailed { step_id: 0, address: w.index });
+            return Err(PosmeError::MerkleVerifyFailed {
+                step_id: 0,
+                address: w.index,
+            });
         }
     }
 
@@ -155,9 +175,16 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
     }
 
     // Step 5: Verify each challenged step.
-    let ctx = VerifyCtx { n, d, k, total_roots, t_0 };
+    let ctx = VerifyCtx {
+        n,
+        d,
+        k,
+        total_roots,
+        t_0,
+    };
     // Collect transcript values for cross-checking between consecutive challenged steps.
-    let mut step_transcripts: Vec<(u32, [u8; LAMBDA])> = Vec::with_capacity(proof.challenged_steps.len());
+    let mut step_transcripts: Vec<(u32, [u8; LAMBDA])> =
+        Vec::with_capacity(proof.challenged_steps.len());
 
     for sp in &proof.challenged_steps {
         let transcript_val = verify_step(sp, proof, &ctx)?;
@@ -167,14 +194,16 @@ pub fn verify(seed: &[u8], proof: &PosmeProof) -> Result<bool> {
     // Step 6: Cross-check transcript chain between consecutive challenged steps.
     // If step c produces T_c, and step c' = c+1 is also challenged,
     // then cursor_in of c' must equal T_c (possibly after entanglement).
-    let entangle_map: std::collections::BTreeMap<u32, [u8; 32]> = proof.entanglement_points
-        .iter().copied().collect();
+    let entangle_map: std::collections::BTreeMap<u32, [u8; 32]> =
+        proof.entanglement_points.iter().copied().collect();
     let mut sorted_transcripts = step_transcripts.clone();
     sorted_transcripts.sort_by_key(|&(step, _)| step);
     for pair in sorted_transcripts.windows(2) {
         let (step_a, mut transcript_a) = pair[0];
         let step_b_id = pair[1].0;
-        let cursor_in_b = proof.challenged_steps.iter()
+        let cursor_in_b = proof
+            .challenged_steps
+            .iter()
             .find(|s| s.step_id == step_b_id)
             .ok_or(PosmeError::VerificationFailed(format!(
                 "challenged step {step_b_id} missing from proof"
@@ -214,8 +243,17 @@ fn verify_symbiotic_write(
     if expected_addr != sp.write.address {
         return Err(PosmeError::WriteMismatch { step_id: step });
     }
-    if !merkle::verify_path(&sp.root_before, sp.write.address, &sp.write.old_block, &sp.write.merkle_path, n) {
-        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
+    if !merkle::verify_path(
+        &sp.root_before,
+        sp.write.address,
+        &sp.write.old_block,
+        &sp.write.merkle_path,
+        n,
+    ) {
+        return Err(PosmeError::MerkleVerifyFailed {
+            step_id: step,
+            address: sp.write.address,
+        });
     }
     let expected_data = posme_hash(&[&sp.write.old_block.data, cursor, &sp.write.old_block.causal]);
     let expected_causal = posme_hash(&[&sp.write.old_block.causal, cursor, &i2osp(step)]);
@@ -224,8 +262,17 @@ fn verify_symbiotic_write(
     {
         return Err(PosmeError::WriteMismatch { step_id: step });
     }
-    if !merkle::verify_path(&sp.root_after, sp.write.address, &sp.write.new_block, &sp.write.merkle_path, n) {
-        return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: sp.write.address });
+    if !merkle::verify_path(
+        &sp.root_after,
+        sp.write.address,
+        &sp.write.new_block,
+        &sp.write.merkle_path,
+        n,
+    ) {
+        return Err(PosmeError::MerkleVerifyFailed {
+            step_id: step,
+            address: sp.write.address,
+        });
     }
     Ok(())
 }
@@ -239,21 +286,28 @@ fn verify_step(
     let step = sp.step_id;
     if step == 0 || step > ctx.k {
         return Err(PosmeError::VerificationFailed(format!(
-            "step_id {step} out of valid range [1, {}]", ctx.k
+            "step_id {step} out of valid range [1, {}]",
+            ctx.k
         )));
     }
     let n = ctx.n;
 
     // A. Verify roots are in the root chain.
     if !verify_root_chain_path(
-        &proof.root_chain_commitment, step as usize - 1,
-        &sp.root_before, &sp.root_chain_paths.0, ctx.total_roots,
+        &proof.root_chain_commitment,
+        step as usize - 1,
+        &sp.root_before,
+        &sp.root_chain_paths.0,
+        ctx.total_roots,
     ) {
         return Err(PosmeError::RootChainFailed { step_id: step });
     }
     if !verify_root_chain_path(
-        &proof.root_chain_commitment, step as usize,
-        &sp.root_after, &sp.root_chain_paths.1, ctx.total_roots,
+        &proof.root_chain_commitment,
+        step as usize,
+        &sp.root_after,
+        &sp.root_chain_paths.1,
+        ctx.total_roots,
     ) {
         return Err(PosmeError::RootChainFailed { step_id: step });
     }
@@ -261,7 +315,10 @@ fn verify_step(
     // B. Verify read Merkle proofs against root_before.
     for rw in &sp.reads {
         if !merkle::verify_path(&sp.root_before, rw.address, &rw.block, &rw.merkle_path, n) {
-            return Err(PosmeError::MerkleVerifyFailed { step_id: step, address: rw.address });
+            return Err(PosmeError::MerkleVerifyFailed {
+                step_id: step,
+                address: rw.address,
+            });
         }
     }
 
