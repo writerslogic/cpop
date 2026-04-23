@@ -408,18 +408,55 @@ pub fn handle_change_event_sync(
     session_events_tx: &broadcast::Sender<SessionEvent>,
     current_focus_opt: Option<&Arc<RwLock<Option<String>>>>,
 ) {
+    // SQLite WAL/SHM/journal files from container-based apps (Bear, Day One) signal
+    // a database write. They bypass the extension filter and are handled separately.
+    let is_wal_event = is_sqlite_auxiliary_file(&event.path);
+
+    // Scrivener chapter content: extract the .scriv package root so all chapters
+    // in a project contribute to the same session checkpoint.
+    let normalized_path = if !is_wal_event {
+        extract_scrivener_package_root(&event.path)
+            .unwrap_or_else(|| event.path.clone())
+    } else {
+        event.path.clone()
+    };
+
     // Opt-out filtering: exclude paths and non-allowed extensions.
-    if !event.path.is_empty()
-        && !event.path.starts_with("title://")
-        && !event.path.starts_with("shadow://")
+    // WAL auxiliary files bypass this block; they have no trackable document path.
+    if !is_wal_event
+        && !normalized_path.is_empty()
+        && !normalized_path.starts_with("title://")
+        && !normalized_path.starts_with("shadow://")
     {
-        let p = Path::new(&event.path);
+        let p = Path::new(&normalized_path);
         if config.is_path_excluded(p) {
             return;
         }
         if !config.is_extension_allowed(p) {
             return;
         }
+    }
+
+    // WAL pseudo-save: treat a SQLite auxiliary write as a Saved event on the
+    // currently focused session. Read current_focus before acquiring sessions to
+    // maintain lock order (current_focus → sessions).
+    if is_wal_event {
+        let focused_path_opt = current_focus_opt
+            .and_then(|cf| cf.read_recover().clone());
+        if let Some(ref focused_path) = focused_path_opt {
+            let mut sessions_map = sessions.write_recover();
+            if let Some(session) = sessions_map.get_mut(focused_path.as_str()) {
+                session.save_count += 1;
+                let _ = session_events_tx.send(SessionEvent {
+                    event_type: SessionEventType::Saved,
+                    session_id: session.session_id.clone(),
+                    document_path: focused_path.clone(),
+                    timestamp: SystemTime::now(),
+                    hash: session.current_hash.clone(),
+                });
+            }
+        }
+        return;
     }
 
     // Acquire signing_key before sessions to match lock order in focus_document_sync
@@ -430,13 +467,13 @@ pub fn handle_change_event_sync(
     // and don't need a mutable reference through get_mut.
     match event.event_type {
         ChangeEventType::Deleted => {
-            let removed = sessions_map.remove(&event.path);
+            let removed = sessions_map.remove(&normalized_path);
             drop(sessions_map);
             if let Some(session) = removed {
                 let _ = session_events_tx.send(SessionEvent {
                     event_type: SessionEventType::Ended,
                     session_id: session.session_id,
-                    document_path: event.path.clone(),
+                    document_path: normalized_path.clone(),
                     timestamp: SystemTime::now(),
                     hash: session.current_hash,
                 });
@@ -448,12 +485,12 @@ pub fn handle_change_event_sync(
             if sessions_map.contains_key(&new_path) {
                 log::warn!(
                     "Rename target already tracked, ignoring: {} -> {}",
-                    event.path,
+                    normalized_path,
                     new_path
                 );
                 return;
             }
-            let mut session = match sessions_map.remove(&event.path) {
+            let mut session = match sessions_map.remove(&normalized_path) {
                 Some(s) => s,
                 None => return,
             };
@@ -505,7 +542,7 @@ pub fn handle_change_event_sync(
         _ => {}
     }
 
-    if let Some(session) = sessions_map.get_mut(&event.path) {
+    if let Some(session) = sessions_map.get_mut(&normalized_path) {
         match event.event_type {
             ChangeEventType::Saved => {
                 session.save_count += 1;
@@ -513,7 +550,7 @@ pub fn handle_change_event_sync(
                 let current_hash = event
                     .hash
                     .clone()
-                    .or_else(|| compute_file_hash(&event.path).ok());
+                    .or_else(|| compute_file_hash(&normalized_path).ok());
                 session.current_hash = current_hash.clone();
 
                 if let Some(hash) = current_hash {
@@ -532,7 +569,7 @@ pub fn handle_change_event_sync(
                 let _ = session_events_tx.send(SessionEvent {
                     event_type: SessionEventType::Saved,
                     session_id: session.session_id.clone(),
-                    document_path: event.path.clone(),
+                    document_path: normalized_path.clone(),
                     timestamp: SystemTime::now(),
                     hash: session.current_hash.clone(),
                 });
@@ -657,6 +694,53 @@ fn wal_append_session_event(
     } else {
         log::error!("Invalid session ID hex: {}", session_id);
     }
+}
+
+/// Detect SQLite auxiliary files (WAL, SHM, journal) that signal a database write.
+/// These files bypass the extension filter and trigger pseudo-save events on the
+/// currently focused document when they arrive from known database-backed apps
+/// (Bear, Day One, etc.).
+fn is_sqlite_auxiliary_file(path: &str) -> bool {
+    let p = Path::new(path);
+    let file_name = match p.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+
+    // Match SQLite auxiliary file patterns: db-wal, db-shm, db-journal
+    file_name.ends_with("-wal")
+        || file_name.ends_with("-shm")
+        || file_name.ends_with("-journal")
+        || file_name.ends_with(".sqlite-wal")
+        || file_name.ends_with(".sqlite-shm")
+        || file_name.ends_with(".sqlite-journal")
+        || file_name.ends_with(".db-wal")
+        || file_name.ends_with(".db-shm")
+        || file_name.ends_with(".db-journal")
+}
+
+/// Extract the .scriv package root from a nested chapter content path.
+///
+/// Scrivener stores chapter content in:
+///   /path/to/Project.scriv/Files/Data/<UUID>/content.rtf
+///
+/// This function strips back to the .scriv package root so checkpoint
+/// events are associated with the project rather than individual chapters.
+fn extract_scrivener_package_root(path: &str) -> Option<String> {
+    let p = Path::new(path);
+
+    // Walk up the path looking for *.scriv directory
+    for ancestor in p.ancestors() {
+        if let Some(file_name) = ancestor.file_name().and_then(|n| n.to_str()) {
+            if file_name.ends_with(".scriv") {
+                if let Some(s) = ancestor.to_str() {
+                    return Some(s.to_string());
+                }
+            }
+        }
+    }
+
+    None
 }
 
 pub fn compute_file_hash(path: &str) -> std::io::Result<String> {
