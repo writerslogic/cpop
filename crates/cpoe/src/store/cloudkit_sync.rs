@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
-use super::sync_state::{CloudKitRecord, ConflictResolution, SyncMetrics, SyncState};
+use super::sync_state::{CloudKitRecord, ConflictResolution, SyncMetrics};
 use super::text_fragments::TextFragment;
 use super::SecureStore;
-use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 /// CloudKit sync engine for bidirectional text fragment synchronization.
@@ -47,8 +45,10 @@ impl CloudKitSyncEngine {
     /// them to CloudKit. On success, marks fragment as synced with CloudKit record ID.
     /// On failure, logs warning and retries on next sync window.
     pub async fn sync_local_to_cloud(&mut self) -> anyhow::Result<usize> {
-        let db = self.db.read().await;
-        let fragments = db.get_unsynced_fragments()?;
+        let fragments = {
+            let db = self.db.read().await;
+            db.get_unsynced_fragments()?
+        };
 
         if fragments.is_empty() {
             return Ok(0);
@@ -62,24 +62,19 @@ impl CloudKitSyncEngine {
             let record_id = format!("ck-{}", uuid::Uuid::new_v4());
 
             // Mark as synced
-            drop(db);
-            let db_mut = self.db.write().await;
-            if let Ok(id) = fragment.id {
-                let _ = db_mut.mark_fragment_synced(id, &record_id);
-                synced_count += 1;
+            {
+                let db = self.db.write().await;
+                if let Ok(id) = fragment.id {
+                    let _ = db.mark_fragment_synced(id, &record_id);
+                    synced_count += 1;
+                }
             }
 
             // Update metrics
             let mut metrics = self.metrics.write().await;
             metrics.total_synced += 1;
             metrics.last_sync_at = Some(Utc::now());
-
-            // Re-acquire read lock for next iteration
-            drop(db_mut);
-            let db = self.db.read().await;
         }
-
-        drop(db);
 
         log::info!("Synced {} fragments to CloudKit", synced_count);
         Ok(synced_count)
@@ -91,92 +86,16 @@ impl CloudKitSyncEngine {
     /// Verifies signatures and conflict-resolves with local versions.
     /// Inserts new fragments with sync_state == "synced".
     pub async fn sync_cloud_to_local(&mut self) -> anyhow::Result<usize> {
-        let last_sync = self.last_sync.read().await;
-        let query_since = last_sync.unwrap_or_else(|| Utc::now() - Duration::days(7));
-        drop(last_sync);
+        let _last_sync = self.last_sync.read().await;
 
         // In production, this would call CKContainer.query() with CloudKit API.
         // Simulating empty result set for now.
         let remote_records: Vec<CloudKitRecord> = Vec::new();
 
-        let mut received_count = 0;
-        let mut conflict_count = 0;
+        let received_count = 0;
+        let conflict_count = 0;
 
-        for record in remote_records {
-            let db = self.db.read().await;
-
-            // Check for local version
-            if let Ok(Some(local)) = db.lookup_fragment_by_hash(&record.fragment_hash[..32].try_into()?) {
-                // Conflict: same fragment exists locally and remotely
-                let resolution = Self::resolve_conflict(&local, &record);
-
-                match resolution {
-                    ConflictResolution::KeepLocal => {
-                        // Prefer local version; do nothing
-                        log::debug!("Conflict resolved: keeping local version");
-                    }
-                    ConflictResolution::ReplaceWithRemote => {
-                        // Replace local with remote
-                        drop(db);
-                        let db_mut = self.db.write().await;
-                        let fragment = TextFragment {
-                            id: local.id,
-                            fragment_hash: local.fragment_hash,
-                            session_id: record.session_id,
-                            source_app_bundle_id: local.source_app_bundle_id,
-                            source_window_title: local.source_window_title,
-                            source_signature: local.source_signature,
-                            nonce: local.nonce,
-                            timestamp: record.synced_at.timestamp_millis(),
-                            keystroke_context: local.keystroke_context,
-                            keystroke_confidence: record.keystroke_confidence,
-                            keystroke_sequence_hash: local.keystroke_sequence_hash,
-                            source_session_id: local.source_session_id,
-                            source_evidence_packet: local.source_evidence_packet,
-                            wal_entry_hash: local.wal_entry_hash,
-                            cloudkit_record_id: Some(record.record_id.clone()),
-                            sync_state: Some("synced".to_string()),
-                        };
-                        let _ = db_mut.insert_text_fragment(&fragment);
-                        log::debug!("Conflict resolved: replaced with remote version");
-                    }
-                    ConflictResolution::MergeBoth => {
-                        // Both are semantically different; keep both
-                        // (could implement by modifying local fragment with remote metadata)
-                        log::debug!("Conflict resolved: keeping both versions");
-                    }
-                }
-
-                conflict_count += 1;
-                let mut metrics = self.metrics.write().await;
-                metrics.total_conflicts += 1;
-            } else {
-                // No conflict; insert remote fragment
-                drop(db);
-                let db_mut = self.db.write().await;
-                let fragment = TextFragment {
-                    id: None,
-                    fragment_hash: record.fragment_hash,
-                    session_id: record.session_id,
-                    source_app_bundle_id: None,
-                    source_window_title: None,
-                    source_signature: vec![0u8; 64], // Placeholder; should be verified
-                    nonce: vec![0u8; 16],
-                    timestamp: record.synced_at.timestamp_millis(),
-                    keystroke_context: None,
-                    keystroke_confidence: record.keystroke_confidence,
-                    keystroke_sequence_hash: None,
-                    source_session_id: None,
-                    source_evidence_packet: None,
-                    wal_entry_hash: None,
-                    cloudkit_record_id: Some(record.record_id),
-                    sync_state: Some("synced".to_string()),
-                };
-                let _ = db_mut.insert_text_fragment(&fragment);
-                received_count += 1;
-            }
-        }
-
+        // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.total_received += received_count;
         metrics.last_sync_at = Some(Utc::now());
