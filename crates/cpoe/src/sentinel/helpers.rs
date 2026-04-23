@@ -1035,6 +1035,10 @@ pub fn detect_paste_boundary(
     app_focused_at_time: &str,
     previous_focused_app: &str,
 ) -> (super::types::KeystrokeContext, f64) {
+    if current_timestamp < last_keystroke_timestamp {
+        return (super::types::KeystrokeContext::OriginalComposition, 0.20);
+    }
+
     let mut signals = 0;
     let time_delta_ms = (current_timestamp - last_keystroke_timestamp) / 1_000_000;
 
@@ -1083,9 +1087,13 @@ pub fn update_keystroke_context_window(
     paste_time: i64,
     context_window_ms: u64,
 ) {
+    let window_nanos = context_window_ms
+        .checked_mul(1_000_000)
+        .and_then(|w| i64::try_from(w).ok())
+        .unwrap_or(i64::MAX);
     session.paste_context = Some(super::types::PasteContext {
         paste_time,
-        context_window_end: paste_time + i64::try_from(context_window_ms * 1_000_000).unwrap_or(i64::MAX),
+        context_window_end: paste_time.saturating_add(window_nanos),
         keystroke_count_after_paste: 0,
     });
 }
@@ -1172,10 +1180,12 @@ pub(super) fn commit_checkpoint_for_path(
 mod tests {
     use super::*;
 
+    const MS_TO_NS: i64 = 1_000_000;
+
     #[test]
     fn test_paste_detection_3_signals() {
-        let last_ts = 1000 * 1_000_000;
-        let current_ts = last_ts + 1000 * 1_000_000;
+        let last_ts = 1000 * MS_TO_NS;
+        let current_ts = last_ts + 1000 * MS_TO_NS;
         let hash1 = [0u8; 32];
         let hash2 = [1u8; 32];
 
@@ -1194,8 +1204,8 @@ mod tests {
 
     #[test]
     fn test_paste_detection_2_signals_long_silence() {
-        let last_ts = 2000 * 1_000_000;
-        let current_ts = last_ts + 2500 * 1_000_000;
+        let last_ts = 2000 * MS_TO_NS;
+        let current_ts = last_ts + 2500 * MS_TO_NS;
         let hash1 = [0u8; 32];
         let hash2 = [1u8; 32];
 
@@ -1214,8 +1224,8 @@ mod tests {
 
     #[test]
     fn test_paste_detection_1_signal_app_transition() {
-        let last_ts = 3000 * 1_000_000;
-        let current_ts = last_ts + 50 * 1_000_000;
+        let last_ts = 3000 * MS_TO_NS;
+        let current_ts = last_ts + 50 * MS_TO_NS;
         let hash = [0u8; 32];
 
         let (context, confidence) = detect_paste_boundary(
@@ -1233,8 +1243,8 @@ mod tests {
 
     #[test]
     fn test_no_paste_signals_original() {
-        let last_ts = 4000 * 1_000_000;
-        let current_ts = last_ts + 100 * 1_000_000;
+        let last_ts = 4000 * MS_TO_NS;
+        let current_ts = last_ts + 100 * MS_TO_NS;
         let hash = [0u8; 32];
 
         let (context, confidence) = detect_paste_boundary(
@@ -1259,17 +1269,17 @@ mod tests {
             ObfuscatedString::new("Test Doc"),
         );
 
-        let paste_time = 5000 * 1_000_000;
+        let paste_time = 5000 * MS_TO_NS;
         update_keystroke_context_window(&mut session, paste_time, 30_000);
 
         assert!(session.paste_context.is_some());
         let ctx = session.paste_context.unwrap();
         assert_eq!(ctx.paste_time, paste_time);
 
-        let within_window = paste_time + 15_000 * 1_000_000;
+        let within_window = paste_time + 15_000 * MS_TO_NS;
         assert!(is_within_paste_window(&session, within_window));
 
-        let past_window = paste_time + 31_000 * 1_000_000;
+        let past_window = paste_time + 31_000 * MS_TO_NS;
         assert!(!is_within_paste_window(&session, past_window));
     }
 }
