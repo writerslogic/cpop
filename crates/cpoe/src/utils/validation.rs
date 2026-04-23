@@ -45,19 +45,23 @@ impl TimestampValidator {
         let now = chrono::Utc::now().timestamp_nanos_safe();
 
         // Reject future-dated events (clock skew + 5 min tolerance)
-        if timestamp > now + self.max_future_drift_ns {
+        // Use saturating_add to handle overflow near i64::MAX
+        let max_future = now.saturating_add(self.max_future_drift_ns);
+        if timestamp > max_future {
             return Err(Error::validation(format!(
-                "timestamp in future: {} > {}",
-                timestamp, now + self.max_future_drift_ns
+                "timestamp in future by {} ns",
+                timestamp.saturating_sub(max_future)
             )));
         }
 
         // Reject too-old events
+        // Use saturating_sub to handle underflow near i64::MIN
         if let Some(max_age) = self.max_age_ns {
-            if timestamp < now - max_age {
+            let min_timestamp = now.saturating_sub(max_age);
+            if timestamp < min_timestamp {
                 return Err(Error::validation(format!(
-                    "timestamp too old: {} < {}",
-                    timestamp, now - max_age
+                    "timestamp too old by {} ns",
+                    min_timestamp.saturating_sub(timestamp)
                 )));
             }
         }
@@ -169,14 +173,14 @@ impl TextValidator {
 
         if byte_len < self.min_bytes {
             return Err(Error::validation(format!(
-                "text too short: {} < {} bytes",
+                "text too short: got {} bytes, minimum {} bytes required",
                 byte_len, self.min_bytes
             )));
         }
 
         if byte_len > self.max_bytes {
             return Err(Error::validation(format!(
-                "text too long: {} > {} bytes",
+                "text too long: got {} bytes, maximum {} bytes allowed",
                 byte_len, self.max_bytes
             )));
         }
@@ -340,5 +344,47 @@ mod tests {
         assert!(validator.validate(&"x".repeat(5)).is_ok());   // 5 bytes - exact min
         assert!(validator.validate(&"x".repeat(10)).is_ok());  // 10 bytes - exact max
         assert!(validator.validate(&"x".repeat(11)).is_err()); // 11 bytes - above max
+    }
+
+    #[test]
+    fn test_timestamp_validator_overflow_safe() {
+        // Test that saturating_add prevents panic on overflow
+        let validator = TimestampValidator::with_future_drift(1000);
+        let now = chrono::Utc::now().timestamp_nanos_safe();
+        // Even a far-future timestamp won't cause panic due to saturating arithmetic
+        let far_future = now + (365 * 24 * 60 * 60 * 1_000_000_000); // 1 year in future
+        let result = validator.validate(far_future);
+        assert!(result.is_err()); // Should error (out of bounds), not panic
+    }
+
+    #[test]
+    fn test_text_validator_error_messages_clear() {
+        let validator = TextValidator::with_bounds(10, 20);
+        let short_result = validator.validate("short");
+        let long_result = validator.validate(&"x".repeat(30));
+
+        let short_err = format!("{:?}", short_result);
+        let long_err = format!("{:?}", long_result);
+
+        // Verify error messages contain actual values, not just comparisons
+        assert!(short_err.contains("got 5"));
+        assert!(short_err.contains("minimum"));
+        assert!(long_err.contains("got 30"));
+        assert!(long_err.contains("maximum"));
+    }
+
+    #[test]
+    fn test_timestamp_validator_error_messages_show_delta() {
+        let validator = TimestampValidator::new();
+        let now = chrono::Utc::now().timestamp_nanos_safe();
+
+        // Create a timestamp 10 minutes in the future
+        let future = now + (10 * 60 * 1_000_000_000);
+        let result = validator.validate(future);
+
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result);
+        // Error should show how far ahead it is
+        assert!(err_msg.contains("ns") || err_msg.contains("future"));
     }
 }

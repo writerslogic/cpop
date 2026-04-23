@@ -11,8 +11,6 @@ use crate::error::Error;
 pub struct ErrorContext {
     operation: String,
     step: String,
-    #[allow(dead_code)]
-    sensitive_count: usize,
 }
 
 impl ErrorContext {
@@ -21,7 +19,6 @@ impl ErrorContext {
         ErrorContext {
             operation: operation.to_string(),
             step: "init".to_string(),
-            sensitive_count: 0,
         }
     }
 
@@ -84,9 +81,9 @@ impl ErrorContext {
 
     /// Redact sensitive strings from log output.
     /// Replaces patterns like: "key=xxxxx", "password=xxxxx", "token=xxxxx"
-    /// Handles multiple occurrences of the same pattern in a single line.
+    /// Handles multiple occurrences in a single line.
     pub fn redact_log_line(line: &str) -> String {
-        let sensitive_patterns = vec![
+        let sensitive_patterns = [
             ("key=", "key=[redacted]"),
             ("password=", "password=[redacted]"),
             ("token=", "token=[redacted]"),
@@ -95,31 +92,17 @@ impl ErrorContext {
         ];
 
         let mut result = line.to_string();
-        for (pattern, replacement) in sensitive_patterns {
-            // Handle multiple occurrences in a single line
-            while result.contains(pattern) {
-                if let Some(start) = result.find(pattern) {
-                    let after_pattern = &result[start + pattern.len()..];
-                    // Skip leading whitespace
-                    let value_start = after_pattern.find(|c: char| !c.is_whitespace()).unwrap_or(after_pattern.len());
-                    // Find end of value (next whitespace or delimiter)
-                    let remainder = &after_pattern[value_start..];
-                    let value_end = remainder.find(|c: char| c.is_whitespace() || c == ',').unwrap_or(remainder.len());
+        for (pattern, replacement) in &sensitive_patterns {
+            while let Some(start) = result.find(pattern) {
+                let prefix = &result[..start];
+                let after_pattern = &result[start + pattern.len()..];
 
-                    let suffix = if value_start + value_end < after_pattern.len() {
-                        &after_pattern[value_start + value_end..]
-                    } else {
-                        ""
-                    };
+                // Find the value: skip leading whitespace, capture until next whitespace/comma
+                let value_chars = after_pattern.chars().skip_while(|c| c.is_whitespace()).collect::<String>();
+                let end_pos = value_chars.find(|c: char| c.is_whitespace() || c == ',').unwrap_or(value_chars.len());
+                let suffix = &after_pattern[after_pattern.len() - value_chars.len() + end_pos..];
 
-                    result = format!("{}{}{}",
-                        &result[..start],
-                        replacement,
-                        suffix
-                    );
-                } else {
-                    break;
-                }
+                result = format!("{}{}{}", prefix, replacement, suffix);
             }
         }
         result

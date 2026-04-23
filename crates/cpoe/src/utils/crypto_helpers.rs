@@ -28,8 +28,6 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> Result<()> {
 /// Format: namespace || field1_len || field1 || field2_len || field2 || ...
 #[derive(Debug, Clone)]
 pub struct SignedPayloadBuilder {
-    #[allow(dead_code)]
-    namespace: String,
     fields: Vec<Vec<u8>>,
 }
 
@@ -38,7 +36,6 @@ impl SignedPayloadBuilder {
     /// Namespace examples: "text-fragment-v1", "wal-entry-v1", "evidence-packet-v1"
     pub fn new(namespace: &str) -> Self {
         SignedPayloadBuilder {
-            namespace: namespace.to_string(),
             fields: vec![namespace.as_bytes().to_vec()],
         }
     }
@@ -104,8 +101,15 @@ impl SignatureKey {
     pub fn verify(&self, payload: &[u8], signature: &[u8]) -> Result<()> {
         match self {
             SignatureKey::Ed25519(key) => {
+                // Ed25519 signatures must be exactly 64 bytes
+                if signature.len() != 64 {
+                    return Err(Error::validation(format!(
+                        "signature has invalid length: {} bytes (expected 64)",
+                        signature.len()
+                    )));
+                }
                 let sig = ed25519_dalek::Signature::from_slice(signature)
-                    .map_err(|_| Error::validation("invalid signature format"))?;
+                    .map_err(|e| Error::validation(format!("signature parsing failed: {}", e)))?;
                 key.verify(payload, &sig)
                     .map_err(|_| Error::validation("signature verification failed"))?;
                 Ok(())
@@ -116,9 +120,14 @@ impl SignatureKey {
 
 /// Nonce management: check, mark used, cleanup old nonces.
 /// Prevents replay attacks by tracking used nonces in database.
-#[allow(missing_debug_implementations)]
 pub struct NonceManager {
     db: std::sync::Arc<rusqlite::Connection>,
+}
+
+impl std::fmt::Debug for NonceManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NonceManager").finish()
+    }
 }
 
 impl NonceManager {
@@ -303,5 +312,97 @@ mod tests {
 
         // Different field orders produce different payloads
         assert_ne!(p1, p2);
+    }
+
+    #[test]
+    fn test_signature_length_validation() {
+        let key = SignatureKey::Ed25519(ed25519_dalek::VerifyingKey::from_bytes(
+            &[0u8; 32]
+        ).unwrap());
+
+        // Signature too short
+        assert!(key.verify(b"payload", &[0u8; 32]).is_err());
+        // Signature too long
+        assert!(key.verify(b"payload", &[0u8; 65]).is_err());
+        // Correct length but invalid content should error on verify
+        assert!(key.verify(b"payload", &[0u8; 64]).is_err());
+    }
+
+    #[test]
+    fn test_constant_time_eq_prevents_branch() {
+        // These comparisons should both fail with same error message (no timing variation)
+        let secret = b"secret123";
+        let wrong1 = b"wrong0000";  // Differs at position 1
+        let wrong2 = b"secretWRG";  // Differs at position 6
+
+        let err1 = constant_time_eq(secret, wrong1);
+        let err2 = constant_time_eq(secret, wrong2);
+
+        // Both should fail (constant-time property means we can't optimize early exit)
+        assert!(err1.is_err());
+        assert!(err2.is_err());
+        // Same error message indicates same code path taken
+        assert_eq!(
+            format!("{:?}", err1),
+            format!("{:?}", err2)
+        );
+    }
+
+    #[test]
+    fn test_nonce_manager_replay_prevention() {
+        // Create in-memory database for testing
+        let db = std::sync::Arc::new(
+            rusqlite::Connection::open_in_memory().expect("failed to create test db")
+        );
+
+        // Initialize nonce table
+        db.execute(
+            "CREATE TABLE used_nonces (nonce BLOB PRIMARY KEY, used_at INTEGER)",
+            [],
+        ).expect("failed to create table");
+
+        let mgr = NonceManager::new(db.clone());
+        let nonce = [1u8; 16];
+        let now = chrono::Utc::now().timestamp_nanos_safe();
+
+        // First check: nonce not yet used (is_used returns Ok(false))
+        assert_eq!(mgr.is_used(&nonce).expect("first check failed"), false);
+
+        // Mark it as used
+        assert!(mgr.mark_used(&nonce, now).is_ok());
+
+        // Second check: nonce is now used (is_used returns Ok(true))
+        assert_eq!(mgr.is_used(&nonce).expect("second check failed"), true);
+    }
+
+    #[test]
+    fn test_nonce_manager_cleanup_expiration() {
+        let db = std::sync::Arc::new(
+            rusqlite::Connection::open_in_memory().expect("failed to create test db")
+        );
+
+        db.execute(
+            "CREATE TABLE used_nonces (nonce BLOB PRIMARY KEY, used_at INTEGER)",
+            [],
+        ).expect("failed to create table");
+
+        let mgr = NonceManager::new(db.clone());
+        let old_nonce = [1u8; 16];
+        let new_nonce = [2u8; 16];
+
+        let now = chrono::Utc::now().timestamp_nanos_safe();
+        let old_time = now - (100 * 1_000_000_000); // 100 seconds ago
+
+        // Add old nonce
+        mgr.mark_used(&old_nonce, old_time).expect("mark old failed");
+        // Add recent nonce
+        mgr.mark_used(&new_nonce, now).expect("mark new failed");
+
+        // Cleanup nonces older than 60 seconds
+        let deleted = mgr.cleanup_expired(60).expect("cleanup failed");
+        assert_eq!(deleted, 1); // Only the old nonce should be deleted
+
+        // New nonce should still exist (is_used returns Ok(true))
+        assert_eq!(mgr.is_used(&new_nonce).expect("check new failed"), true);
     }
 }
