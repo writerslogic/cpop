@@ -250,57 +250,6 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         });
     }
 
-    // Writing velocity flag.
-    let mean_bps = finite_or(metrics.velocity.mean_bps, 0.0);
-    if mean_bps > 0.0 {
-        let in_human_range = mean_bps > 0.3 && mean_bps < 25.0;
-        flags.push(ReportFlag {
-            category: "Velocity".into(),
-            flag: format!("Mean Writing Rate: {:.1} B/s", mean_bps),
-            detail: format!(
-                "Average content production speed across all sessions. Human prose range: 0.5-15 B/s."
-            ),
-            signal: if in_human_range { FlagSignal::Human } else { FlagSignal::Neutral },
-        });
-    }
-
-    // Cross-modal consistency flag.
-    if let Some(cm) = &metrics.cross_modal {
-        let passed = cm.checks.iter().filter(|c| c.passed).count();
-        let total = cm.checks.len();
-        if total > 0 {
-            let verdict_label = match cm.verdict {
-                crate::forensics::cross_modal::CrossModalVerdict::Consistent => "Consistent",
-                crate::forensics::cross_modal::CrossModalVerdict::Marginal => "Marginal",
-                crate::forensics::cross_modal::CrossModalVerdict::Inconsistent => "Inconsistent",
-                crate::forensics::cross_modal::CrossModalVerdict::Insufficient => "Insufficient data",
-            };
-            flags.push(ReportFlag {
-                category: "Cross-Modal".into(),
-                flag: format!("Evidence Coherence: {}", verdict_label),
-                detail: format!("{}/{} cross-modal consistency checks passed.", passed, total),
-                signal: match cm.verdict {
-                    crate::forensics::cross_modal::CrossModalVerdict::Consistent => FlagSignal::Human,
-                    crate::forensics::cross_modal::CrossModalVerdict::Marginal => FlagSignal::Neutral,
-                    _ => FlagSignal::Synthetic,
-                },
-            });
-        }
-    }
-
-    // Anomaly flags from the authorship profile.
-    for anomaly in profile.anomalies.iter().take(3) {
-        flags.push(ReportFlag {
-            category: "Anomaly".into(),
-            flag: anomaly.anomaly_type.to_string(),
-            detail: anomaly.description.clone(),
-            signal: match anomaly.severity.to_string().as_str() {
-                s if s.contains("High") || s.contains("Alert") => FlagSignal::Synthetic,
-                _ => FlagSignal::Neutral,
-            },
-        });
-    }
-
     let (key_fp, guilloche_seed_hex) = match crate::ffi::helpers::load_signing_key() {
         Ok(signing_key) => {
             let vk = signing_key.verifying_key();
@@ -482,6 +431,51 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             severity: a.severity.to_string(),
         })
         .collect();
+
+    // Flags that require forensic metrics (computed after the forensics block).
+    let mean_bps = finite_or(metrics.velocity.mean_bps, 0.0);
+    if mean_bps > 0.0 {
+        let in_human_range = mean_bps > 0.3 && mean_bps < 25.0;
+        flags.push(ReportFlag {
+            category: "Velocity".into(),
+            flag: format!("Mean Writing Rate: {:.1} B/s", mean_bps),
+            detail: "Average content production speed across all sessions. Human prose range: 0.5-15 B/s.".into(),
+            signal: if in_human_range { FlagSignal::Human } else { FlagSignal::Neutral },
+        });
+    }
+    if let Some(cm) = &metrics.cross_modal {
+        let passed = cm.checks.iter().filter(|c| c.passed).count();
+        let total = cm.checks.len();
+        if total > 0 {
+            let verdict_label = match cm.verdict {
+                crate::forensics::cross_modal::CrossModalVerdict::Consistent => "Consistent",
+                crate::forensics::cross_modal::CrossModalVerdict::Marginal => "Marginal",
+                crate::forensics::cross_modal::CrossModalVerdict::Inconsistent => "Inconsistent",
+                crate::forensics::cross_modal::CrossModalVerdict::Insufficient => "Insufficient data",
+            };
+            flags.push(ReportFlag {
+                category: "Cross-Modal".into(),
+                flag: format!("Evidence Coherence: {}", verdict_label),
+                detail: format!("{}/{} cross-modal consistency checks passed.", passed, total),
+                signal: match cm.verdict {
+                    crate::forensics::cross_modal::CrossModalVerdict::Consistent => FlagSignal::Human,
+                    crate::forensics::cross_modal::CrossModalVerdict::Marginal => FlagSignal::Neutral,
+                    _ => FlagSignal::Synthetic,
+                },
+            });
+        }
+    }
+    for anomaly in profile.anomalies.iter().take(3) {
+        flags.push(ReportFlag {
+            category: "Anomaly".into(),
+            flag: anomaly.anomaly_type.to_string(),
+            detail: anomaly.description.clone(),
+            signal: match anomaly.severity.to_string().as_str() {
+                s if s.contains("High") || s.contains("Alert") => FlagSignal::Synthetic,
+                _ => FlagSignal::Neutral,
+            },
+        });
+    }
 
     // Forgery cost estimation from available evidence components.
     let chain_duration_sec = {
