@@ -8,6 +8,9 @@ pub mod stats;
 pub mod time;
 pub(crate) mod lock;
 pub mod telemetry;
+pub mod crypto_helpers;
+pub mod validation;
+pub mod error_context;
 
 pub use probability::Probability;
 pub use stats::{
@@ -15,6 +18,11 @@ pub use stats::{
     mean_and_std_dev, mean_and_variance, median, std_dev,
 };
 pub use time::{duration_to_ms, now_ns, now_secs, ns_elapsed, ns_to_ms, ns_to_secs};
+pub use crypto_helpers::{
+    constant_time_eq, compute_content_hash, SignedPayloadBuilder, NonceManager, SignatureKey,
+};
+pub use validation::{TimestampValidator, BundleIdValidator, TextValidator};
+pub use error_context::{ErrorContext, sanitize_for_user};
 pub(crate) use time::DateTimeNanosExt;
 pub(crate) use lock::{MutexRecover, RwLockRecover};
 

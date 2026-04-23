@@ -458,7 +458,7 @@ pub fn auto_watch_paths() -> Vec<PathBuf> {
 /// Return whether `bundle_id` belongs to a known writing app that requires
 /// title-based document identity (i.e., does not expose `AXDocument`).
 pub fn needs_title_inference(bundle_id: &str) -> bool {
-    lookup(bundle_id).map_or(false, |a| a.needs_title_inference)
+    lookup(bundle_id).is_some_and(|a| a.needs_title_inference)
 }
 
 #[cfg(test)]
