@@ -1013,6 +1013,94 @@ pub(crate) fn try_hw_cosign(
     true
 }
 
+/// Detect if current keystroke follows a paste event.
+///
+/// Returns: (KeystrokeContext, confidence: 0.0-1.0)
+///
+/// Decision logic (2/3 signals required):
+/// - Signal 1: Keystroke silence >500ms after last keystroke
+/// - Signal 2: Text hash discontinuity from previous keystroke
+/// - Signal 3: App/window transition detected
+///
+/// Confidence calculation:
+/// - 3/3 signals: 0.99 (extremely confident)
+/// - 2/3 signals: 0.85-0.92 (confident)
+/// - 1/3 signals: 0.60-0.70 (uncertain)
+/// - 0/3 signals: 0.20 (likely original composition)
+pub fn detect_paste_boundary(
+    last_keystroke_timestamp: i64,
+    current_timestamp: i64,
+    accumulated_text_hash: &[u8; 32],
+    new_text_hash: &[u8; 32],
+    app_focused_at_time: &str,
+    previous_focused_app: &str,
+) -> (super::types::KeystrokeContext, f64) {
+    let mut signals = 0;
+    let time_delta_ms = (current_timestamp - last_keystroke_timestamp) / 1_000_000;
+
+    // Signal 1: Keystroke silence >500ms
+    if time_delta_ms > 500 {
+        signals += 1;
+    }
+
+    // Signal 2: Hash discontinuity
+    if accumulated_text_hash != new_text_hash {
+        signals += 1;
+    }
+
+    // Signal 3: App transition
+    if app_focused_at_time != previous_focused_app {
+        signals += 1;
+    }
+
+    match signals {
+        3 => (super::types::KeystrokeContext::PastedContent, 0.99),
+        2 => {
+            let confidence = if time_delta_ms > 2000 {
+                0.92
+            } else {
+                0.85
+            };
+            (super::types::KeystrokeContext::PastedContent, confidence)
+        }
+        1 => {
+            if app_focused_at_time != previous_focused_app {
+                (super::types::KeystrokeContext::PastedContent, 0.70)
+            } else {
+                (super::types::KeystrokeContext::OriginalComposition, 0.60)
+            }
+        }
+        _ => (super::types::KeystrokeContext::OriginalComposition, 0.20),
+    }
+}
+
+/// Update keystroke context for a session after paste detection.
+///
+/// Sets a time window during which subsequent keystrokes are marked as PastedContent.
+/// Window duration: typically 30 seconds after paste.
+pub fn update_keystroke_context_window(
+    session: &mut super::types::DocumentSession,
+    paste_time: i64,
+    context_window_ms: u64,
+) {
+    session.paste_context = Some(super::types::PasteContext {
+        paste_time,
+        context_window_end: paste_time + (context_window_ms * 1_000_000),
+        keystroke_count_after_paste: 0,
+    });
+}
+
+/// Check if current keystroke is within paste context window.
+pub fn is_within_paste_window(
+    session: &super::types::DocumentSession,
+    current_time: i64,
+) -> bool {
+    match &session.paste_context {
+        Some(ctx) => current_time < ctx.context_window_end,
+        None => false,
+    }
+}
+
 /// Hash a file, open the secure store, and write a checkpoint event.
 ///
 /// Returns the committed event hash on success, or `None` on any failure.

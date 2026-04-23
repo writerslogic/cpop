@@ -219,6 +219,20 @@ impl fmt::Display for KeystrokeContext {
     }
 }
 
+/// Paste context tracking for a keystroke window.
+///
+/// Tracks when a paste event occurred and the time window during which
+/// subsequent keystrokes are considered part of the pasted content region.
+#[derive(Debug, Clone)]
+pub struct PasteContext {
+    /// When paste occurred (nanoseconds since UNIX_EPOCH)
+    pub paste_time: i64,
+    /// When the paste context window closes (nanoseconds since UNIX_EPOCH)
+    pub context_window_end: i64,
+    /// Number of keystrokes after paste (for metrics)
+    pub keystroke_count_after_paste: usize,
+}
+
 /// How an AI tool detection was established.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -315,6 +329,8 @@ pub struct DocumentSession {
     pub(crate) last_hw_cosign_signature: Option<Vec<u8>>,
     /// Chain index counter for hardware co-signatures.
     pub(crate) hw_cosign_chain_index: u64,
+    /// Paste context window for keystroke classification (Phase 2.3).
+    pub paste_context: Option<PasteContext>,
 }
 
 impl Clone for DocumentSession {
@@ -354,6 +370,7 @@ impl Clone for DocumentSession {
             hw_cosign_scheduler: None,
             last_hw_cosign_signature: None,
             hw_cosign_chain_index: 0,
+            paste_context: self.paste_context.clone(),
         }
     }
 }
@@ -410,6 +427,7 @@ impl DocumentSession {
             hw_cosign_scheduler: None,
             last_hw_cosign_signature: None,
             hw_cosign_chain_index: 0,
+            paste_context: None,
         }
     }
 

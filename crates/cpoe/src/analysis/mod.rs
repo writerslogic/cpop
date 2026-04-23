@@ -8,10 +8,12 @@
 
 pub mod active_probes;
 pub mod behavioral_fingerprint;
+pub mod content_detector;
 pub mod error_topology;
 pub mod hurst;
 pub mod iki_compression;
 pub mod labyrinth;
+pub mod language_model;
 pub mod lyapunov;
 pub mod perplexity;
 pub mod pink_noise;
@@ -23,6 +25,9 @@ pub use active_probes::{
     GaltonInvariantResult, ProbeSample, ReflexGateResult,
 };
 pub use behavioral_fingerprint::{BehavioralFingerprint, ForgeryAnalysis, ForgeryFlag};
+pub use content_detector::{
+    ContentAnalysis, ContentDetector, ContextType, KeystrokeMetrics, PatternMatcher, ProseStyle,
+};
 pub use error_topology::{
     analyze_error_topology, ErrorDistribution, ErrorTopology, ErrorTopologyError, EventType,
     TopologyEvent,
@@ -32,6 +37,7 @@ pub use hurst::{
 };
 pub use iki_compression::{analyze_iki_compression, IkiCompressionAnalysis, IkiCompressionError};
 pub use labyrinth::{analyze_labyrinth, LabyrinthAnalysis, LabyrinthError, LabyrinthParams};
+pub use language_model::{LanguageClassifier, TfidfModel};
 pub use lyapunov::{analyze_lyapunov, LyapunovAnalysis, LyapunovError};
 pub use perplexity::PerplexityModel;
 pub use pink_noise::{
