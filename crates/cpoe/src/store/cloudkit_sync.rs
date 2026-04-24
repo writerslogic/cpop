@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: SSPL-1.0 OR LicenseRef-Commercial
 
 use super::sync_state::{CloudKitRecord, ConflictResolution, SyncMetrics};
-use super::text_fragments::TextFragment;
 use super::SecureStore;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -86,12 +85,8 @@ impl CloudKitSyncEngine {
     /// Verifies signatures and conflict-resolves with local versions.
     /// Inserts new fragments with sync_state == "synced".
     pub async fn sync_cloud_to_local(&mut self) -> anyhow::Result<usize> {
-        let _last_sync = self.last_sync.read().await;
-
         // In production, this would call CKContainer.query() with CloudKit API.
         // Simulating empty result set for now.
-        let remote_records: Vec<CloudKitRecord> = Vec::new();
-
         let received_count = 0;
         let conflict_count = 0;
 

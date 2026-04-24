@@ -249,7 +249,7 @@ impl ClipboardMonitor {
     /// Deduplication via change count and timestamp throttling (100ms).
     async fn check_clipboard_change(&self) -> Result<Option<CopyEvent>, ClipboardError> {
         let now = chrono::Utc::now().timestamp_nanos_safe();
-        let last_copy = *self.last_copy_time.read();
+        let last_copy = *self.last_copy_time.read().await;
 
         // Debounce: reject if < 100ms since last copy
         if now - last_copy < CLIPBOARD_DEBOUNCE_MS as i64 * 1_000_000 {
@@ -260,7 +260,7 @@ impl ClipboardMonitor {
         let (current_count, text) = self.read_pasteboard().await?;
 
         // Check if change count matches (skip if no change)
-        let last_count = *self.last_change_count.read();
+        let last_count = *self.last_change_count.read().await;
         if current_count == last_count {
             return Ok(None);
         }
@@ -285,8 +285,8 @@ impl ClipboardMonitor {
         };
 
         // Update state
-        *self.last_change_count.write() = current_count;
-        *self.last_copy_time.write() = now;
+        *self.last_change_count.write().await = current_count;
+        *self.last_copy_time.write().await = now;
 
         Ok(Some(copy_event))
     }
@@ -309,7 +309,7 @@ impl ClipboardMonitor {
     ) -> Result<(), ClipboardError> {
         let text_hex = hex::encode(&copy_event.text_hash);
 
-        let sessions_guard = sessions.read();
+        let sessions_guard = sessions.read().await;
         for (session_id, session) in sessions_guard.iter() {
             if session.is_active() {
                 if let Ok(true) = self.fragment_matches_hash(store, session_id, &copy_event.text_hash).await {
