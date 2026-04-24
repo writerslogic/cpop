@@ -680,14 +680,9 @@ pub fn ffi_apply_remote_fragment(
                 format!("Invalid public key: {e}"),
             ),
         };
-        let sig = match Signature::from_bytes(
-            source_signature.as_slice().try_into().unwrap(),
-        ) {
-            Ok(s) => s,
-            Err(e) => return FfiTextFragmentStoreResult::err(
-                format!("Invalid signature: {e}"),
-            ),
-        };
+        // Signature::from_bytes is infallible in ed25519-dalek v2.
+        let sig_arr: &[u8; 64] = source_signature.as_slice().try_into().unwrap();
+        let sig = Signature::from_bytes(sig_arr);
         // Reconstruct the domain-tagged payload that was signed.
         const DST: &[u8] = b"witnessd-text-fragment-v1";
         let sid_len = (session_id.len() as u32).to_le_bytes();

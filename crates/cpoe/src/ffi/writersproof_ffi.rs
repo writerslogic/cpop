@@ -318,12 +318,13 @@ pub fn ffi_sync_text_attestation(
     // Sign with domain separation: DST || content_hash_bytes.
     let signature_hex = {
         use ed25519_dalek::Signer;
+        const DST: &[u8] = b"witnessd-text-attest-v1";
         let hash_bytes = match hex::decode(&content_hash) {
             Ok(b) => b,
             Err(e) => return FfiResult::err(format!("Invalid content_hash hex: {e}")),
         };
-        let mut payload = Vec::with_capacity(25 + hash_bytes.len());
-        payload.extend_from_slice(b"witnessd-text-attest-v1\0\0");
+        let mut payload = Vec::with_capacity(DST.len() + hash_bytes.len());
+        payload.extend_from_slice(DST);
         payload.extend_from_slice(&hash_bytes);
         hex::encode(signing_key.sign(&payload).to_bytes())
     };

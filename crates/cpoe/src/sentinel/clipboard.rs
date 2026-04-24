@@ -163,7 +163,7 @@ impl ClipboardMonitor {
     ///
     /// Returns an error only if initialization fails critically.
     /// Safe to call multiple times.
-    pub fn new() -> Result<Self, ClipboardError> {
+    pub fn new() -> std::result::Result<Self, ClipboardError> {
         Ok(ClipboardMonitor {
             monitored_apps: Arc::new(RwLock::new(default_monitored_apps())),
             last_change_count: Arc::new(RwLock::new(0)),
@@ -175,7 +175,7 @@ impl ClipboardMonitor {
     /// Add an app bundle ID to the monitoring list.
     ///
     /// Returns error if limit (50 apps) exceeded.
-    pub fn add_monitored_app(&self, bundle_id: String) -> Result<(), ClipboardError> {
+    pub fn add_monitored_app(&self, bundle_id: String) -> std::result::Result<(), ClipboardError> {
         if bundle_id.is_empty() || bundle_id.len() > 256 {
             return Err(ClipboardError::Other("Invalid bundle ID length".into()));
         }
@@ -218,7 +218,7 @@ impl ClipboardMonitor {
         self: Arc<Self>,
         sessions: Arc<RwLock<HashMap<String, DocumentSession>>>,
         store: Arc<SecureStore>,
-    ) -> Result<(), ClipboardError> {
+    ) -> std::result::Result<(), ClipboardError> {
         loop {
             match self.check_clipboard_change().await {
                 Ok(Some(copy_event)) => {
@@ -259,7 +259,7 @@ impl ClipboardMonitor {
     ///
     /// Returns Some(CopyEvent) if change detected and text valid, None if unchanged.
     /// Deduplication via change count and timestamp throttling (100ms).
-    async fn check_clipboard_change(&self) -> Result<Option<CopyEvent>, ClipboardError> {
+    async fn check_clipboard_change(&self) -> std::result::Result<Option<CopyEvent>, ClipboardError> {
         let now = Utc::now().timestamp_nanos_opt().unwrap_or(0);
         let last_copy = *self.last_copy_time.read_recover();
 
@@ -327,7 +327,7 @@ impl ClipboardMonitor {
         copy_event: &CopyEvent,
         sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
         store: &Arc<SecureStore>,
-    ) -> Result<(), ClipboardError> {
+    ) -> std::result::Result<(), ClipboardError> {
         let text_hex = hex::encode(copy_event.text_hash);
 
         // Collect focused session IDs under the lock, then drop it before awaiting.
@@ -362,7 +362,7 @@ impl ClipboardMonitor {
         store: &Arc<SecureStore>,
         _session_id: &str,
         text_hash: &[u8; 32],
-    ) -> Result<bool, ClipboardError> {
+    ) -> std::result::Result<bool, ClipboardError> {
         match store.lookup_fragment_by_hash(text_hash) {
             Ok(Some(_)) => Ok(true),
             Ok(None) => Ok(false),
@@ -378,7 +378,7 @@ impl ClipboardMonitor {
         store: &Arc<SecureStore>,
         copy_event: &CopyEvent,
         fragment_hash: &[u8; 32],
-    ) -> Result<(), ClipboardError> {
+    ) -> std::result::Result<(), ClipboardError> {
         let now = Utc::now().timestamp_nanos_opt().unwrap_or(0);
 
         store.insert_clipboard_event(
@@ -399,7 +399,7 @@ impl ClipboardMonitor {
     /// Platform-specific implementation:
     /// - macOS: NSPasteboard.generalPasteboard().changeCount() + stringForType()
     /// - Linux/Windows: Stubbed (returns error for now)
-    async fn read_pasteboard(&self) -> Result<(i32, String), ClipboardError> {
+    async fn read_pasteboard(&self) -> std::result::Result<(i32, String), ClipboardError> {
         log::trace!("Reading pasteboard");
         Ok((0, String::new()))
     }
@@ -408,13 +408,13 @@ impl ClipboardMonitor {
     ///
     /// Platform-specific. Returns monitored app ID if focused.
     /// Stub: returns error until platform implementation is wired.
-    async fn get_focused_app_bundle_id(&self) -> Result<String, ClipboardError> {
+    async fn get_focused_app_bundle_id(&self) -> std::result::Result<String, ClipboardError> {
         Err(ClipboardError::NoMonitoredAppInFocus)
     }
 
     /// Get focused window title.
     /// Stub: returns error until platform implementation is wired.
-    async fn get_focused_window_title(&self) -> Result<String, ClipboardError> {
+    async fn get_focused_window_title(&self) -> std::result::Result<String, ClipboardError> {
         Err(ClipboardError::NoMonitoredAppInFocus)
     }
 
