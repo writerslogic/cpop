@@ -250,8 +250,9 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         });
     }
 
-    let (key_fp, guilloche_seed_hex) = match crate::ffi::helpers::load_signing_key() {
-        Ok(signing_key) => {
+    let loaded_key = crate::ffi::helpers::load_signing_key().ok();
+    let (key_fp, guilloche_seed_hex) = match loaded_key.as_ref() {
+        Some(signing_key) => {
             let vk = signing_key.verifying_key();
             let fp = hex::encode(&vk.as_bytes()[..4]);
 
@@ -273,8 +274,8 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
 
             (fp, seed_hex)
         }
-        Err(e) => {
-            log::error!("load signing key failed: {e}");
+        None => {
+            log::error!("load signing key failed");
             ("unknown".to_string(), String::new())
         }
     };
@@ -387,10 +388,13 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
     };
     let correction_ratio = c.correction_ratio.get();
     if correction_ratio.is_finite() && correction_ratio > 0.0 && keystroke_estimate > 0 {
-        process.deletion_sequences =
-            Some((correction_ratio * keystroke_estimate as f64) as u64);
-        // Average deletion length: assume each deletion sequence removes ~3.5 chars.
-        process.avg_deletion_length = Some(3.5);
+        let del_seqs = (correction_ratio * keystroke_estimate as f64) as u64;
+        process.deletion_sequences = Some(del_seqs);
+        if del_seqs > 0 {
+            let total_deletions = correction_ratio * keystroke_estimate as f64;
+            process.avg_deletion_length =
+                Some((total_deletions / del_seqs as f64).clamp(1.0, 50.0));
+        }
     }
     if let Some(wm) = &metrics.writing_mode {
         if let Some(cl) = &wm.cognitive_layer {
@@ -474,8 +478,8 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             category: "Anomaly".into(),
             flag: anomaly.anomaly_type.to_string(),
             detail: anomaly.description.clone(),
-            signal: match anomaly.severity.to_string().as_str() {
-                s if s.contains("High") || s.contains("Alert") => FlagSignal::Synthetic,
+            signal: match anomaly.severity {
+                crate::forensics::Severity::Alert => FlagSignal::Synthetic,
                 _ => FlagSignal::Neutral,
             },
         });
@@ -485,7 +489,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
     let chain_duration_sec = {
         let first_ns = events.first().map(|e| e.timestamp_ns).unwrap_or(0);
         let last_ns = events.last().map(|e| e.timestamp_ns).unwrap_or(0);
-        ((last_ns - first_ns).max(0) as f64 / 1_000_000_000.0) as u64
+        (last_ns.saturating_sub(first_ns).max(0) as f64 / 1_000_000_000.0) as u64
     };
     let forgery = {
         use crate::forensics::{estimate_forgery_cost, ForgeryCostInput};
@@ -510,7 +514,9 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             cross_modal_passed: cm_passed,
             cross_modal_total: cm_total,
             has_external_time_anchor: false,
-            has_content_key_entanglement: events.len() > 3,
+            has_content_key_entanglement: events
+                .iter()
+                .any(|e| e.vdf_input.is_some() && e.vdf_output.is_some()),
         };
         let est = estimate_forgery_cost(&input);
         let tier_label = match est.tier {
@@ -906,7 +912,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
             }
             #[cfg(not(feature = "did-webvh"))]
             {
-                crate::ffi::helpers::load_signing_key().ok().and_then(|sk| {
+                loaded_key.as_ref().and_then(|sk| {
                     crate::identity::did_key_from_public(sk.verifying_key().as_bytes())
                 })
             }
@@ -914,7 +920,7 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         provenance_breakdown: None,
     };
 
-    war_report.verifiable_credential_json = build_vc_json(&war_report);
+    war_report.verifiable_credential_json = build_vc_json(&war_report, loaded_key.as_ref());
 
     // Compute provenance breakdown from text fragments
     war_report.provenance_breakdown = {
@@ -1314,10 +1320,13 @@ fn collect_warnings(report: &WarReport) -> Vec<String> {
 /// Constructs an EAR token with trust vector, seal, and chain metadata,
 /// then projects it into an unsigned VC via the VC profile module.
 /// Returns `None` if the signing key is unavailable or VC construction fails.
-fn build_vc_json(report: &WarReport) -> Option<String> {
+fn build_vc_json(
+    report: &WarReport,
+    signing_key: Option<&ed25519_dalek::SigningKey>,
+) -> Option<String> {
     use std::collections::BTreeMap;
 
-    let signing_key = crate::ffi::helpers::load_signing_key().ok()?;
+    let signing_key = signing_key?;
     let pub_key = signing_key.verifying_key();
     let author_did = crate::identity::did_key_from_public(pub_key.as_bytes())?;
 

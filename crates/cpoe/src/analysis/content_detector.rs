@@ -9,6 +9,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Check if `text` contains `word` as a whole word (not as a substring).
+fn contains_word(text: &str, word: &str) -> bool {
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|w| w == word)
+}
+
 /// Detected content type with confidence score.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContextType {
@@ -98,7 +104,7 @@ impl PatternMatcher {
             vec![
                 "function", "const", "let", "var", "async", "await", "import", "export",
                 "class", "extends", "interface", "type", "return", "if", "switch", "case",
-                "=>", "=>",
+                "=>",
             ],
         );
 
@@ -157,10 +163,15 @@ impl PatternMatcher {
     pub fn detect_patterns(&self, text: &str) -> Vec<String> {
         let mut found = Vec::new();
 
-        // Check language keywords
+        // Check language keywords (word-boundary match to avoid
+        // "if" matching "life", "for" matching "information", etc.)
         for (lang, keywords) in &self.language_keywords {
             for keyword in keywords {
-                if text.contains(keyword) {
+                if keyword.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    if contains_word(text, keyword) {
+                        found.push(format!("{}:{}", lang, keyword));
+                    }
+                } else if text.contains(keyword) {
                     found.push(format!("{}:{}", lang, keyword));
                 }
             }
@@ -629,7 +640,7 @@ impl KeystrokeMetrics {
 
         let mut intervals = Vec::new();
         for window in timestamps.windows(2) {
-            let interval_ns = window[1] - window[0];
+            let interval_ns = window[1].saturating_sub(window[0]);
             if interval_ns > 0 {
                 intervals.push(interval_ns as f64 / 1_000_000.0); // Convert to ms
             }
