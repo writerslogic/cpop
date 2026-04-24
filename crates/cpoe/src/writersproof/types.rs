@@ -345,6 +345,18 @@ pub struct TextAttestationResponse {
     pub writersproof_id: String,
 }
 
+/// A text attestation queued for later submission when offline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedTextAttestation {
+    pub id: String,
+    pub request: TextAttestationRequest,
+    pub retry_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    pub created_at: String,
+}
+
 /// Request body for `POST /v1/credentials/issue`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

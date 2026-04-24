@@ -375,14 +375,33 @@ pub fn ffi_sync_text_attestation(
         app_bundle_id: Some(app_bundle_id).filter(|s| !s.is_empty()),
         device_id: None,
     };
+    let queue_req = req.clone();
 
     let result = rt.block_on(async {
         tokio::time::timeout(std::time::Duration::from_secs(15), client.submit_text_attestation(req)).await
     });
 
     match result {
-        Err(_) => FfiResult::err("Text attestation sync timed out".to_string()),
-        Ok(Err(e)) => FfiResult::err(format!("Text attestation sync failed: {e}")),
+        Err(_) | Ok(Err(_)) => {
+            let err_msg = match &result {
+                Err(_) => "timeout".to_string(),
+                Ok(Err(e)) => e.to_string(),
+                _ => unreachable!(),
+            };
+            match crate::writersproof::OfflineQueue::default_dir()
+                .and_then(|d| crate::writersproof::OfflineQueue::new(&d))
+                .and_then(|q| q.enqueue_text_attestation(queue_req))
+            {
+                Ok(id) => {
+                    log::info!("Text attestation queued for retry: {id} ({err_msg})");
+                    return FfiResult::ok(format!("Queued for retry: {writersproof_id}"));
+                }
+                Err(qe) => {
+                    log::warn!("Failed to queue text attestation: {qe}");
+                    return FfiResult::err(format!("Sync failed ({err_msg}) and queuing failed: {qe}"));
+                }
+            }
+        }
         Ok(Ok(_)) => {
             // Re-sign with anchor-specific DST for transparency log.
             let anchor_sig = match load_signing_key() {
@@ -426,5 +445,59 @@ pub fn ffi_sync_text_attestation(
             }
             FfiResult::ok(format!("Synced: {writersproof_id}"))
         }
+    }
+}
+
+/// Drain all queued text attestations, submitting them to the WritersProof API.
+///
+/// Call on app launch, after sign-in, or when network connectivity is restored.
+/// Returns the number of successful submissions.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_drain_text_attestation_queue() -> FfiResult {
+    let api_key = match load_api_key() {
+        Ok(k) if k.is_empty() => {
+            return FfiResult::err("Not authenticated".to_string());
+        }
+        Ok(k) => k,
+        Err(_) => return FfiResult::ok("No API key; nothing to drain".to_string()),
+    };
+
+    let queue = match crate::writersproof::OfflineQueue::default_dir()
+        .and_then(|d| crate::writersproof::OfflineQueue::new(&d))
+    {
+        Ok(q) => q,
+        Err(e) => return FfiResult::err(format!("Cannot open queue: {e}")),
+    };
+
+    let count = match queue.text_attestation_count() {
+        Ok(0) => return FfiResult::ok("Queue empty".to_string()),
+        Ok(n) => n,
+        Err(e) => return FfiResult::err(format!("Cannot read queue: {e}")),
+    };
+
+    let rt = match crate::ffi::beacon::beacon_runtime() {
+        Ok(rt) => rt,
+        Err(e) => return FfiResult::err(format!("No async runtime: {e}")),
+    };
+
+    let client = match crate::writersproof::WritersProofClient::new(
+        crate::writersproof::client::DEFAULT_API_URL,
+    ) {
+        Ok(c) => c.with_jwt(api_key),
+        Err(e) => return FfiResult::err(format!("Client error: {e}")),
+    };
+
+    let result = rt.block_on(async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            queue.drain_text_attestations(&client),
+        )
+        .await
+    });
+
+    match result {
+        Err(_) => FfiResult::err("Queue drain timed out".to_string()),
+        Ok(Err(e)) => FfiResult::err(format!("Queue drain failed: {e}")),
+        Ok(Ok(n)) => FfiResult::ok(format!("Drained {n}/{count} text attestations")),
     }
 }

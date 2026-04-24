@@ -228,6 +228,111 @@ impl OfflineQueue {
         atomic_write(&path, &data)?;
         Ok(())
     }
+
+    // --- Text attestation queue (separate subdirectory) ---
+
+    fn text_dir(&self) -> Result<PathBuf> {
+        let dir = self.queue_dir.join("text");
+        fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
+
+    /// Queue a text attestation for later submission.
+    pub fn enqueue_text_attestation(
+        &self,
+        request: super::types::TextAttestationRequest,
+    ) -> Result<String> {
+        let id = format!(
+            "{}-{}",
+            Utc::now().format("%Y%m%d%H%M%S"),
+            hex::encode(rand::random::<[u8; 4]>())
+        );
+
+        let entry = super::types::QueuedTextAttestation {
+            id: id.clone(),
+            request,
+            retry_count: 0,
+            last_error: None,
+            created_at: Utc::now().to_rfc3339(),
+        };
+
+        let dir = self.text_dir()?;
+        let path = dir.join(format!("{id}.json"));
+        let data = serde_json::to_vec_pretty(&entry)
+            .map_err(|e| Error::checkpoint(format!("text queue serialize: {e}")))?;
+        atomic_write(&path, &data)?;
+        Ok(id)
+    }
+
+    /// List queued text attestations.
+    pub fn list_text_attestations(&self) -> Result<Vec<super::types::QueuedTextAttestation>> {
+        let dir = match self.text_dir() {
+            Ok(d) => d,
+            Err(_) => return Ok(Vec::new()),
+        };
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            match fs::read(&path) {
+                Ok(data) => match serde_json::from_slice(&data) {
+                    Ok(queued) => entries.push(queued),
+                    Err(e) => log::warn!("Malformed text queue entry {}: {e}", path.display()),
+                },
+                Err(e) => log::warn!("Failed to read text queue entry {}: {e}", path.display()),
+            }
+            if entries.len() >= Self::MAX_LIST_ENTRIES {
+                break;
+            }
+        }
+        entries.sort_by(|a: &super::types::QueuedTextAttestation, b| {
+            a.created_at.cmp(&b.created_at)
+        });
+        Ok(entries)
+    }
+
+    /// Submit all queued text attestations via `client`.
+    ///
+    /// Successful entries are removed; failed entries stay with incremented
+    /// `retry_count`. Returns count of successful submissions.
+    pub async fn drain_text_attestations(
+        &self,
+        client: &WritersProofClient,
+    ) -> Result<usize> {
+        let entries = self.list_text_attestations()?;
+        let mut success_count = 0;
+
+        for mut entry in entries {
+            match client.submit_text_attestation(entry.request.clone()).await {
+                Ok(_) => {
+                    Self::validate_id(&entry.id)?;
+                    let path = self.text_dir()?.join(format!("{}.json", entry.id));
+                    if path.exists() {
+                        fs::remove_file(&path)?;
+                    }
+                    success_count += 1;
+                }
+                Err(e) => {
+                    entry.retry_count += 1;
+                    entry.last_error = Some(e.to_string());
+                    Self::validate_id(&entry.id)?;
+                    let path = self.text_dir()?.join(format!("{}.json", entry.id));
+                    let data = serde_json::to_vec_pretty(&entry)
+                        .map_err(|e| Error::checkpoint(format!("text queue update: {e}")))?;
+                    atomic_write(&path, &data)?;
+                }
+            }
+        }
+
+        Ok(success_count)
+    }
+
+    /// Number of queued text attestations.
+    pub fn text_attestation_count(&self) -> Result<usize> {
+        Ok(self.list_text_attestations()?.len())
+    }
 }
 
 #[cfg(test)]
