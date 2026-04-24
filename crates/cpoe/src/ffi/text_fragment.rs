@@ -623,6 +623,9 @@ pub fn ffi_get_pending_sync_count() -> i64 {
 }
 
 /// Apply a remotely synced fragment received from CloudKit.
+///
+/// Verifies the Ed25519 signature over the domain-tagged payload before
+/// storing, preventing injection of forged fragments via compromised sync.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_apply_remote_fragment(
     fragment_hash_hex: String,
@@ -630,12 +633,17 @@ pub fn ffi_apply_remote_fragment(
     source_signature_hex: String,
     nonce_hex: String,
     timestamp_ms: i64,
+    signing_public_key_hex: String,
     source_app_bundle_id: Option<String>,
     source_window_title: Option<String>,
     keystroke_context: Option<String>,
     keystroke_confidence: Option<f64>,
     cloudkit_record_id: Option<String>,
 ) -> FfiTextFragmentStoreResult {
+    if timestamp_ms <= 0 {
+        return FfiTextFragmentStoreResult::err("timestamp_ms must be positive");
+    }
+
     let fragment_hash = match hex::decode(&fragment_hash_hex) {
         Ok(b) if b.len() == 32 => b,
         _ => return FfiTextFragmentStoreResult::err(
@@ -655,9 +663,55 @@ pub fn ffi_apply_remote_fragment(
         ),
     };
 
+    // Verify signature before accepting remote fragment.
+    let pub_bytes = match hex::decode(&signing_public_key_hex) {
+        Ok(b) if b.len() == 32 => b,
+        _ => return FfiTextFragmentStoreResult::err(
+            "signing_public_key_hex must be 64 hex chars (32 bytes)",
+        ),
+    };
+    {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        let vk = match VerifyingKey::from_bytes(
+            pub_bytes.as_slice().try_into().unwrap(),
+        ) {
+            Ok(k) => k,
+            Err(e) => return FfiTextFragmentStoreResult::err(
+                format!("Invalid public key: {e}"),
+            ),
+        };
+        let sig = match Signature::from_bytes(
+            source_signature.as_slice().try_into().unwrap(),
+        ) {
+            Ok(s) => s,
+            Err(e) => return FfiTextFragmentStoreResult::err(
+                format!("Invalid signature: {e}"),
+            ),
+        };
+        // Reconstruct the domain-tagged payload that was signed.
+        const DST: &[u8] = b"witnessd-text-fragment-v1";
+        let sid_len = (session_id.len() as u32).to_le_bytes();
+        let mut payload = Vec::with_capacity(
+            DST.len() + 4 + session_id.len() + 32 + 8 + 16,
+        );
+        payload.extend_from_slice(DST);
+        payload.extend_from_slice(&sid_len);
+        payload.extend_from_slice(session_id.as_bytes());
+        payload.extend_from_slice(&fragment_hash);
+        payload.extend_from_slice(&timestamp_ms.to_le_bytes());
+        payload.extend_from_slice(&nonce);
+        if vk.verify(&payload, &sig).is_err() {
+            return FfiTextFragmentStoreResult::err(
+                "Remote fragment signature verification failed",
+            );
+        }
+    }
+
     let context = keystroke_context
         .as_deref()
         .and_then(|s| s.parse::<KeystrokeContext>().ok());
+
+    let confidence = keystroke_confidence.map(|c| c.clamp(0.0, 1.0));
 
     let fragment = TextFragment {
         id: None,
@@ -669,7 +723,7 @@ pub fn ffi_apply_remote_fragment(
         nonce,
         timestamp: timestamp_ms,
         keystroke_context: context,
-        keystroke_confidence,
+        keystroke_confidence: confidence,
         keystroke_sequence_hash: None,
         source_session_id: None,
         source_evidence_packet: None,

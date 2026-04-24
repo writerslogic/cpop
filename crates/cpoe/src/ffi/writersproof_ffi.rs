@@ -309,7 +309,7 @@ pub fn ffi_sync_text_attestation(
     }
 
     let signing_key = match load_signing_key() {
-        Ok(k) => k,
+        Ok(k) => zeroize::Zeroizing::new(k),
         Err(e) => return FfiResult::err(format!("Signing key unavailable: {e}")),
     };
 
@@ -327,6 +327,7 @@ pub fn ffi_sync_text_attestation(
         payload.extend_from_slice(&hash_bytes);
         hex::encode(signing_key.sign(&payload).to_bytes())
     };
+    drop(signing_key);
 
     let api_key = match load_api_key() {
         Ok(k) if k.is_empty() => {
