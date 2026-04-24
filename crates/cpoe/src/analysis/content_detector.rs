@@ -569,13 +569,24 @@ impl PatternMatcher {
 
         // Check language keywords (word-boundary match to avoid
         // "if" matching "life", "for" matching "information", etc.)
+        // SQL and similar case-insensitive languages: match against lowercased text.
+        let text_lower = text.to_lowercase();
         for (lang, keywords) in &self.language_keywords {
+            let case_insensitive = lang == "sql";
+            let haystack = if case_insensitive { &text_lower } else { text };
             for keyword in keywords {
-                if keyword.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    if contains_word(text, keyword) {
+                let needle: String;
+                let kw = if case_insensitive {
+                    needle = keyword.to_lowercase();
+                    needle.as_str()
+                } else {
+                    keyword
+                };
+                if kw.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    if contains_word(haystack, kw) {
                         found.push(format!("{}:{}", lang, keyword));
                     }
-                } else if text.contains(keyword) {
+                } else if haystack.contains(kw) {
                     found.push(format!("{}:{}", lang, keyword));
                 }
             }
@@ -704,16 +715,10 @@ impl ContentDetector {
     ) -> f64 {
         let mut score = 0.0;
 
-        // Count language patterns
+        // Count language keyword patterns (anything not ide: or messaging:)
         let code_keywords = patterns
             .iter()
-            .filter(|p| {
-                p.starts_with("rust:")
-                    || p.starts_with("python:")
-                    || p.starts_with("javascript:")
-                    || p.starts_with("swift:")
-                    || p.starts_with("sql:")
-            })
+            .filter(|p| !p.starts_with("ide:") && !p.starts_with("messaging:"))
             .count();
 
         // Boost for code keywords
@@ -821,11 +826,7 @@ impl ContentDetector {
         // Check for code blocks and prose mix
         let code_keyword_count = patterns
             .iter()
-            .filter(|p| {
-                p.starts_with("rust:")
-                    || p.starts_with("python:")
-                    || p.starts_with("javascript:")
-            })
+            .filter(|p| !p.starts_with("ide:") && !p.starts_with("messaging:"))
             .count();
 
         if code_keyword_count > 0 && text.len() > 200 {
