@@ -31,7 +31,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::broadcast;
+use tokio_util::sync::CancellationToken;
 use chrono::Utc;
+use zeroize::Zeroize;
 
 /// Maximum clipboard text size (1MB).
 const MAX_CLIPBOARD_TEXT_SIZE: usize = 1_000_000;
@@ -114,6 +116,12 @@ impl std::fmt::Display for ClipboardError {
 }
 
 impl std::error::Error for ClipboardError {}
+
+impl From<ClipboardError> for crate::error::Error {
+    fn from(e: ClipboardError) -> Self {
+        crate::error::Error::Platform(e.to_string())
+    }
+}
 
 /// Copy event captured from clipboard.
 #[derive(Debug, Clone)]
@@ -218,10 +226,11 @@ impl ClipboardMonitor {
         self: Arc<Self>,
         sessions: Arc<RwLock<HashMap<String, DocumentSession>>>,
         store: Arc<SecureStore>,
+        cancel: CancellationToken,
     ) -> std::result::Result<(), ClipboardError> {
         loop {
             match self.check_clipboard_change().await {
-                Ok(Some(copy_event)) => {
+                Ok(Some(mut copy_event)) => {
                     // Try to attach evidence if text matches a session fragment
                     match self
                         .try_attach_evidence(&copy_event, &sessions, &store)
@@ -243,6 +252,8 @@ impl ClipboardMonitor {
                             // Expected for most copies (not from our sessions)
                         }
                     }
+                    // CB-007: Zeroize plaintext after evidence processing completes
+                    copy_event.text.zeroize();
                 }
                 Ok(None) => {
                     // No change; continue
@@ -253,7 +264,14 @@ impl ClipboardMonitor {
                 }
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // CB-011: Support cancellation between poll cycles
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                _ = cancel.cancelled() => {
+                    log::info!("Clipboard monitor cancelled");
+                    return Ok(());
+                }
+            }
         }
     }
 
@@ -263,10 +281,14 @@ impl ClipboardMonitor {
     /// Deduplication via change count and timestamp throttling (100ms).
     async fn check_clipboard_change(&self) -> std::result::Result<Option<CopyEvent>, ClipboardError> {
         let now = Utc::now().timestamp_millis();
-        let last_copy = *self.last_copy_time.read_recover();
+
+        // CB-002: Acquire write locks upfront to eliminate TOCTOU race between
+        // reading last_change_count/last_copy_time and updating them.
+        let mut last_copy_guard = self.last_copy_time.write_recover();
+        let mut last_count_guard = self.last_change_count.write_recover();
 
         // Debounce: reject if < 100ms since last copy
-        if now.saturating_sub(last_copy) < CLIPBOARD_DEBOUNCE_MS as i64 {
+        if now.saturating_sub(*last_copy_guard) < CLIPBOARD_DEBOUNCE_MS as i64 {
             return Ok(None);
         }
 
@@ -274,8 +296,7 @@ impl ClipboardMonitor {
         let (current_count, text) = self.read_pasteboard().await?;
 
         // Check if change count matches (skip if no change)
-        let last_count = *self.last_change_count.read_recover();
-        if current_count == last_count {
+        if current_count == *last_count_guard {
             return Ok(None);
         }
 
@@ -307,9 +328,9 @@ impl ClipboardMonitor {
             pasteboard_change_count: current_count,
         };
 
-        // Update state
-        *self.last_change_count.write_recover() = current_count;
-        *self.last_copy_time.write_recover() = now;
+        // Update state atomically (guards already held)
+        *last_count_guard = current_count;
+        *last_copy_guard = now;
 
         Ok(Some(copy_event))
     }

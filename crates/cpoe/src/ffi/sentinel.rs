@@ -49,6 +49,8 @@ fn ffi_runtime() -> Result<Arc<tokio::runtime::Runtime>, String> {
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_start() -> FfiResult {
     log::debug!("ffi_sentinel_start called");
+    // Reset injection state from any previous run (SI-008/SI-009).
+    super::sentinel_inject::reset_inject_state();
     // If a sentinel already exists, reuse it (handles restart after stop)
     let existing = get_sentinel();
     if existing.as_ref().is_some_and(|s| s.is_running()) {

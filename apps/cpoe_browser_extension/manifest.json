@@ -8,7 +8,8 @@
     "nativeMessaging",
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "contextMenus"
   ],
   "optional_host_permissions": [
     "https://*/*"

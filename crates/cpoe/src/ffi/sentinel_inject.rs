@@ -26,6 +26,37 @@ use crate::RwLockRecover;
 /// as suspicious.
 pub const MAX_INJECT_RATE_PER_SEC: u64 = 50;
 
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Mutex;
+use std::time::Instant;
+
+struct RateWindow {
+    start: Option<Instant>,
+    count: u64,
+}
+
+static RATE_LIMITER: Mutex<RateWindow> = Mutex::new(RateWindow {
+    start: None,
+    count: 0,
+});
+
+static LAST_INJECT_TS: AtomicI64 = AtomicI64::new(0);
+
+/// Reset injection state (rate limiter window and last timestamp).
+///
+/// Must be called when the sentinel restarts so that stale state from a
+/// previous run does not leak into the new session. Called automatically
+/// by `ffi_sentinel_start`.
+pub fn reset_inject_state() {
+    LAST_INJECT_TS.store(0, Ordering::Relaxed);
+    let mut window = match RATE_LIMITER.lock() {
+        Ok(w) => w,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    window.start = None;
+    window.count = 0;
+}
+
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn ffi_sentinel_inject_keystroke(
     timestamp_ns: i64,
@@ -40,6 +71,12 @@ pub fn ffi_sentinel_inject_keystroke(
     if char_value.len() > 16 {
         return false;
     }
+    // SI-004: Reject non-positive timestamps. The caller uses NSEvent.timestamp
+    // (mach_absolute_time based), which is always positive for real events.
+    // Far-future values are valid (monotonic clock can be large after long uptime).
+    if timestamp_ns <= 0 {
+        return false;
+    }
     let is_key_up = char_value == "UP";
 
     let sentinel_opt = get_sentinel();
@@ -48,10 +85,12 @@ pub fn ffi_sentinel_inject_keystroke(
         _ => return false,
     };
 
-    // KeyUp events are forwarded to the event loop for dwell time computation.
-    // They bypass rate limiting, verification, and voice collection.
+    // KeyUp events carry no actionable data in the current pipeline: dwell time
+    // computation requires pairing KeyDown/KeyUp by keycode, which the sentinel
+    // does not yet implement. Returning true tells the caller the event was
+    // accepted (not an error) so it does not retry or log a failure. When dwell
+    // time recording is added, this path should feed the per-session dwell map.
     if is_key_up {
-        // KeyUp events are noted for dwell time but no further processing needed yet.
         return true;
     }
 
@@ -59,17 +98,6 @@ pub fn ffi_sentinel_inject_keystroke(
     // Uses monotonic Instant (not caller-supplied timestamp) to prevent bypass
     // via crafted timestamps. H-017: Mutex-guarded window prevents races.
     {
-        use std::sync::Mutex;
-        use std::time::Instant;
-        struct RateWindow {
-            start: Option<Instant>,
-            count: u64,
-        }
-        static RATE_LIMITER: Mutex<RateWindow> = Mutex::new(RateWindow {
-            start: None,
-            count: 0,
-        });
-
         let mut window = match RATE_LIMITER.lock() {
             Ok(w) => w,
             Err(poisoned) => poisoned.into_inner(),
@@ -171,8 +199,7 @@ pub fn ffi_sentinel_inject_keystroke(
     // Impact: negligible for typical use (one outlier per switch is filtered by
     // the jitter analyzer's outlier rejection), but cadence scores near the
     // boundary may be slightly penalized when documents are switched frequently.
-    static LAST_INJECT_TS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
-    let prev_ts = LAST_INJECT_TS.swap(timestamp_ns, std::sync::atomic::Ordering::Relaxed);
+    let prev_ts = LAST_INJECT_TS.swap(timestamp_ns, Ordering::Relaxed);
     let duration_since_last_ns = if prev_ts > 0 && timestamp_ns > prev_ts {
         (timestamp_ns - prev_ts) as u64
     } else {
