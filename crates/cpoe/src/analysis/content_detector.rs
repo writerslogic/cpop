@@ -480,6 +480,10 @@ impl ContentDetector {
             score += 0.15;
         }
 
+        // Boost if messaging patterns detected
+        let messaging_count = patterns.iter().filter(|p| p.starts_with("messaging:")).count();
+        score += (messaging_count as f64) * 0.1;
+
         // Reduce if formal email patterns present
         if text.contains("To:") || text.contains("Subject:") {
             score *= 0.3;

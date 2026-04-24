@@ -3,7 +3,6 @@
 use super::shadow::ShadowManager;
 use super::types::*;
 use crate::config::SentinelConfig;
-use crate::crypto::ObfuscatedString;
 use crate::wal::{EntryType, Wal};
 
 use crate::RwLockRecover;
@@ -1209,6 +1208,7 @@ pub(super) fn commit_checkpoint_for_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::ObfuscatedString;
 
     const MS_TO_NS: i64 = 1_000_000;
 

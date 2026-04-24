@@ -9,7 +9,6 @@
 //! <0.70 defaults to `Undetermined` with author attestation fallback.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Authorship method classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
