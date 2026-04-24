@@ -35,6 +35,7 @@ pub fn ffi_sentinel_inject_keystroke(
     keyboard_type: i64,
     source_pid: i64,
     char_value: String,
+    coalesced_count: u64,
 ) -> bool {
     if char_value.len() > 16 {
         return false;
@@ -193,7 +194,7 @@ pub fn ffi_sentinel_inject_keystroke(
     crate::sentinel::trace!("[FFI_INJECT] focus={:?} keycode={}", focus, keycode);
     if let Some(ref path) = focus {
         if let Some(session) = sentinel.sessions.write_recover().get_mut(path) {
-            session.keystroke_count += 1;
+            session.keystroke_count += coalesced_count.max(1);
             crate::sentinel::trace!(
                 "[FFI_INJECT] COUNTED {:?} total={}",
                 path,
