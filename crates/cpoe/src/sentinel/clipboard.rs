@@ -20,10 +20,13 @@
 //! 3. Write to pasteboard as "com.writersproof.evidence"
 //! 4. Emit EvidenceEvent to broadcast channel
 
+use crate::error::Error;
 use crate::store::SecureStore;
 use crate::sentinel::types::DocumentSession;
 use crate::utils::crypto_helpers;
 use crate::RwLockRecover;
+use coset::{CborSerializable, CoseSign1Builder, HeaderBuilder};
+use ed25519_dalek::{Signer, SigningKey};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -356,11 +359,17 @@ impl ClipboardMonitor {
     /// Check if text hash matches any fragment in a session.
     async fn fragment_matches_hash(
         &self,
-        _store: &Arc<SecureStore>,
+        store: &Arc<SecureStore>,
         _session_id: &str,
-        _text_hash: &[u8; 32],
+        text_hash: &[u8; 32],
     ) -> Result<bool, ClipboardError> {
-        Ok(false)
+        match store.lookup_fragment_by_hash(text_hash) {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(ClipboardError::Other(
+                format!("Fragment lookup failed: {}", e),
+            )),
+        }
     }
 
     /// Persist clipboard event to database.
@@ -408,6 +417,60 @@ impl ClipboardMonitor {
     async fn get_focused_window_title(&self) -> Result<String, ClipboardError> {
         Err(ClipboardError::NoMonitoredAppInFocus)
     }
+
+    /// Check if a bundle ID is in the trusted monitored apps list.
+    ///
+    /// Returns Ok(true) if the app is monitored, Ok(false) otherwise.
+    #[allow(dead_code)]
+    pub fn verify_paste_source_bundle_id(
+        &self,
+        bundle_id: &str,
+    ) -> std::result::Result<bool, ClipboardError> {
+        if bundle_id.is_empty() {
+            return Ok(false);
+        }
+        let apps = self.monitored_apps.read_recover();
+        Ok(apps.iter().any(|app| app == bundle_id))
+    }
+}
+
+/// Wrap clipboard text content in a COSE_Sign1 envelope with Ed25519 signature.
+///
+/// Protected header contains Algorithm::EdDSA. The `nonce` is included in
+/// the unprotected header for replay prevention. Payload is the raw text bytes.
+#[allow(dead_code)]
+pub fn wrap_clipboard_cose_sign1(
+    content: &[u8],
+    signing_key: &SigningKey,
+    nonce: &[u8],
+) -> crate::error::Result<Vec<u8>> {
+    let protected = HeaderBuilder::new()
+        .algorithm(coset::iana::Algorithm::EdDSA)
+        .build();
+
+    let unprotected = HeaderBuilder::new()
+        .iv(nonce.to_vec())
+        .build();
+
+    let sign1 = CoseSign1Builder::new()
+        .protected(protected)
+        .unprotected(unprotected)
+        .payload(content.to_vec())
+        .create_signature(&[], |sig_data| {
+            let sig = signing_key.sign(sig_data);
+            sig.to_bytes().to_vec()
+        })
+        .build();
+
+    if sign1.signature.is_empty() {
+        return Err(Error::crypto(
+            "COSE_Sign1 clipboard wrapping produced empty signature",
+        ));
+    }
+
+    sign1
+        .to_vec()
+        .map_err(|e| Error::crypto(format!("COSE encoding error: {e}")))
 }
 
 #[cfg(test)]

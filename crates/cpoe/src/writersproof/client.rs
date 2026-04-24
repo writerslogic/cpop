@@ -8,8 +8,9 @@ use zeroize::Zeroizing;
 
 use super::types::{
     AnchorRequest, AnchorResponse, AttestResponse, BeaconRequest, BeaconResponse,
-    ChallengeResponse, ConfirmNonceRequest, EnrollRequest, EnrollResponse, Hex64, NonceResponse,
-    PulseRequest, PulseResponse, VerifyResponse,
+    ChallengeResponse, ConfirmNonceRequest, CredentialIssueRequest, CredentialIssueResponse,
+    CredentialStatusResponse, EnrollRequest, EnrollResponse, Hex64, NonceResponse, PulseRequest,
+    PulseResponse, VerifyResponse,
 };
 use crate::error::{Error, Result};
 
@@ -285,6 +286,34 @@ impl WritersProofClient {
         }
 
         Self::json_response::<AnchorResponse>(resp).await
+    }
+
+    /// Submit a text attestation to WritersProof for public verification.
+    ///
+    /// `POST /v1/text-attestation`
+    pub async fn submit_text_attestation(
+        &self,
+        req: super::types::TextAttestationRequest,
+    ) -> Result<super::types::TextAttestationResponse> {
+        let url = format!("{}/v1/text-attestation", self.base_url);
+        let mut http_req = self.client.post(&url).json(&req);
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt.as_str());
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!("text-attestation request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "text-attestation request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        Self::json_response::<super::types::TextAttestationResponse>(resp).await
     }
 
     /// Publish evidence to WritersProof and receive a canonical URL.
@@ -576,6 +605,137 @@ impl WritersProofClient {
         }
         serde_json::from_slice(&bytes)
             .map_err(|e| Error::crypto(format!("response parse failed: {e}")))
+    }
+
+    /// Issue an authorship credential via WritersProof.
+    ///
+    /// `POST /v1/credentials/issue`
+    #[allow(dead_code)]
+    pub async fn issue_credential(
+        &self,
+        req: CredentialIssueRequest,
+    ) -> Result<CredentialIssueResponse> {
+        let url = format!("{}/v1/credentials/issue", self.base_url);
+        let mut http_req = self.client.post(&url).json(&req);
+        if let Some(ref jwt) = self.jwt {
+            http_req = http_req.bearer_auth(jwt.as_str());
+        } else {
+            return Err(Error::crypto(
+                "credential issuance requires authentication",
+            ));
+        }
+
+        let resp = http_req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!(
+                "credential issue request failed: {e}"
+            )))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("[unreadable: {e}]"));
+            return Err(Error::crypto(format!(
+                "credential issue failed: HTTP {status}: {body}"
+            )));
+        }
+
+        Self::json_response::<CredentialIssueResponse>(resp).await
+    }
+
+    /// Get the status of an issued credential.
+    ///
+    /// `GET /v1/credentials/:id/status`
+    #[allow(dead_code)]
+    pub async fn get_credential_status(
+        &self,
+        credential_id: &str,
+    ) -> Result<CredentialStatusResponse> {
+        if !credential_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(Error::crypto(format!(
+                "invalid credential ID: must be alphanumeric/dash/underscore, got: {}",
+                &credential_id[..credential_id.len().min(32)]
+            )));
+        }
+
+        let url = format!(
+            "{}/v1/credentials/{}/status",
+            self.base_url, credential_id
+        );
+        let mut req = self.client.get(&url);
+        if let Some(ref jwt) = self.jwt {
+            req = req.bearer_auth(jwt.as_str());
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!(
+                "credential status request failed: {e}"
+            )))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "credential status request failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        Self::json_response::<CredentialStatusResponse>(resp).await
+    }
+
+    /// Revoke an issued credential.
+    ///
+    /// `POST /v1/credentials/:id/revoke`
+    #[allow(dead_code)]
+    pub async fn revoke_credential(
+        &self,
+        credential_id: &str,
+    ) -> Result<()> {
+        if !credential_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(Error::crypto(format!(
+                "invalid credential ID: must be alphanumeric/dash/underscore, got: {}",
+                &credential_id[..credential_id.len().min(32)]
+            )));
+        }
+
+        let url = format!(
+            "{}/v1/credentials/{}/revoke",
+            self.base_url, credential_id
+        );
+        let mut req = self.client.post(&url);
+        if let Some(ref jwt) = self.jwt {
+            req = req.bearer_auth(jwt.as_str());
+        } else {
+            return Err(Error::crypto(
+                "credential revocation requires authentication",
+            ));
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| Error::crypto(format!(
+                "credential revoke request failed: {e}"
+            )))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::crypto(format!(
+                "credential revoke failed: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        Ok(())
     }
 
     /// Check if the WritersProof service is reachable.

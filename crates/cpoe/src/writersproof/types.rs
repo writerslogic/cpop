@@ -322,3 +322,74 @@ pub struct ConfirmNonceRequest {
     /// SHA-256 of the committed checkpoint event, hex-encoded (64 chars).
     pub checkpoint_hash: String,
 }
+
+/// Request body for `POST /v1/text-attestation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextAttestationRequest {
+    pub content_hash: String,
+    pub tier: String,
+    pub writersproof_id: String,
+    pub signature_hex: String,
+    pub public_key_hex: String,
+    pub attested_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_bundle_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+}
+
+/// Response from `POST /v1/text-attestation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextAttestationResponse {
+    pub success: bool,
+    pub writersproof_id: String,
+}
+
+/// Request body for `POST /v1/credentials/issue`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialIssueRequest {
+    /// CBOR-encoded AuthorshipCredential (hex-encoded).
+    pub credential_cbor: String,
+    /// Ed25519 signature over the credential CBOR (hex-encoded).
+    pub signature: String,
+    /// Ed25519 public key of the issuing device (hex-encoded).
+    pub public_key: String,
+    /// Session ID the credential is derived from.
+    pub session_id: String,
+    /// Attestation tier: "verified", "corroborated", or "declared".
+    pub attestation_tier: String,
+}
+
+/// Response from `POST /v1/credentials/issue`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialIssueResponse {
+    /// Server-assigned credential identifier.
+    pub credential_id: String,
+    /// ISO 8601 timestamp when the credential was issued.
+    pub issued_at: String,
+    /// ISO 8601 timestamp when the credential expires.
+    pub expires_at: String,
+    /// Server-signed COSE_Sign1 envelope (hex-encoded).
+    pub issuer_signed: String,
+    /// Credential status: "active", "suspended", "revoked".
+    pub status: String,
+}
+
+/// Response from `GET /v1/credentials/:id/status`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialStatusResponse {
+    pub credential_id: String,
+    /// "active", "suspended", or "revoked".
+    pub status: String,
+    pub issued_at: String,
+    pub expires_at: String,
+    /// ISO 8601 timestamp of last status change, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
+    /// Reason for revocation, if revoked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revocation_reason: Option<String>,
+}

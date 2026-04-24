@@ -183,6 +183,7 @@ fn test_verdict_invalid_declaration_caps_to_v2() {
         clc_metrics: None,
         repair_locality: None,
         fatigue_trajectory: None,
+        provenance: None,
     };
 
     let v = verdict::compute_verdict(
@@ -287,6 +288,7 @@ fn test_verdict_overlapping_caps_both_apply() {
         clc_metrics: None,
         repair_locality: None,
         fatigue_trajectory: None,
+        provenance: None,
     };
 
     let v = verdict::compute_verdict(

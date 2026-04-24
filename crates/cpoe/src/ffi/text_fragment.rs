@@ -9,6 +9,7 @@
 use super::helpers::{load_signing_key, open_store};
 use crate::store::text_fragments::{KeystrokeContext, TextFragment};
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 
 // ---------------------------------------------------------------------------
 // FFI types
@@ -76,6 +77,40 @@ impl FfiPasteRecordResult {
     }
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiAttestTextResult {
+    pub success: bool,
+    pub tier: String,
+    pub fragment_hash_hex: String,
+    pub writersproof_id: String,
+    pub attestation_text: String,
+    pub error_message: Option<String>,
+}
+
+impl FfiAttestTextResult {
+    fn ok(tier: String, hash_hex: String, wp_id: String, attestation: String) -> Self {
+        Self {
+            success: true,
+            tier,
+            fragment_hash_hex: hash_hex,
+            writersproof_id: wp_id,
+            attestation_text: attestation,
+            error_message: None,
+        }
+    }
+    fn err(msg: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            tier: String::new(),
+            fragment_hash_hex: String::new(),
+            writersproof_id: String::new(),
+            attestation_text: String::new(),
+            error_message: Some(msg.into()),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -95,6 +130,24 @@ fn to_ffi(f: &TextFragment) -> FfiTextFragment {
 
 fn hash_text(text: &str) -> [u8; 32] {
     Sha256::digest(text.as_bytes()).into()
+}
+
+/// Normalize text for attestation hashing: NFC-normalize, keep only Unicode
+/// letters + ASCII digits, lowercase everything. Resilient to formatting
+/// changes across platforms, apps, and sharing contexts.
+pub fn normalize_for_attestation(text: &str) -> String {
+    text.nfc()
+        .filter(|c| c.is_alphabetic() || c.is_ascii_digit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Hash text after normalization. Returns `(normalized, hash)` to avoid
+/// recomputing the normalization.
+fn hash_normalized_text(text: &str) -> (String, [u8; 32]) {
+    let normalized = normalize_for_attestation(text);
+    let hash = Sha256::digest(normalized.as_bytes()).into();
+    (normalized, hash)
 }
 
 /// Sign the fragment payload: session_id || fragment_hash || timestamp || nonce.
@@ -125,6 +178,14 @@ fn generate_nonce() -> [u8; 16] {
     let mut nonce = [0u8; 16];
     rand::RngCore::fill_bytes(&mut rand::rng(), &mut nonce);
     nonce
+}
+
+/// Generate a 64-hex-char ephemeral session ID for attestations without a
+/// live sentinel session (matches the format of real session IDs).
+fn generate_ephemeral_session_id() -> String {
+    let mut buf = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::rng(), &mut buf);
+    hex::encode(buf)
 }
 
 // ---------------------------------------------------------------------------
@@ -348,4 +409,487 @@ pub fn ffi_sentinel_record_paste(
     }
 
     FfiPasteRecordResult::ok(text_hash_hex, matched_session_id)
+}
+
+/// Create a tiered authorship attestation for selected text.
+///
+/// NFC-normalizes the text (letters + digits, lowercased), hashes it,
+/// determines the attestation tier based on sentinel state, signs and stores
+/// a fragment, and returns a formatted attestation block ready to paste.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_attest_text(
+    text_content: String,
+    app_bundle_id: String,
+    window_title: String,
+) -> FfiAttestTextResult {
+    let (normalized, fragment_hash) = hash_normalized_text(&text_content);
+    if normalized.is_empty() {
+        return FfiAttestTextResult::err("No attestable content after normalization");
+    }
+
+    let fragment_hash_hex = hex::encode(fragment_hash);
+    let writersproof_id = fragment_hash_hex[..8].to_string();
+
+    // Determine tier from sentinel state.
+    let sentinel_opt = super::sentinel::get_sentinel();
+    let (tier, session_id) = match sentinel_opt.as_ref() {
+        Some(s) if s.is_running() => {
+            let sessions = s.sessions();
+            // Pick the session with the most keystrokes for strongest evidence.
+            let matched = sessions
+                .iter()
+                .filter(|sess| {
+                    sess.app_bundle_id == app_bundle_id && sess.keystroke_count > 0
+                })
+                .max_by_key(|sess| sess.keystroke_count);
+            if s.is_keystroke_capture_active() {
+                if let Some(sess) = matched {
+                    ("verified", sess.session_id.clone())
+                } else {
+                    ("corroborated", generate_ephemeral_session_id())
+                }
+            } else {
+                ("corroborated", generate_ephemeral_session_id())
+            }
+        }
+        _ => ("declared", generate_ephemeral_session_id()),
+    };
+
+    // Sign and store as text fragment.
+    let timestamp = current_timestamp_ms();
+    let timestamp_iso = chrono::DateTime::from_timestamp_millis(timestamp)
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+        .unwrap_or_default();
+    let nonce = generate_nonce();
+
+    let signing_key = match load_signing_key() {
+        Ok(k) => k,
+        Err(e) => {
+            return FfiAttestTextResult::err(format!("Signing key unavailable: {e}"));
+        }
+    };
+
+    let signature = sign_fragment(&signing_key, &session_id, &fragment_hash, timestamp, &nonce);
+
+    let fragment = TextFragment {
+        id: None,
+        fragment_hash: fragment_hash.to_vec(),
+        session_id,
+        source_app_bundle_id: Some(app_bundle_id).filter(|s| !s.is_empty()),
+        source_window_title: Some(window_title).filter(|s| !s.is_empty()),
+        source_signature: signature.to_vec(),
+        nonce: nonce.to_vec(),
+        timestamp,
+        keystroke_context: None,
+        keystroke_confidence: None,
+        keystroke_sequence_hash: None,
+        source_session_id: None,
+        source_evidence_packet: None,
+        wal_entry_hash: None,
+        cloudkit_record_id: None,
+        sync_state: None,
+    };
+
+    let mut store = match open_store() {
+        Ok(s) => s,
+        Err(e) => {
+            return FfiAttestTextResult::err(e);
+        }
+    };
+
+    if let Err(e) = store.insert_text_fragment(&fragment) {
+        return FfiAttestTextResult::err(format!("Failed to store attestation: {e}"));
+    }
+
+    let tier_description = match tier {
+        "verified" => "Cryptographic authorship attestation with keystroke evidence.",
+        "corroborated" => "Authorship attestation, sentinel active during authoring.",
+        _ => "Signed author declaration.",
+    };
+
+    let tier_label = match tier {
+        "verified" => "Verified",
+        "corroborated" => "Corroborated",
+        _ => "Declared",
+    };
+
+    let attestation_text = format!(
+        "WritersProof {tier_label} | ID: {writersproof_id} | {timestamp_iso}\n\
+         {tier_description}\n\
+         verify.writersproof.com"
+    );
+
+    FfiAttestTextResult::ok(
+        tier.to_string(),
+        fragment_hash_hex,
+        writersproof_id,
+        attestation_text,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// CloudKit sync FFI functions
+// ---------------------------------------------------------------------------
+
+/// FFI result for sync operations that return a boolean success/failure.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct FfiSyncResult {
+    pub success: bool,
+    pub error_message: Option<String>,
+}
+
+impl FfiSyncResult {
+    fn ok() -> Self {
+        Self { success: true, error_message: None }
+    }
+    fn err(msg: impl Into<String>) -> Self {
+        Self { success: false, error_message: Some(msg.into()) }
+    }
+}
+
+/// Mark a fragment as pending sync to CloudKit.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_mark_fragment_for_sync(fragment_id: i64) -> FfiSyncResult {
+    let store = match open_store() {
+        Ok(s) => s,
+        Err(e) => return FfiSyncResult::err(e),
+    };
+
+    match store.mark_fragment_for_sync(fragment_id) {
+        Ok(()) => FfiSyncResult::ok(),
+        Err(e) => FfiSyncResult::err(
+            format!("Failed to mark for sync: {e}"),
+        ),
+    }
+}
+
+/// Update a fragment's sync state with optional CloudKit record ID.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_update_fragment_sync_state(
+    fragment_id: i64,
+    state: String,
+    cloudkit_record_id: Option<String>,
+) -> FfiSyncResult {
+    let store = match open_store() {
+        Ok(s) => s,
+        Err(e) => return FfiSyncResult::err(e),
+    };
+
+    match store.update_fragment_sync_state(
+        fragment_id,
+        &state,
+        cloudkit_record_id.as_deref(),
+    ) {
+        Ok(()) => FfiSyncResult::ok(),
+        Err(e) => FfiSyncResult::err(
+            format!("Failed to update sync state: {e}"),
+        ),
+    }
+}
+
+/// Get count of fragments pending sync to CloudKit.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_get_pending_sync_count() -> i64 {
+    let store = match open_store() {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(
+                "ffi_get_pending_sync_count: failed to open store: {e}"
+            );
+            return -1;
+        }
+    };
+
+    match store.get_pending_sync_count() {
+        Ok(count) => count,
+        Err(e) => {
+            log::warn!(
+                "ffi_get_pending_sync_count: query failed: {e}"
+            );
+            -1
+        }
+    }
+}
+
+/// Apply a remotely synced fragment received from CloudKit.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_apply_remote_fragment(
+    fragment_hash_hex: String,
+    session_id: String,
+    source_signature_hex: String,
+    nonce_hex: String,
+    timestamp_ms: i64,
+    source_app_bundle_id: Option<String>,
+    source_window_title: Option<String>,
+    keystroke_context: Option<String>,
+    keystroke_confidence: Option<f64>,
+    cloudkit_record_id: Option<String>,
+) -> FfiTextFragmentStoreResult {
+    let fragment_hash = match hex::decode(&fragment_hash_hex) {
+        Ok(b) if b.len() == 32 => b,
+        _ => return FfiTextFragmentStoreResult::err(
+            "fragment_hash_hex must be 64 hex chars (32 bytes)",
+        ),
+    };
+    let source_signature = match hex::decode(&source_signature_hex) {
+        Ok(b) if b.len() == 64 => b,
+        _ => return FfiTextFragmentStoreResult::err(
+            "source_signature_hex must be 128 hex chars (64 bytes)",
+        ),
+    };
+    let nonce = match hex::decode(&nonce_hex) {
+        Ok(b) if b.len() == 16 => b,
+        _ => return FfiTextFragmentStoreResult::err(
+            "nonce_hex must be 32 hex chars (16 bytes)",
+        ),
+    };
+
+    let context = keystroke_context
+        .as_deref()
+        .and_then(|s| s.parse::<KeystrokeContext>().ok());
+
+    let fragment = TextFragment {
+        id: None,
+        fragment_hash: fragment_hash.clone(),
+        session_id,
+        source_app_bundle_id,
+        source_window_title,
+        source_signature,
+        nonce,
+        timestamp: timestamp_ms,
+        keystroke_context: context,
+        keystroke_confidence,
+        keystroke_sequence_hash: None,
+        source_session_id: None,
+        source_evidence_packet: None,
+        wal_entry_hash: None,
+        cloudkit_record_id,
+        sync_state: Some("synced".to_string()),
+    };
+
+    let mut store = match open_store() {
+        Ok(s) => s,
+        Err(e) => return FfiTextFragmentStoreResult::err(e),
+    };
+
+    match store.apply_remote_fragment(&fragment) {
+        Ok(id) => FfiTextFragmentStoreResult::ok(
+            hex::encode(&fragment_hash),
+            id,
+        ),
+        Err(e) => FfiTextFragmentStoreResult::err(
+            format!("Failed to apply remote fragment: {e}"),
+        ),
+    }
+}
+
+/// Resolve a sync conflict for a fragment.
+///
+/// `strategy`: "keep_local", "keep_remote", or "keep_newest".
+/// Remote fragment fields are required for "keep_remote"/"keep_newest".
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_resolve_sync_conflict(
+    fragment_id: i64,
+    strategy: String,
+    remote_fragment_hash_hex: Option<String>,
+    remote_session_id: Option<String>,
+    remote_signature_hex: Option<String>,
+    remote_nonce_hex: Option<String>,
+    remote_timestamp_ms: Option<i64>,
+    remote_cloudkit_record_id: Option<String>,
+) -> FfiSyncResult {
+    use crate::store::text_fragments::SyncResolutionStrategy;
+
+    let strat = match strategy.as_str() {
+        "keep_local" => SyncResolutionStrategy::KeepLocal,
+        "keep_remote" => SyncResolutionStrategy::KeepRemote,
+        "keep_newest" => SyncResolutionStrategy::KeepNewest,
+        _ => return FfiSyncResult::err(format!(
+            "Invalid strategy '{strategy}'; \
+             expected keep_local, keep_remote, or keep_newest"
+        )),
+    };
+
+    let remote_fragment =
+        if strat != SyncResolutionStrategy::KeepLocal {
+            let hash = match remote_fragment_hash_hex
+                .as_deref()
+                .map(hex::decode)
+            {
+                Some(Ok(b)) if b.len() == 32 => b,
+                _ => return FfiSyncResult::err(
+                    "Remote fragment hash required",
+                ),
+            };
+            let sig = match remote_signature_hex
+                .as_deref()
+                .map(hex::decode)
+            {
+                Some(Ok(b)) if b.len() == 64 => b,
+                _ => return FfiSyncResult::err(
+                    "Remote signature required",
+                ),
+            };
+            let nonce = match remote_nonce_hex
+                .as_deref()
+                .map(hex::decode)
+            {
+                Some(Ok(b)) if b.len() == 16 => b,
+                _ => return FfiSyncResult::err(
+                    "Remote nonce required",
+                ),
+            };
+            Some(TextFragment {
+                id: None,
+                fragment_hash: hash,
+                session_id: remote_session_id.unwrap_or_default(),
+                source_app_bundle_id: None,
+                source_window_title: None,
+                source_signature: sig,
+                nonce,
+                timestamp: remote_timestamp_ms.unwrap_or(0),
+                keystroke_context: None,
+                keystroke_confidence: None,
+                keystroke_sequence_hash: None,
+                source_session_id: None,
+                source_evidence_packet: None,
+                wal_entry_hash: None,
+                cloudkit_record_id: remote_cloudkit_record_id,
+                sync_state: None,
+            })
+        } else {
+            None
+        };
+
+    let mut store = match open_store() {
+        Ok(s) => s,
+        Err(e) => return FfiSyncResult::err(e),
+    };
+
+    match store.resolve_sync_conflict(
+        fragment_id,
+        strat,
+        remote_fragment.as_ref(),
+    ) {
+        Ok(()) => FfiSyncResult::ok(),
+        Err(e) => FfiSyncResult::err(
+            format!("Failed to resolve conflict: {e}"),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_ascii() {
+        assert_eq!(normalize_for_attestation("Hello, World!"), "helloworld");
+    }
+
+    #[test]
+    fn test_normalize_unicode_precomposed() {
+        assert_eq!(normalize_for_attestation("caf\u{00e9} r\u{00e9}sum\u{00e9}"), "caf\u{00e9}r\u{00e9}sum\u{00e9}");
+    }
+
+    #[test]
+    fn test_normalize_nfc_nfd_equivalence() {
+        let nfc = "caf\u{00e9}";          // precomposed é
+        let nfd = "cafe\u{0301}";          // e + combining acute
+        assert_eq!(
+            normalize_for_attestation(nfc),
+            normalize_for_attestation(nfd),
+        );
+    }
+
+    #[test]
+    fn test_normalize_digits() {
+        assert_eq!(normalize_for_attestation("I wrote 5 chapters"), "iwrote5chapters");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_stripped() {
+        assert_eq!(
+            normalize_for_attestation("Hello\n\n  World\t!!"),
+            "helloworld"
+        );
+    }
+
+    #[test]
+    fn test_normalize_cjk() {
+        assert_eq!(normalize_for_attestation("写作 证明"), "写作证明");
+    }
+
+    #[test]
+    fn test_normalize_empty_after_strip() {
+        assert_eq!(normalize_for_attestation("!@#$%"), "");
+    }
+
+    #[test]
+    fn test_hash_normalized_deterministic() {
+        let (_, h1) = hash_normalized_text("Hello, World!");
+        let (_, h2) = hash_normalized_text("hello world");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_nfc_nfd_identical() {
+        let (_, h1) = hash_normalized_text("caf\u{00e9}");
+        let (_, h2) = hash_normalized_text("cafe\u{0301}");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_ffi_attest_text_empty_input() {
+        let result = ffi_attest_text(String::new(), String::new(), String::new());
+        assert!(!result.success);
+        assert_eq!(
+            result.error_message.as_deref(),
+            Some("No attestable content after normalization")
+        );
+    }
+
+    #[test]
+    fn test_ffi_attest_text_punctuation_only() {
+        let result = ffi_attest_text("...!!!".to_string(), String::new(), String::new());
+        assert!(!result.success);
+        assert_eq!(
+            result.error_message.as_deref(),
+            Some("No attestable content after normalization")
+        );
+    }
+
+    #[test]
+    fn test_ffi_attest_text_declared_tier_and_lookup() {
+        let _lock = crate::ffi::helpers::lock_ffi_env();
+        let tmp = std::env::temp_dir().join("cpoe_attest_test");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::env::set_var("CPOE_DATA_DIR", tmp.to_str().unwrap());
+        let init = crate::ffi::system::ffi_init();
+        assert!(init.success, "init failed: {:?}", init.error_message);
+
+        let result = ffi_attest_text(
+            "This is my original text".to_string(),
+            "com.apple.Notes".to_string(),
+            "My Note".to_string(),
+        );
+        assert!(result.success, "attest failed: {:?}", result.error_message);
+        assert_eq!(result.tier, "declared");
+        assert!(!result.fragment_hash_hex.is_empty());
+        assert_eq!(result.fragment_hash_hex.len(), 64);
+        assert_eq!(result.writersproof_id.len(), 8);
+        assert!(result.fragment_hash_hex.starts_with(&result.writersproof_id));
+        assert!(result.attestation_text.contains("WritersProof Declared"));
+        assert!(result.attestation_text.contains("verify.writersproof.com"));
+        assert!(result.attestation_text.contains(&result.writersproof_id));
+
+        // Verify the stored fragment is retrievable by hash.
+        let lookup = ffi_text_fragment_lookup(result.fragment_hash_hex.clone());
+        assert!(lookup.is_some(), "stored attestation fragment not found by hash");
+        let frag = lookup.unwrap();
+        assert_eq!(frag.fragment_hash_hex, result.fragment_hash_hex);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

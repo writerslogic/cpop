@@ -287,3 +287,85 @@ pub fn ffi_publish_evidence(
         },
     }
 }
+
+/// Sync a text attestation to the WritersProof API for public verification.
+///
+/// Called after `ffi_attest_text` stores the attestation locally. Submits the
+/// hash, tier, and signature so verifiers can look it up at
+/// `verify.writersproof.com`.
+#[cfg_attr(feature = "ffi", uniffi::export)]
+pub fn ffi_sync_text_attestation(
+    content_hash: String,
+    tier: String,
+    writersproof_id: String,
+    attested_at: String,
+    app_bundle_id: String,
+) -> FfiResult {
+    if content_hash.len() != 64 || !content_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return FfiResult::err("content_hash must be 64 hex characters".to_string());
+    }
+    if writersproof_id.len() != 8 {
+        return FfiResult::err("writersproof_id must be 8 hex characters".to_string());
+    }
+
+    let signing_key = match load_signing_key() {
+        Ok(k) => k,
+        Err(e) => return FfiResult::err(format!("Signing key unavailable: {e}")),
+    };
+
+    let public_key_hex = hex::encode(signing_key.verifying_key().as_bytes());
+
+    // Sign the content hash with Ed25519 for server-side verification.
+    let signature_hex = {
+        use ed25519_dalek::Signer;
+        let hash_bytes = match hex::decode(&content_hash) {
+            Ok(b) => b,
+            Err(e) => return FfiResult::err(format!("Invalid content_hash hex: {e}")),
+        };
+        hex::encode(signing_key.sign(&hash_bytes).to_bytes())
+    };
+
+    let api_key = match load_api_key() {
+        Ok(k) if k.is_empty() => {
+            return FfiResult::err("WritersProof API key is empty".to_string());
+        }
+        Ok(k) => k,
+        Err(_) => {
+            // No API key — skip sync silently (offline/unauthenticated mode).
+            return FfiResult::ok("Skipped: no API key configured".to_string());
+        }
+    };
+
+    let rt = match crate::ffi::beacon::beacon_runtime() {
+        Ok(rt) => rt,
+        Err(e) => return FfiResult::err(format!("Failed to get async runtime: {e}")),
+    };
+
+    let client = match crate::writersproof::WritersProofClient::new(
+        crate::writersproof::client::DEFAULT_API_URL,
+    ) {
+        Ok(c) => c.with_jwt(api_key),
+        Err(e) => return FfiResult::err(format!("Failed to create API client: {e}")),
+    };
+
+    let req = crate::writersproof::types::TextAttestationRequest {
+        content_hash,
+        tier,
+        writersproof_id: writersproof_id.clone(),
+        signature_hex,
+        public_key_hex,
+        attested_at,
+        app_bundle_id: Some(app_bundle_id).filter(|s| !s.is_empty()),
+        device_id: None,
+    };
+
+    let result = rt.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(15), client.submit_text_attestation(req)).await
+    });
+
+    match result {
+        Err(_) => FfiResult::err("Text attestation sync timed out".to_string()),
+        Ok(Err(e)) => FfiResult::err(format!("Text attestation sync failed: {e}")),
+        Ok(Ok(_)) => FfiResult::ok(format!("Synced: {writersproof_id}")),
+    }
+}
