@@ -176,7 +176,11 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                         .to_vec(),
                 )?,
                 process_proof: ProcessProof {
-                    algorithm: ProofAlgorithm::SwfSha256,
+                    algorithm: if ev.posme_proof.is_some() {
+                        ProofAlgorithm::SwfPosme
+                    } else {
+                        ProofAlgorithm::SwfSha256
+                    },
                     params: ProofParams {
                         time_cost: 1,
                         memory_cost: 0,
@@ -203,7 +207,7 @@ pub fn ffi_export_evidence(path: String, tier: String, output: String) -> FfiRes
                 verifier_nonce: None,
                 lamport_signature: ev.lamport_signature.clone(),
                 lamport_pubkey_fingerprint: ev.lamport_pubkey_fingerprint.clone(),
-                posme_proof: None,
+                posme_proof: ev.posme_proof.clone(),
             })
         })
         .collect::<Result<Vec<_>, String>>()

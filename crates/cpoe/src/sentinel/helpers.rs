@@ -865,7 +865,10 @@ pub fn create_document_hash_payload(hash: &str, size: i64) -> Result<Vec<u8>, St
     let mut hash_fixed = [0u8; 32];
     hash_fixed.copy_from_slice(&hash_bytes);
     payload.extend_from_slice(&hash_fixed);
-    payload.extend_from_slice(&(size.max(0) as u64).to_be_bytes());
+    if size < 0 {
+        return Err(format!("Negative file size: {}", size));
+    }
+    payload.extend_from_slice(&(size as u64).to_be_bytes());
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -879,6 +882,12 @@ pub fn create_document_hash_payload(hash: &str, size: i64) -> Result<Vec<u8>, St
 /// Canonicalize and validate a user-provided path against traversal attacks.
 pub fn validate_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
     let path = path.as_ref();
+
+    if let Ok(meta) = std::fs::symlink_metadata(path) {
+        if meta.file_type().is_symlink() {
+            return Err(format!("Symlinks not accepted: {}", path.display()));
+        }
+    }
 
     if path.exists() {
         let canonical = path
@@ -961,7 +970,7 @@ pub(crate) fn try_hw_cosign(
     let clock_ms = clock_info.as_ref().map(|c| c.clock).unwrap_or(0);
     let caps = tpm.capabilities();
     let counter = if caps.monotonic_counter {
-        clock_info.as_ref().map(|c| c.clock).unwrap_or(0)
+        clock_info.as_ref().map(|c| u64::from(c.reset_count)).unwrap_or(0)
     } else {
         clock_ms
     };
@@ -1036,8 +1045,15 @@ pub fn detect_paste_boundary(
     app_focused_at_time: &str,
     previous_focused_app: &str,
 ) -> (super::types::KeystrokeContext, f64) {
-    if current_timestamp < last_keystroke_timestamp {
+    if last_keystroke_timestamp == 0 {
         return (super::types::KeystrokeContext::OriginalComposition, 0.20);
+    }
+    if current_timestamp < last_keystroke_timestamp {
+        log::warn!(
+            "Timestamp regression in paste detection: current={} < last={}",
+            current_timestamp, last_keystroke_timestamp
+        );
+        return (super::types::KeystrokeContext::PastedContent, 0.80);
     }
 
     let mut signals = 0;
@@ -1133,8 +1149,21 @@ pub(super) fn commit_checkpoint_for_path(
              WP unreachable or nonce not fetched before checkpoint window"
         );
     }
-    let file_path = std::path::Path::new(path);
-    let (content_hash, raw_size) = match crate::crypto::hash_file_with_size(file_path) {
+    let file = match open_nofollow(path) {
+        Ok(f) => f,
+        Err(e) => {
+            log::debug!("Auto-checkpoint open failed for {path}: {e}");
+            return None;
+        }
+    };
+    let raw_size = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(e) => {
+            log::debug!("Auto-checkpoint metadata failed for {path}: {e}");
+            return None;
+        }
+    };
+    let (content_hash, _) = match crate::crypto::hash_file_handle(file) {
         Ok(pair) => pair,
         Err(e) => {
             log::debug!("Auto-checkpoint hash failed for {path}: {e}");

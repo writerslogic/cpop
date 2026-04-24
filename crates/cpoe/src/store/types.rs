@@ -44,6 +44,8 @@ pub struct SecureEvent {
     pub hw_cosign_entropy_digest: Option<Vec<u8>>,
     /// Hardware co-signature: byte count of accumulated entropy at co-sign time.
     pub hw_cosign_entropy_bytes: Option<u64>,
+    /// PoSME proof bytes (CBOR-serialized PosmeProof).
+    pub posme_proof: Option<Vec<u8>>,
 }
 
 impl SecureEvent {
@@ -87,6 +89,7 @@ impl SecureEvent {
             hw_cosign_entangled_hash: None,
             hw_cosign_entropy_digest: None,
             hw_cosign_entropy_bytes: None,
+            posme_proof: None,
         }
     }
 }

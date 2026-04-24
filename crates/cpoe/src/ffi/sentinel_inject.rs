@@ -229,27 +229,3 @@ pub fn ffi_sentinel_inject_keystroke(
     true
 }
 
-/// Notify the sentinel of a paste event detected by the host app.
-///
-/// `char_count` is the number of characters pasted. The sentinel
-/// records this so the next checkpoint can flag it as a paste.
-#[cfg_attr(feature = "ffi", uniffi::export)]
-pub fn ffi_sentinel_notify_paste(char_count: i64) -> bool {
-    if char_count < 0 {
-        return false;
-    }
-    let sentinel_opt = get_sentinel();
-    let sentinel = match sentinel_opt.as_ref() {
-        Some(s) if s.is_running() => s,
-        _ => return false,
-    };
-
-    let sessions = sentinel.sessions();
-    if sessions.is_empty() {
-        return false;
-    }
-
-    // Store the paste char count so ffi_sentinel_witnessing_status can report it
-    sentinel.set_last_paste_chars(char_count);
-    true
-}

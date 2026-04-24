@@ -156,6 +156,22 @@ fn checkpoint_to_wire(
     export_nonce: &[u8; 8],
     lamport: Option<&CheckpointSignature>,
 ) -> Result<CheckpointWire> {
+    #[cfg(feature = "posme")]
+    let posme_algorithm = if let Some(ref posme_bytes) = cp.posme_swf {
+        match ciborium::from_reader::<posme::PosmeProof, _>(posme_bytes.as_slice()) {
+            Ok(proof) => Some(if proof.proof_algorithm == 31 {
+                ProofAlgorithm::SwfPosmeEntangled
+            } else {
+                ProofAlgorithm::SwfPosme
+            }),
+            Err(_) => Some(ProofAlgorithm::SwfPosme),
+        }
+    } else {
+        None
+    };
+    #[cfg(not(feature = "posme"))]
+    let posme_algorithm: Option<ProofAlgorithm> = None;
+
     let process_proof = if let Some(swf) = &cp.argon2_swf {
         // §entangled-mode-requirement: ENHANCED/MAXIMUM → algorithm 21
         let algorithm = if use_entangled {
@@ -232,6 +248,11 @@ fn checkpoint_to_wire(
             claimed_duration: 0,
         }
     };
+
+    let mut process_proof = process_proof;
+    if let Some(alg) = posme_algorithm {
+        process_proof.algorithm = alg;
+    }
 
     let merkle_root = &process_proof.merkle_root;
     let swf_input = &process_proof.input;
@@ -367,7 +388,7 @@ fn checkpoint_to_wire(
         verifier_nonce: None,
         lamport_signature: lamport.and_then(|s| s.lamport_signature.clone()),
         lamport_pubkey_fingerprint: lamport.and_then(|s| s.lamport_pubkey_fingerprint.clone()),
-        posme_proof: None,
+        posme_proof: cp.posme_swf.clone(),
     };
     // SHA-256(CBOR(checkpoint \ {8})) per spec
     wire.checkpoint_hash = wire.compute_hash().map_err(Error::crypto)?;

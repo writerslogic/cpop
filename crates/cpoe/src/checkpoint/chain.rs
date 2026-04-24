@@ -61,7 +61,7 @@ fn compute_chain_mac(mac_key: &[u8], data: &[u8]) -> Result<[u8; 32]> {
 
 impl Chain {
     pub fn new(document_path: impl AsRef<Path>, vdf_params: Parameters) -> Result<Self> {
-        Self::new_with_mode(document_path, vdf_params, EntanglementMode::Legacy)
+        Self::new_with_mode(document_path, vdf_params, EntanglementMode::Entangled)
     }
 
     /// Attach an MMR coordinator so each commit anchors its root in the signed hash.
@@ -738,10 +738,15 @@ impl Chain {
         #[cfg(feature = "posme")]
         let (argon2_swf, posme_swf) = {
             let cn = challenge_nonce.as_ref();
+            let vdf_output_bytes = vdf_proof
+                .as_ref()
+                .map(|v| v.output)
+                .unwrap_or([0u8; 32]);
             let posme_seed = if ordinal == 0 {
                 vdf::posme_seed_genesis(
                     doc_cbor_for_genesis.as_deref().unwrap_or(&[]),
                     &jitter_or_nonce,
+                    &vdf_output_bytes,
                     cn,
                 )
             } else if intervals_cbor.is_some() {
@@ -754,13 +759,15 @@ impl Chain {
                     &previous_hash,
                     intervals_cbor.as_deref().unwrap_or(&[]),
                     &phys_cbor,
+                    &vdf_output_bytes,
                     cn,
                 )
             } else {
-                vdf::posme_seed_core(&previous_hash, &content_hash, cn)
+                vdf::posme_seed_core(&previous_hash, &content_hash, &vdf_output_bytes, cn)
             };
 
-            // Tier selection: jitter available → ENHANCED (2), else CORE (1).
+            // Tier selection: jitter available → STANDARD (2), else CORE (1).
+            // Higher tiers (3=ENHANCED, 4=MAXIMUM) are selected via config.
             // Physics context presence does not increase tier (it's mixed into
             // the seed regardless) but it does strengthen the proof.
             let tier = if rfc_jitter.is_some() { 2u8 } else { 1u8 };

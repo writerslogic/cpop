@@ -84,10 +84,36 @@ impl SecureStore {
         timestamp: i64,
         captured_at: i64,
     ) -> anyhow::Result<()> {
+        // Reject timestamps more than 5 minutes in the future.
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+        let five_min_ns = 5 * 60 * 1_000_000_000i64;
+        if timestamp > now_ns + five_min_ns || captured_at > now_ns + five_min_ns {
+            anyhow::bail!("Clipboard event timestamp is too far in the future");
+        }
+
+        // Compute HMAC-SHA256 over evidence-critical fields.
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.hmac_key)
+            .expect("HMAC key length already validated");
+        mac.update(fragment_hash);
+        mac.update(&(app_bundle_id.len() as u32).to_be_bytes());
+        mac.update(app_bundle_id.as_bytes());
+        mac.update(&(window_title.len() as u32).to_be_bytes());
+        mac.update(window_title.as_bytes());
+        mac.update(text_hash);
+        mac.update(&pasteboard_change_count.to_le_bytes());
+        mac.update(&timestamp.to_le_bytes());
+        mac.update(&captured_at.to_le_bytes());
+        let hmac_tag: [u8; 32] = mac.finalize().into_bytes().into();
+
         self.conn.execute(
             "INSERT INTO clipboard_events
-             (fragment_hash, app_bundle_id, window_title, text_hash, pasteboard_change_count, timestamp, captured_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+             (fragment_hash, app_bundle_id, window_title, text_hash, pasteboard_change_count, timestamp, captured_at, hmac)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             rusqlite::params![
                 fragment_hash,
                 app_bundle_id,
@@ -95,8 +121,9 @@ impl SecureStore {
                 text_hash,
                 pasteboard_change_count,
                 timestamp,
-                captured_at
-            ]
+                captured_at,
+                hmac_tag
+            ],
         )?;
         Ok(())
     }

@@ -195,6 +195,7 @@ impl PatternMatcher {
 /// - ≥0.80: High confidence classification
 /// - 0.60-0.79: Moderate confidence
 /// - <0.60: Low confidence, return Unknown
+#[derive(Debug)]
 pub struct ContentDetector {
     matcher: PatternMatcher,
 }
@@ -540,15 +541,15 @@ impl ContentDetector {
         let mut lang_scores = HashMap::new();
 
         for pattern in patterns {
-            if let Some(lang) = pattern.strip_prefix("rust:") {
+            if let Some(_lang) = pattern.strip_prefix("rust:") {
                 *lang_scores.entry("rust").or_insert(0) += 1;
-            } else if let Some(lang) = pattern.strip_prefix("python:") {
+            } else if let Some(_lang) = pattern.strip_prefix("python:") {
                 *lang_scores.entry("python").or_insert(0) += 1;
-            } else if let Some(lang) = pattern.strip_prefix("javascript:") {
+            } else if let Some(_lang) = pattern.strip_prefix("javascript:") {
                 *lang_scores.entry("javascript").or_insert(0) += 1;
-            } else if let Some(lang) = pattern.strip_prefix("swift:") {
+            } else if let Some(_lang) = pattern.strip_prefix("swift:") {
                 *lang_scores.entry("swift").or_insert(0) += 1;
-            } else if let Some(lang) = pattern.strip_prefix("sql:") {
+            } else if let Some(_lang) = pattern.strip_prefix("sql:") {
                 *lang_scores.entry("sql").or_insert(0) += 1;
             }
         }

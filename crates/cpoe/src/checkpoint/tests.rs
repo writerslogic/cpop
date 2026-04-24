@@ -16,7 +16,7 @@ fn temp_document() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Create chain with Optional signature policy for legacy tests
+/// Create chain with Optional signature policy for tests.
 fn test_chain(path: &Path) -> Chain {
     Chain::new(path, test_vdf_params())
         .expect("create chain")
@@ -397,7 +397,9 @@ fn test_entangled_chain_creation() {
 #[test]
 fn test_entangled_commit_requires_entangled_mode() {
     let (dir, path) = temp_document();
-    let mut chain = Chain::new(&path, test_vdf_params()).expect("create legacy chain");
+    let mut chain = Chain::new_with_mode(&path, test_vdf_params(), EntanglementMode::Legacy)
+        .expect("create legacy chain")
+        .with_signature_policy(SignaturePolicy::Optional);
 
     let err = chain
         .commit_entangled(

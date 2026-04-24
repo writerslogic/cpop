@@ -25,10 +25,10 @@ const MIN_READS_PER_STEP: u8 = 4;
 const MIN_CHALLENGES: u16 = 2;
 const MIN_RECURSION_DEPTH: u8 = 1;
 // Maximum bounds to prevent OOM on untrusted proofs.
-// Arena: 2^26 blocks = 4 GiB arena (4x headroom over MAXIMUM tier).
-// Steps: 2^28 = ~8 GB of roots (4x headroom over MAXIMUM tier).
-const MAX_ARENA_BLOCKS: u32 = 1 << 26;
-const MAX_TOTAL_STEPS: u32 = 1 << 28;
+// Arena: 2^22 blocks = 256 MiB arena (2x headroom over MAXIMUM tier 2^21).
+// Steps: 2^24 (2x headroom over MAXIMUM tier 4*2^21 = 2^23).
+const MAX_ARENA_BLOCKS: u32 = 1 << 22;
+const MAX_TOTAL_STEPS: u32 = 1 << 24;
 
 impl PosmeParams {
     /// Validate parameters against minimum bounds.
@@ -100,44 +100,56 @@ impl PosmeParams {
         self.arena_blocks as u64 * 64
     }
 
-    /// CORE tier: 256 MiB arena, rho=4, d=8, Q=32, R=1.
+    /// CORE tier: 4 MiB arena, rho=4, d=8, Q=32, R=1. ~50 MiB peak RAM.
     pub fn core() -> Self {
         Self {
-            arena_blocks: 1 << 22,
-            total_steps: 4 * (1 << 22),
+            arena_blocks: 1 << 16,
+            total_steps: 4 * (1 << 16),
             reads_per_step: 8,
             challenges: 32,
             recursion_depth: 1,
         }
     }
 
-    /// ENHANCED tier: 512 MiB arena, rho=4, d=8, Q=64, R=2.
+    /// STANDARD tier: 16 MiB arena, rho=4, d=8, Q=48, R=1. ~150 MiB peak RAM.
+    pub fn standard() -> Self {
+        Self {
+            arena_blocks: 1 << 18,
+            total_steps: 4 * (1 << 18),
+            reads_per_step: 8,
+            challenges: 48,
+            recursion_depth: 1,
+        }
+    }
+
+    /// ENHANCED tier: 64 MiB arena, rho=4, d=8, Q=64, R=2. ~500 MiB peak RAM.
     pub fn enhanced() -> Self {
         Self {
-            arena_blocks: 1 << 23,
-            total_steps: 4 * (1 << 23),
+            arena_blocks: 1 << 20,
+            total_steps: 4 * (1 << 20),
             reads_per_step: 8,
             challenges: 64,
             recursion_depth: 2,
         }
     }
 
-    /// MAXIMUM tier: 1 GiB arena, rho=4, d=8, Q=128, R=3.
+    /// MAXIMUM tier: 128 MiB arena, rho=4, d=8, Q=128, R=3. ~900 MiB peak RAM.
     pub fn maximum() -> Self {
         Self {
-            arena_blocks: 1 << 24,
-            total_steps: 4 * (1 << 24),
+            arena_blocks: 1 << 21,
+            total_steps: 4 * (1 << 21),
             reads_per_step: 8,
             challenges: 128,
             recursion_depth: 3,
         }
     }
 
-    /// Select tier by content tier (1=core, 2=enhanced, 3=maximum).
+    /// Select tier by content tier (1=core, 2=standard, 3=enhanced, 4=maximum).
     pub fn for_tier(tier: u8) -> Self {
         match tier {
             1 => Self::core(),
-            2 => Self::enhanced(),
+            2 => Self::standard(),
+            3 => Self::enhanced(),
             _ => Self::maximum(),
         }
     }
@@ -174,6 +186,7 @@ mod tests {
     fn test_params_valid() {
         assert!(PosmeParams::test().validate().is_ok());
         assert!(PosmeParams::core().validate().is_ok());
+        assert!(PosmeParams::standard().validate().is_ok());
         assert!(PosmeParams::enhanced().validate().is_ok());
         assert!(PosmeParams::maximum().validate().is_ok());
     }
@@ -187,7 +200,7 @@ mod tests {
     #[test]
     fn test_params_arena_bytes() {
         let p = PosmeParams::core();
-        assert_eq!(p.arena_bytes(), 256 * 1024 * 1024); // 256 MiB
+        assert_eq!(p.arena_bytes(), 4 * 1024 * 1024); // 4 MiB
     }
 
     #[test]
@@ -207,7 +220,7 @@ mod tests {
     #[test]
     fn reject_total_steps_above_max() {
         let mut p = PosmeParams::test();
-        p.total_steps = (1 << 28) + 1;
+        p.total_steps = (1 << 24) + 1;
         assert!(p.validate().is_err());
     }
 
@@ -221,7 +234,7 @@ mod tests {
     #[test]
     fn reject_arena_blocks_above_max() {
         let mut p = PosmeParams::test();
-        p.arena_blocks = 1 << 27; // exceeds MAX_ARENA_BLOCKS (1 << 26)
+        p.arena_blocks = 1 << 23; // exceeds MAX_ARENA_BLOCKS (1 << 22)
         p.total_steps = p.arena_blocks; // satisfy rho >= 1
         assert!(p.validate().is_err());
     }

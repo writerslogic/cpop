@@ -129,7 +129,8 @@ impl SecureStore {
                 text_hash               BLOB NOT NULL,
                 pasteboard_change_count INTEGER NOT NULL,
                 timestamp               INTEGER NOT NULL,
-                captured_at             INTEGER NOT NULL
+                captured_at             INTEGER NOT NULL,
+                hmac                    BLOB
             );
 
             CREATE INDEX IF NOT EXISTS idx_secure_events_timestamp ON secure_events(timestamp_ns);
@@ -169,6 +170,12 @@ impl SecureStore {
             )?;
         }
 
+        // Migration: add `hmac` to pre-existing clipboard_events
+        if !has_column(&self.conn, "clipboard_events", "hmac")? {
+            self.conn
+                .execute_batch("ALTER TABLE clipboard_events ADD COLUMN hmac BLOB;")?;
+        }
+
         if !has_column(&self.conn, "secure_events", "challenge_nonce")? {
             self.conn
                 .execute_batch("ALTER TABLE secure_events ADD COLUMN challenge_nonce TEXT;")?;
@@ -184,6 +191,11 @@ impl SecureStore {
                  ALTER TABLE secure_events ADD COLUMN hw_cosign_entropy_digest BLOB;
                  ALTER TABLE secure_events ADD COLUMN hw_cosign_entropy_bytes INTEGER;",
             )?;
+        }
+
+        if !has_column(&self.conn, "secure_events", "posme_proof")? {
+            self.conn
+                .execute_batch("ALTER TABLE secure_events ADD COLUMN posme_proof BLOB;")?;
         }
 
         // Migration: ensure text_fragments tables exist (created in init_schema, but check for older DBs)

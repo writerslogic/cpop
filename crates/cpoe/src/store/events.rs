@@ -56,8 +56,9 @@ impl SecureStore {
                 lamport_signature, lamport_pubkey_fingerprint, challenge_nonce,
                 hw_cosign_signature, hw_cosign_pubkey, hw_cosign_salt_commitment,
                 hw_cosign_chain_index, hw_cosign_entangled_hash,
-                hw_cosign_entropy_digest, hw_cosign_entropy_bytes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                hw_cosign_entropy_digest, hw_cosign_entropy_bytes,
+                posme_proof
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &e.device_id[..],
                 &e.machine_id,
@@ -98,7 +99,8 @@ impl SecureStore {
                 e.hw_cosign_chain_index.map(|c| i64::try_from(c).unwrap_or(i64::MAX)),
                 e.hw_cosign_entangled_hash.as_deref(),
                 e.hw_cosign_entropy_digest.as_deref(),
-                e.hw_cosign_entropy_bytes.map(|v| i64::try_from(v).unwrap_or(i64::MAX))
+                e.hw_cosign_entropy_bytes.map(|v| i64::try_from(v).unwrap_or(i64::MAX)),
+                e.posme_proof.as_deref()
             ],
         )?;
 
@@ -148,7 +150,8 @@ impl SecureStore {
                 lamport_signature, lamport_pubkey_fingerprint, challenge_nonce, \
                 hw_cosign_signature, hw_cosign_pubkey, hw_cosign_salt_commitment, \
                 hw_cosign_chain_index, hw_cosign_entangled_hash, \
-                hw_cosign_entropy_digest, hw_cosign_entropy_bytes \
+                hw_cosign_entropy_digest, hw_cosign_entropy_bytes, \
+                posme_proof \
                 FROM secure_events WHERE file_path = ?1 ORDER BY id ASC";
         let query = match limit {
             Some(_) => format!("{base_query} LIMIT ?2"),
@@ -289,6 +292,7 @@ impl SecureStore {
             hw_cosign_entangled_hash: row.get(27)?,
             hw_cosign_entropy_digest: row.get(28)?,
             hw_cosign_entropy_bytes: row.get::<_, Option<i64>>(29)?.map(|v| u64::try_from(v).unwrap_or(0)),
+            posme_proof: row.get(30)?,
         })
     }
 
@@ -335,7 +339,8 @@ impl SecureStore {
                 lamport_signature, lamport_pubkey_fingerprint, challenge_nonce, \
                 hw_cosign_signature, hw_cosign_pubkey, hw_cosign_salt_commitment, \
                 hw_cosign_chain_index, hw_cosign_entangled_hash, \
-                hw_cosign_entropy_digest, hw_cosign_entropy_bytes \
+                hw_cosign_entropy_digest, hw_cosign_entropy_bytes, \
+                posme_proof \
                 FROM secure_events ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([], Self::row_to_event_with_hmac)?;
@@ -414,7 +419,8 @@ impl SecureStore {
                     lamport_signature, lamport_pubkey_fingerprint, challenge_nonce,
                     hw_cosign_signature, hw_cosign_pubkey, hw_cosign_salt_commitment,
                     hw_cosign_chain_index, hw_cosign_entangled_hash,
-                    hw_cosign_entropy_digest, hw_cosign_entropy_bytes
+                    hw_cosign_entropy_digest, hw_cosign_entropy_bytes,
+                    posme_proof
              FROM secure_events WHERE device_id = ? ORDER BY id ASC",
         )?;
 

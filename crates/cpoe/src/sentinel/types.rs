@@ -199,6 +199,8 @@ impl AiToolCategory {
 }
 
 /// Source context of a keystroke during Phase 2 clipboard/paste tracking.
+// NOTE: A parallel KeystrokeContext exists in store/text_fragments.rs.
+// These should be consolidated in a future refactor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeystrokeContext {
     /// User typing fresh text, not from clipboard.
@@ -281,25 +283,25 @@ pub struct DocumentSession {
     pub shadow_id: Option<String>,
     pub start_time: SystemTime,
     pub last_focus_time: SystemTime,
-    pub total_focus_ms: i64,
+    pub(crate) total_focus_ms: i64,
     pub focus_count: u32,
     pub initial_hash: Option<String>,
     pub current_hash: Option<String>,
-    pub save_count: u32,
-    pub change_count: u32,
-    pub keystroke_count: u64,
+    pub(crate) save_count: u32,
+    pub(crate) change_count: u32,
+    pub(crate) keystroke_count: u64,
     pub app_bundle_id: String,
     pub app_name: String,
     pub window_title: ObfuscatedString,
     /// Per-document jitter samples for forensic analysis.
-    pub jitter_samples: Vec<crate::jitter::SimpleJitterSample>,
+    pub(crate) jitter_samples: Vec<crate::jitter::SimpleJitterSample>,
     /// Incremental hash chain over accepted jitter samples.
     ///
     /// Updated on every validated keystroke:
     ///   `state = SHA256(prev_state || timestamp_ns_be || duration_ns_be || zone)`
     /// Initialized at session start from the session_id so the chain is
     /// session-scoped.  Checkpoints read this directly — O(1), no allocation.
-    pub jitter_hash_state: [u8; 32],
+    pub(crate) jitter_hash_state: [u8; 32],
     /// Cognitive writing signal accumulator (word boundaries, edit ops, corrections).
     pub cognitive: crate::forensics::cognitive_accumulator::CognitiveAccumulator,
     /// Focus loss events during this session (timestamps when user switched away).
@@ -368,8 +370,8 @@ impl Clone for DocumentSession {
             last_focused_at: self.last_focused_at,
             // Scheduler contains zeroize-protected SE salt; not cloned.
             hw_cosign_scheduler: None,
-            last_hw_cosign_signature: None,
-            hw_cosign_chain_index: 0,
+            last_hw_cosign_signature: self.last_hw_cosign_signature.clone(),
+            hw_cosign_chain_index: self.hw_cosign_chain_index,
             paste_context: self.paste_context.clone(),
         }
     }

@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 /// Compute a PoSME proof for a checkpoint.
 ///
 /// `seed`: 32-byte seed derived from checkpoint context (see `posme_seed_*` in params.rs).
-/// `tier`: content tier (1=core, 2=enhanced, 3=maximum).
+/// `tier`: content tier (1=core, 2=standard, 3=enhanced, 4=maximum).
 ///
 /// Returns the CBOR-serialized proof bytes for storage in `Checkpoint.posme_swf`.
 pub fn compute(seed: [u8; 32], tier: u8) -> Result<Vec<u8>> {

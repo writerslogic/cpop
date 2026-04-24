@@ -2,10 +2,9 @@
 
 //! PoSME proof generation: execute K steps, derive challenges, build proof.
 //!
-//! Memory strategy: the initial execution pass stores only lightweight metadata
-//! per step (32 bytes root + 32 bytes transcript + 4 bytes write_addr = 68 bytes).
-//! For K=16M steps that's ~1 GB of metadata plus the arena itself (~256 MiB-1 GiB).
-//! Challenged steps are replayed individually to regenerate full witness data.
+//! Two-pass strategy: the execution pass stores per-step roots (32 bytes each)
+//! and builds a root chain commitment. Dead allocations (arena, tree, roots) are
+//! freed between passes. Challenged steps are replayed to regenerate witnesses.
 
 use std::time::Instant;
 
@@ -208,6 +207,7 @@ pub fn execute(seed: &[u8], params: &PosmeParams) -> Result<PosmeProof> {
     let (mut arena, mut tree, root_0, t_0) = initialize(seed, n);
     let init_tree = MerkleTree::build(&arena);
     let init_witnesses = generate_init_witnesses(seed, &init_tree, &arena, n);
+    drop(init_tree);
 
     // Phase 2: Execute K steps, storing only roots.
     // write_index is not needed here -- rebuilt during replay.
@@ -226,9 +226,12 @@ pub fn execute(seed: &[u8], params: &PosmeParams) -> Result<PosmeProof> {
     }
     let elapsed = start.elapsed();
     let final_transcript = transcript;
+    drop(arena);
+    drop(tree);
 
     // Phase 3: Build root chain commitment.
     let root_chain = RootChain::build(&roots);
+    drop(roots);
     let root_chain_commitment = root_chain.root();
 
     // Phase 4: Derive Fiat-Shamir challenges.
@@ -247,6 +250,7 @@ pub fn execute(seed: &[u8], params: &PosmeParams) -> Result<PosmeProof> {
     let mut step_proofs: Vec<(usize, StepProof)> = Vec::with_capacity(challenges.len());
 
     let (mut replay_arena, mut replay_tree, _, mut replay_t) = initialize(seed, n);
+    let init_tree = MerkleTree::build(&replay_arena);
     let mut replay_wi = WriteIndex::new(n);
     let mut current_step = 0u32;
 
@@ -324,6 +328,7 @@ pub fn execute_entangled(
     let (mut arena, mut tree, root_0, t_0) = initialize(seed, n);
     let init_tree = MerkleTree::build(&arena);
     let init_witnesses = generate_init_witnesses(seed, &init_tree, &arena, n);
+    drop(init_tree);
 
     let mut transcript = t_0;
     let root_cap = (k as usize).checked_add(1).ok_or_else(|| {
@@ -350,8 +355,11 @@ pub fn execute_entangled(
     }
     let elapsed = start.elapsed();
     let final_transcript = transcript;
+    drop(arena);
+    drop(tree);
 
     let root_chain = RootChain::build(&roots);
+    drop(roots);
     let root_chain_commitment = root_chain.root();
 
     let challenges = derive_challenges(
@@ -365,6 +373,7 @@ pub fn execute_entangled(
 
     let mut step_proofs: Vec<(usize, StepProof)> = Vec::with_capacity(challenges.len());
     let (mut replay_arena, mut replay_tree, _, mut replay_t) = initialize(seed, n);
+    let init_tree = MerkleTree::build(&replay_arena);
     let mut replay_wi = WriteIndex::new(n);
     let mut current_step = 0u32;
     let mut replay_jitter_idx = 0usize;

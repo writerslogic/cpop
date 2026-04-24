@@ -39,10 +39,6 @@ const CLIPBOARD_DEBOUNCE_MS: u64 = 100;
 /// Maximum monitored apps to prevent resource exhaustion.
 const MAX_MONITORED_APPS: usize = 50;
 
-/// Maximum evidence cache entries (prevent unbounded memory).
-#[allow(dead_code)]
-const MAX_EVIDENCE_CACHE_SIZE: usize = 1000;
-
 /// Default monitored applications (writing apps).
 fn default_monitored_apps() -> Vec<String> {
     vec![
@@ -147,6 +143,7 @@ pub struct EvidenceEvent {
 }
 
 /// Clipboard monitor for detecting copy events and generating evidence.
+#[derive(Debug)]
 pub struct ClipboardMonitor {
     /// Monitored app bundle IDs (protected by RwLock).
     monitored_apps: Arc<RwLock<Vec<String>>>,
@@ -154,9 +151,6 @@ pub struct ClipboardMonitor {
     last_change_count: Arc<RwLock<i32>>,
     /// Timestamp of last copy event (for debounce).
     last_copy_time: Arc<RwLock<i64>>,
-    /// Cache of evidence packets by text hash (hex string).
-    #[allow(dead_code)]
-    evidence_cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     /// Broadcast sender for evidence events.
     pending_evidence_tx: broadcast::Sender<EvidenceEvent>,
 }
@@ -171,7 +165,6 @@ impl ClipboardMonitor {
             monitored_apps: Arc::new(RwLock::new(default_monitored_apps())),
             last_change_count: Arc::new(RwLock::new(0)),
             last_copy_time: Arc::new(RwLock::new(0)),
-            evidence_cache: Arc::new(RwLock::new(HashMap::new())),
             pending_evidence_tx: broadcast::channel(100).0,
         })
     }
@@ -180,6 +173,16 @@ impl ClipboardMonitor {
     ///
     /// Returns error if limit (50 apps) exceeded.
     pub fn add_monitored_app(&self, bundle_id: String) -> Result<(), ClipboardError> {
+        if bundle_id.is_empty() || bundle_id.len() > 256 {
+            return Err(ClipboardError::Other("Invalid bundle ID length".into()));
+        }
+        if !bundle_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        {
+            return Err(ClipboardError::Other("Invalid bundle ID format".into()));
+        }
+
         let mut apps = self.monitored_apps.write_recover();
 
         if apps.len() >= MAX_MONITORED_APPS {
@@ -209,7 +212,7 @@ impl ClipboardMonitor {
     /// - No monitored app: silently skip (expected for most copies)
     /// - Evidence attachment fails: log debug, continue
     pub async fn monitor_loop(
-        self,
+        self: Arc<Self>,
         sessions: Arc<RwLock<HashMap<String, DocumentSession>>>,
         store: Arc<SecureStore>,
     ) -> Result<(), ClipboardError> {
@@ -217,21 +220,24 @@ impl ClipboardMonitor {
             match self.check_clipboard_change().await {
                 Ok(Some(copy_event)) => {
                     // Try to attach evidence if text matches a session fragment
-                    if let Err(e) = self
+                    match self
                         .try_attach_evidence(&copy_event, &sessions, &store)
                         .await
                     {
-                        log::trace!("Evidence attachment skipped: {}", e);
-                        // Expected for most copies (not from our sessions)
+                        Ok(()) => {
+                            // Emit to broadcast channel only on successful attachment
+                            let _ = self.pending_evidence_tx.send(EvidenceEvent {
+                                fragment_hash: copy_event.text_hash,
+                                evidence: vec![],
+                                source_app: copy_event.app_bundle_id.clone(),
+                                timestamp: copy_event.timestamp,
+                            });
+                        }
+                        Err(e) => {
+                            log::trace!("Evidence attachment skipped: {}", e);
+                            // Expected for most copies (not from our sessions)
+                        }
                     }
-
-                    // Emit to broadcast channel
-                    let _ = self.pending_evidence_tx.send(EvidenceEvent {
-                        fragment_hash: copy_event.text_hash,
-                        evidence: vec![], // Empty placeholder; filled by try_attach_evidence
-                        source_app: copy_event.app_bundle_id.clone(),
-                        timestamp: copy_event.timestamp,
-                    });
                 }
                 Ok(None) => {
                     // No change; continue
@@ -274,6 +280,15 @@ impl ClipboardMonitor {
         }
 
         let app_bundle_id = self.get_focused_app_bundle_id().await?;
+
+        // Only proceed if the focused app is monitored
+        {
+            let apps = self.monitored_apps.read_recover();
+            if !apps.contains(&app_bundle_id) {
+                return Ok(None);
+            }
+        }
+
         let window_title = self.get_focused_window_title().await?;
 
         let text_hash = crypto_helpers::compute_content_hash(text.as_bytes());
@@ -310,18 +325,27 @@ impl ClipboardMonitor {
         sessions: &Arc<RwLock<HashMap<String, DocumentSession>>>,
         store: &Arc<SecureStore>,
     ) -> Result<(), ClipboardError> {
-        let text_hex = hex::encode(&copy_event.text_hash);
+        let text_hex = hex::encode(copy_event.text_hash);
 
-        let sessions_guard = sessions.read_recover();
-        for (session_id, session) in sessions_guard.iter() {
-            if session.is_focused() {
-                if let Ok(true) = self.fragment_matches_hash(store, session_id, &copy_event.text_hash).await {
-                    log::debug!("Text matched fragment in session {}", session_id);
+        // Collect focused session IDs under the lock, then drop it before awaiting.
+        let focused_ids: Vec<String> = {
+            let sessions_guard = sessions.read_recover();
+            sessions_guard
+                .iter()
+                .filter(|(_, s)| s.is_focused())
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
 
-                    self.persist_clipboard_event(store, copy_event, &copy_event.text_hash).await?;
-
-                    return Ok(());
-                }
+        for session_id in &focused_ids {
+            if let Ok(true) = self
+                .fragment_matches_hash(store, session_id, &copy_event.text_hash)
+                .await
+            {
+                log::debug!("Text matched fragment in session {}", session_id);
+                self.persist_clipboard_event(store, copy_event, &copy_event.text_hash)
+                    .await?;
+                return Ok(());
             }
         }
 
@@ -374,13 +398,15 @@ impl ClipboardMonitor {
     /// Get focused app bundle ID.
     ///
     /// Platform-specific. Returns monitored app ID if focused.
+    /// Stub: returns error until platform implementation is wired.
     async fn get_focused_app_bundle_id(&self) -> Result<String, ClipboardError> {
-        Ok("com.apple.Notes".to_string())
+        Err(ClipboardError::NoMonitoredAppInFocus)
     }
 
     /// Get focused window title.
+    /// Stub: returns error until platform implementation is wired.
     async fn get_focused_window_title(&self) -> Result<String, ClipboardError> {
-        Ok("Untitled Document".to_string())
+        Err(ClipboardError::NoMonitoredAppInFocus)
     }
 }
 

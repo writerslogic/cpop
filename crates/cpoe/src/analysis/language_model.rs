@@ -125,6 +125,7 @@ impl Default for TfidfModel {
 }
 
 /// Pre-trained classifiers for common document types.
+#[derive(Debug)]
 pub struct LanguageClassifier {
     /// Models for each document class
     models: HashMap<String, TfidfModel>,
@@ -173,7 +174,7 @@ impl LanguageClassifier {
 
         // Normalize confidence to 0-1 range using sigmoid transformation
         // Score/(score+1) always yields [0, 1) for non-negative scores
-        let confidence = best_score / (best_score + 1.0);
+        let confidence = best_score.max(0.0) / (best_score.max(0.0) + 1.0);
 
         (best_class, confidence)
     }
@@ -270,7 +271,7 @@ mod tests {
     fn test_language_classifier_python_detection() {
         let classifier = LanguageClassifier::new();
         let text = "def hello(): import sys; class MyClass: pass";
-        let (class, confidence) = classifier.classify(text);
+        let (_class, confidence) = classifier.classify(text);
 
         assert!(confidence > 0.0);
         assert!(confidence <= 1.0);
@@ -280,7 +281,7 @@ mod tests {
     fn test_language_classifier_email_detection() {
         let classifier = LanguageClassifier::new();
         let text = "To: user@example.com Subject: Meeting Dear John, Best regards,";
-        let (class, confidence) = classifier.classify(text);
+        let (_class, confidence) = classifier.classify(text);
 
         // Should detect as email with reasonable confidence
         assert!(confidence > 0.0);

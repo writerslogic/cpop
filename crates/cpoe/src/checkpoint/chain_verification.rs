@@ -329,9 +329,10 @@ impl Chain {
                 }
             }
 
-            // PoSME SWF verification: checks proof structure and param bounds.
-            // Full seed-binding verification requires session context (jitter data,
-            // challenge nonce) and is deferred to the evidence verification pipeline.
+            // PoSME SWF verification: checks proof structure, param bounds, and
+            // algorithm consistency. Seed-binding verification (jitter data,
+            // challenge nonce, VDF output) requires session context and is
+            // deferred to the evidence verification pipeline.
             #[cfg(feature = "posme")]
             if let Some(posme_bytes) = &checkpoint.posme_swf {
                 let proof: posme::PosmeProof = match ciborium::from_reader(posme_bytes.as_slice()) {
@@ -347,11 +348,30 @@ impl Chain {
                     report.fail(format!("checkpoint {i}: PoSME params invalid: {e}"));
                     return report;
                 }
-                // Duration plausibility: reject proofs that claim to have run
-                // faster than physically possible for the tier's arena size.
-                // CORE (256 MiB) needs ~0.5s minimum on modern hardware;
-                // use 100ms floor as conservative lower bound.
-                let min_duration_ms = 100u128;
+                // Algorithm field must be 30 (standard) or 31 (entangled).
+                if proof.proof_algorithm != 30 && proof.proof_algorithm != 31 {
+                    report.fail(format!(
+                        "checkpoint {i}: PoSME proof_algorithm {} not recognized (expected 30 or 31)",
+                        proof.proof_algorithm
+                    ));
+                    return report;
+                }
+                // Entangled proofs must carry entanglement points.
+                if proof.proof_algorithm == 31 && proof.entanglement_points.is_empty() {
+                    report.fail(format!(
+                        "checkpoint {i}: PoSME entangled proof (alg 31) has no entanglement points"
+                    ));
+                    return report;
+                }
+                // VDF must be present alongside PoSME (time anchor binding).
+                if checkpoint.vdf.is_none() && checkpoint.ordinal > 0 {
+                    report.warnings.push(format!(
+                        "checkpoint {i}: PoSME proof present but no VDF time anchor"
+                    ));
+                }
+                // Duration plausibility: CORE (4 MiB arena) completes in ~10ms
+                // on modern hardware; use 1ms floor as conservative lower bound.
+                let min_duration_ms = 1u128;
                 if proof.claimed_duration.as_millis() < min_duration_ms && checkpoint.ordinal > 0 {
                     report.warnings.push(format!(
                         "checkpoint {i}: PoSME claimed_duration {}ms below \
