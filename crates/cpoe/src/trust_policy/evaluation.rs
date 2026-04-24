@@ -77,16 +77,24 @@ impl AppraisalPolicy {
                 product.powf(1.0 / self.factors.len() as f32)
             }
             TrustComputation::CustomFormula => {
-                log::warn!("CustomFormula not implemented; falling back to WeightedAverage");
+                // Weighted geometric mean: penalizes low outliers more than
+                // arithmetic average, rewards uniformly high scores.
+                if self.factors.is_empty() {
+                    return 0.0;
+                }
                 let total_weight: f32 = self.factors.iter().map(|f| f.weight).sum();
                 if total_weight == 0.0 {
                     return 0.0;
                 }
-                self.factors
+                let log_sum: f32 = self
+                    .factors
                     .iter()
-                    .map(|f| f.weight * f.normalized_score)
-                    .sum::<f32>()
-                    / total_weight
+                    .map(|f| {
+                        let s = f.normalized_score.max(1e-6);
+                        (f.weight / total_weight) * s.ln()
+                    })
+                    .sum();
+                log_sum.exp().clamp(0.0, 1.0)
             }
         }
     }

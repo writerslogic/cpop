@@ -337,7 +337,11 @@ pub(crate) fn build_war_report_for_path(path: &str) -> Result<(WarReport, String
         ForensicBreakdown {
             writing_mode: profile.writing_mode().to_string(),
             cognitive_score: metrics.assessment_score.get(),
-            writing_mode_confidence: if profile.event_count > 20 { 0.8 } else { 0.3 },
+            writing_mode_confidence: metrics
+                .writing_mode
+                .as_ref()
+                .map(|wm| wm.confidence)
+                .unwrap_or_else(|| if profile.event_count > 20 { 0.8 } else { 0.3 }),
             revision_cycle_count: profile.revision_cycle_count(),
             hurst_exponent: metrics.hurst_exponent.filter(|v| v.is_finite()),
             assessment_score: metrics.assessment_score.get(),

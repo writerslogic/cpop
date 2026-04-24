@@ -13,6 +13,26 @@ use authorproof_protocol::rfc::packet::{
 
 use super::types::{Packet, TrustTier};
 
+/// Detect the system input language for the jitter seal `lang` field.
+///
+/// On macOS, reads the preferred language from the system locale.
+/// Falls back to "en-US" if detection fails.
+fn detect_system_language() -> String {
+    std::env::var("LANG")
+        .ok()
+        .and_then(|lang| {
+            // LANG is typically "en_US.UTF-8" or "fr_FR.UTF-8"
+            let base = lang.split('.').next()?;
+            let normalized = base.replace('_', "-");
+            if normalized.len() >= 2 {
+                Some(normalized)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "en-US".to_string())
+}
+
 /// Error returned when converting a [`Packet`] to [`rfc::PacketRfc`] fails.
 #[derive(Debug, thiserror::Error)]
 pub enum RfcConversionError {
@@ -77,8 +97,7 @@ impl TryFrom<&Packet> for rfc::PacketRfc {
                 .saturating_mul(1000)
                 .min(20_000_000);
             JitterSealStructure {
-                // lang is a placeholder; language detection is not yet implemented.
-                lang: "en-US".to_string(),
+                lang: detect_system_language(),
                 bucket_commitment: jb.entropy_commitment.hash.to_vec(),
                 entropy_millibits: entropy_estimate,
                 dp_epsilon_centibits: rfc::Centibits::from_float(0.5),
@@ -89,8 +108,7 @@ impl TryFrom<&Packet> for rfc::PacketRfc {
             // This is expected for sessions without jitter capture; verifiers
             // must not treat an empty commitment as a valid zero-entropy proof.
             JitterSealStructure {
-                // lang is a placeholder; language detection is not yet implemented.
-                lang: "en-US".to_string(),
+                lang: detect_system_language(),
                 bucket_commitment: Vec::new(),
                 entropy_millibits: 0,
                 dp_epsilon_centibits: rfc::Centibits::from_float(0.5),

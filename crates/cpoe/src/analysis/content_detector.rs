@@ -566,9 +566,60 @@ impl ContentDetector {
     }
 
     /// Detect prose writing style from patterns and content.
-    fn detect_prose_style(&self, _patterns: &[String]) -> ProseStyle {
-        // Simple heuristic: could be enhanced with more sophisticated analysis
-        ProseStyle::Casual
+    fn detect_prose_style(&self, patterns: &[String]) -> ProseStyle {
+        let mut academic = 0u32;
+        let mut fiction = 0u32;
+        let mut technical = 0u32;
+        let mut blog = 0u32;
+
+        for p in patterns {
+            let lower = p.to_lowercase();
+            if lower.contains("citation")
+                || lower.contains("abstract")
+                || lower.contains("et al")
+                || lower.contains("hypothesis")
+                || lower.contains("methodology")
+            {
+                academic += 1;
+            }
+            if lower.contains("dialogue")
+                || lower.contains("narrator")
+                || lower.contains("chapter")
+                || lower.contains("character")
+            {
+                fiction += 1;
+            }
+            if lower.contains("api")
+                || lower.contains("config")
+                || lower.contains("parameter")
+                || lower.contains("implementation")
+            {
+                technical += 1;
+            }
+            if lower.contains("post")
+                || lower.contains("comment")
+                || lower.contains("subscribe")
+                || lower.contains("opinion")
+            {
+                blog += 1;
+            }
+        }
+
+        let max = academic.max(fiction).max(technical).max(blog);
+        if max == 0 {
+            return ProseStyle::Casual;
+        }
+        if academic == max {
+            ProseStyle::Academic
+        } else if fiction == max {
+            ProseStyle::Fiction
+        } else if technical == max {
+            ProseStyle::Technical
+        } else if blog == max {
+            ProseStyle::Blog
+        } else {
+            ProseStyle::Casual
+        }
     }
 }
 

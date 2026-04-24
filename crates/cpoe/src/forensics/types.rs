@@ -485,18 +485,6 @@ impl AuthorshipProfile {
             Assessment::Suspicious => "transcriptive",
         }
     }
-    #[deprecated(note = "stub; use ForensicMetrics assessment_score instead")]
-    pub fn cognitive_score(&self) -> f64 {
-        0.7
-    }
-    #[deprecated(note = "stub; use ForensicMetrics assessment_score instead")]
-    pub fn writing_mode_confidence(&self) -> f64 {
-        if self.event_count > 20 {
-            0.8
-        } else {
-            0.3
-        }
-    }
     pub fn revision_cycle_count(&self) -> u32 {
         u32::try_from(self.session_count).unwrap_or(u32::MAX)
     }

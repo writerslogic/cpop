@@ -117,8 +117,9 @@ pub fn ffi_submit_beacon(document_path: String, timeout_secs: u64) -> FfiBeaconR
     let did = match load_did() {
         Ok(d) => d,
         Err(e) => {
-            log::warn!("DID unavailable for beacon submit, using placeholder: {e}");
-            "unknown".into()
+            log::debug!("DID from identity.json unavailable: {e}; deriving from signing key");
+            crate::identity::did_key_from_public(signing_key.verifying_key().as_bytes())
+                .unwrap_or_else(|| "unknown".into())
         }
     };
     let api_key = match load_api_key() {
