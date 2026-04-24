@@ -77,79 +77,483 @@ impl Default for PatternMatcher {
 
 impl PatternMatcher {
     /// Create a new pattern matcher with built-in keywords.
+    ///
+    /// Keywords are split into two tiers:
+    /// - **Discriminators**: unique to a language (high signal)
+    /// - **Common**: shared across languages (lower signal, still useful
+    ///   for code-vs-prose detection)
     pub fn new() -> Self {
         let mut keywords = HashMap::new();
 
-        // Rust keywords
         keywords.insert(
             "rust".to_string(),
             vec![
-                "fn", "pub", "impl", "struct", "enum", "trait", "use", "mod", "async", "await",
-                "let", "mut", "const", "match", "unwrap", "Result", "Option", "Box",
+                // Discriminators (unique to Rust or rare elsewhere)
+                "fn", "impl", "trait", "pub", "mod", "crate", "mut", "unsafe",
+                "where", "loop", "derive", "cfg", "unwrap", "Result", "Option",
+                "Vec", "Box", "Arc", "Mutex", "Some", "None", "Ok", "Err",
+                "println", "eprintln", "macro_rules", "lifetimes",
+                // Syntax patterns
+                "&mut", "&self", "->", "::", "#[", "!(", "?;",
+                // Common (shared with other languages)
+                "struct", "enum", "match", "let", "const", "async", "await",
+                "use", "return", "if", "else", "for", "while",
             ],
         );
 
-        // Python keywords
         keywords.insert(
             "python".to_string(),
             vec![
-                "def", "class", "import", "from", "async", "await", "if", "elif", "else",
-                "for", "while", "return", "yield", "raise", "try", "except", "with",
+                // Discriminators
+                "def", "elif", "except", "lambda", "yield", "nonlocal",
+                "global", "assert", "pass", "raise", "finally", "self",
+                "__init__", "__name__", "__main__", "isinstance", "range",
+                "print", "True", "False", "None",
+                // Syntax patterns
+                "import", "from", "with", "as", "in", "not", "and", "or",
+                "is", "del", "try",
+                // Common
+                "class", "return", "if", "else", "for", "while", "async",
+                "await",
             ],
         );
 
-        // JavaScript/TypeScript keywords
         keywords.insert(
             "javascript".to_string(),
             vec![
-                "function", "const", "let", "var", "async", "await", "import", "export",
-                "class", "extends", "interface", "type", "return", "if", "switch", "case",
-                "=>",
+                // Discriminators
+                "function", "var", "undefined", "typeof", "instanceof",
+                "prototype", "null", "NaN", "this", "new", "delete",
+                "console", "require", "module", "exports", "Promise",
+                "then", "catch", "finally", "throw", "debugger",
+                // Syntax patterns
+                "===", "!==", "=>", "...", "?.","${",
+                // TypeScript discriminators
+                "interface", "type", "namespace", "declare", "readonly",
+                "keyof", "extends", "implements",
+                // Common
+                "const", "let", "import", "export", "class", "return",
+                "if", "else", "for", "while", "switch", "case", "async",
+                "await",
             ],
         );
 
-        // Swift keywords
         keywords.insert(
             "swift".to_string(),
             vec![
-                "func", "class", "struct", "enum", "protocol", "extension", "var", "let",
-                "import", "guard", "defer", "async", "await", "throws",
+                // Discriminators
+                "func", "protocol", "extension", "guard", "defer",
+                "throws", "rethrows", "associatedtype", "typealias",
+                "inout", "subscript", "willSet", "didSet", "deinit",
+                "init", "override", "final", "fileprivate", "internal",
+                "open", "weak", "unowned", "lazy", "mutating",
+                "nonmutating", "convenience", "required", "optional",
+                "@objc", "@IBOutlet", "@IBAction", "@Published",
+                "@State", "@Binding", "@Environment",
+                // Common
+                "class", "struct", "enum", "var", "let", "import",
+                "return", "if", "else", "for", "while", "switch",
+                "case", "async", "await",
             ],
         );
 
-        // SQL keywords
+        keywords.insert(
+            "go".to_string(),
+            vec![
+                // Discriminators
+                "func", "package", "goroutine", "chan", "select",
+                "defer", "fallthrough", "go", "range", "make", "append",
+                "cap", "len", "panic", "recover", "iota", "nil",
+                "fmt", "Println", "Printf", "Sprintf",
+                // Syntax patterns
+                ":=", "<-",
+                // Common
+                "import", "struct", "interface", "const", "var",
+                "return", "if", "else", "for", "switch", "case", "type",
+            ],
+        );
+
+        keywords.insert(
+            "c_cpp".to_string(),
+            vec![
+                // C discriminators
+                "include", "define", "ifdef", "ifndef", "endif",
+                "typedef", "sizeof", "malloc", "free", "printf",
+                "scanf", "NULL", "void", "int", "char", "float",
+                "double", "long", "short", "unsigned", "signed",
+                "static", "extern", "volatile", "register",
+                // C++ discriminators
+                "template", "typename", "namespace", "using",
+                "virtual", "override", "final", "nullptr", "auto",
+                "constexpr", "noexcept", "decltype", "static_cast",
+                "dynamic_cast", "reinterpret_cast", "const_cast",
+                "std", "cout", "cin", "endl", "vector", "string",
+                "unique_ptr", "shared_ptr", "move",
+                // Syntax patterns
+                "->", "::", "#include", "<<", ">>",
+                // Common
+                "struct", "enum", "class", "return", "if", "else",
+                "for", "while", "switch", "case", "const",
+            ],
+        );
+
+        keywords.insert(
+            "java".to_string(),
+            vec![
+                // Discriminators
+                "public", "private", "protected", "abstract", "final",
+                "synchronized", "volatile", "transient", "native",
+                "strictfp", "implements", "throws", "instanceof",
+                "super", "this", "new", "null", "boolean", "byte",
+                "System", "String", "Integer", "ArrayList", "HashMap",
+                "Override", "Deprecated", "SuppressWarnings",
+                "IOException", "Exception", "Runnable", "Thread",
+                // Common
+                "class", "interface", "extends", "import", "package",
+                "return", "if", "else", "for", "while", "switch",
+                "case", "try", "catch", "finally", "throw", "static",
+                "void", "int",
+            ],
+        );
+
+        keywords.insert(
+            "kotlin".to_string(),
+            vec![
+                // Discriminators
+                "fun", "val", "var", "when", "object", "companion",
+                "sealed", "data", "inline", "reified", "crossinline",
+                "noinline", "tailrec", "suspend", "coroutine",
+                "lateinit", "by", "init", "constructor", "internal",
+                "actual", "expect", "typealias", "vararg",
+                "it", "println", "listOf", "mapOf", "setOf",
+                // Common
+                "class", "interface", "abstract", "override", "import",
+                "return", "if", "else", "for", "while", "when",
+                "try", "catch", "throw", "null", "is", "as",
+            ],
+        );
+
+        keywords.insert(
+            "ruby".to_string(),
+            vec![
+                // Discriminators
+                "def", "end", "do", "puts", "require", "attr_accessor",
+                "attr_reader", "attr_writer", "module", "include",
+                "extend", "prepend", "begin", "rescue", "ensure",
+                "raise", "yield", "block_given", "proc", "lambda",
+                "nil", "unless", "until", "then", "elsif", "self",
+                "super", "defined", "freeze",
+                // Common
+                "class", "return", "if", "else", "for", "while",
+                "case", "when",
+            ],
+        );
+
+        keywords.insert(
+            "php".to_string(),
+            vec![
+                // Discriminators
+                "echo", "isset", "unset", "empty", "die", "exit",
+                "require_once", "include_once", "array", "foreach",
+                "elseif", "endforeach", "endif", "endwhile",
+                "endfor", "endswitch", "callable", "mixed",
+                "readonly", "match",
+                // Syntax patterns
+                "$", "->", "::", "<?php", "?>",
+                // Common
+                "function", "class", "interface", "namespace", "use",
+                "public", "private", "protected", "static", "abstract",
+                "return", "if", "else", "for", "while", "switch",
+                "case", "try", "catch", "throw", "new", "null",
+                "true", "false",
+            ],
+        );
+
         keywords.insert(
             "sql".to_string(),
             vec![
-                "SELECT", "INSERT", "UPDATE", "DELETE", "WHERE", "FROM", "JOIN", "CREATE",
-                "DROP", "ALTER", "GROUP", "ORDER", "HAVING",
+                // Discriminators (case-insensitive matching downstream)
+                "SELECT", "INSERT", "UPDATE", "DELETE", "WHERE", "FROM",
+                "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "CROSS",
+                "CREATE", "DROP", "ALTER", "TRUNCATE", "INDEX",
+                "TABLE", "VIEW", "TRIGGER", "PROCEDURE", "FUNCTION",
+                "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET",
+                "UNION", "INTERSECT", "EXCEPT", "EXISTS", "BETWEEN",
+                "LIKE", "IN", "IS", "NULL", "NOT", "AND", "OR",
+                "AS", "ON", "SET", "VALUES", "INTO", "DISTINCT",
+                "COUNT", "SUM", "AVG", "MIN", "MAX", "COALESCE",
+                "CASE", "WHEN", "THEN", "ELSE", "END",
+                "PRIMARY", "FOREIGN", "KEY", "REFERENCES",
+                "CONSTRAINT", "DEFAULT", "AUTO_INCREMENT",
+                "VARCHAR", "INTEGER", "BOOLEAN", "TIMESTAMP",
+                "BEGIN", "COMMIT", "ROLLBACK", "TRANSACTION",
             ],
         );
 
-        // IDE keybindings and editor patterns
+        keywords.insert(
+            "html_css".to_string(),
+            vec![
+                // HTML discriminators
+                "<div", "<span", "<body", "<head", "<html", "<script",
+                "<style", "<link", "<meta", "<form", "<input",
+                "<button", "<table", "<tr>", "<td>", "<th>", "<ul>",
+                "<ol>", "<li>", "<img", "<a ", "</div>", "</span>",
+                "class=", "id=", "href=", "src=",
+                // CSS discriminators
+                "margin:", "padding:", "display:", "position:",
+                "color:", "background:", "font-size:", "border:",
+                "flex", "grid", "@media", "@keyframes", "@import",
+                "!important", ":hover", ":focus", "::before",
+                "::after", "z-index:",
+            ],
+        );
+
+        keywords.insert(
+            "shell".to_string(),
+            vec![
+                // Discriminators
+                "#!/bin", "echo", "grep", "sed", "awk", "curl",
+                "wget", "chmod", "chown", "mkdir", "rmdir",
+                "export", "source", "alias", "unset", "shift",
+                "getopts", "trap", "exec", "eval", "xargs",
+                "pipe", "tee", "sort", "uniq", "wc", "cut",
+                "find", "test", "read", "local", "fi", "esac",
+                "done", "elif",
+                // Syntax patterns
+                "&&", "||", "|", ">>", "2>&1", "$@", "$#",
+                "$?", "${", "$(", "if [",
+            ],
+        );
+
+        keywords.insert(
+            "objective_c".to_string(),
+            vec![
+                // Discriminators
+                "@interface", "@implementation", "@end", "@protocol",
+                "@property", "@synthesize", "@dynamic", "@selector",
+                "@autoreleasepool", "@try", "@catch", "@finally",
+                "@throw", "@class", "@import", "@optional", "@required",
+                "NSObject", "NSString", "NSArray", "NSDictionary",
+                "NSNumber", "NSMutableArray", "NSMutableDictionary",
+                "NSLog", "BOOL", "YES", "NO", "nil", "id",
+                "alloc", "init", "dealloc", "retain", "release",
+                "autorelease", "strong", "weak", "copy", "assign",
+                "nonatomic", "atomic", "readonly", "readwrite",
+                // Syntax patterns
+                "[[", "]]", "@\"",
+            ],
+        );
+
+        keywords.insert(
+            "csharp".to_string(),
+            vec![
+                // Discriminators
+                "namespace", "using", "partial", "sealed", "virtual",
+                "override", "abstract", "delegate", "event", "async",
+                "await", "yield", "where", "ref", "out", "params",
+                "get", "set", "value", "var", "dynamic", "is", "as",
+                "typeof", "sizeof", "stackalloc", "checked", "unchecked",
+                "Console", "String", "List", "Dictionary", "Task",
+                "IEnumerable", "LINQ", "System", "Assert",
+                // Syntax patterns
+                "=>", "??", "?.", "?..",
+                // Common
+                "class", "interface", "struct", "enum", "public",
+                "private", "protected", "static", "void", "int",
+                "string", "bool", "return", "if", "else", "for",
+                "foreach", "while", "switch", "case", "try", "catch",
+                "throw", "new", "null", "true", "false",
+            ],
+        );
+
+        keywords.insert(
+            "json".to_string(),
+            vec![
+                // JSON structure indicators (substring match is fine)
+                "{\"", "\":", "\",", "\":\"", "\":[", "\":{",
+                "true", "false", "null",
+            ],
+        );
+
+        keywords.insert(
+            "xml".to_string(),
+            vec![
+                // Discriminators
+                "<?xml", "xmlns", "<![CDATA[", "]]>", "<!DOCTYPE",
+                "<!ENTITY", "<!ELEMENT", "<!ATTLIST",
+                // Common patterns
+                "</", "/>", "<!--", "-->",
+            ],
+        );
+
+        keywords.insert(
+            "yaml".to_string(),
+            vec![
+                // Discriminators
+                "---", "...", "!!str", "!!int", "!!float", "!!bool",
+                "!!null", "!!seq", "!!map", "*anchor", "&anchor",
+                "<<:", "%YAML",
+            ],
+        );
+
+        keywords.insert(
+            "toml".to_string(),
+            vec![
+                // Discriminators
+                "[[", "]]", "= true", "= false",
+                "[package]", "[dependencies]", "[workspace]",
+                "[profile", "[features]", "[build-dependencies]",
+                "[dev-dependencies]", "[target.",
+            ],
+        );
+
+        keywords.insert(
+            "markdown".to_string(),
+            vec![
+                // Discriminators
+                "```", "---", "##", "###", "####",
+                "- [", "* [", "![", "](", "> ",
+                "| ---", "| :--",
+            ],
+        );
+
+        keywords.insert(
+            "r_lang".to_string(),
+            vec![
+                // Discriminators
+                "<-", "library", "require", "data.frame", "ggplot",
+                "mutate", "filter", "summarize", "group_by", "aes",
+                "geom_", "facet_", "tibble", "dplyr", "tidyr",
+                "pipe", "print", "cat", "paste", "paste0",
+                "sapply", "lapply", "tapply", "mapply",
+                "matrix", "vector", "list", "factor", "numeric",
+                "character", "logical", "integer", "double",
+                "TRUE", "FALSE", "NULL", "NA", "NaN", "Inf",
+                "function",
+            ],
+        );
+
+        keywords.insert(
+            "scala".to_string(),
+            vec![
+                // Discriminators
+                "val", "var", "def", "object", "sealed", "trait",
+                "implicit", "lazy", "override", "abstract",
+                "with", "extends", "forSome", "yield",
+                "match", "case", "println", "Unit", "Any",
+                "Nothing", "Nil", "Some", "None", "Option",
+                "Either", "Left", "Right", "Future",
+                // Common
+                "class", "import", "package", "return", "if",
+                "else", "for", "while", "try", "catch", "throw",
+                "new", "null", "true", "false",
+            ],
+        );
+
+        keywords.insert(
+            "typescript".to_string(),
+            vec![
+                // Discriminators (beyond JS)
+                "interface", "type", "namespace", "declare",
+                "readonly", "keyof", "infer", "extends",
+                "implements", "abstract", "enum", "as",
+                "unknown", "never", "any", "void",
+                "Partial", "Required", "Readonly", "Record",
+                "Pick", "Omit", "Exclude", "Extract",
+                "NonNullable", "ReturnType", "Parameters",
+            ],
+        );
+
+        keywords.insert(
+            "lua".to_string(),
+            vec![
+                // Discriminators
+                "local", "then", "end", "elseif", "repeat",
+                "until", "do", "function", "require", "module",
+                "pairs", "ipairs", "next", "select", "unpack",
+                "setmetatable", "getmetatable", "rawget", "rawset",
+                "pcall", "xpcall", "coroutine", "table",
+                "string", "math", "io", "os",
+                "print", "type", "tostring", "tonumber",
+                "nil", "true", "false", "not", "and", "or",
+            ],
+        );
+
+        keywords.insert(
+            "dart".to_string(),
+            vec![
+                // Discriminators
+                "Widget", "StatelessWidget", "StatefulWidget",
+                "BuildContext", "setState", "build", "scaffold",
+                "Container", "Column", "Row", "Text", "Center",
+                "EdgeInsets", "MaterialApp", "ThemeData",
+                "late", "required", "final", "const", "var",
+                "dynamic", "covariant", "mixin", "with",
+                "factory", "operator", "typedef", "part",
+                "show", "hide", "deferred", "as",
+                "async", "await", "yield", "sync",
+                "print",
+            ],
+        );
+
+        keywords.insert(
+            "powershell".to_string(),
+            vec![
+                // Discriminators
+                "$_", "$PSVersionTable", "$true", "$false", "$null",
+                "Write-Host", "Write-Output", "Write-Error",
+                "Get-", "Set-", "New-", "Remove-", "Invoke-",
+                "ForEach-Object", "Where-Object", "Select-Object",
+                "Sort-Object", "Group-Object", "Measure-Object",
+                "-eq", "-ne", "-gt", "-lt", "-ge", "-le",
+                "-like", "-match", "-contains", "-in",
+                "param", "begin", "process", "end",
+                "[string]", "[int]", "[bool]", "[array]",
+                "[hashtable]", "[PSCustomObject]",
+                "function", "filter", "workflow",
+            ],
+        );
+
+        // Syntax patterns that indicate code (language-agnostic)
         let ide_patterns = vec![
-            "Ctrl+/",    // Comment/uncomment (cross-platform)
-            "Cmd+/",     // Comment (macOS)
-            "Cmd+Shift+L", // Multi-select (VS Code macOS)
-            "Ctrl+Shift+L", // Multi-select (VS Code Windows/Linux)
-            "Cmd+D",     // Select word (VS Code macOS)
-            "Ctrl+D",    // Select word (VS Code Windows/Linux)
-            "->",        // Arrow function or closure
-            "=>",        // Function declaration
-            ":::",       // Markdown fence marker
-            "```",       // Code block delimiter
+            "->",     // Pointer/closure/return type
+            "=>",     // Fat arrow / match arm
+            "::",     // Scope resolution / path
+            "```",    // Code block delimiter (markdown)
+            "//",     // Line comment
+            "/*",     // Block comment start
+            "*/",     // Block comment end
+            "!=",     // Not-equal operator
+            ">=",     // Greater-or-equal
+            "<=",     // Less-or-equal
+            "&&",     // Logical AND
+            "||",     // Logical OR
+            "+=",     // Add-assign
+            "-=",     // Sub-assign
+            "<<",     // Left shift / stream
+            ">>",     // Right shift / stream
         ];
 
         // Email/chat patterns
         let messaging_patterns = vec![
             "To:",
-            "Subject:",
             "From:",
-            "Dear",
+            "Subject:",
+            "Cc:",
+            "Bcc:",
+            "Reply-To:",
+            "Dear ",
+            "Hi ",
+            "Hello ",
             "Thanks",
             "Best regards",
-            "@username",
-            "#hashtag",
+            "Sincerely",
+            "Kind regards",
+            "Sent from",
+            "On behalf of",
+            "wrote:",
+            "-----Original",
+            "Forwarded message",
         ];
 
         Self {
@@ -555,19 +959,13 @@ impl ContentDetector {
 
     /// Detect specific programming language from patterns.
     fn detect_language(&self, patterns: &[String]) -> String {
-        let mut lang_scores = HashMap::new();
+        let mut lang_scores: HashMap<&str, u32> = HashMap::new();
 
         for pattern in patterns {
-            if let Some(_lang) = pattern.strip_prefix("rust:") {
-                *lang_scores.entry("rust").or_insert(0) += 1;
-            } else if let Some(_lang) = pattern.strip_prefix("python:") {
-                *lang_scores.entry("python").or_insert(0) += 1;
-            } else if let Some(_lang) = pattern.strip_prefix("javascript:") {
-                *lang_scores.entry("javascript").or_insert(0) += 1;
-            } else if let Some(_lang) = pattern.strip_prefix("swift:") {
-                *lang_scores.entry("swift").or_insert(0) += 1;
-            } else if let Some(_lang) = pattern.strip_prefix("sql:") {
-                *lang_scores.entry("sql").or_insert(0) += 1;
+            if let Some((lang, _)) = pattern.split_once(':') {
+                if lang != "ide" && lang != "messaging" {
+                    *lang_scores.entry(lang).or_insert(0) += 1;
+                }
             }
         }
 
