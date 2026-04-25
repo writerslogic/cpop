@@ -832,3 +832,137 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     updateBadge(operatingMode === "standalone" ? "S" : "", "#95a5a6");
   }
 });
+
+// ---------------------------------------------------------------------------
+// Text Attestation — right-click context menu
+// ---------------------------------------------------------------------------
+
+const ATTEST_API_URL = "https://api.writersproof.com";
+
+chrome.contextMenus.create({
+  id: "writersproof-attest-text",
+  title: "Attest Authorship with WritersProof",
+  contexts: ["selection"],
+});
+
+/**
+ * NFC-normalize text for attestation: keep only Unicode letters + ASCII
+ * digits, lowercase everything. Must match Rust normalize_for_attestation().
+ */
+function normalizeForAttestation(text) {
+  const nfc = text.normalize("NFC");
+  let result = "";
+  for (const ch of nfc) {
+    const code = ch.codePointAt(0);
+    if (code >= 0x30 && code <= 0x39) {
+      result += ch;
+    } else if (/\p{Letter}/u.test(ch)) {
+      result += ch.toLowerCase();
+    }
+  }
+  return result;
+}
+
+async function hashText(text) {
+  const data = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return bytesToHex(new Uint8Array(buf));
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "writersproof-attest-text") return;
+  const selectedText = info.selectionText;
+  if (!selectedText || !selectedText.trim()) return;
+
+  const normalized = normalizeForAttestation(selectedText);
+  if (!normalized) {
+    notifyTab(tab.id, "No attestable content (letters/digits only).");
+    return;
+  }
+
+  const hash = await hashText(normalized);
+  const wpId = hash.slice(0, 8);
+  const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  // Determine tier from current session state.
+  let tier = "declared";
+  if (operatingMode === "native" && isConnected && activeTabId === tab.id) {
+    tier = "verified";
+  } else if (standaloneSessionId && activeTabId === tab.id) {
+    tier = "corroborated";
+  }
+
+  const tierLabels = { verified: "Verified", corroborated: "Corroborated", declared: "Declared" };
+  const tierDescs = {
+    verified: "Cryptographic authorship attestation with keystroke evidence.",
+    corroborated: "Authorship attestation, sentinel active during authoring.",
+    declared: "Signed author declaration.",
+  };
+
+  const attestationBlock =
+    `WritersProof ${tierLabels[tier]} | ID: ${wpId} | ${timestamp}\n` +
+    `${tierDescs[tier]}\n` +
+    `verify.writersproof.com`;
+
+  // Copy attestation block to clipboard via content script.
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (block) => {
+        navigator.clipboard.writeText(block).catch(() => {
+          const ta = document.createElement("textarea");
+          ta.value = block;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        });
+      },
+      args: [attestationBlock],
+    });
+  } catch (e) {
+    console.warn("Clipboard write failed:", e);
+  }
+
+  // Sync via native messaging if desktop app connected (it has signing key + auth).
+  // Standalone mode: attestation is local-only until desktop app is installed.
+  if (operatingMode === "native" && isConnected) {
+    sendNativeMessage({
+      type: "text_attestation",
+      content_hash: hash,
+      tier,
+      writersproof_id: wpId,
+      attested_at: timestamp,
+    });
+  }
+
+  notifyTab(tab.id, `Attestation copied (${tierLabels[tier]}). Paste after your text.`);
+});
+
+function notifyTab(tabId, message) {
+  if (!tabId) return;
+  try {
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: (msg) => {
+        const d = document.createElement("div");
+        d.textContent = msg;
+        Object.assign(d.style, {
+          position: "fixed", bottom: "20px", right: "20px", zIndex: "2147483647",
+          background: "#1a1a2e", color: "#2dd4bf", padding: "12px 20px",
+          borderRadius: "8px", fontSize: "14px", fontFamily: "system-ui, sans-serif",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)", opacity: "0", transition: "opacity 0.3s",
+        });
+        document.body.appendChild(d);
+        requestAnimationFrame(() => { d.style.opacity = "1"; });
+        setTimeout(() => {
+          d.style.opacity = "0";
+          setTimeout(() => d.remove(), 300);
+        }, 3000);
+      },
+      args: [message],
+    });
+  } catch (e) {
+    console.warn("Tab notification failed:", e);
+  }
+}
