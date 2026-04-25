@@ -293,25 +293,50 @@ impl OfflineQueue {
         Ok(entries)
     }
 
-    /// Submit all queued text attestations via `client`.
+    /// Maximum retry attempts before an entry is discarded.
+    const MAX_TEXT_RETRIES: u32 = 10;
+
+    /// Submit queued text attestations via `client`.
     ///
-    /// Successful entries are removed; failed entries stay with incremented
-    /// `retry_count`. Returns count of successful submissions.
+    /// Skips entries that haven't reached their backoff window yet.
+    /// Entries exceeding MAX_TEXT_RETRIES are removed. Returns count of
+    /// successful submissions.
     pub async fn drain_text_attestations(
         &self,
         client: &WritersProofClient,
     ) -> Result<usize> {
         let entries = self.list_text_attestations()?;
         let mut success_count = 0;
+        let now = Utc::now();
 
         for mut entry in entries {
+            // Remove entries that exceeded max retries.
+            if entry.retry_count >= Self::MAX_TEXT_RETRIES {
+                log::info!("Discarding text attestation {} after {} retries", entry.id, entry.retry_count);
+                Self::validate_id(&entry.id)?;
+                let path = self.text_dir()?.join(format!("{}.json", entry.id));
+                if path.exists() { fs::remove_file(&path)?; }
+                continue;
+            }
+
+            // Exponential backoff: wait 2^retry_count seconds (1s, 2s, 4s, 8s, ... 512s max).
+            if entry.retry_count > 0 {
+                if let Ok(created) = chrono::DateTime::parse_from_rfc3339(&entry.created_at) {
+                    let backoff_secs = 1i64 << entry.retry_count.min(9);
+                    let earliest_retry = created + chrono::Duration::seconds(
+                        backoff_secs * entry.retry_count as i64,
+                    );
+                    if now < earliest_retry {
+                        continue;
+                    }
+                }
+            }
+
             match client.submit_text_attestation(entry.request.clone()).await {
                 Ok(_) => {
                     Self::validate_id(&entry.id)?;
                     let path = self.text_dir()?.join(format!("{}.json", entry.id));
-                    if path.exists() {
-                        fs::remove_file(&path)?;
-                    }
+                    if path.exists() { fs::remove_file(&path)?; }
                     success_count += 1;
                 }
                 Err(e) => {
